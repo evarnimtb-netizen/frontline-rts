@@ -224,7 +224,7 @@ fn load_rejects_bad_s11a1_state() {
     }
 }
 
-/// Spec 3 "Vehicle type cap": with 17 vehicle types the 17th type's rounds
+/// Spec 3 "Vehicle type cap": with 18 vehicle types (ww2's 17 and a clone) the last type's rounds
 /// carry their type and their class. Control: the old 4-bit pack in a
 /// `u8` (`class | (t + 1) << 4`) loses type 16 (17 << 4 wraps to 16 = type 0).
 #[test]
@@ -236,24 +236,23 @@ fn seventeen_vehicle_types_keep_their_kill_rows() {
             .find(|t| t.id == "ww2:ger_pz4_h_squad")
             .and_then(|t| t.vehicle)
             .unwrap() as usize;
-        assert_eq!(s.vehicles.len(), 15, "ww2 has 15 vehicle defs at the base");
-        while s.vehicles.len() < 17 {
-            let v = s.vehicles[pz].clone();
-            s.vehicles.push(v);
-        }
+        // Build B: 15 base defs + the leIG 18 and the M3; one clone more.
+        assert_eq!(s.vehicles.len(), 17, "ww2 has 17 vehicle defs with S11a1");
+        let v = s.vehicles[pz].clone();
+        s.vehicles.push(v);
         let t = s
             .squad_types
             .iter_mut()
             .find(|t| t.id == "ww2:ger_pz4_h_squad")
             .unwrap();
-        t.vehicle = Some(16);
+        t.vehicle = Some(17);
     });
     let sq = spawn(&mut w, 0, "ww2:ger_pz4_h_squad", 300, 300);
     steps(&mut w, 2);
     let g = w.game().unwrap();
     let v = g.squads[&sq].members[0];
-    assert_eq!(g.vehicles()[&v].type_idx, 16);
-    assert_eq!(g.players[1].s7.kills_by_vehicle.len(), 17);
+    assert_eq!(g.vehicles()[&v].type_idx, 17);
+    assert_eq!(g.players[1].s7.kills_by_vehicle.len(), 18);
     let cannon = g
         .setup()
         .weapons
@@ -262,7 +261,7 @@ fn seventeen_vehicle_types_keep_their_kill_rows() {
         .unwrap() as u16;
     let class = g.round_class(&w.state.entities, cannon, u16::MAX, v);
     assert_eq!(kill_class::base(class), kill_class::TANK_AP);
-    assert_eq!(kill_class::vehicle(class), Some(16));
+    assert_eq!(kill_class::vehicle(class), Some(17));
     // Every type up to the cap keeps both parts.
     for t in [0u16, 14, 15, 16, 4094] {
         let k = kill_class::with_vehicle(kill_class::FRAG, t);
@@ -982,4 +981,125 @@ fn real_infantry_guns_solve_300_and_900_m_on_flat_ground() {
         candidates(&m3, from, far).next().is_none(),
         "control: past range"
     );
+}
+
+/// A flat world with a 25 m crest band across x = 500 (the G2 crest of
+/// `indirect.rs`, as a map band), player 0's real gun `card` at (50, 500)
+/// and a Grenadier squad at (600, 500) that sees the target ground.
+fn crest_gun(card: &str, crest: bool) -> (World, SquadId) {
+    use frontline_content::Fixed;
+    use frontline_content::setup::{BandSetup, FixedVec2};
+    let mut w = flat_world_with(1, |s| {
+        if crest {
+            s.map.terrain.bands.push(BandSetup {
+                from: FixedVec2::from_m([500, 0]),
+                to: FixedVec2::from_m([500, 1024]),
+                height: Fixed::from_int(25),
+                half_width: Fixed::from_int(40),
+            });
+        }
+    });
+    steps(&mut w, 2);
+    let sq = spawn(&mut w, 0, card, 50, 500);
+    spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 600, 500);
+    steps(&mut w, 30);
+    (w, sq)
+}
+
+/// Review A-6: `Masked` and `s11.masked` reached through the sim (the real
+/// 105 mm M3 behind a 25 m crest band), and (review A-3) a gun refusal
+/// leaves the mortar row `fm.refused` alone. Controls: the real leIG 18
+/// from the same spot is accepted; the M3 on flat ground is accepted.
+#[test]
+fn real_m3_is_masked_behind_a_crest_through_the_sim() {
+    let t = c(580, 500);
+    let (mut w, sq) = crest_gun("ww2:usa_105mm_m3_squad", true);
+    assert_eq!(order(&mut w, sq, t, 4), Some(FireMissionRefusal::Masked));
+    let p = &w.game().unwrap().players[0];
+    assert_eq!(p.s11.masked, 1);
+    assert_eq!(
+        p.fm.refused.iter().sum::<u32>(),
+        0,
+        "A-3: not in the mortar row"
+    );
+    let (mut w, sq) = crest_gun("ww2:ger_leig18_squad", true);
+    assert_eq!(
+        order(&mut w, sq, t, 4),
+        None,
+        "control: the leIG clears the crest"
+    );
+    let (mut w, sq) = crest_gun("ww2:usa_105mm_m3_squad", false);
+    assert_eq!(order(&mut w, sq, t, 4), None, "control: flat ground");
+}
+
+/// Review A-6: two broken rules at once give the earlier refusal of G1's
+/// order (Rounds before NotReady before NoBombs before UnknownGround
+/// before CannotReach). Control: each pair's later rule alone gives the
+/// later refusal (the single-rule cases of `gun_mission_refusals_in_order`).
+#[test]
+fn gun_refusals_take_the_first_broken_rule() {
+    let mut s = scene();
+    let (w, sq, gun) = (&mut s.w, s.sq, s.gun);
+    let t = c(TARGET.0, TARGET.1);
+    let size = w.match_setup().unwrap().map.size_m;
+    let unknown = c(300, size - 30);
+    let limber = |w: &mut World, on: bool| {
+        w.edit_vehicle(gun, |vs| {
+            vs.served.as_mut().unwrap().state = if on {
+                GunState::Limbered
+            } else {
+                GunState::Emplaced
+            }
+        });
+    };
+    let (ammo, loaded) = {
+        let vs = &w.game().unwrap().vehicles[&gun];
+        (vs.ammo.clone(), vs.loaded)
+    };
+    let empty = |w: &mut World, on: bool| {
+        let (a, l) = (ammo.clone(), loaded);
+        w.edit_vehicle(gun, move |vs| {
+            if on {
+                vs.ammo[1] = 0;
+                if vs.loaded == Some(1) {
+                    vs.loaded = None;
+                }
+            } else {
+                vs.ammo = a;
+                vs.loaded = l;
+            }
+        });
+    };
+    limber(w, true);
+    assert_eq!(order(w, sq, t, 0), Some(FireMissionRefusal::Rounds));
+    empty(w, true);
+    assert_eq!(order(w, sq, t, 4), Some(FireMissionRefusal::NotReady));
+    limber(w, false);
+    assert_eq!(order(w, sq, unknown, 4), Some(FireMissionRefusal::NoBombs));
+    empty(w, false);
+    assert_eq!(
+        order(w, sq, unknown, 4),
+        Some(FireMissionRefusal::UnknownGround)
+    );
+    assert_eq!(order(w, sq, t, 4), None, "control");
+}
+
+/// Review A-2: the `[indirect] range_m` of the gun's table bounds the
+/// order (`CannotReach` past it). Control: a target inside it is taken.
+#[test]
+fn gun_refuses_past_its_table_range() {
+    let mut s = scene_with(1, 0, |s| {
+        let w = s
+            .weapons
+            .iter_mut()
+            .find(|w| w.id == "test:inf_gun_main")
+            .unwrap();
+        w.indirect.as_mut().unwrap().range = frontline_content::Fixed::from_int(300);
+    });
+    let (w, sq) = (&mut s.w, s.sq);
+    assert_eq!(
+        order(w, sq, c(650, 500), 4),
+        Some(FireMissionRefusal::CannotReach)
+    );
+    assert_eq!(order(w, sq, c(550, 500), 4), None, "control: 250 m");
 }

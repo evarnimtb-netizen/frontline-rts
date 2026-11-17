@@ -910,10 +910,11 @@ impl MatchState {
         };
         let he = self.gun_he_slot(v);
         // Emplaced, with its crew (a crew ordered off is released: G6).
-        let emplaced = vs
-            .served
-            .as_ref()
-            .is_some_and(|sv| sv.state == crate::vehicle::GunState::Emplaced && sv.crew.is_some());
+        let emplaced = vs.served.as_ref().is_some_and(|sv| {
+            sv.state == crate::vehicle::GunState::Emplaced
+                    // Review A-4a: a crew link naming a dead squad ends it too.
+                    && sv.crew.is_some_and(|q| self.squads.contains_key(&q))
+        });
         let he_left = he.is_some_and(|k| {
             vs.loaded == Some(k) || vs.ammo.get(k as usize).is_some_and(|n| *n > 0)
         });
@@ -964,7 +965,9 @@ impl MatchState {
             && vs.manned(v, SeatRole::Loader)
             && vs.component(ComponentKind::Gun) > 0
             && vs.component(ComponentKind::Recoil) > 0
-            && vs.repairing.is_none();
+            && vs.repairing.is_none()
+            // Review A-5: no round while the trail is re-laid.
+            && vs.gun_ready();
         if !crew_ok {
             // Waits for the S9 slot swap (or the repair).
             vs.lay_turn = None;

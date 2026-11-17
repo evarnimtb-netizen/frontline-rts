@@ -1362,6 +1362,11 @@ impl MatchState {
     fn gun_relay(&mut self, ctx: &mut Ctx, id: SimId) {
         let i = id.index();
         let min_men = self.setup.rules.vehicles.guns.min_men as usize;
+        // Review A-4b: a gun on a fire mission re-lays to the mission
+        // bearing even while it holds fire.
+        let on_mission = ctx.ents.squad[i]
+            .and_then(|q| self.squads.get(&q))
+            .is_some_and(|sq| matches!(sq.order, Order::FireMission { .. }));
         let vs = self.vehicles.get_mut(&id).expect("listed");
         let face = vs.face.take();
         let lay = vs.lay_turn;
@@ -1396,7 +1401,7 @@ impl MatchState {
         let t = ctx.ents.transform[i];
         let to = match face {
             Some(p) => Some(yaw_to(t.pos.xy(), p, t.yaw)),
-            None if lay.is_some() && (sv.hold_fire_m == 0 || attacked) => lay,
+            None if lay.is_some() && (sv.hold_fire_m == 0 || attacked || on_mission) => lay,
             None => None,
         };
         if let Some(to) = to

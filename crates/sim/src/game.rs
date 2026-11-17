@@ -1397,7 +1397,21 @@ impl MatchState {
             squad,
             refusal,
         });
-        self.players[p.0 as usize].fm.refused[refusal as usize] += 1;
+        // Review A-3: a gun squad's refusal stays out of the mortar row
+        // (`fm.refused`); the event and the S11 counters keep it.
+        let gun = self
+            .setup
+            .rules
+            .fire_mission
+            .as_ref()
+            .is_some_and(|fm| fm.gun_missions != 0)
+            && self
+                .squads
+                .get(&squad)
+                .is_some_and(|sq| self.gun_indirect_weapon(sq).is_some());
+        if !gun {
+            self.players[p.0 as usize].fm.refused[refusal as usize] += 1;
+        }
         false
     }
 
@@ -1574,6 +1588,11 @@ impl MatchState {
         let w = &self.setup.weapons[wi as usize];
         let ind = w.indirect.as_ref()?;
         let (mount, from) = self.gun_mount(ents, gun)?;
+        // Review A-2: the table's `range_m` bounds the order.
+        let reach: Fx = ind.range.into();
+        if (target - from.xy()).length_sq_raw() > FxVec2::new(reach, Fx::ZERO).length_sq_raw() {
+            return Some(FireMissionRefusal::CannotReach);
+        }
         let to = target.extend(terrain.height_at(target));
         crate::indirect::solve_gun(
             ind,
