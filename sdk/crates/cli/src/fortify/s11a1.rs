@@ -388,7 +388,13 @@ fn mask_once(args: &FortifyArgs, seed: u64, p: u8, crest: bool) -> Result<(bool,
     match order(&mut w, p, sq, target, 1) {
         Some(r) => Ok((r == "masked", false)),
         None => {
-            let m0 = mission(&w, sq).ok_or_else(|| anyhow!("{what}: no mission"))?;
+            // Review B-2: an aim point (the point plus the mission's aim
+            // error) in the crest's shadow has no clear arc: the mission
+            // ends unfired (counted as not fired over), where before the
+            // round burst on the far slope.
+            let Some(m0) = mission(&w, sq) else {
+                return Ok((false, false));
+            };
             // The aim point of the round (the mission's aim error added):
             // a burst within 10 m of it flew its solution over the crest.
             let aim = target + m0.offset;

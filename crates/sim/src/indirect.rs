@@ -141,11 +141,18 @@ pub(crate) fn candidates(
 
 /// S11a1 G2: steps of a flight the mask test reads ([`MASK_FIRST`] to
 /// [`MASK_LAST`] of [`MASK_STEPS`]), and the clearance (m) the shell must
-/// keep above the ground there.
+/// keep above the ground there. Review B-2: the last fifth (steps
+/// [`MASK_CLEAR_LAST`] + 1..=[`MASK_LAST`]) is read too, with no clearance
+/// (the shell only has to be above the ground): a round whose aim point
+/// lies in a crest's shadow burst on the far slope before.
 pub const MASK_STEPS: i64 = 20;
 pub const MASK_FIRST: i64 = 2;
-pub const MASK_LAST: i64 = 16;
+pub const MASK_LAST: i64 = 19;
+pub const MASK_CLEAR_LAST: i64 = 16;
 const MASK_CLEAR: Fx = Fx::from_ratio(1, 2);
+pub const MASK_LATE_SINK: Fx = Fx::from_int(2);
+/// Review B-2: the last read is where this much of the range is left (m).
+pub const MASK_NEAR_M: i32 = 5;
 
 /// S11a1 G2: the gun's mount as the solver checks it: the hull's axes where
 /// it stands and the mount's elevation limits (rad).
@@ -157,7 +164,8 @@ pub struct GunMount {
 }
 
 /// Whether shot `s` from `from` clears the ground by [`MASK_CLEAR`] at
-/// steps [`MASK_FIRST`]..=[`MASK_LAST`] of [`MASK_STEPS`] (no rays: one
+/// steps [`MASK_FIRST`]..=[`MASK_CLEAR_LAST`] and stays above it to
+/// [`MASK_LAST`] of [`MASK_STEPS`] (no rays: one
 /// height read a step). The arc is the drag-free one the solver solved
 /// (the half-substep `vz` correction left out).
 pub fn arc_clear(terrain: &Heightfield, from: FxVec3, s: &Shot) -> bool {
@@ -165,8 +173,11 @@ pub fn arc_clear(terrain: &Heightfield, from: FxVec3, s: &Shot) -> bool {
     let g = G.raw() as i64;
     let vz = s.vel.z.raw() as i64 - g / (2 * SUBSTEP_HZ as i64);
     let one = 1i64 << Fx::FRAC_BITS;
-    (MASK_FIRST..=MASK_LAST).all(|i| {
-        let t = t_all * i / MASK_STEPS;
+    // Review B-2: one more read where [`MASK_NEAR_M`] of the range is left.
+    let range = (s.vel.xy().length().raw() as i64 * t_all / one).max(1);
+    let near = (MASK_NEAR_M as i64 * one).min(range);
+    let t_near = t_all - t_all * near / range;
+    let clear_at = |t: i64, late: bool| {
         let at = |p: Fx, v: Fx| {
             Fx::from_raw(
                 (p.raw() as i64 + v.raw() as i64 * t / one).clamp(i32::MIN as i64, i32::MAX as i64)
@@ -175,9 +186,16 @@ pub fn arc_clear(terrain: &Heightfield, from: FxVec3, s: &Shot) -> bool {
         };
         let xy = crate::fx::FxVec2::new(at(from.x, s.vel.x), at(from.y, s.vel.y));
         let z = from.z.raw() as i64 + vz * t / one - g * t / one * t / one / 2;
-        let ground = terrain.height_at(terrain.clamp(xy)) + MASK_CLEAR;
+        let ground = terrain.height_at(terrain.clamp(xy));
+        let ground = if late {
+            ground - MASK_LATE_SINK
+        } else {
+            ground + MASK_CLEAR
+        };
         z >= ground.raw() as i64
-    })
+    };
+    (MASK_FIRST..=MASK_LAST).all(|i| clear_at(t_all * i / MASK_STEPS, i > MASK_CLEAR_LAST))
+        && (t_near <= t_all * MASK_LAST / MASK_STEPS || clear_at(t_near, true))
 }
 
 /// S11a1 G2: a gun's solution from muzzle `from` to ground point `to`: the
@@ -597,9 +615,9 @@ mod tests {
     /// lands within 3 m of the target (no aim error, no scatter here).
     /// The gun stands 450 m behind the crest, not 300 m: at 380 m the
     /// leIG's lowest charge needs 77 deg (its 73 deg range is 482 m).
-    /// Control: the +30 deg M3 table is masked from the same spot. (The
-    /// mask reads steps 2..=16 of 20: the last fifth of a flight is never
-    /// tested, by the spec.)
+    /// Control: the +30 deg M3 table is masked from the same spot. (Review
+    /// B-2: the mask reads steps 2..=19 of 20, the last fifth with no
+    /// clearance.)
     #[test]
     fn high_angle_gun_clears_the_crest() {
         let t = crest();
@@ -614,6 +632,28 @@ mod tests {
             Err(crate::fire_mission::FireMissionRefusal::Masked),
             "control: the +30 deg M3 is masked from the same spot"
         );
+    }
+
+    /// Review B-2: every leIG aim point on the far flank of the crest and
+    /// past it that the solver accepts is hit within 6 m (the shell does
+    /// not burst on the slope short of it). Control: the Build A rule
+    /// (steps 2..=16 only) accepts x = 523 and bursts 14 m short.
+    #[test]
+    fn accepted_leig_points_behind_a_crest_are_hit() {
+        let t = crest();
+        let from = FxVec3::new(Fx::from_int(50), Fx::from_int(500), Fx::ONE);
+        let mut accepted = 0;
+        for x in (521..=700).step_by(2) {
+            let to = FxVec3::new(Fx::from_int(x), Fx::from_int(500), Fx::ZERO);
+            let to = to.xy().extend(t.height_at(to.xy()));
+            let Ok(s) = solve_gun(&leig(), from, to, &t, true, None, Fx::ZERO) else {
+                continue;
+            };
+            accepted += 1;
+            let miss = (burst(&t, from, &s).xy() - to.xy()).length();
+            assert!(miss <= Fx::from_int(6), "x {x}: miss {miss:?}");
+        }
+        assert!(accepted > 10, "accepted {accepted}");
     }
 
     /// G2 (spec: "a flat 300 m shot of the M3 has its apex at 2.6 m and
