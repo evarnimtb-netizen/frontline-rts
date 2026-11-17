@@ -2382,6 +2382,32 @@ impl World {
         end
     }
 
+    /// S11a2 M3 fortify-test hook (`docs/slices/S11a2.md` 4 M3): one world
+    /// step with player `player`'s S3 lift step alone run on `ai`, a fresh
+    /// state the caller keeps (not part of the match), a plan every
+    /// `replan_ticks`; its `Stop` commands wait in `ai.pending` for the
+    /// reaction delay and are applied as the player's (as
+    /// [`Self::drive_breach`]).
+    pub fn drive_ff_lift(&mut self, ai: &mut crate::ai::AiState, player: PlayerId) {
+        let tick = self.state.tick;
+        if let Some(game) = self.state.game.as_ref()
+            && (player.0 as usize) < game.players.len()
+        {
+            game.drive_ff_lift_plan(ai, &self.state.entities, &self.state.terrain, tick, player);
+        }
+        let n = ai.pending.iter().take_while(|c| c.due <= tick).count();
+        let cmds: Vec<Command> = ai
+            .pending
+            .drain(..n)
+            .map(|c| Command {
+                player,
+                seq: c.seq,
+                kind: c.kind,
+            })
+            .collect();
+        self.step(&cmds);
+    }
+
     /// S10b staging tool (tests: the save checks of the new orders): edits
     /// squad `id` directly. The caller keeps it valid; false when there is
     /// no such squad.

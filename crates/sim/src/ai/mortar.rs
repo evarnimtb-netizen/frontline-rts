@@ -859,6 +859,7 @@ impl Planner<'_> {
 impl crate::game::MatchState {
     /// Test hook (S11a2 S2): the spotter spot of player `me`'s mortar
     /// squad `id` at `gunner` for `target` (no known enemies, 16 rays).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn test_spot_for(
         &self,
         ai: &mut AiState,

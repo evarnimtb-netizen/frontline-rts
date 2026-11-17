@@ -963,6 +963,49 @@ impl super::Planner<'_> {
     }
 }
 
+impl crate::game::MatchState {
+    /// S11a2 M3 fortify-test hook (`World::drive_ff_lift`): one plan of
+    /// the S3 lift step alone for player `me` with the given (fresh,
+    /// unsaved) state, if it is due (`ai.next_plan`), as
+    /// `drive_breach_plan` drives the breach habit.
+    pub(crate) fn drive_ff_lift_plan(
+        &self,
+        ai: &mut super::AiState,
+        ents: &crate::ecs::Entities,
+        terrain: &crate::terrain::Heightfield,
+        tick: u64,
+        me: PlayerId,
+    ) {
+        if tick < ai.next_plan {
+            return;
+        }
+        let ps = &self.setup.players[me.0 as usize];
+        let d = self.setup.rules.difficulty.get(ps.difficulty);
+        ai.next_plan = tick + d.replan_ticks.max(1) as u64;
+        let due = tick + d.reaction_ticks.max(1) as u64;
+        super::Planner {
+            g: self,
+            ai,
+            me,
+            ents,
+            terrain,
+            due,
+            tick,
+            quality: d.decision_quality_pct.min(100) as i64,
+            rng: crate::rng::RngStream::new(
+                self.setup.seed,
+                tick,
+                SimId(me.0 as u32),
+                crate::rng::Purpose::AI_PLAN,
+            ),
+            mortar_rays: 0,
+            at_sites: Default::default(),
+            own_routes: Default::default(),
+        }
+        .ff_lift();
+    }
+}
+
 #[cfg(test)]
 impl crate::game::MatchState {
     /// Test hook (fix C-2): one A3 observer buy for player `me` on `ai`

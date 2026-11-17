@@ -23,7 +23,7 @@
 //!   lost), `rounds_fired`. Control: `counter_battery` 0 (no marker; the
 //!   answer is aimed where the marker would be, the gun itself, and the
 //!   sim refuses it: unknown ground).
-//! - `ff_lift` (T142, chunk 2): see [`ff_lift_row`].
+//! - `ff_lift` (T142): see [`ff_lift_row`].
 use anyhow::{Result, anyhow, bail};
 use frontline_content::MatchSetup;
 use frontline_sim::{
@@ -601,9 +601,134 @@ pub fn cb_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<CbRow> 
     Ok(row)
 }
 
-/// The `ff_lift` row: built in chunk 2 (null keys: T142 prints SKIP).
-pub fn ff_lift_row(_args: &FortifyArgs, _seeds: std::ops::Range<u64>) -> Result<FfLiftRow> {
-    Ok(FfLiftRow::default())
+/// `ff_lift`: bombs, the squad's start beyond the point (m).
+pub const LIFT_ROUNDS: u16 = 12;
+pub const LIFT_START_M: i32 = 90;
+
+/// One `ff_lift` run of player `p` (`ff_safe` the switch): (no own man
+/// hurt by own fire, the mission lifted, bombs fired).
+fn ff_lift_once(args: &FortifyArgs, seed: u64, p: u8, safe: u32) -> Result<(bool, bool, u32)> {
+    let mut w = world_with(args, seed, |s| {
+        flat(s);
+        switches(s, 1, 0);
+        s.rules.ai.arty.ff_safe = safe;
+    })?;
+    let what = format!("s11a2.ff_lift seed {seed} player {p} ff_safe {safe}");
+    let e = 1 - p;
+    park(&mut w, p, at(60, 950));
+    park(&mut w, e, at(1000, 60));
+    let point = at(FF_POINT.0, FF_POINT.1);
+    let mortar = spawn(
+        &mut w,
+        p,
+        MORTARS[p as usize],
+        at(FF_MORTAR.0, FF_MORTAR.1),
+        EAST,
+    )?;
+    let sq = spawn(
+        &mut w,
+        p,
+        RIFLES[p as usize],
+        at(FF_POINT.0 + LIFT_START_M, FF_POINT.1),
+        EAST,
+    )?;
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    for _ in 0..2 * hz {
+        w.step(&[]);
+    }
+    let bombs = |w: &World| -> u32 {
+        w.game().unwrap().players()[p as usize]
+            .fm
+            .bombs
+            .iter()
+            .sum()
+    };
+    let hurt = |w: &World| {
+        let c = &w.game().unwrap().players()[p as usize].s11a2;
+        c.ff_bursts
+    };
+    let (b0, h0) = (bombs(&w), hurt(&w));
+    if let Some(r) = order(&mut w, p, mortar, point, LIFT_ROUNDS) {
+        bail!("{what}: refused {r}");
+    }
+    if mission(&w, mortar).is_none() {
+        bail!("{what}: no mission");
+    }
+    let mut ai = frontline_sim::ai::AiState::new(w.tick());
+    let t0 = w.tick();
+    let mut sent = false;
+    let mut end = None;
+    while end.is_none_or(|t| w.tick() < t + 40 * hz) {
+        if w.tick() > t0 + MISSION_MAX_S * hz {
+            bail!("{what}: the mission never ended");
+        }
+        // The squad walks onto the point as the first bomb leaves.
+        if !sent && bombs(&w) > b0 {
+            sent = true;
+            let seq = w.tick() as u32;
+            w.step(&[Command {
+                player: PlayerId(p),
+                seq,
+                kind: CommandKind::Move {
+                    squad: sq,
+                    target: point,
+                },
+            }]);
+            continue;
+        }
+        w.drive_ff_lift(&mut ai, PlayerId(p));
+        if end.is_none() && mission(&w, mortar).is_none() {
+            end = Some(w.tick());
+        }
+    }
+    Ok((hurt(&w) == h0, ai.counters.ff_lifts > 0, bombs(&w) - b0))
+}
+
+/// The `ff_lift` row (spec 4 M3): a mortar team's 12-bomb Direct mission
+/// on a point 300 m off; an own rifle squad 90 m beyond the point is sent
+/// onto it as the first bomb leaves; the owner's S3 lift step is driven
+/// each plan (`World::drive_ff_lift`); each faction's mortar in turn.
+/// `clean_runs_pct` (no own man hurt by own fire), `lifted_pct`,
+/// `rounds_fired` (bombs, all runs). Control: `ff_safe` 0 (the step lifts
+/// nothing, the mission runs out).
+pub fn ff_lift_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<FfLiftRow> {
+    let all = par_seeds(seeds, |seed| {
+        let mut v = Vec::new();
+        for safe in [1u32, 0] {
+            for p in [0u8, 1] {
+                v.push((safe, ff_lift_once(args, seed, p, safe)?));
+            }
+        }
+        Ok(v)
+    })?;
+    let side = |safe: u32| {
+        let runs: Vec<(bool, bool, u32)> = all
+            .iter()
+            .flatten()
+            .filter(|(s, _)| *s == safe)
+            .map(|(_, r)| *r)
+            .collect();
+        let n = runs.len() as u32;
+        (
+            pct(runs.iter().filter(|r| r.0).count() as u32, n),
+            pct(runs.iter().filter(|r| r.1).count() as u32, n),
+            (n > 0).then_some(runs.iter().map(|r| r.2).sum::<u32>() as f64),
+        )
+    };
+    let (clean, lifted, rounds) = side(1);
+    let (c_clean, c_lifted, c_rounds) = side(0);
+    Ok(FfLiftRow {
+        clean_runs_pct: clean,
+        lifted_pct: lifted,
+        rounds_fired: rounds,
+        start_m: Some(LIFT_START_M as f64),
+        bombs: Some(LIFT_ROUNDS as f64),
+        control: FfLiftControl {
+            clean_runs_pct: c_clean,
+            lifted_pct: c_lifted,
+            rounds_fired: c_rounds,
+        },
+    })
 }
 
 /// Every S11a2 row.

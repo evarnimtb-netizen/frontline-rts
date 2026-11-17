@@ -932,9 +932,9 @@ impl S11a2Faction {
         self.cb_err_first_mm += s.cb_err_first_mm;
         self.cb_dropped += s.cb_dropped as u64;
         self.cb_missions += s.cb_missions as u64;
-        for k in 0..3 {
-            self.cb_rounds[k] += s.cb_rounds[k] as u64;
-            self.gun_rounds[k] += gun_rounds[k] as u64;
+        for (k, (c, g)) in s.cb_rounds.iter().zip(gun_rounds).enumerate() {
+            self.cb_rounds[k] += *c as u64;
+            self.gun_rounds[k] += g as u64;
         }
         self.cb_bursts += s.cb_bursts as u64;
         self.cb_near_bursts += s.cb_near_bursts as u64;
