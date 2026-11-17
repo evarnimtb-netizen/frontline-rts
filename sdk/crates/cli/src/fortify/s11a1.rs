@@ -17,9 +17,9 @@
 //! - `mask` (T129): a 25 m crest band across x = 500 (the G2 crest), the gun
 //!   at (50, 500), the point at (580, 500), marked; one round. `m3_refused_pct`
 //!   (the M3 refused `masked`), `leig_fired_pct` (the leIG's order accepted
-//!   and its round burst beyond the crest, x > 540: no aim point within 10 m
-//!   is possible with the 50 m map-fire error floor, so "over the crest"
-//!   is what is read). Exposure `orders`. Control: flat ground.
+//!   and its round burst within 10 m of its aim point, the point plus the
+//!   mission's aim error: it flew its solution over the crest). Exposure
+//!   `orders`. Control: flat ground.
 //! - `barrage` (T130): 12 M1 HE from the M3 500 m east, observed by the FO
 //!   Party 350 m from the target, on a German rifle squad in the open and
 //!   (another run) in a dug trench: `open_loss_pct`, `trench_loss_pct`
@@ -50,6 +50,8 @@ pub const BARRAGE_ROUNDS: u16 = 12;
 const BARRAGE_RANGE_M: i32 = 500;
 const BARRAGE_FO_M: i32 = 350;
 const BARRAGE_TARGET: (i32, i32) = (400, 500);
+/// `mask`: the leIG's round lands within this many metres of its aim point.
+const MASK_LAND_M: i32 = 10;
 /// The longest mission (s) before a run fails.
 const MISSION_MAX_S: u64 = 600;
 
@@ -386,11 +388,16 @@ fn mask_once(args: &FortifyArgs, seed: u64, p: u8, crest: bool) -> Result<(bool,
     match order(&mut w, p, sq, target, 1) {
         Some(r) => Ok((r == "masked", false)),
         None => {
-            let id = mission(&w, sq)
-                .ok_or_else(|| anyhow!("{what}: no mission"))?
-                .id;
-            let b = run_out(&mut w, sq, id, &what)?;
-            Ok((false, b.iter().any(|b| b.pos.x > Fx::from_int(540))))
+            let m0 = mission(&w, sq).ok_or_else(|| anyhow!("{what}: no mission"))?;
+            // The aim point of the round (the mission's aim error added):
+            // a burst within 10 m of it flew its solution over the crest.
+            let aim = target + m0.offset;
+            let b = run_out(&mut w, sq, m0.id, &what)?;
+            Ok((
+                false,
+                b.iter()
+                    .any(|b| (b.pos.xy() - aim).length() <= Fx::from_int(MASK_LAND_M)),
+            ))
         }
     }
 }
