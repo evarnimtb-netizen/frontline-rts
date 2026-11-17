@@ -28,7 +28,7 @@ ablations `targets/S11a1-ablations/`. Branch `claude/project-thread-e7nsak`, bas
 
 ## Build A (2026-11-17)
 Commits: `9ed0bf0` layout (SAVE 27, kill class u16, S11 counters, AI records), `84a972a` keys / schema / radio /
-inf_gun / AT-gun split, `030e6ff` G2 solver, then G1-G7 (gun missions, radio, ends, rearm, counters).
+inf_gun / AT-gun split, `030e6ff` G2 solver, `067dee7` G1, G3-G7 (gun missions, radio, ends, rearm, counters).
 Tests (control in brackets): `seventeen_vehicle_types_keep_their_kill_rows` (old u8 pack), `load_rejects_bad_s11a1_state`
 (staged save loads), `s11a1_layout_roundtrips_and_hashes`, `at_gun_ai_ignores_infantry_guns` (at_gun clone gets a
 job), `load_rejects_bad_s11a1_keys` (`gun_break_m` widened: failed), `indirect_gun_keys_and_radio_trait_parse` (band to
