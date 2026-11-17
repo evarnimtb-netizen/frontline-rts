@@ -6,8 +6,11 @@ only your files (`git commit -m ... -- FILES`), never `git add -A`, never the un
 `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Build A done 2026-11-17 (both chunks). Next: Build B (`S11a2-build-B.md`). The S11a1 review fixes C-1..C-7 run
-after A (separate "S11a1 fix" commits) and change AI play: Build B's neutral base is the fresh 40 set named below, not A40.**
+**State: Build A done 2026-11-17, then the S11a1 review fixes C-1..C-7 (`8cb2c4d`..`cddb069`, "S11a1 fix" commits; S11a1
+log "Fix"). Next: Build B (`S11a2-build-B.md`).**
+- **Neutral base for Build B: `target/s11a2-base40-fix`** (default, seeds 1-20 both bases, head `cddb069`), not
+  `s11a2-base40` / A40: the fixes change AI play (same 36/40 against it). Germany 15 of 40 (37.5 %); AI gun missions
+  Germany 246 (6.2 a match; 238 observed, 7 map), USA 130 (3.3; 124 observed, 5 map). Check: 961 tests, all ok.
 - SAVE 28, PROTOCOL 14. All four switches 0 in `skirmish.toml`. Keys and ranges as spec 2 (absent keys: the defaults).
 - Code map: `counter_battery.rs` (`CbSpot`, `MAX_CB_SPOTS`, `cb_note` K1+K3 sharpen, `cb_tick` K2+K3 decay, `near_own_marker`
   K4, `nearest_soldier`, `whole_second`, `validate_spots`); `cb_note` called in `gunnery.rs` `gun_mission_tick` after
@@ -24,7 +27,9 @@ after A (separate "S11a1 fix" commits) and change AI play: Build B's neutral bas
   at `ai/arty.rs` `run_arty` and `ai/mortar.rs` `fire_targets` by name. `Stop` (`game.rs` `order_stop`) sets a gun or mortar
   squad's order to `Idle` the tick it applies (AI commands wait their reaction delay first); rounds already in the
   air still burst and count (test `bombs_in_the_air_still_hurt_after_the_tube_dies`).
-- Not done: nothing of A. Build B: M1-M3, S1-S3, R1-R3, switches on, sets. `ff` on sanity 40 set: below.
+- Not done: nothing of A. Build B: M1-M3, S1-S3, R1-R3, switches on, sets. `ff` on sanity 40 set: below (old base).
+- S11a1 changes B builds on: P1/P3 share `[ai.arty] danger_close_m`; P3 lifts only missions aimed at the focus (C-4);
+  observer post reset at most once a `repath_s` (C-3); T131a/b are reports (S11a1-10).
 
 ## Build A (2026-11-17)
 Commits: `13b9c82` layout + keys, `625b079` ablate/check/doc, `2a43103` F1-F4, `2d4d9b7` fmt, `23fb60b` K1-K4; log.

@@ -5,7 +5,7 @@ ablations `targets/S11a1-ablations/`. Branch `claude/project-thread-e7nsak`, bas
 `git add -A`, never the untracked `.claude/`, `target/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Build C done 2026-11-17 (both chunks; review B-1..B-4 fixed, B-5 not). Next: orchestrator measure 480 + ablations, Review, Fix, verify, Docs.**
+**State: Build C and review fixes C-1..C-7 done 2026-11-17 (B-5 not). Next: orchestrator measure 480 + ablations, verify, Docs.**
 - SAVE 27, PROTOCOL 14 (no layout change in C). `[ai.arty]` `buy`, `fo`, `prep` 1 in `skirmish.toml`; gun cards `ai_weight` 5.
 - Planner `crates/sim/src/ai/arty.rs` (module notes in the "Build C" comment); called in `ai.rs` `plan`: `take_arty` after
   `take_guns`, `buy_arty` after `buy_gun`, `arty` after `mortars`. `held_pots()` = `gun_pot` + `arty_pot` (ai.rs buy, fort.rs x2).
@@ -21,9 +21,19 @@ ablations `targets/S11a1-ablations/`. Branch `claude/project-thread-e7nsak`, bas
 - Tests: `crates/sim/src/s11a1_ai_tests.rs` (13). Recipe there: `ai_world`, `fire_scene` (disarmed target squad, VB-Trupp
   100 m from it, intel marked), `prep_scene` (the S10a-ai breach scene + a US mortar 380 m out).
 - Sets: `target/s11a1-C40/` (default, `skirmish40_a_off.json`), `target/s11a1-C40off/`, `target/s11a1-C40-{arty,prep,fo}_off/`.
-- Open: T131 MISS (the base `breach_ai` row is 0 %, not the 30 % the spec quotes; the job is given up before smoke in all
-  20 runs, prep or not); the mortar prep variant never fired (prep_fired 0 %: not diagnosed); B-5; `arty_pot_is_kept_from_other_buys`,
-  `ai_rebuys_a_lost_gun_inside_the_pot`, `ai_gun_orders_nothing_the_sim_refuses` (10 min) not written (the 40 set reads refused 0).
+- Open: T131a/b reports until S11a1-10 (the job gives up before smoke in all 20 runs, prep or not); B-5;
+  `ai_gun_orders_nothing_the_sim_refuses` (10 min) not written (the 40 set reads refused 0).
+
+## Fix (2026-11-17, review C-1..C-7, after S11a2 Build A; each verified in the code first)
+Commits: `8cb2c4d` C-1 (gun_dry drop -> `fm_dry_drops`, not a mission), `7f878b5` C-2 (`buy_fo` minus pending call-ins;
+tests `arty_pot_is_kept_from_other_buys`, `ai_rebuys_a_lost_gun_inside_the_pot`; s5a_ai keeps arty off: with it on no
+seed 1-8 has the refill+ambush scene), `c9a480b` C-3 (post reset once a `repath_s`), `28c6425` C-4 (P1 uses `[ai.arty]
+danger_close_m`; P3 lifts only missions aimed at the focus), `cbfa456` C-5 (`NO_POINT` loads), `f695368` C-6 (`prep` read
+by C-1; switches-off test checks the whole stream), `cddb069` C-7 (row mortar `place_observing` 250 m: prep_fired 100 %
+on seed 1, gap still 0 %; S11a1-10 in TODO; T131a/b reports). Each new test seen to fail with its fix undone.
+Check `tools/check.sh quick 730e67f` all ok, 961 tests. New default set `target/s11a2-base40-fix` (the neutral base for
+S11a2 Build B): Germany 15 of 40 (37.5 %); gun missions Germany 246 (6.2 a match; 238 observed, 7 map), USA 130 (3.3;
+124 observed, 5 map); `neutral.py s11a2-base40 s11a2-base40-fix` same 36/40 (the fixes change AI play).
 
 ## Build C (2026-11-17)
 Commits: `afd7891` B-2, `25436fa` planner A1-A6, `dafa3ef` B-1, `1c70fad` B-3/B-4, `8015d6e` tests, `fe3ff69` weights + `buy`/`fo`
@@ -122,26 +132,19 @@ low-angle gun always has one at short range); `IndirectDef` literals in `indirec
 the setup check accepts `[indirect]` on a `cannon` with `low_angle`, and mount elevation to 89 for it.
 Check: `tools/check.sh quick 730e67f` all ok, 907 tests passed (release CLI rebuilt first).
 
-## Plan revision (2026-11-16, after an independent review: 1 blocker, 6 major, 4 minor; all verified in the code, none rejected)
-Spec 3: kill-class carrier widened in the SAVE 27 commit (15-type cap), `fo_lost_at`, `guns_bought`,
-`gun_direct_rounds`. G2: mask steps 2..=16 at 0.5 m, hull-pitch limit, test with zero error. G3: mission ttl, load
-check and `end_mission` for gun squads, infantry guns counted only in `S11Counters` (T80, T84, mortar rows clean).
-A1: role split of `take_guns` / `gun_jobs` / `gun_recrews` and `outside_limit` moved into Build A; Build C wiring
-(lists before `assign`, `arty_pot` beside `gun_pot` incl. `ai/fort.rs`, `mortars` before `arty`). Balance note: the
-high-angle leIG may favour Germany; the measure reads `arty_off` first.
+## Plan revision (2026-11-16, after an independent review: 1 blocker, 6 major, 4 minor; all verified, none rejected)
+Kill class widened (15 types), G2 mask + hull pitch, G3 ttl + load checks, A1 role split, Build C wiring; `arty_off` first.
 
 ## Plan (2026-11-16)
 Scope (spec 1): gun fire missions on the S5b mission code and the S9 gun entity; low- and high-angle solutions
 with a mask test; gun aim-error keys; a radio link; leIG 18, 105 mm M3, VB-Trupp, FO Party at the design's
 figures; fortify rows `gun_fm`, `mask`, `barrage`, `breach_prep`; AI: one gun and one observer team a side, static
 in base, observed missions inside a 25 % shell budget, lifted near own men; preparation fire for the breach job by
-guns and mortars. Cut to S11a2 with reasons (spec 1, outline spec 12): crate-only shells and AI resupply, friendly
-fire, registration, counter-battery, displacement and tows, defensive fire, assault hold, HEAT, per-faction delays.
+guns and mortars. Cut to S11a2 with reasons: spec 1, outline spec 12.
 Decisions taken for the owner (all (A), `docs/TODO.md` S11a1-1..9): split; priced base rearm for now; friendly
 fire in S11a2; no tows; prices 320 / 380 / 80 / 120; only the breach job waits for preparation fire; T131 hard at
 60 %; HEAT later; cards buyable before the presenter pass.
-The breach gap, honestly: preparation fire is aimed at the staged row (T131: 0 % -> >= 60 %; review C-7: reports until S11a1-10). In matches breach
-jobs do not start (T123), so `prep_missions_per_match` is expected near 0 there; that needs S10c-6 (B).
-Stage split: A (SAVE 27 layout, keys, solver, gun missions, radio, rearm switch; neutral by content) -> B (content,
-rows, JSON; neutral because the AI buys nothing; gate T128-T130) -> C (AI chunk 1 A1-A6, chunk 2 P1-P3 and the
-breach row; fallback: stop after chunk 1 with `prep` 0).
+The breach gap, honestly: preparation fire is aimed at the staged row (T131: 0 % -> >= 60 %; C-7: reports until S11a1-10). In matches breach jobs
+do not start (T123), so `prep_missions_per_match` is expected near 0 there; that needs S10c-6 (B).
+Stage split: A (SAVE 27 layout, keys, solver, missions, radio, rearm; neutral by content) -> B (content, rows, JSON;
+gate T128-T130) -> C (AI chunk 1 A1-A6, chunk 2 P1-P3 and the breach row).
