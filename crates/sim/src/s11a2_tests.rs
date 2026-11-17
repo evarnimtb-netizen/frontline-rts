@@ -208,12 +208,6 @@ fn load_rejects_bad_s11a2_state() {
         ),
         ("pending and marked", Box::new(|s| sp(s, 1).marked = true)),
         (
-            "marked with no shot",
-            Box::new(|s| {
-                sp(s, 0).shots = 0;
-            }),
-        ),
-        (
             "s11a2 counter out of range",
             Box::new(|s| game_mut(s).players[0].s11a2.ff_wounds = u32::MAX),
         ),
@@ -916,7 +910,7 @@ fn note(w: &mut World, at: FxVec2, tick: u64) {
     let SimState { entities, game, .. } = &mut w.state;
     game.as_mut()
         .unwrap()
-        .cb_note(entities, PlayerId(0), at, tick);
+        .cb_note(entities, PlayerId(0), at, tick, false);
 }
 
 /// [`MatchState::cb_tick`] on every whole second of `from..=to`.
@@ -960,6 +954,42 @@ fn gun_rounds_leave_evidence_with_the_enemy() {
     assert_eq!(order(&mut w, mortar, c(450, 500), 3), None);
     run_out(&mut w, mortar, 300);
     assert!(spots(&w, 1).is_empty(), "control: mortars leave none");
+}
+
+/// Fix B-1: the rounds of a counter-fire mission (`cb`, aimed at an own
+/// marker) add evidence with the enemy but no `shots` (no new evidence for
+/// its counter-fire, so counter-fire does not feed itself). Control: the
+/// same map fire with no own marker there: `shots` as rounds.
+#[test]
+fn counter_fire_rounds_add_evidence_but_no_shots() {
+    let run = |marker: bool| {
+        let (mut w, gun, _) = cb_scene(1, |_| {});
+        if marker {
+            let at = c(MAP_TARGET.0, MAP_TARGET.1);
+            assert!(w.edit_player(PlayerId(0), |pl| {
+                pl.cb = vec![CbSpot {
+                    of: 1,
+                    pos: at,
+                    at,
+                    err_mm: 30_000,
+                    heard_mm: 800_000,
+                    evidence: 3,
+                    shots: 3,
+                    decay_at: 30 * 3000,
+                    mark_at: 0,
+                    marked: true,
+                }];
+            }));
+        }
+        map_fire(&mut w, gun, 3);
+        assert_eq!(mission(&w, gun).map(|m| m.cb), Some(marker));
+        run_out(&mut w, gun, 300);
+        let sp = spots(&w, 1);
+        assert_eq!(sp.len(), 1, "{sp:?}");
+        (sp[0].evidence, sp[0].shots)
+    };
+    assert_eq!(run(true), (3, 0), "evidence, no shots");
+    assert_eq!(run(false), (3, 3), "control: not counter-fire");
 }
 
 /// K1 (D 10 test 5): a gun that hops 60 m keeps its spot; 80 m (beyond

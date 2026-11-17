@@ -93,8 +93,18 @@ impl MatchState {
 
     /// K1: one fire-mission round of an infantry gun of `firer` fired from
     /// `gun` at `tick` is heard by every other player with a living soldier
-    /// (ascending id). Nothing with `counter_battery` 0.
-    pub(crate) fn cb_note(&mut self, ents: &Entities, firer: PlayerId, gun: FxVec2, tick: u64) {
+    /// (ascending id). Nothing with `counter_battery` 0. A round of a
+    /// counter-fire mission (`cb`) adds evidence (the marker still forms
+    /// and sharpens) but no `shots`: it is no new evidence for the AI's
+    /// counter-fire (R2), so counter-fire does not feed itself (fix B-1).
+    pub(crate) fn cb_note(
+        &mut self,
+        ents: &Entities,
+        firer: PlayerId,
+        gun: FxVec2,
+        tick: u64,
+        cb: bool,
+    ) {
         let Some(fm) = self.setup.rules.fire_mission.as_ref() else {
             return;
         };
@@ -140,7 +150,7 @@ impl MatchState {
                 Some((_, k)) => {
                     let s = &mut spots[k];
                     s.evidence = s.evidence.saturating_add(1);
-                    s.shots = s.shots.saturating_add(1);
+                    s.shots = s.shots.saturating_add(!cb as u32);
                     // K3: a marked spot sharpens (no new draw).
                     if s.marked && s.err_mm > 0 {
                         let l_now = mm(FxVec2::new(listen, Fx::ZERO)) as u64;
@@ -177,7 +187,7 @@ impl MatchState {
                         err_mm: 0,
                         heard_mm: 0,
                         evidence: 1,
-                        shots: 1,
+                        shots: !cb as u32,
                         decay_at: whole_second(tick + decay, hz),
                         mark_at: 0,
                         marked: false,
@@ -324,8 +334,9 @@ pub(crate) fn validate_spots(
             && c.decay_at <= decay_max
             && tick < c.decay_at.saturating_add(hz)
             && (c.mark_at == 0
-                || (c.mark_at <= mark_max && tick < c.mark_at.saturating_add(hz) && !c.marked))
-            && (!c.marked || c.shots >= 1);
+                || (c.mark_at <= mark_max && tick < c.mark_at.saturating_add(hz) && !c.marked));
+        // A marked spot may have no `shots`: counter-fire rounds add
+        // evidence only (fix B-1).
         if !ok {
             return Err("bad counter-battery spot");
         }

@@ -1144,7 +1144,7 @@ impl MatchState {
             c.cb_rounds[md] = c.cb_rounds[md].saturating_add(1);
         }
         // S11a2 K1: the enemy hears the round.
-        self.cb_note(ents, sq_owner, gp, tick);
+        self.cb_note(ents, sq_owner, gp, tick, m.cb);
         let left = rounds - 1;
         let sq = self.squads.get_mut(&sid).expect("live");
         if let Order::FireMission { rounds, m: sm, .. } = &mut sq.order {
