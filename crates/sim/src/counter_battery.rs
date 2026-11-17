@@ -293,10 +293,12 @@ pub(crate) fn validate_spots(
     }
     let size = Fx::from_int(s.map.size_m);
     let on_map = |p: FxVec2| p.x >= Fx::ZERO && p.y >= Fx::ZERO && p.x <= size && p.y <= size;
-    let size_mm = (s.map.size_m.max(0) as u64 * 1000).min(u32::MAX as u64) as u32;
+    // A listener can stand anywhere on the map: `heard_mm` (and with
+    // `cb_error_pct` 100, `err_mm`) can reach the diagonal (review A-2).
+    let size_mm = (s.map.size_m.max(0) as u64 * 1000 * 3 / 2).min(u32::MAX as u64) as u32;
     let hz = s.tick_hz.max(1) as u64;
-    let decay_max = tick + (fm.cb_decay_s as u64 + 1) * hz;
-    let mark_max = tick + (fm.cb_delay_s as u64 + 1) * hz;
+    let decay_max = tick.saturating_add((fm.cb_decay_s as u64 + 1) * hz);
+    let mark_max = tick.saturating_add((fm.cb_delay_s as u64 + 1) * hz);
     for c in spots {
         let ok = (c.of as usize) < s.players.len()
             && c.of != holder.0
@@ -305,9 +307,11 @@ pub(crate) fn validate_spots(
             && c.err_mm <= size_mm
             && c.heard_mm <= size_mm
             && c.evidence >= 1
-            && tick < c.decay_at + hz
+            // Upper bounds first, and no overflow on hostile values (A-1).
             && c.decay_at <= decay_max
-            && (c.mark_at == 0 || (tick < c.mark_at + hz && c.mark_at <= mark_max && !c.marked))
+            && tick < c.decay_at.saturating_add(hz)
+            && (c.mark_at == 0
+                || (c.mark_at <= mark_max && tick < c.mark_at.saturating_add(hz) && !c.marked))
             && (!c.marked || c.shots >= 1);
         if !ok {
             return Err("bad counter-battery spot");

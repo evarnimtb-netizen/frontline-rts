@@ -152,7 +152,8 @@ fn load_rejects_bad_s11a2_state() {
     World::load(&bytes, 1).expect("control: the staged save loads");
     let tick = w.tick();
     let hz = 30u64;
-    let size_mm = 1_024_000 + 1;
+    // The bound is 1.5 map sides (the diagonal fits; review A-2).
+    let size_mm = 1_536_000 + 1;
     type Edit = Box<dyn Fn(&mut SimState)>;
     fn sp(s: &mut SimState, k: usize) -> &mut CbSpot {
         &mut s.game.as_mut().unwrap().players[1].cb[k]
@@ -181,6 +182,14 @@ fn load_rejects_bad_s11a2_state() {
             Box::new(move |s| sp(s, 0).heard_mm = size_mm),
         ),
         ("no evidence", Box::new(|s| sp(s, 0).evidence = 0)),
+        (
+            "decay_at at u64::MAX (no overflow panic; review A-1)",
+            Box::new(|s| sp(s, 0).decay_at = u64::MAX),
+        ),
+        (
+            "mark_at at u64::MAX (no overflow panic; review A-1)",
+            Box::new(|s| sp(s, 1).mark_at = u64::MAX),
+        ),
         (
             "decay_at a second past",
             Box::new(move |s| sp(s, 0).decay_at = tick - hz),
@@ -228,6 +237,13 @@ fn load_rejects_bad_s11a2_state() {
     sp(&mut x.state, 0).decay_at = tick + 1 - hz;
     sp(&mut x.state, 1).mark_at = tick + 1 - hz;
     World::load(&x.save(), 1).expect("times inside the last second load");
+    // Review A-2: a listener in the far corner hears a gun in the other
+    // corner (the diagonal, 1448 m on the 1024 m map); with `cb_error_pct`
+    // 100 the error is as long. That save is legal and loads.
+    let mut x = World::load(&bytes, 1).unwrap();
+    sp(&mut x.state, 0).heard_mm = 1_448_155;
+    sp(&mut x.state, 0).err_mm = 1_448_155;
+    World::load(&x.save(), 1).expect("a corner-to-corner spot loads");
 }
 
 // ------------------------------------------------- friendly fire (F) --
