@@ -1728,7 +1728,7 @@
           "after_s": 240,
           "buy": 1,
           "cb_max_error_m": 60,
-          "counter_fire": 0,
+          "counter_fire": 1,
           "danger_close_m": 50,
           "ff_safe": 1,
           "fo": 1,

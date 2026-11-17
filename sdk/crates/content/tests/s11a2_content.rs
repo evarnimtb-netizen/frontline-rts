@@ -55,7 +55,7 @@ fn load_rejects_bad_s11a2_keys() {
     let a = &s.rules.ai.arty;
     assert_eq!(
         (a.ff_safe, a.counter_fire, a.lift_m, a.cb_max_error_m),
-        (1, 0, 100, 60)
+        (1, 1, 100, 60)
     );
     let d = AiArtyTuning::default();
     assert_eq!(
