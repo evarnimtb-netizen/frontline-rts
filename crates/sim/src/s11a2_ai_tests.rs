@@ -5,6 +5,7 @@
 use super::s6_tests::{flat_world_with, members, spawn, steps};
 use super::s11a1_tests::{mission, order};
 use super::*;
+use crate::game::Order;
 
 const MORTAR: &str = "ww2:ger_mortar_team";
 const LEIG: &str = "ww2:ger_leig18_squad";
@@ -25,8 +26,18 @@ fn ai_world(
     ff_safe: u32,
     edit: impl FnOnce(&mut frontline_content::MatchSetup),
 ) -> World {
+    ai_world_of(threads, 0, ff_safe, edit)
+}
+
+/// [`ai_world`] with player `p` the AI.
+fn ai_world_of(
+    threads: usize,
+    p: u8,
+    ff_safe: u32,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> World {
     let mut w = flat_world_with(threads, |s| {
-        s.players[0].is_ai = true;
+        s.players[p as usize].is_ai = true;
         let fm = s.rules.fire_mission.as_mut().unwrap();
         fm.friendly_fire = 1;
         fm.counter_battery = 0;
@@ -40,7 +51,7 @@ fn ai_world(
         s.rules.income_per_min = 0;
         edit(s);
     });
-    w.state.game.as_mut().unwrap().players[0].manpower = 0;
+    w.state.game.as_mut().unwrap().players[p as usize].manpower = 0;
     let start: Vec<SimId> = w
         .game()
         .unwrap()
@@ -57,7 +68,11 @@ fn ai_world(
 }
 
 pub(super) fn counters(w: &World) -> crate::ai::AiCounters {
-    w.game().unwrap().ai[0].as_ref().unwrap().counters.clone()
+    counters_of(w, 0)
+}
+
+fn counters_of(w: &World, p: usize) -> crate::ai::AiCounters {
+    w.game().unwrap().ai[p].as_ref().unwrap().counters.clone()
 }
 
 fn ai(w: &World) -> &crate::ai::AiState {
@@ -96,7 +111,11 @@ struct Sent {
 
 impl Sent {
     fn look(&mut self, w: &World) {
-        for c in &ai(w).pending {
+        self.look_of(w, 0);
+    }
+
+    fn look_of(&mut self, w: &World, p: usize) {
+        for c in &w.game().unwrap().ai[p].as_ref().unwrap().pending {
             if self.seen.insert(c.seq) {
                 self.cmds.push(c.kind.clone());
             }
@@ -123,12 +142,16 @@ impl Sent {
 
 /// Steps until `n` more plans ran, recording the AI's commands.
 fn plans(w: &mut World, n: u32, sent: &mut Sent) {
-    let p0 = counters(w).plans;
+    plans_of(w, 0, n, sent);
+}
+
+fn plans_of(w: &mut World, p: usize, n: u32, sent: &mut Sent) {
+    let p0 = counters_of(w, p).plans;
     let t0 = w.tick();
-    while counters(w).plans < p0 + n {
+    while counters_of(w, p).plans < p0 + n {
         assert!(w.tick() < t0 + 30 * 600, "no plan for 10 minutes");
         w.step(&[]);
-        sent.look(w);
+        sent.look_of(w, p);
     }
 }
 
@@ -322,4 +345,322 @@ fn a_gun_mission_gets_one_stop_not_two() {
     };
     assert_eq!(run(1), (1, 1, 0), "one Stop, from S3");
     assert_eq!(run(0), (1, 0, 1), "control: one Stop, from A6");
+}
+
+// ------------------------------------------------- counter-fire (R) --
+
+/// Gives player `p` one marker of player `1 - p`'s gun at `at` with
+/// error `err_m` and `shots` rounds of evidence.
+fn give_marker(w: &mut World, p: u8, at: FxVec2, err_m: u32, shots: u32) {
+    let hz = 30;
+    let sec = w.tick().div_ceil(hz) * hz;
+    assert!(w.edit_player(PlayerId(p), |pl| {
+        pl.cb = vec![crate::counter_battery::CbSpot {
+            of: 1 - p,
+            pos: at,
+            at,
+            err_mm: err_m * 1000,
+            heard_mm: 800_000,
+            evidence: 3,
+            shots,
+            decay_at: sec + 300 * hz,
+            mark_at: 0,
+            marked: true,
+        }];
+    }));
+}
+
+fn add_shot(w: &mut World, p: u8) {
+    assert!(w.edit_player(PlayerId(p), |pl| pl.cb[0].shots += 1));
+}
+
+const MARK: (i32, i32) = (500, 200);
+
+/// The R scene: AI player `p`'s gun (`card`, with a record) at
+/// (`gun_x`, 500), a marker of the enemy's gun at `mark` (40 m wide), and
+/// with `observed` the S11a1 A4 scene too (an own VB-Trupp at (600, 500),
+/// an unarmed US rifle squad it sees at (700, 500)). `counter_fire` 1.
+fn cf_scene(
+    threads: usize,
+    p: u8,
+    card: &str,
+    gun_x: i32,
+    mark: (i32, i32),
+    observed: bool,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> (World, SquadId) {
+    let mut w = ai_world_of(threads, p, 1, |s| {
+        s.rules.fire_mission.as_mut().unwrap().counter_battery = 1;
+        let a = &mut s.rules.ai.arty;
+        a.counter_fire = 1;
+        a.buy = 1;
+        a.max_guns = 0;
+        edit(s);
+    });
+    let gun = spawn(&mut w, p, card, gun_x, 500);
+    if observed {
+        spawn(&mut w, p, WALKER, 600, 500);
+        let e = spawn(&mut w, 1 - p, "ww2:usa_rifle_squad", 700, 500);
+        unarm(&mut w, e);
+        assert!(w.mark_intel(PlayerId(p), c(700, 500)));
+    }
+    give_marker(&mut w, p, c(mark.0, mark.1), 40, 3);
+    (w, gun)
+}
+
+/// R1, R3: an AI gun answers a marker with map fire before its observed
+/// target (`cb_missions`, the sim flags the mission `cb`). Control
+/// `counter_fire` 0: the A4 target instead.
+#[test]
+fn ai_gun_answers_a_marker() {
+    let run = |cf: u32| {
+        let (mut w, gun) = cf_scene(1, 0, LEIG, 100, MARK, true, |s| {
+            s.rules.ai.arty.counter_fire = cf
+        });
+        let mut sent = Sent::default();
+        let t0 = w.tick();
+        while mission(&w, gun).is_none() && w.tick() < t0 + 30 * 60 {
+            w.step(&[]);
+            sent.look(&w);
+        }
+        let m = mission(&w, gun).expect("a mission");
+        let Order::FireMission { target, .. } = w.game().unwrap().squads[&gun].order else {
+            unreachable!()
+        };
+        (target, m.cb, counters(&w).cb_missions)
+    };
+    let (t, cb, n) = run(1);
+    assert_eq!(t, c(MARK.0, MARK.1), "on the marker");
+    assert!(cb, "the sim flags it counter-fire");
+    assert_eq!(n, 1);
+    let (t, cb, n) = run(0);
+    assert!(
+        (t - c(700, 500)).length() < Fx::from_int(30),
+        "control: the A4 target"
+    );
+    assert_eq!((cb, n), (false, 0));
+}
+
+/// R2: one mission per new evidence: 40 plans with no new enemy round
+/// give one counter-fire mission (`cb_stale_holds` after it). Control: one
+/// more round heard: a second mission.
+#[test]
+fn ai_counter_fire_waits_for_new_evidence() {
+    let (mut w, gun) = cf_scene(1, 0, LEIG, 100, MARK, false, |_| {});
+    let mut sent = Sent::default();
+    plans(&mut w, 40, &mut sent);
+    let k = counters(&w);
+    assert_eq!(
+        sent.missions_near(gun, c(MARK.0, MARK.1), 1),
+        1,
+        "one mission"
+    );
+    assert_eq!(k.cb_missions, 1);
+    assert!(k.cb_stale_holds > 0, "held for no new evidence");
+    add_shot(&mut w, 0);
+    plans(&mut w, 40, &mut sent);
+    assert_eq!(
+        counters(&w).cb_missions,
+        2,
+        "control: new evidence, a new mission"
+    );
+}
+
+/// R2: the flat M3 behind a crest cannot answer a marker beyond it: the
+/// AI sends no order (`cb_masked` 1, the evidence spent: once), the sim
+/// refuses nothing. Control: no crest: the mission.
+#[test]
+fn ai_does_not_order_a_masked_counter_fire() {
+    let run = |crest: bool| {
+        let (mut w, gun) = cf_scene(1, 1, "ww2:usa_105mm_m3_squad", 50, (580, 500), false, |s| {
+            if crest {
+                s.map
+                    .terrain
+                    .bands
+                    .push(frontline_content::setup::BandSetup {
+                        from: frontline_content::setup::FixedVec2::from_m([500, 0]),
+                        to: frontline_content::setup::FixedVec2::from_m([500, 1024]),
+                        height: frontline_content::Fixed::from_int(25),
+                        half_width: frontline_content::Fixed::from_int(40),
+                    });
+            }
+        });
+        let mut sent = Sent::default();
+        plans_of(&mut w, 1, 20, &mut sent);
+        let pl = &w.game().unwrap().players[1];
+        (
+            counters_of(&w, 1),
+            sent.missions_near(gun, c(580, 500), 1),
+            pl.s11.masked + pl.s11.not_ready + pl.fm.refused.iter().sum::<u32>(),
+        )
+    };
+    let (k, orders, refused) = run(true);
+    assert_eq!((k.cb_masked, orders, refused), (1, 0, 0), "{k:?}");
+    let (k, orders, _) = run(false);
+    assert_eq!(
+        (k.cb_masked, orders, k.cb_missions),
+        (0, 1, 1),
+        "control: flat"
+    );
+}
+
+/// R2: a gun at or under `reserve_pct` of its HE keeps it (the A4 hold):
+/// no counter-fire. Control `reserve_pct` 0: it fires.
+#[test]
+fn ai_counter_fire_keeps_the_reserve() {
+    let run = |reserve: u32| {
+        let (mut w, gun) = cf_scene(1, 0, LEIG, 100, MARK, false, |s| {
+            s.rules.ai.arty.reserve_pct = reserve
+        });
+        let v = members(&w, gun)[0];
+        assert!(w.edit_vehicle(v, |vs| {
+            for n in vs.ammo.iter_mut() {
+                *n = (*n).min(1);
+            }
+            vs.loaded = None;
+        }));
+        let mut sent = Sent::default();
+        plans(&mut w, 10, &mut sent);
+        counters(&w)
+    };
+    let k = run(30);
+    assert_eq!(k.cb_missions, 0);
+    assert!(k.arty_reserve_holds > 0);
+    assert_eq!(run(0).cb_missions, 1, "control: reserve 0");
+}
+
+/// The combined scene of the next two tests: the AI's mortar on the
+/// unarmed enemy with the walker 120 m off sent onto the point at
+/// `walk_at`, and the AI's leIG with a marker. Switches: `on` all four.
+fn all_scene(threads: usize, on: u32) -> (World, SquadId, SquadId, SquadId) {
+    let mut w = ai_world(threads, on, |s| {
+        let fm = s.rules.fire_mission.as_mut().unwrap();
+        fm.friendly_fire = on;
+        fm.counter_battery = on;
+        let a = &mut s.rules.ai.arty;
+        a.counter_fire = on;
+        a.buy = 1;
+        a.max_guns = 0;
+        s.rules.ai.mortar.mission_rounds = 12;
+        s.rules.ai.barrage_rounds = 12;
+    });
+    let mortar = spawn(&mut w, 0, MORTAR, 100, 500);
+    let enemy = spawn(&mut w, 1, "ww2:usa_rifle_squad", ENEMY.0, ENEMY.1);
+    let own = spawn(&mut w, 0, WALKER, ENEMY.0, ENEMY.1 + 120);
+    unarm(&mut w, enemy);
+    unarm(&mut w, own);
+    let gun = spawn(&mut w, 0, LEIG, 100, 800);
+    give_marker(&mut w, 0, c(MARK.0, MARK.1), 40, 3);
+    (w, mortar, own, gun)
+}
+
+/// The walker is sent onto the point at this tick (after the AI's mortar
+/// mission began, about 65 s in).
+const WALK_AT: u64 = 30 * 75;
+
+/// Steps `all_scene` to `end`, sending the walker at [`WALK_AT`].
+fn all_steps(w: &mut World, own: SquadId, end: u64, sent: &mut Sent) {
+    while w.tick() < end {
+        if w.tick() == WALK_AT {
+            walk(w, own, c(ENEMY.0, ENEMY.1 + 5));
+        } else {
+            w.step(&[]);
+        }
+        sent.look(w);
+    }
+}
+
+/// Neutrality of the switches (spec 4): with all four S11a2 switches 0,
+/// 40+ plans of a scene with a marker and own men walking onto a mortar
+/// target bring no S3 `Stop`, no counter-fire order and every S11a2 AI
+/// counter 0. Control: the switches 1: a lift and a counter-fire mission.
+#[test]
+fn ai_all_s11a2_switches_off_emit_nothing_new() {
+    let run = |on: u32| {
+        let (mut w, mortar, own, gun) = all_scene(1, on);
+        let mut sent = Sent::default();
+        all_steps(&mut w, own, 30 * 150, &mut sent);
+        let k = counters(&w);
+        assert!(k.plans >= 40, "plans {}", k.plans);
+        (
+            sent.stops(mortar),
+            sent.missions_near(gun, c(MARK.0, MARK.1), 1),
+            [
+                k.ff_lifts,
+                k.ff_holds,
+                k.cb_missions,
+                k.cb_wide_holds,
+                k.cb_stale_holds,
+                k.cb_masked,
+            ],
+        )
+    };
+    let (stops, cf, k) = run(0);
+    assert_eq!((stops, cf, k), (0, 0, [0; 6]), "nothing new");
+    let (stops, cf, k) = run(1);
+    assert!(
+        stops == 1 && cf == 1,
+        "control: {stops} stops, {cf} counter-fire, {k:?}"
+    );
+}
+
+/// Determinism (spec 5): the combined scene on 1 and 4 threads, and saves
+/// taken with a counter-fire mission in Laying, with a lift pending and
+/// later play on to the same hash. Control: the walker never sent.
+#[test]
+fn ai_s11a2_deterministic_threads_and_save_load() {
+    use crate::fire_mission::phase;
+    let end = 30 * 150;
+    // The probe: find the two save ticks.
+    let (mut w, mortar, own, gun) = all_scene(1, 1);
+    let (mut laying, mut lift) = (None, None);
+    let mut sent = Sent::default();
+    while w.tick() < end {
+        let next = w.tick() + 1;
+        all_steps(&mut w, own, next, &mut sent);
+        if laying.is_none() && mission(&w, gun).is_some_and(|m| m.cb && m.phase == phase::LAYING) {
+            laying = Some(w.tick());
+        }
+        if lift.is_none()
+            && ai(&w)
+                .pending
+                .iter()
+                .any(|c| matches!(c.kind, CommandKind::Stop { squad } if squad == mortar))
+        {
+            lift = Some(w.tick());
+        }
+    }
+    let h1 = w.full_state_hash();
+    let at = [
+        laying.expect("a counter-fire mission in Laying"),
+        lift.expect("a lift pending"),
+        end - 30 * 20,
+    ];
+    let go = |threads: usize| {
+        let (mut w, _, own, _) = all_scene(threads, 1);
+        let mut saves = Vec::new();
+        let mut sent = Sent::default();
+        while w.tick() < end {
+            if at.contains(&w.tick()) {
+                saves.push((w.tick(), w.save()));
+            }
+            let next = w.tick() + 1;
+            all_steps(&mut w, own, next, &mut sent);
+        }
+        (w.full_state_hash(), saves, own)
+    };
+    let (h, saves, own) = go(4);
+    assert_eq!(h, h1, "1 and 4 threads");
+    assert_eq!(saves.len(), 3);
+    for (t, bytes) in saves {
+        let mut w = World::load(&bytes, 1).unwrap_or_else(|e| panic!("save at {t}: {e:?}"));
+        all_steps(&mut w, own, end, &mut Sent::default());
+        assert_eq!(w.full_state_hash(), h1, "the save at tick {t}");
+    }
+    // Control: the walker never sent.
+    let (mut w, ..) = all_scene(1, 1);
+    while w.tick() < end {
+        w.step(&[]);
+    }
+    assert_ne!(w.full_state_hash(), h1, "control");
 }

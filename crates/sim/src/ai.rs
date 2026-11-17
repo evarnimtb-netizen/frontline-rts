@@ -1261,13 +1261,21 @@ impl MatchState {
                             // dry drop, not a mission.
                             dropped += 1;
                             let c = &mut ai.counters;
-                            c.arty_missions = c.arty_missions.saturating_sub(1);
-                            if let Some(r) = ai.arty.get_mut(squad) {
+                            let r = ai.arty.get_mut(squad);
+                            // S11a2 (review A-4): a counter-fire mission
+                            // counts in `cb_missions`, not `arty_missions`.
+                            if r.as_ref().is_some_and(|r| r.cb) {
+                                c.cb_missions = c.cb_missions.saturating_sub(1);
+                            } else {
+                                c.arty_missions = c.arty_missions.saturating_sub(1);
+                            }
+                            if let Some(r) = r {
                                 if r.prep {
                                     c.arty_prep_missions = c.arty_prep_missions.saturating_sub(1);
                                 }
                                 r.missions = r.missions.saturating_sub(1);
                                 r.prep = false;
+                                r.cb = false;
                             }
                             return false;
                         }

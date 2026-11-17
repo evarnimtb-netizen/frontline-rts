@@ -452,11 +452,13 @@ impl super::Planner<'_> {
                 self.ai.counters.arty_lifts += 1;
                 rec.last_order = tick;
                 rec.prep = false;
+                rec.cb = false;
             }
             self.ai.arty.insert(id, rec);
             return;
         }
         rec.prep = false;
+        rec.cb = false;
         if busy {
             self.ai.arty.insert(id, rec);
             return;
@@ -480,7 +482,9 @@ impl super::Planner<'_> {
         if let Some(t) = self.prep_target(pos, min, max, a.danger_close_m, known, own, id) {
             targets.insert(0, t);
         }
-        if targets.is_empty() {
+        // S11a2 R1, R2 (first two gates): the own marker to answer.
+        let marker = self.cb_candidate(&rec);
+        if targets.is_empty() && marker.is_none() {
             self.ai.arty.insert(id, rec);
             return;
         }
@@ -508,12 +512,52 @@ impl super::Planner<'_> {
         }
         let rounds = (a.mission_rounds.min(held) as u16).max(1);
         let mut checked = false;
-        for t in targets.iter().take(super::mortar::MODE_CHECKS) {
+        // P1 before counter-fire: the prep target alone first.
+        let prep = usize::from(targets.first().is_some_and(|t| t.prep));
+        if prep == 1 && self.arty_fire(id, pos, &targets[..1], rounds, &mut rec, &mut checked) {
+            self.ai.arty.insert(id, rec);
+            return;
+        }
+        // S11a2 R2 (last gates), R3: counter-fire before the A4 targets.
+        if let Some((at, shots)) = marker
+            && self.counter_fire(id, at, shots, rounds, &mut rec)
+        {
+            self.ai.arty.insert(id, rec);
+            return;
+        }
+        if self.arty_fire(id, pos, &targets[prep..], rounds, &mut rec, &mut checked) {
+            self.ai.arty.insert(id, rec);
+            return;
+        }
+        if checked {
+            self.ai.counters.arty_no_observer += 1;
+        }
+        self.ai.arty.insert(id, rec);
+    }
+
+    /// A4 for gun squad `id` at `pos`: the first of the best
+    /// [`super::mortar::MODE_CHECKS`] targets (P1's alone and the rest
+    /// share the count) that is Observed or Direct and that the knowledge
+    /// record and the sim accept gets a mission (true). `checked`: a mode
+    /// check ran.
+    fn arty_fire(
+        &mut self,
+        id: SquadId,
+        pos: FxVec2,
+        ts: &[super::mortar::Target],
+        rounds: u16,
+        rec: &mut AiArty,
+        checked: &mut bool,
+    ) -> bool {
+        let g = self.g;
+        let tick = self.tick;
+        let room = super::mortar::MODE_CHECKS.saturating_sub(usize::from(*checked));
+        for t in ts.iter().take(room) {
             if self.mortar_rays < crate::fire_mission::OBSERVE_RAYS {
                 break;
             }
             self.mortar_rays -= crate::fire_mission::OBSERVE_RAYS;
-            checked = true;
+            *checked = true;
             let (md, _) = g.mode_for(self.ents, self.terrain, id, pos, t.pos, tick);
             if md == crate::fire_mission::mode::MAP
                 || !g.known_by_record(self.me, t.pos)
@@ -537,13 +581,79 @@ impl super::Planner<'_> {
             rec.missions = rec.missions.saturating_add(1);
             rec.last_order = tick;
             rec.prep = t.prep;
-            self.ai.arty.insert(id, rec);
-            return;
+            return true;
         }
-        if checked {
-            self.ai.counters.arty_no_observer += 1;
+        false
+    }
+
+    /// S11a2 R1 and the first two R2 gates for a gun with record `rec`:
+    /// the own marker with the smallest error (ties: the lower index) of
+    /// an enemy gun, as (marker, its `shots`), when `counter_fire` is 1, it
+    /// is no wider than `cb_max_error_m` (else `cb_wide_holds`) and it has
+    /// new evidence since the gun's last counter-fire order or refusal
+    /// (else `cb_stale_holds`).
+    fn cb_candidate(&mut self, rec: &AiArty) -> Option<(FxVec2, u32)> {
+        let g = self.g;
+        let a = &g.setup.rules.ai.arty;
+        if a.counter_fire == 0 {
+            return None;
         }
-        self.ai.arty.insert(id, rec);
+        let me = self.me.0;
+        let best = g.players[me as usize]
+            .cb
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.marked && c.of != me)
+            .min_by_key(|(k, c)| (c.err_mm, *k))
+            .map(|(_, c)| *c)?;
+        if best.err_mm as u64 > a.cb_max_error_m as u64 * 1000 {
+            self.ai.counters.cb_wide_holds += 1;
+            return None;
+        }
+        if best.shots <= rec.cb_shots {
+            self.ai.counters.cb_stale_holds += 1;
+            return None;
+        }
+        Some((best.at, best.shots))
+    }
+
+    /// S11a2 R2 (own men, the sim's refusal) and R3 for gun squad `id`:
+    /// map fire of `rounds` on the marker `at` (true when ordered). A
+    /// refusal counts `cb_masked` and spends the evidence (`cb_shots`).
+    fn counter_fire(
+        &mut self,
+        id: SquadId,
+        at: FxVec2,
+        shots: u32,
+        rounds: u16,
+        rec: &mut AiArty,
+    ) -> bool {
+        let g = self.g;
+        if self.own_near(at, Some(id)) {
+            return false;
+        }
+        if g.mission_refusal(self.ents, self.terrain, id, at, rounds, self.tick)
+            .is_some()
+        {
+            self.ai.counters.cb_masked += 1;
+            rec.cb_shots = shots;
+            return false;
+        }
+        self.ai.emit(
+            self.due,
+            CommandKind::FireMission {
+                squad: id,
+                target: at,
+                rounds,
+            },
+        );
+        self.ai.counters.cb_missions += 1;
+        rec.missions = rec.missions.saturating_add(1);
+        rec.last_order = self.tick;
+        rec.prep = false;
+        rec.cb = true;
+        rec.cb_shots = shots;
+        true
     }
 
     /// S11a1 P1: the preparation target for a tube at `at` with the band
@@ -612,6 +722,7 @@ impl super::Planner<'_> {
             if let Some(rec) = self.ai.arty.get_mut(&id) {
                 rec.last_order = self.tick;
                 rec.prep = false;
+                rec.cb = false;
             }
         }
     }
