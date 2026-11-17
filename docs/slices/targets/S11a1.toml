@@ -3350,24 +3350,26 @@ control = "fortify10.s11a1.barrage.control.trench_suppressed_pct"
 note = "report: share of the trench squad's men ducked or pinned at the last burst (the barrage should pin: 6.1); no sourced bound"
 
 # --- T131: the AI breach row with preparation fire (row breach_prep; Build C) ---
-# Source: TODO S10a-16 (A) (gap and placed >= 60 %, attackers <= 60 %); T93f/h read 30 %
-# without preparation fire. Owner question S11a1-7 (A): hard. 20 runs.
+# Source: TODO S10a-16 (A) (gap and placed >= 60 %, attackers <= 60 %); the base breach_ai
+# row reads 0 % without preparation fire (review C-7; not 30 %). Owner question S11a1-7 (A): hard. 20 runs.
 [[target]]
 id = "T131a"
 metric = "fortify10.s11a1.breach_prep.gap_opened_pct"
 min = 60
+kind = "report"
 exposure = "fortify10.s11a1.breach_prep.prep_fired_pct"
 exposure_min = 80
 control = "fortify10.s11a1.breach_prep.control.gap_opened_pct"
-note = "the breach_ai force plus one mortar team; exposure: runs where a prep mission fired prep_rounds_min rounds before the carrier left; control: prep 0"
+note = "report until owner question S11a1-10 (review C-7); the breach_ai force plus one mortar team; exposure: runs where a prep mission fired prep_rounds_min rounds before the carrier left; control: prep 0"
 [[target]]
 id = "T131b"
 metric = "fortify10.s11a1.breach_prep.placed_pct"
 min = 60
+kind = "report"
 exposure = "fortify10.s11a1.breach_prep.prep_fired_pct"
 exposure_min = 80
 control = "fortify10.s11a1.breach_prep.control.placed_pct"
-note = "a charge laid or the cut done; exposure and control as T131a"
+note = "report until S11a1-10 (review C-7); a charge laid or the cut done; exposure and control as T131a"
 [[target]]
 id = "T131c"
 metric = "fortify10.s11a1.breach_prep.attacker_loss_pct"

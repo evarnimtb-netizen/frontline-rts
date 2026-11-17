@@ -140,7 +140,7 @@ fire, registration, counter-battery, displacement and tows, defensive fire, assa
 Decisions taken for the owner (all (A), `docs/TODO.md` S11a1-1..9): split; priced base rearm for now; friendly
 fire in S11a2; no tows; prices 320 / 380 / 80 / 120; only the breach job waits for preparation fire; T131 hard at
 60 %; HEAT later; cards buyable before the presenter pass.
-The breach gap, honestly: preparation fire is aimed at the staged row (T131: 30 % -> >= 60 %). In matches breach
+The breach gap, honestly: preparation fire is aimed at the staged row (T131: 0 % -> >= 60 %; review C-7: reports until S11a1-10). In matches breach
 jobs do not start (T123), so `prep_missions_per_match` is expected near 0 there; that needs S10c-6 (B).
 Stage split: A (SAVE 27 layout, keys, solver, gun missions, radio, rearm switch; neutral by content) -> B (content,
 rows, JSON; neutral because the AI buys nothing; gate T128-T130) -> C (AI chunk 1 A1-A6, chunk 2 P1-P3 and the

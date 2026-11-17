@@ -830,8 +830,9 @@ fn breach_ai_world(
 pub enum PrepTube {
     /// None (the S10a-ai row).
     None,
-    /// The faction's mortar team 250 m behind the stage spot (its own
-    /// leader observes by voice, or its spotter).
+    /// The faction's mortar team 250 m from the MG nest, at the first
+    /// bearing from which its own leader sees it (fix C-7,
+    /// `place_observing`).
     Mortar,
     /// The faction's infantry gun in the far east and its observer team
     /// 120 m behind the stage spot (linked by radio).
@@ -841,6 +842,8 @@ pub enum PrepTube {
 /// S11a1: the stage spot's distance behind the wire (`[ai.fort] stage_m`
 /// 60) plus 250 m: where the row's mortar stands, east of the wire.
 const PREP_MORTAR_M: i32 = 310;
+/// Fix C-7: the mortar's distance from the nest it prepares.
+const PREP_MORTAR_OBS_M: i32 = 250;
 const PREP_FO_M: i32 = 120;
 const PREP_GUN_X: i32 = 1000;
 
@@ -899,7 +902,7 @@ pub(super) fn breach_ai_run_with(
     w.place_squad(amg, at(start_x, LINE_Y - 20), WEST);
     let rifle = call_in(&mut w, att, "line")?;
     w.place_squad(rifle, at(start_x, LINE_Y + 20), WEST);
-    let tube_sq = prep_tube(&mut w, att, tube, wire_x)?;
+    let tube_sq = prep_tube(&mut w, att, tube, wire_x, nest_c)?;
     let prep_min = w.match_setup().unwrap().rules.ai.arty.prep_rounds_min;
     let mut prep_fired = false;
     let def_men = (members(&w, a).len() + members(&w, mg).len()) as u32;
@@ -1019,7 +1022,13 @@ pub(super) fn breach_ai_run_with(
 
 /// Spawns the attacker's preparation tube (and for a gun its observer
 /// team); the tube's squad.
-fn prep_tube(w: &mut World, att: u8, tube: PrepTube, wire_x: i32) -> Result<Option<SquadId>> {
+fn prep_tube(
+    w: &mut World,
+    att: u8,
+    tube: PrepTube,
+    wire_x: i32,
+    nest_c: FxVec2,
+) -> Result<Option<SquadId>> {
     let s = w.match_setup().unwrap();
     let germany = s.factions[s.players[att as usize].faction as usize].id == "ww2:germany";
     let card = |w: &World, id: &str| {
@@ -1041,7 +1050,11 @@ fn prep_tube(w: &mut World, att: u8, tube: PrepTube, wire_x: i32) -> Result<Opti
             } else {
                 "ww2:usa_mortar_team"
             };
-            Some(put(w, id, wire_x + PREP_MORTAR_M)?)
+            let q = put(w, id, wire_x + PREP_MORTAR_M)?;
+            // S11a1 fix C-7: where its own leader sees the nest (the
+            // ground hides it from due east), so the prep is observed.
+            super::place_observing(w, q, nest_c, PREP_MORTAR_OBS_M)?;
+            Some(q)
         }
         PrepTube::Gun => {
             let (gun, fo) = if germany {

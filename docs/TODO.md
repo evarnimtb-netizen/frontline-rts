@@ -362,7 +362,7 @@ measured yet. The design's gate "S11a ships only if S5 and S6 met their HE-share
   **(A) assumed overnight 2026-11-16, owner asleep.** (B) Every assault on a point with a known trench holds its first
   bound 60 s for the guns (design 6.4; changes every attack, so it needs its own ablation: S11a2 candidate).
 - S11a1-7 Breach target T131. (A) Hard: with preparation fire the staged AI breach opens the wire and places its
-  charge in at least 60 % of 20 runs (the S10a-16 (A) bar; 30 % today), attackers' losses a report. **(A) assumed
+  charge in at least 60 % of 20 runs (the S10a-16 (A) bar; 0 % today: the base `breach_ai` row, review C-7), attackers' losses a report. **(A) assumed
   overnight 2026-11-16, owner asleep.** (B) A report until S11a2. Note: breach jobs still do not START in matches
   (T123, S10c-6); preparation fire does not change that.
 - S11a1-8 HEAT rounds (Igr 38 HL, M67). (A) In S11a2 (2 a gun, rare cap), so this slice's measure does not move the
@@ -370,6 +370,9 @@ measured yet. The design's gate "S11a ships only if S5 and S6 met their HE-share
 - S11a1-9 Human play before a presenter pass. (A) The four cards are buyable on the branch although the HUD has no
   gun fire-mission tool and no model for them; a presenter pass and the `godot` headless tests come before a merge to
   main is asked. **(A) assumed overnight 2026-11-16, owner asleep.** (B) Add a `hidden` card key and hide them first.
+- S11a1-10 T131 while the breach job gives up (review C-7, 2026-11-17). (A) Keep T131a/b as reports until the breach
+  job's give-up rule is decided (S10a-16); the staged row's mortar now observes the nest. **(A) recommended, assumed
+  overnight 2026-11-17, owner asleep.** (B) Loosen the `run_breach` `lost` rule for breach jobs under preparation fire.
 
 ## S11a2 open owner questions (asked 2026-11-17 by the Plan stage; each runs on (A): "assumed overnight 2026-11-17, owner asleep")
 
