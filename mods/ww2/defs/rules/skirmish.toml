@@ -1270,6 +1270,9 @@ base_bomb_s = 0
 # different near points. Off (0) in S5a by S5a-42 (A): S5b's FireMission
 # and observer rule decide the base battery, measured against this lever.
 base_bomb_after_fire_s = 0
+# S11a1 G7 (owner S11a1-2 (A)): 1 = an infantry gun rearms in the own base at
+# the shells price, as an AT gun; 0 = HQ, dump and truck only (S11a2 default).
+arty_base_rearm = 1
 # Items and AT rockets keep [items] resupply_s, now priced.
 low_pct = 30                 # %: HUD "low" marker below this share of a squad's load (Part B)
 # --- S6: HQ, dumps and crates (docs/slices/S6-hq-crates.md "Sim rules";
@@ -1515,6 +1518,33 @@ belt_detour_pct = 130        # % (C5): the own route round a belt is at most thi
 builder_cards_min = 2        # C3: with fewer living builder squads the next buy is a builder card; 0 = off (orchestrator 2026-11-16: 2, owner S10c-2 proposed (B))
 mine_assign_reach_m = 450    # m (C2): mine_assign pulls a free builder only within this of the site (sweeps keep sweep_reach_m; fix pass 3: 450 of 450/600/800, none kept US losses <= 0.65)
 
+# S11a1: the artillery AI (docs/slices/S11a1.md 2, rules A1-A6, P1-P3): one
+# infantry gun and one observer team a side, observed missions inside a
+# shell budget, preparation fire for the breach job. The three switches stay
+# 0 until Build C (ablations arty_off, fo_off, prep_off).
+[ai.arty]
+buy = 0                      # A1 switch: buy an infantry gun
+fo = 0                       # A3 switch: buy and post an observer team
+prep = 0                     # P1-P3 switch: preparation fire for the breach job
+after_s = 240                # s (A1): no gun before this (D 4.7 unlock 3:00 / 4:00)
+income_max_pct = 15          # % (A1): infantry-gun cards cost at most this share of the income so far (half the AT-gun share)
+reserve_mp = 0               # A1: manpower that stays after a gun is bought
+max_guns = 1                 # A1: infantry guns alive or called in at once
+fo_max = 1                   # A3: observer teams alive at once
+fo_rebuy_s = 180             # s (A3): wait after an observer team is lost
+mission_rounds = 4           # A4: rounds of one AI gun mission
+reserve_pct = 30             # % (A4, A5): no new mission at or under this share of the gun's HE (D 6.4)
+shell_mp_max_pct = 25        # % (A5): gun shells cost at most this share of the income so far (D 6.4)
+danger_close_m = 50          # m (A4, A6): own men this close to the target: no mission, or lift (D 4.5)
+post_m = 300                 # m (A3): the first post candidate this far short of the point ...
+post_side_m = 60             # m: ... and this far either side
+post_rays = 8                # A3: sight rays a plan's post search may cast
+post_clear_m = 150           # m (A3): a candidate with a known enemy this close is passed over
+post_retry_s = 60            # s (A3): a failed search waits this long
+prep_near_m = 40             # m (P2): a mission this close to the breach focus is its preparation ...
+prep_rounds_min = 2          # P2: ... once it has fired this many rounds ...
+prep_wait_s = 60             # s (P2): ... and the breach job waits for it at most this long (D 6.4 prep_fire_s)
+
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired
 # Direct (the mortar's own leader sees the point), Observed (another squad
@@ -1590,6 +1620,21 @@ intel_snap_m = 25            # m: map fire within this of a known cell centre, a
 
 # --- Player orders ---
 player_rounds = 6            # rounds in a mission ordered from the HUD tool (1..=50)
+
+# --- S11a1: gun fire missions (docs/slices/S11a1.md 2, 4 G1-G6; design
+# artillery-on-map.md §4.1, §4.8). A served gun whose main weapon has an
+# [indirect] table takes FireMission on its own squad; no ww2 gun has one
+# before S11a1 Build B. Switches: 1 on, 0 off (ablation a_off). ---
+gun_missions = 1             # G1: 0 = a gun's mission is refused not_mortar (as before S11a1)
+radio_link = 1               # G5: an observer also links by radio (a radio man near him, one near the tube); 0 = voice only
+mask = 1                     # G2: a gun's arc must clear the ground (20 steps of the flight); 0 = no ground test
+gun_fire_direction_s = 20    # s: a gun mission's order to first round (D 4.8: USA 15, Germany 25; one value until S11a2)
+gun_adjust_rounds_max = 1    # a gun mission's adjusting rounds at most (D 4.8 adjust_rounds 1)
+gun_first_round_error_pct = 3    # G4: observed and direct first-round error (% of range) ...
+gun_first_round_error_min_m = 25 # ... at least this (m) (D 4.1 fire modes table)
+gun_map_fire_error_pct = 6       # G4: map fire error (% of range) ...
+gun_map_fire_error_min_m = 50    # ... at least this (m) (D 4.1)
+gun_break_m = 150            # m (G6): a seen enemy this close to the gun ends its mission (crew self-defence)
 
 # S10a: fortifications, wire, materials and breaching
 # (docs/slices/S10a-fortifications.md 3.2; design infantry-structures 7.1-7.7).

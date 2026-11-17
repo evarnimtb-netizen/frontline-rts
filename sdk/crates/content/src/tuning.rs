@@ -1114,6 +1114,9 @@ tuning_table! {
         /// (review M2): brakes the base battery (artillery-on-map.md §4.10)
         /// until S6 crates.
         base_bomb_after_fire_s: 0..=1800 = "default_base_bomb_after_fire_s",
+        /// S11a1 G7: 1 = an infantry gun rearms in the own base at the
+        /// shells price (as an AT gun); 0 = at an HQ, dump or truck only.
+        arty_base_rearm: 0..=1 = "d_fm_one",
         /// HUD "low" marker below this share of a squad's load (%).
         low_pct: 1..=100,
         /// S6: a crate this close to a mortar's gunner, a man or a tank's
@@ -2344,7 +2347,56 @@ tuning_table! {
         intel_snap_m: 0..=500,
         /// Rounds in a mission ordered from the HUD tool.
         player_rounds: 1..=50,
+        /// S11a1 G1 switch: a served gun whose main weapon has `[indirect]`
+        /// takes fire missions (0: refused `not_mortar`, as before S11a1).
+        gun_missions: 0..=1 = "d_fm_one",
+        /// S11a1 G5 switch: an observer is also linked by radio (a living
+        /// `radio` man of his squad near him and one of the firing unit
+        /// near the tube; 0: the voice link only).
+        radio_link: 0..=1 = "d_fm_one",
+        /// S11a1 G2 switch: a gun's solution must clear the ground (0: no
+        /// ground test of the arc).
+        mask: 0..=1 = "d_fm_one",
+        /// S11a1 G3: a gun mission's order to first round, observed or map
+        /// fire (s; direct fire keeps `direct_s`).
+        gun_fire_direction_s: 0..=3600 = "d_fm_gun_fire_direction_s",
+        /// S11a1 G3: a gun mission's adjusting rounds at most.
+        gun_adjust_rounds_max: 1..=50 = "d_fm_one",
+        /// S11a1 G4: a gun mission's first-round aim error, observed and
+        /// direct (% of range) ...
+        gun_first_round_error_pct: 0..=50 = "d_fm_gun_first_round_error_pct",
+        /// ... at least this (m).
+        gun_first_round_error_min_m: 0..=2000 = "d_fm_gun_first_round_error_min_m",
+        /// S11a1 G4: a gun's map fire aim error (% of range) ...
+        gun_map_fire_error_pct: 0..=50 = "d_fm_gun_map_fire_error_pct",
+        /// ... at least this (m).
+        gun_map_fire_error_min_m: 0..=2000 = "d_fm_gun_map_fire_error_min_m",
+        /// S11a1 G6: a seen enemy this close to the gun ends its mission
+        /// (crew self-defence) (m).
+        gun_break_m: 0..=2000 = "d_fm_gun_break_m",
     }
+}
+
+fn d_fm_one() -> u32 {
+    1
+}
+fn d_fm_gun_fire_direction_s() -> u32 {
+    20
+}
+fn d_fm_gun_first_round_error_pct() -> u32 {
+    3
+}
+fn d_fm_gun_first_round_error_min_m() -> u32 {
+    25
+}
+fn d_fm_gun_map_fire_error_pct() -> u32 {
+    6
+}
+fn d_fm_gun_map_fire_error_min_m() -> u32 {
+    50
+}
+fn d_fm_gun_break_m() -> u32 {
+    150
 }
 
 impl FireMissionTuning {
@@ -2354,6 +2406,12 @@ impl FireMissionTuning {
             table,
             ("first_round_error_min_m", self.first_round_error_min_m),
             ("map_fire_error_min_m", self.map_fire_error_min_m),
+        );
+        check_order(
+            out,
+            table,
+            ("gun_first_round_error_min_m", self.gun_first_round_error_min_m),
+            ("gun_map_fire_error_min_m", self.gun_map_fire_error_min_m),
         );
     }
 }
@@ -2632,6 +2690,94 @@ impl FortTuning {
     }
 }
 
+tuning_table! {
+    /// `[ai.arty]` (S11a1, docs/slices/S11a1.md 2, rules A1-A6, P1-P3):
+    /// how the AI buys and fires its infantry gun, places its observer
+    /// team and fires preparation for a breach. The three switches are 0
+    /// until Build C (absent: these values).
+    pub struct AiArtyTuning {
+        /// A1 switch: buy an infantry gun.
+        buy: 0..=1,
+        /// A3 switch: buy and post an observer team.
+        fo: 0..=1,
+        /// P1-P3 switch: preparation fire for the breach job.
+        prep: 0..=1,
+        /// A1: no gun before this match time (s).
+        after_s: 0..=3600,
+        /// A1: infantry-gun cards cost at most this share of the income so
+        /// far (%).
+        income_max_pct: 0..=100,
+        /// A1: manpower that stays after a gun is bought.
+        reserve_mp: 0..=10000,
+        /// A1: infantry guns alive or called in at once.
+        max_guns: 0..=8,
+        /// A3: observer teams alive at once ...
+        fo_max: 0..=8,
+        /// ... and the wait after one is lost before the next (s).
+        fo_rebuy_s: 0..=3600,
+        /// A4: rounds of one AI gun mission.
+        mission_rounds: 1..=50,
+        /// A4, A5: no new mission at or under this share of the gun's HE
+        /// load (%).
+        reserve_pct: 0..=100,
+        /// A5: gun shells cost at most this share of the income so far (%).
+        shell_mp_max_pct: 0..=100,
+        /// A4, A6: own men this close to a target: no mission, or lift (m).
+        danger_close_m: 0..=2000,
+        /// A3: the first post candidate this far short of the point (m) ...
+        post_m: 0..=2000,
+        /// ... and at this sideways offset either side (m).
+        post_side_m: 0..=2000,
+        /// A3: sight rays a plan's post search may cast.
+        post_rays: 0..=48,
+        /// A3: a candidate with a known enemy this close is passed over (m).
+        post_clear_m: 0..=2000,
+        /// A3: after a failed search, the next one waits this long (s).
+        post_retry_s: 0..=3600,
+        /// P2: a mission within this of the breach focus counts as its
+        /// preparation (m) ...
+        prep_near_m: 0..=2000,
+        /// ... once it has fired this many rounds ...
+        prep_rounds_min: 1..=50,
+        /// ... and the breach job waits for it at most this long (s).
+        prep_wait_s: 0..=3600,
+    }
+}
+
+impl AiArtyTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for AiArtyTuning {
+    /// S11a1 starting values (a rules def without `[ai.arty]`): every
+    /// switch off.
+    fn default() -> AiArtyTuning {
+        AiArtyTuning {
+            buy: 0,
+            fo: 0,
+            prep: 0,
+            after_s: 240,
+            income_max_pct: 15,
+            reserve_mp: 0,
+            max_guns: 1,
+            fo_max: 1,
+            fo_rebuy_s: 180,
+            mission_rounds: 4,
+            reserve_pct: 30,
+            shell_mp_max_pct: 25,
+            danger_close_m: 50,
+            post_m: 300,
+            post_side_m: 60,
+            post_rays: 8,
+            post_clear_m: 150,
+            post_retry_s: 60,
+            prep_near_m: 40,
+            prep_rounds_min: 2,
+            prep_wait_s: 60,
+        }
+    }
+}
+
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
 pub const TABLES: &[(&str, &[TuningKey])] = &[
@@ -2648,6 +2794,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("ai.guns", AiGunsTuning::KEYS),
     ("ai.fort", AiFortTuning::KEYS),
     ("ai.obstacles", AiObstacleTuning::KEYS),
+    ("ai.arty", AiArtyTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -2714,6 +2861,7 @@ pub(crate) struct TuningRefs<'a> {
     pub ai_guns: &'a AiGunsTuning,
     pub ai_fort: &'a AiFortTuning,
     pub ai_obstacles: &'a AiObstacleTuning,
+    pub ai_arty: &'a AiArtyTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -2777,6 +2925,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.ai_guns.check(&p("ai.guns"), out);
     t.ai_fort.check(&p("ai.fort"), out);
     t.ai_obstacles.check(&p("ai.obstacles"), out);
+    t.ai_arty.check(&p("ai.arty"), out);
 }
 
 #[cfg(test)]

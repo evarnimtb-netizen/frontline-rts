@@ -270,3 +270,45 @@ fn seventeen_vehicle_types_keep_their_kill_rows() {
     let o = old(kill_class::TANK_AP as u8, 16);
     assert_ne!(o >> 4, 17, "the old u8 pack keeps type 16");
 }
+
+/// Adds a test-only infantry gun to a setup: the Pak 38 vehicle and squad
+/// cloned as `test:inf_gun` with role `role` (Build B brings the real
+/// leIG 18 and M3). Returns nothing; spawn it by the id.
+pub(super) fn add_test_gun(s: &mut frontline_content::MatchSetup, role: frontline_content::VehicleRole) {
+    let src = s
+        .squad_types
+        .iter()
+        .position(|t| t.id == "ww2:ger_pak38_squad")
+        .unwrap();
+    let vi = s.squad_types[src].vehicle.unwrap() as usize;
+    let mut v = s.vehicles[vi].clone();
+    v.role = role;
+    s.vehicles.push(v);
+    let mut t = s.squad_types[src].clone();
+    t.id = "test:inf_gun".into();
+    t.vehicle = Some((s.vehicles.len() - 1) as u16);
+    s.squad_types.push(t);
+}
+
+/// Spec A1 / review 2: the AT-gun habits take only role `at_gun`; an
+/// `inf_gun` gets no `AiGun` job and no order. Control: the same clone
+/// with role `at_gun` gets a job.
+#[test]
+fn at_gun_ai_ignores_infantry_guns() {
+    use frontline_content::VehicleRole;
+    let run = |role: VehicleRole| {
+        let mut w = flat_world_with(1, |s| {
+            s.players[1].is_ai = true;
+            add_test_gun(s, role);
+        });
+        steps(&mut w, 2);
+        let q = spawn(&mut w, 1, "test:inf_gun", 400, 400);
+        let order0 = w.game().unwrap().squads[&q].order.kind();
+        steps(&mut w, 30 * 40);
+        let g = w.game().unwrap();
+        let ai = g.ai[1].as_ref().unwrap();
+        (ai.guns.contains_key(&q), g.squads[&q].order.kind() == order0)
+    };
+    assert_eq!(run(VehicleRole::InfGun), (false, true), "an inf_gun is left alone");
+    assert!(run(VehicleRole::AtGun).0, "control: an at_gun clone gets a job");
+}

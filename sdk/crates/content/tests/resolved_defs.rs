@@ -171,15 +171,20 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // changed it; the Build B chunk 2 values were 0xcaa4642889a6f13c,
 // 0x13c5225b50488cd8, 0x1a0487ab11070c7c, 0xcaa4642889a6f13c,
 // 0x9ed4bb657bfadea6, 0x23d580882bba6d30.
+// S11a1 Build A (the `[fire_mission]` gun keys, `[supply] arty_base_rearm`,
+// `[ai.arty]`, and `IndirectSetup::{low_angle, range, spread}`) changed
+// it; the fix pass 3 values were 0xe3126bd862ff1dca, 0x1aef21fc0c166eb7,
+// 0x22d77a202d9da7d1, 0xe3126bd862ff1dca, 0x6fa9aae9eeab9435,
+// 0x82578541945f24ad.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xe3126bd862ff1dca),
-    ("skirmish usa-ger seed 7 hard", 0x1aef21fc0c166eb7),
-    ("test_unlock ger-usa seed 1 normal", 0x22d77a202d9da7d1),
-    ("example override ger-usa seed 1 normal", 0xe3126bd862ff1dca),
-    ("human ger vs ai usa seed 3 easy", 0x6fa9aae9eeab9435),
+    ("skirmish ger-usa seed 1 normal", 0xf5b40609e6521881),
+    ("skirmish usa-ger seed 7 hard", 0xb898a6ecbbe46227),
+    ("test_unlock ger-usa seed 1 normal", 0x83a1f236e5b268cb),
+    ("example override ger-usa seed 1 normal", 0xf5b40609e6521881),
+    ("human ger vs ai usa seed 3 easy", 0x196c9824ba128d6b),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x82578541945f24ad,
+        0xd7d21eb2ceaf5e48,
     ),
 ];
 

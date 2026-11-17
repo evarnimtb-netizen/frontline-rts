@@ -135,6 +135,7 @@ mod tests {
         IndirectSetup::lower(&frontline_content::defs::IndirectDef {
             charges_m_s: vec![75, 105, 130, 152, 174],
             elevation_deg: [45, 87],
+            ..Default::default()
         })
     }
 
@@ -142,6 +143,7 @@ mod tests {
         IndirectSetup::lower(&frontline_content::defs::IndirectDef {
             charges_m_s: vec![70, 95, 117, 137, 155, 172, 188],
             elevation_deg: [45, 85],
+            ..Default::default()
         })
     }
 
@@ -276,6 +278,7 @@ mod tests {
         let ind = IndirectSetup::lower(&frontline_content::defs::IndirectDef {
             charges_m_s: vec![100, 300],
             elevation_deg: [45, 89],
+            ..Default::default()
         });
         let bound = flight_bound_s(&ind) as f64;
         let mut longest = 0.0f64;

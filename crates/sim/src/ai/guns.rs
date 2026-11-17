@@ -402,7 +402,12 @@ impl super::Planner<'_> {
                 return true;
             };
             if vs.served.is_some() {
-                guns.push(MyTank { ..*t });
+                // S11a1 (review 2): only AT guns are this habit's; an
+                // infantry gun is parked out of every list (Build C's
+                // `ai::arty` takes it).
+                if at_gun(g, vs) {
+                    guns.push(MyTank { ..*t });
+                }
                 return false;
             }
             // A tractor with seats works as a transport like any half-track;
@@ -450,7 +455,7 @@ impl super::Planner<'_> {
                 s.owner == me
                     && s.members
                         .first()
-                        .is_some_and(|v| g.vehicles.get(v).is_some_and(|x| x.served.is_some()))
+                        .is_some_and(|v| g.vehicles.get(v).is_some_and(|x| at_gun(g, x)))
             })
         });
         let tick = self.tick;
@@ -1127,7 +1132,7 @@ impl super::Planner<'_> {
                     }
                     _ => false,
                 };
-                free && vs.served.is_some() && rounds_of(vs) > 0
+                free && at_gun(g, vs) && rounds_of(vs) > 0
             })
             .map(|(&id, _)| id)
             .collect();
@@ -1483,4 +1488,14 @@ mod tests {
         let step = Fx::from_int(a.approach_m as i32).div_int(a.los_rays as i32);
         assert!((line[1].xy() - (p + dir * step)).length() < Fx::from_int(1));
     }
+}
+
+/// S11a1 (review 2): a served gun of role `at_gun` (the habits of this
+/// module never take an `inf_gun`).
+pub(super) fn at_gun(g: &crate::game::MatchState, vs: &crate::vehicle::VehicleState) -> bool {
+    vs.served.is_some()
+        && g.setup
+            .vehicles
+            .get(vs.type_idx as usize)
+            .is_some_and(|v| v.role == VehicleRole::AtGun)
 }

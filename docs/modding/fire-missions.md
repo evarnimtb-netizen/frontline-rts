@@ -99,6 +99,37 @@ mission's burst deadline against the weapon's own bound (`2 v / g` of the
 highest charge + 20 s for a target below the muzzle + 4 s, at least 60 s),
 so long-flight tables load (S5b review L1).
 
+## Guns (`[indirect] low_angle`, S11a1)
+
+A served gun (role `inf_gun` or `at_gun`, `crew_model = "served"`) whose
+main weapon has an `[indirect]` table takes a fire mission on its own
+squad (`[fire_mission] gun_missions`). A gun's table sets `low_angle`:
+
+```toml
+[indirect]
+charges_m_s = [92, 120, 150, 180, 210]   # rising
+elevation_deg = [0, 73]                  # the band may start below 45 deg
+low_angle = true                         # try each charge's high root, then its low root
+range_m = 3550                           # indirect range (default: the weapon's range_m)
+spread_mrad = 8                          # mission round scatter (default: the weapon's spread)
+```
+
+Candidates run lowest charge first, the high root before the low root,
+each inside the band; with `[fire_mission] mask` 1 a candidate counts only
+if its arc clears the ground at steps 2..=16 of 20 (0.5 m above it) and its
+elevation, taken onto the hull's pitch where the gun stands, lies inside
+the mount's own elevation limits. None in the band: `cannot_reach` (or
+`inside_minimum`); none clear: `masked`. A mortar's table (no `low_angle`)
+solves exactly as before. Refusal order for a gun: `off_map`,
+`not_mortar`, `rounds`, `not_ready` (not emplaced, or gunner or loader
+slot unmanned), `no_bombs` (no HE round in the rack), `unknown_ground`,
+`inside_minimum` / `cannot_reach`, `masked`. A gun's mission uses the
+`gun_*` timing and error keys; an infantry gun counts in the player's
+`S11Counters`, never in the mortar counters. Radio (`radio_link`): an
+observer whose squad has a living `radio` man near him is linked when the
+firing unit also has a living `radio` man within `observer_link_m` of the
+tube (a gun: its crew squad).
+
 ## The AI (`[ai.mortar]`, S5b Part B)
 
 Each plan, a mortar squad that is not on a mission (`crates/sim/src/ai/mortar.rs`):

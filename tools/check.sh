@@ -137,6 +137,9 @@ quick() {
     # S10c-ai: its override files (non-switch values allowed there).
     step "ablate.sh S10c" ablate_dry_s10c env ABLATIONS=docs/slices/targets/S10c-ai-ablations \
         tools/ablate.sh --dry-run target/ablate-on target/ablate-dry
+    # S11a1: its override files (the S11a1 switches only).
+    step "ablate.sh S11a1" ablate_dry_s11a1 env ABLATIONS=docs/slices/targets/S11a1-ablations \
+        tools/ablate.sh --dry-run target/ablate-on target/ablate-dry
     pk=$(crates_changed "$base")
     # Release, not debug: the same build the batches use, and the whole
     # workspace's tests take 6 minutes in release against 18 in debug.

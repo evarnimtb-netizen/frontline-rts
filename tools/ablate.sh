@@ -41,6 +41,14 @@
 # neutrality control there (as all_off: neutral.py against NEUTRAL_BASE,
 # default target/s10c-base40, the 40 set of main 54009f6).
 #
+# S11a1 (docs/slices/S11a1.md 2): with ABLATIONS=docs/slices/targets/
+# S11a1-ablations every *.toml there is an override (a_off, arty_off,
+# fo_off, prep_off, radio_off, base_rearm_off), and a file may hold only the
+# S11a1 switches: [fire_mission] gun_missions, radio_link, mask 0; [supply]
+# arty_base_rearm 0 or 1; [ai.arty] buy, fo, prep 0. a_off is the
+# neutrality control there (NEUTRAL_BASE default target/s11a1-base40, the
+# 40 set of base 730e67f).
+#
 # Env: ABLATIONS=DIR (default docs/slices/targets/S10b-ai-ablations; the
 # S10a set is docs/slices/targets/S10a-ai-ablations), TARGETS (default the
 # slice file beside DIR: S10b-ai.toml / S10a-ai.toml), NEUTRAL_BASE (default
@@ -52,10 +60,20 @@ DIR=${DIR%/}
 TARGETS=${TARGETS:-${DIR%-ablations}.toml}
 S10C=0
 NEUTRAL_NAME=all_off
+MODE=default
 if [ "$(basename "$DIR")" = S10c-ai-ablations ]; then
     S10C=1
+    MODE=s10c
     NEUTRAL_NAME=c_off
     NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10c-base40}
+fi
+if [ "$(basename "$DIR")" = S11a1-ablations ]; then
+    # The S10c rules for listing and applying (every *.toml; a key may
+    # already hold its value), the S11a1 key list.
+    S10C=1
+    MODE=s11a1
+    NEUTRAL_NAME=a_off
+    NEUTRAL_BASE=${NEUTRAL_BASE:-target/s11a1-base40}
 fi
 NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10b-verify}
 DRY=0
@@ -92,10 +110,10 @@ fi
 # (No tomllib on this Mac's python: the files are plain enough to read by
 # line.) Prints the number of keys.
 check_file() {
-    python3 -I - "$1" "$S10C" <<'PY'
+    python3 -I - "$1" "$MODE" <<'PY'
 import re, sys
 path = sys.argv[1]
-s10c = sys.argv[2] == "1"
+mode = sys.argv[2]
 zero = lambda *ks: {k: 0 for k in ks}
 # S10c-ai: each key with the values its override files may set.
 allowed = {
@@ -118,8 +136,16 @@ switches = {
     "fortify": zero("mine_paths"),
     "ai.truck": zero("refusal_memory"),
 }
-if s10c:
+# S11a1: its switches (arty_base_rearm may also state its default 1).
+allowed_s11a1 = {
+    "fire_mission": {"gun_missions": {0}, "radio_link": {0}, "mask": {0}},
+    "supply": {"arty_base_rearm": {0, 1}},
+    "ai.arty": {"buy": {0}, "fo": {0}, "prep": {0}},
+}
+if mode == "s10c":
     switches = allowed
+elif mode == "s11a1":
+    switches = allowed_s11a1
 else:
     switches = {t: {k: {v} for k, v in ks.items()} for t, ks in switches.items()}
 table, keys = None, {}
@@ -200,7 +226,7 @@ if [ $DRY -eq 1 ]; then
             out=$("$CLI" skirmish --ai-vs-ai --seed 1 --seeds 1 --minutes 1 --rules-override "$f" --summary 2>&1)
             st=$?
             applied=$(printf '%s\n' "$out" |
-                grep -cE "^override $f: .*: (ai\.fort|ai\.obstacles|fortify|ai\.truck)\.[a-z_]*: [0-9]+ -> [0-9]+$")
+                grep -cE "^override $f: .*: (ai\.fort|ai\.obstacles|fortify|ai\.truck|ai\.arty|fire_mission|supply)\.[a-z_]*: [0-9]+ -> [0-9]+$")
             # S10c-ai: a key may already hold its listed value (c_off sets
             # `front_slots` 1, the default). Fix pass 1 (finding A-3):
             # each key of the file counts once, when the CLI echoed its

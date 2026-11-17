@@ -365,6 +365,10 @@ pub enum VehicleRole {
     AtGun,
     /// S9: a gun tractor (`[tow]`, no weapons needed); outside the limit.
     Tractor,
+    /// S11a1: a served infantry gun or field howitzer (`crew_model =
+    /// "served"`, fire missions through its weapon's `[indirect]`);
+    /// outside the vehicle limit. The AT-gun AI never takes it.
+    InfGun,
 }
 
 impl VehicleRole {
@@ -378,6 +382,7 @@ impl VehicleRole {
             VehicleRole::Truck => "truck",
             VehicleRole::AtGun => "at_gun",
             VehicleRole::Tractor => "tractor",
+            VehicleRole::InfGun => "inf_gun",
         }
     }
 
@@ -390,7 +395,13 @@ impl VehicleRole {
                 | VehicleRole::Truck
                 | VehicleRole::AtGun
                 | VehicleRole::Tractor
+                | VehicleRole::InfGun
         )
+    }
+
+    /// S11a1: a served gun's role (`at_gun` or `inf_gun`).
+    pub const fn is_served_gun(self) -> bool {
+        matches!(self, VehicleRole::AtGun | VehicleRole::InfGun)
     }
 }
 
@@ -2279,11 +2290,11 @@ impl VehicleDef {
         let served = self.crew_model == CrewModel::Served;
         let m = &self.mobility;
         let towed = m.kind == MobilityKind::Towed;
-        let gun_role = self.role == VehicleRole::AtGun;
+        let gun_role = self.role.is_served_gun();
         if served != gun_role || served != towed {
             out.push(Issue::new(
                 "crew_model",
-                "role `at_gun`, `crew_model = \"served\"` and `mobility.type = \"towed\"` go together",
+                "role `at_gun` or `inf_gun`, `crew_model = \"served\"` and `mobility.type = \"towed\"` go together",
             ));
         }
         let keys = [
@@ -4017,7 +4028,7 @@ pub(crate) fn check_vehicle(
     {
         return Some("vehicles.seats: missing, repeated or outside the frame");
     }
-    if v.served() != (v.role == VehicleRole::AtGun)
+    if v.served() != v.role.is_served_gun()
         || v.served() != (v.mobility.kind == MobilityKind::Towed)
         || v.service.len() > MAX_SERVICE_SLOTS
         || v.mobility.towed.is_some() != v.served()
