@@ -165,11 +165,13 @@ impl AiState {
     }
 }
 
-/// One candidate target of a mortar squad.
+/// One candidate target of a mortar squad (S11a1: or an infantry gun).
 #[derive(Copy, Clone)]
-struct Target {
-    score: i64,
-    pos: FxVec2,
+pub(super) struct Target {
+    pub(super) score: i64,
+    pub(super) pos: FxVec2,
+    /// S11a1 P1: the breach job's preparation target.
+    pub(super) prep: bool,
 }
 
 impl Planner<'_> {
@@ -452,12 +454,31 @@ impl Planner<'_> {
         known: &[Known],
         own: &[FxVec2],
     ) -> Vec<Target> {
-        let g = self.g;
-        let s = &g.setup;
+        let s = &self.g.setup;
         let w = &s.weapons[s.squad_types[sq.type_idx as usize].weapon as usize];
         let min = Fx::from(w.range_min) + Fx::from_int(20);
         let max = Fx::from(w.range_max) - Fx::from_int(10);
-        let danger = sq_m(Fx::from_int(s.rules.ai.infantry.danger_close_m as i32));
+        let danger_m = s.rules.ai.infantry.danger_close_m;
+        self.fire_targets(gunner, min, max, danger_m, true, known, own)
+    }
+
+    /// Step 1 for any tube at `gunner` (S11a1: generic over the band
+    /// `min..=max`, the danger-close distance and the noise, which the
+    /// infantry-gun planner leaves out: no RNG there). Best first.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn fire_targets(
+        &mut self,
+        gunner: FxVec2,
+        min: Fx,
+        max: Fx,
+        danger_m: u32,
+        noise: bool,
+        known: &[Known],
+        own: &[FxVec2],
+    ) -> Vec<Target> {
+        let g = self.g;
+        let s = &g.setup;
+        let danger = sq_m(Fx::from_int(danger_m.min(2000) as i32));
         let ok = |c: FxVec2| {
             let d = (c - gunner).length();
             d >= min && d <= max && !own.iter().any(|o| (*o - c).length_sq_raw() <= danger)
@@ -484,9 +505,14 @@ impl Planner<'_> {
             // A moving man counts half: the bombs land 20-30 s after the
             // order (laying plus flight), so a group on the move is
             // elsewhere by then.
-            let score = still * 10 + (n - still) * 5 + trench * 20 + self.noise();
+            let noise = if noise { self.noise() } else { 0 };
+            let score = still * 10 + (n - still) * 5 + trench * 20 + noise;
             if score >= 20 {
-                out.push(Target { score, pos: c });
+                out.push(Target {
+                    score,
+                    pos: c,
+                    prep: false,
+                });
             }
         }
         // Intel cells: an enemy seen in a trench there lately.
@@ -534,6 +560,7 @@ impl Planner<'_> {
             out.push(Target {
                 score: 30 + 10 * manned.min(3),
                 pos,
+                prep: false,
             });
         }
         out.sort_by(|a, b| {

@@ -2821,7 +2821,7 @@ impl super::Planner<'_> {
         let spent =
             (g.fort.accounts[self.me.0 as usize].materials_micro + pending).saturating_sub(s10b);
         let pl = &g.players[self.me.0 as usize];
-        let have = (pl.manpower as i64 - self.gun_pot()).max(0) as u64 * crate::supply::MICRO
+        let have = (pl.manpower as i64 - self.held_pots()).max(0) as u64 * crate::supply::MICRO
             + pl.ammo.credit as u64;
         let room = budget
             .saturating_sub(spent)
@@ -2918,7 +2918,7 @@ impl super::Planner<'_> {
             })
             .sum();
         let pl = &g.players[self.me.0 as usize];
-        let have = (pl.manpower as i64 - self.gun_pot()).max(0) as u64 * crate::supply::MICRO
+        let have = (pl.manpower as i64 - self.held_pots()).max(0) as u64 * crate::supply::MICRO
             + pl.ammo.credit as u64;
         let room = budget
             .saturating_sub(spent)

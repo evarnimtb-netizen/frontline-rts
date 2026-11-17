@@ -1387,6 +1387,8 @@ impl Planner<'_> {
 
         // S9: guns, tows and crews are the gun jobs'.
         let guns = self.take_guns(&mut tanks, &mut mine);
+        // S11a1: observer teams are the artillery habit's.
+        self.take_arty(&mut mine);
         self.retreats(&mut mine, &known);
         // S10a-ai: shelled marks, then the fort jobs keep their squads.
         self.fort_marks(&known);
@@ -1412,6 +1414,7 @@ impl Planner<'_> {
         self.buy(&kv);
         self.buy_recon_truck();
         self.buy_gun();
+        self.buy_arty();
         let mut points = self.evaluate_points(&known, &kv);
         self.fort_points(&mut points);
         // S10c-ai: front exposure (counters only, every plan).
@@ -1446,6 +1449,8 @@ impl Planner<'_> {
         claimed.extend(loading);
         self.order_infantry(&mine, &assigned, &mut points, &known, &escorting, &claimed);
         self.mortars(&mine, &points, &known);
+        // S11a1: the infantry guns and observers, with the rays left.
+        self.arty(&points, &known);
         self.throws(&mine, &known, &kv);
     }
 
@@ -1694,8 +1699,9 @@ impl Planner<'_> {
             })
             .count() as i64;
         let pl = &g.players[p];
-        // S9: the guns' own budget (`ai::guns`) is not for other cards.
-        let mut budget = pl.manpower as i64 - self.gun_pot();
+        // S9: the guns' own budget (`ai::guns`) is not for other cards;
+        // S11a1: nor the infantry guns' (`ai::arty`).
+        let mut budget = pl.manpower as i64 - self.held_pots();
         // S5a: keep `float_mp` back while an own unit waits for a paid
         // refill in the base.
         if self.waiting_refill() {
