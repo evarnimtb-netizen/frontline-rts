@@ -24,7 +24,7 @@
 //!   Party 350 m from the target, on a German rifle squad in the open and
 //!   (another run) in a dug trench: `open_loss_pct`, `trench_loss_pct`
 //!   (men lost of the squad), `trench_vs_open_pct`, `trench_suppressed_pct`
-//!   (the trench squad's living men ducked or pinned at the last burst).
+//!   (the trench squad's living men ducked or pinned one tick after the last burst).
 //!   Control: the trench dug but the squad standing 8 m in front of it, in
 //!   the open (with a fixed-seed sim, "both squads in the open" at one spot
 //!   would be the open run itself).
@@ -297,23 +297,51 @@ fn gun_fm_once(args: &FortifyArgs, seed: u64, p: u8, kind: u8) -> Result<(f64, u
     Ok((mean(&misses).unwrap_or(0.0), n, m0.mode == mode::OBSERVED))
 }
 
+/// Runs `f` for each seed on its own thread (each world is separate and
+/// deterministic, so the results do not depend on it) and returns the
+/// results in seed order; the first error wins.
+fn par_seeds<T: Send>(
+    seeds: std::ops::Range<u64>,
+    f: impl Fn(u64) -> Result<T> + Sync,
+) -> Result<Vec<T>> {
+    let f = &f;
+    std::thread::scope(|sc| {
+        let hs: Vec<_> = seeds.map(|seed| sc.spawn(move || f(seed))).collect();
+        hs.into_iter()
+            .map(|h| {
+                h.join()
+                    .unwrap_or_else(|_| Err(anyhow!("a row thread panicked")))
+            })
+            .collect()
+    })
+}
+
 /// The `gun_fm` row (module docs).
 pub fn gun_fm_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<GunFmRow> {
     let (mut obs, mut map, mut ctl) = (Vec::new(), Vec::new(), Vec::new());
     let mut per = [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]];
     let (mut rounds, mut runs, mut started) = (0u32, 0u32, 0u32);
-    for seed in seeds {
+    let all = par_seeds(seeds, |seed| {
+        let mut v = Vec::new();
         for p in [0u8, 1] {
-            let (o, n, s) = gun_fm_once(args, seed, p, 0)?;
+            v.push((
+                gun_fm_once(args, seed, p, 0)?,
+                gun_fm_once(args, seed, p, 1)?.0,
+                gun_fm_once(args, seed, p, 2)?.0,
+            ));
+        }
+        Ok(v)
+    })?;
+    for v in all {
+        for (p, ((o, n, s), m, c)) in v.into_iter().enumerate() {
             obs.push(o);
-            per[p as usize][0].push(o);
+            per[p][0].push(o);
             rounds += n;
             runs += 1;
             started += s as u32;
-            let (m, _, _) = gun_fm_once(args, seed, p, 1)?;
             map.push(m);
-            per[p as usize][1].push(m);
-            ctl.push(gun_fm_once(args, seed, p, 2)?.0);
+            per[p][1].push(m);
+            ctl.push(c);
         }
     }
     let (o, m, c) = (mean(&obs), mean(&map), mean(&ctl));
@@ -371,11 +399,21 @@ fn mask_once(args: &FortifyArgs, seed: u64, p: u8, crest: bool) -> Result<(bool,
 pub fn mask_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<MaskRow> {
     let mut n = 0u32;
     let mut v = [[0u32; 2]; 2]; // [crest, flat][m3 refused, leig fired]
-    for seed in seeds {
-        n += 1;
+    let all = par_seeds(seeds, |seed| {
+        let mut r = [[false; 2]; 2];
         for (k, crest) in [true, false].into_iter().enumerate() {
-            v[k][0] += mask_once(args, seed, 1, crest)?.0 as u32;
-            v[k][1] += mask_once(args, seed, 0, crest)?.1 as u32;
+            r[k] = [
+                mask_once(args, seed, 1, crest)?.0,
+                mask_once(args, seed, 0, crest)?.1,
+            ];
+        }
+        Ok(r)
+    })?;
+    for r in all {
+        n += 1;
+        for k in 0..2 {
+            v[k][0] += r[k][0] as u32;
+            v[k][1] += r[k][1] as u32;
         }
     }
     Ok(MaskRow {
@@ -433,6 +471,7 @@ fn barrage_once(args: &FortifyArgs, seed: u64, kind: u8) -> Result<(u32, u32, u3
     let mut down = 0u32;
     let mut bursts = 0u32;
     let mut end = None;
+    let mut pending = false;
     while end.is_none_or(|e| w.tick() < e + 20 * hz) {
         if end.is_none() && mission(&w, gun).is_none() {
             end = Some(w.tick());
@@ -441,13 +480,16 @@ fn barrage_once(args: &FortifyArgs, seed: u64, kind: u8) -> Result<(u32, u32, u3
             bail!("{what}: the mission never ended");
         }
         w.step(&[]);
+        // The men's state one tick after a burst (they duck on the next tick).
+        let read = pending;
         let n = w
             .take_burst_log()
             .iter()
             .filter(|b| b.mission == id)
             .count() as u32;
-        if n > 0 {
-            bursts += n;
+        bursts += n;
+        pending = n > 0;
+        if read {
             down = members(&w, rifle)
                 .iter()
                 .filter(|m| {
@@ -464,10 +506,14 @@ fn barrage_once(args: &FortifyArgs, seed: u64, kind: u8) -> Result<(u32, u32, u3
 /// The `barrage` row (module docs).
 pub fn barrage_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<BarrageRow> {
     let mut t = [[0u32; 4]; 3];
-    for seed in seeds {
-        for kind in 0..3u8 {
-            let (l, m, d, b) = barrage_once(args, seed, kind)?;
-            let r = &mut t[kind as usize];
+    let all = par_seeds(seeds, |seed| {
+        (0..3u8)
+            .map(|kind| barrage_once(args, seed, kind))
+            .collect::<Result<Vec<_>>>()
+    })?;
+    for runs in all {
+        for (kind, (l, m, d, b)) in runs.into_iter().enumerate() {
+            let r = &mut t[kind];
             r[0] += l;
             r[1] += m;
             r[2] += d;
