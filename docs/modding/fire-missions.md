@@ -136,6 +136,29 @@ abandoned or captured, its crew is ordered off, or a seen enemy comes
 within `gun_break_m` (direct fire resumes). With `[supply]
 arty_base_rearm` 0 an `inf_gun` gets nothing in its base zone.
 
+Checks (S11a1 Build B): the main mount may name up to +89 deg in the
+vehicle file; above +60 the cross-check wants a weapon with a `low_angle`
+table (one rule, `vehicle::low_angle_top`, in the def check and the setup
+check). A gun order past the table's `range_m` is `cannot_reach`. A gun
+squad's refusals are not added to the mortar row `fm.refused` (the event
+and `S11Counters::masked` / `not_ready` still count). The `radio` trait
+is allowed on any member; `leader` stays first-slot only, so a gun crew's
+radio man is its commander slot without `leader`.
+
+The ww2 guns and observers (S11a1; `artillery-on-map.md` 2.1, 2.2, 4.7):
+
+| Card | Gun | Crew | Elevation | Charges (m/s) | Range | Rate | Rounds | Cost / pop / cooldown / unlock |
+|---|---|---|---|---|---|---|---|---|
+| `ger_leig18_squad` | 7.5 cm leIG 18, 400 kg | 5 | -10..+73 | 92-210 | 3,550 m | 8/min | 12 Igr 18 | 320 / 2 / 90 s / 3:00 |
+| `usa_105mm_m3_squad` | 105 mm M3, 1,130 kg | 6 | -9..+30 | 205-311 | 7,600 m | 3/min | 10 M1 HE | 380 / 2 / 120 s / 4:00 |
+| `ger_vb_trupp` | observer (leader; Funker `radio`) | 2 | | | | | | 80 / 2 / 60 s / 0:00 |
+| `usa_fo_party` | observer (officer; radio operator `radio`) | 3 | | | | | | 120 / 3 / 60 s / 0:00 |
+
+Both guns are pushed (no tow in S11a1), `max_alive` 2; the AI buys none
+until the S11a1 AI stage (`ai_weight` 0). The M1 HE's blast, fragment
+reach, suppression and crater are the 75 mm values times 1.46 (the cube
+root of the filler ratio 2.2 / 0.7), 160 fragment rays.
+
 ## The AI (`[ai.mortar]`, S5b Part B)
 
 Each plan, a mortar squad that is not on a mission (`crates/sim/src/ai/mortar.rs`):

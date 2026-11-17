@@ -93,6 +93,32 @@ class Neutral(unittest.TestCase):
         self.assertFalse(ok, lines)
         self.assertIn("factions.germany.s10c.mines_seen: 7 -> 8", lines[1])
 
+    def test_neutral_skips_s11a1_keys_the_base_lacks(self):
+        # S11a1 Build B: the `s11a1` blocks are skipped when BASE lacks them.
+        # Control: the same block under another name fails.
+        new = copy.deepcopy(BASE)
+        new["factions"]["germany"]["s11a1"] = {"guns_bought": 1}
+        new["factions"]["germany"]["s11a1_derived"] = {"gun_observed_pct": 50.0}
+        lines, ok = self.run_dirs(BASE, new)
+        self.assertTrue(ok, lines)
+        other = copy.deepcopy(BASE)
+        other["factions"]["germany"]["x11a1"] = {"guns_bought": 1}
+        self.assertFalse(self.run_dirs(BASE, other)[1])
+
+    def test_grown_list_with_zero_tail_is_equal(self):
+        # S11a1 Build B: `s5b.refused` grew 7 -> 9. Control: a non-zero
+        # tail, or a shorter list, still fails.
+        base = copy.deepcopy(BASE)
+        base["factions"]["germany"]["s5b"] = {"refused": [1, 0, 2]}
+        new = copy.deepcopy(base)
+        new["factions"]["germany"]["s5b"]["refused"] = [1, 0, 2, 0, 0]
+        lines, ok = self.run_dirs(base, new)
+        self.assertTrue(ok, lines)
+        new["factions"]["germany"]["s5b"]["refused"] = [1, 0, 2, 0, 1]
+        self.assertFalse(self.run_dirs(base, new)[1])
+        new["factions"]["germany"]["s5b"]["refused"] = [1, 0]
+        self.assertFalse(self.run_dirs(base, new)[1])
+
     def test_key_only_in_base_fails(self):
         new = copy.deepcopy(BASE)
         del new["wins"]["usa"]

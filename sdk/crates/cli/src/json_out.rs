@@ -160,8 +160,12 @@ pub fn add_sides(doc: &mut Value, r: &ManyReport) {
                     "squads_at_min": p.squads_at_min,
                     "deaths": crate::skirmish::DEATH_PLACES.iter().zip(p.death_places).map(|(n, v)| ((*n).to_string(), json!(v))).collect::<Map<_, _>>(),
                 });
+                // S11a1: the raw counters of this side.
+                let mut s11 = crate::skirmish::S11a1Faction::default();
+                s11.add(&p.s11a1, p.kills, p.s10.income_mp);
                 if let Some(o) = side.as_object_mut() {
                     o.insert("s10c".into(), s10c_blocks(&one).0);
+                    o.insert("s11a1".into(), s11a1_blocks(&s11).0);
                 }
                 side
             })
@@ -634,6 +638,12 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
         o.insert("s10c".into(), raw);
         o.insert("s10c_derived".into(), derived);
     }
+    // S11a1 (docs/slices/S11a1.md 7): counters by name, derived shares.
+    {
+        let (raw, derived) = s11a1_blocks(&f.s11a1);
+        o.insert("s11a1".into(), raw);
+        o.insert("s11a1_derived".into(), derived);
+    }
     o.insert(
         "s6_derived".into(),
         json!({
@@ -1050,6 +1060,85 @@ pub fn s10b_ai_blocks(c: &crate::skirmish::S10bAiFaction) -> (Value, Value) {
         "jobs_overdue": c.get("jobs_overdue"),
         "refused_reorders": c.get("refused_reorders"),
         "lost_on_known_per_match": per(c.lost_on_known),
+    });
+    (Value::Object(raw), derived)
+}
+
+/// S11a1: a faction's `s11a1` (raw: every `S11Counters` field by name,
+/// arrays by mode name; every S11a1 `AiCounters` field; the two new
+/// refusals as `refused_masked` / `refused_not_ready`; denominators) and
+/// `s11a1_derived` (spec 7 names; null where the denominator is 0).
+/// Gun kills also count as `tank_he` in `kills_by` and in
+/// `tank_mp_killed` (the round class of a gun's HE; review A-3): the flag
+/// `gun_kills_in_tank_he` says so.
+pub fn s11a1_blocks(c: &crate::skirmish::S11a1Faction) -> (Value, Value) {
+    use frontline_sim::fire_mission::mode;
+    let n = c.matches.max(1) as f64;
+    let m = c.matches as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let by_mode = |a: &[u64; 3]| -> Value {
+        Value::Object(
+            mode::NAMES
+                .iter()
+                .zip(a.iter())
+                .map(|(k, v)| ((*k).to_string(), json!(v)))
+                .collect(),
+        )
+    };
+    let mut raw = Map::new();
+    raw.insert("matches".into(), json!(c.matches));
+    raw.insert("gun_missions".into(), by_mode(&c.gun_missions));
+    raw.insert("gun_rounds".into(), by_mode(&c.gun_rounds));
+    raw.insert("gun_miss_mm".into(), by_mode(&c.gun_miss_mm));
+    for (k, v) in [
+        ("masked", c.masked),
+        ("not_ready", c.not_ready),
+        ("refused_masked", c.masked),
+        ("refused_not_ready", c.not_ready),
+        ("radio_rounds", c.radio_rounds),
+        ("low_rounds", c.low_rounds),
+        ("high_rounds", c.high_rounds),
+        ("gun_breaks", c.gun_breaks),
+        ("gun_shell_micro", c.gun_shell_micro),
+        ("gun_kills", c.gun_kills),
+        ("guns_bought", c.guns_bought),
+        ("gun_direct_rounds", c.gun_direct_rounds),
+        ("near_own_bursts", c.near_own_bursts),
+        ("kills", c.kills),
+        ("income_mp", c.income_mp),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    for (k, name) in crate::skirmish::S11A1_AI.iter().enumerate() {
+        raw.insert((*name).into(), json!(c.ai[k]));
+    }
+    for (k, v) in [
+        ("matches_with_gun", c.matches_with_gun),
+        ("matches_gun_fired", c.matches_gun_fired),
+        ("matches_with_fo", c.matches_with_fo),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    raw.insert("gun_kills_in_tank_he".into(), json!(true));
+    let rounds: u64 = c.gun_rounds.iter().sum();
+    let seen = (c.gun_rounds[mode::DIRECT as usize] + c.gun_rounds[mode::OBSERVED as usize]) as f64;
+    let posts = c.get("fo_posts") + c.get("fo_post_fails");
+    let with_target = c.get("arty_missions") + c.get("arty_no_observer");
+    let derived = json!({
+        "gun_bought_matches_pct": pct_or_null(c.matches_with_gun as f64, m),
+        "guns_bought_per_match": per(c.guns_bought),
+        "fo_bought_matches_pct": pct_or_null(c.matches_with_fo as f64, m),
+        "gun_fired_matches_pct": pct_or_null(c.matches_gun_fired as f64, c.matches_with_gun as f64),
+        "gun_rounds_per_match": per(rounds),
+        "gun_observed_pct": pct_or_null(seen, rounds as f64),
+        "gun_kill_share_pct": pct_or_null(c.gun_kills as f64, c.kills as f64),
+        "gun_shell_mp_pct": pct_or_null(c.gun_shell_micro as f64 / 1e6, c.income_mp as f64),
+        "near_own_bursts_per_match": per(c.near_own_bursts),
+        "gun_refused_total": c.masked + c.not_ready,
+        "prep_missions_per_match": per(c.get("arty_prep_missions") + c.get("mortar_prep_missions")),
+        "fo_lost_per_match": per(c.get("fo_lost")),
+        "fo_post_fail_pct": pct_or_null(c.get("fo_post_fails") as f64, posts as f64),
+        "arty_no_observer_pct": pct_or_null(c.get("arty_no_observer") as f64, with_target as f64),
     });
     (Value::Object(raw), derived)
 }

@@ -12,7 +12,9 @@ Compares the CLI JSON files present in both directories:
   counters that stay zero); a key only in BASE fails. S10c-ai (Build A):
   a key starting `s10c` that BASE lacks is skipped (its observer counters
   read state, so they are not zero with the switches off); when both have
-  it, it is compared like any other. The set header's
+  it, it is compared like any other. S11a1 (Build B): the same for a key
+  starting `s11a1`; a list that grew is equal when the new tail is zero
+  (`s5b.refused` 7 -> 9 items). The set header's
   `overrides` list (the `-o` files a run was given) is not part of the
   verdict: when it differs the line gets a note `(note: overrides N -> M
   items)`.
@@ -69,7 +71,7 @@ def diff(base, new, path, out, strict, skip=frozenset()):
             if k not in new:
                 out.append(f"{p}: only in BASE")
             elif k not in base:
-                if k.startswith("s10c"):
+                if k.startswith("s10c") or k.startswith("s11a1"):
                     continue
                 if strict and not is_blank(new[k]):
                     out.append(f"{p}: only in NEW and not zero ({json.dumps(new[k])[:60]})")
@@ -77,6 +79,10 @@ def diff(base, new, path, out, strict, skip=frozenset()):
                 diff(base[k], new[k], p, out, strict, skip)
         return
     if isinstance(base, list) and isinstance(new, list):
+        # S11a1 B: a counter array that grew (e.g. `s5b.refused`, 7 -> 9
+        # refusal kinds) is equal when the new tail is all zero.
+        if len(new) > len(base) and all(is_blank(x) for x in new[len(base):]):
+            new = new[: len(base)]
         if len(base) != len(new) and (strict or len(new) < len(base)):
             out.append(f"{path}: {len(base)} items -> {len(new)}")
             return

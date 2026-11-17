@@ -415,6 +415,8 @@ pub struct PlayerReport {
     pub death_places: [u32; 6],
     /// S10c-ai: the AI's S10c counters and the exposure seen ([`S10cSeen`]).
     pub s10c: S10cPlayer,
+    /// S11a1: the player's `S11Counters` and the AI's S11a1 counters.
+    pub s11a1: S11a1Player,
     /// B1-5 `--side-detail`: at [`SQUAD_MINUTES`], own foot squads with a
     /// man alive (no vehicle, not a crew) and own squads on a running
     /// (not parked) AI fort job (`None`: over sooner, or no side detail).
@@ -704,6 +706,130 @@ impl S10bAiSeen {
             }
             self.chances[p] |= bits;
         }
+    }
+}
+
+/// S11a1 (docs/slices/S11a1.md 3, 7): the AI's S11a1 counters in report
+/// order (names of [`S11a1Player::ai`]).
+pub const S11A1_AI: [&str; 14] = [
+    "arty_buys",
+    "fo_buys",
+    "arty_missions",
+    "arty_prep_missions",
+    "mortar_prep_missions",
+    "arty_lifts",
+    "arty_budget_holds",
+    "arty_reserve_holds",
+    "arty_no_observer",
+    "fo_posts",
+    "fo_post_fails",
+    "fo_lost",
+    "breach_prep_waits",
+    "breach_prep_timeouts",
+];
+
+/// S11a1 numbers of one player in one match.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S11a1Player {
+    /// The player's infantry-gun counters (saved in the sim).
+    pub s11: frontline_sim::fire_mission::S11Counters,
+    /// [`S11A1_AI`] order (zero for a human).
+    pub ai: [u32; 14],
+}
+
+impl S11a1Player {
+    /// The S11a1 counters of `a` in [`S11A1_AI`] order.
+    pub fn ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 14] {
+        [
+            a.arty_buys,
+            a.fo_buys,
+            a.arty_missions,
+            a.arty_prep_missions,
+            a.mortar_prep_missions,
+            a.arty_lifts,
+            a.arty_budget_holds,
+            a.arty_reserve_holds,
+            a.arty_no_observer,
+            a.fo_posts,
+            a.fo_post_fails,
+            a.fo_lost,
+            a.breach_prep_waits,
+            a.breach_prep_timeouts,
+        ]
+    }
+}
+
+/// S11a1 numbers of one faction over a `--seeds` run (sums and per-match
+/// tallies of `s11a1_derived`, spec 7). The JSON blocks are
+/// [`crate::json_out::s11a1_blocks`].
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S11a1Faction {
+    pub matches: u32,
+    /// Sums of the `S11Counters` arrays (by mode) and scalars.
+    pub gun_missions: [u64; 3],
+    pub gun_rounds: [u64; 3],
+    pub gun_miss_mm: [u64; 3],
+    pub masked: u64,
+    pub not_ready: u64,
+    pub radio_rounds: u64,
+    pub low_rounds: u64,
+    pub high_rounds: u64,
+    pub gun_breaks: u64,
+    pub gun_shell_micro: u64,
+    pub gun_kills: u64,
+    pub guns_bought: u64,
+    pub gun_direct_rounds: u64,
+    pub near_own_bursts: u64,
+    /// [`S11A1_AI`] order.
+    pub ai: [u64; 14],
+    /// The faction's kills and income (MP) over the run (denominators).
+    pub kills: u64,
+    pub income_mp: u64,
+    /// Matches with a gun bought; of those, with a gun mission round; with
+    /// an observer team bought (AI).
+    pub matches_with_gun: u32,
+    pub matches_gun_fired: u32,
+    pub matches_with_fo: u32,
+}
+
+impl S11a1Faction {
+    /// The sum of AI counter `name` ([`S11A1_AI`]).
+    pub fn get(&self, name: &str) -> u64 {
+        S11A1_AI
+            .iter()
+            .position(|k| *k == name)
+            .map_or(0, |k| self.ai[k])
+    }
+
+    /// Adds one match of one player.
+    pub fn add(&mut self, c: &S11a1Player, kills: u32, income_mp: u64) {
+        let s = &c.s11;
+        self.matches += 1;
+        for k in 0..3 {
+            self.gun_missions[k] += s.gun_missions[k] as u64;
+            self.gun_rounds[k] += s.gun_rounds[k] as u64;
+            self.gun_miss_mm[k] += s.gun_miss_mm[k];
+        }
+        self.masked += s.masked as u64;
+        self.not_ready += s.not_ready as u64;
+        self.radio_rounds += s.radio_rounds as u64;
+        self.low_rounds += s.low_rounds as u64;
+        self.high_rounds += s.high_rounds as u64;
+        self.gun_breaks += s.gun_breaks as u64;
+        self.gun_shell_micro += s.gun_shell_micro;
+        self.gun_kills += s.gun_kills as u64;
+        self.guns_bought += s.guns_bought as u64;
+        self.gun_direct_rounds += s.gun_direct_rounds as u64;
+        self.near_own_bursts += s.near_own_bursts as u64;
+        for (k, v) in c.ai.iter().enumerate() {
+            self.ai[k] += *v as u64;
+        }
+        self.kills += kills as u64;
+        self.income_mp += income_mp;
+        let gun = s.guns_bought > 0;
+        self.matches_with_gun += u32::from(gun);
+        self.matches_gun_fired += u32::from(gun && s.gun_rounds.iter().sum::<u32>() > 0);
+        self.matches_with_fo += u32::from(c.ai[1] > 0);
     }
 }
 
@@ -1981,6 +2107,10 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     ai: ai.map_or_else(S5aAi::default, |a| S5aAi::of(&a.counters)),
                 },
                 s5b: pl.fm,
+                s11a1: S11a1Player {
+                    s11: pl.s11,
+                    ai: ai.map_or([0; 14], |a| S11a1Player::ai_counters(&a.counters)),
+                },
                 s5b_ai: ai.map_or_else(S5bAi::default, |a| S5bAi::of(&a.counters)),
                 s6: g.supply6().accounts.get(p).copied().unwrap_or_default(),
                 s6_stock_held_g: g
@@ -2599,6 +2729,8 @@ pub struct FactionSummary {
     pub s10b_ai: S10bAiFaction,
     /// S10c-ai sums (the JSON blocks `s10c` and `s10c_derived`).
     pub s10c: S10cFaction,
+    /// S11a1 sums (the JSON blocks `s11a1` and `s11a1_derived`).
+    pub s11a1: S11a1Faction,
 }
 
 /// S10b: the twelve `FortAccount` counters in report order.
@@ -3470,6 +3602,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             f.s10b.add(&p.s10.fort, p.s10.s10b_ordered);
             f.s10b_ai.add(&p.s10, r.tick_hz as u32);
             f.s10c.add(&p.s10c, &p.s10);
+            f.s11a1.add(&p.s11a1, p.kills, p.s10.income_mp);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;
@@ -4255,6 +4388,60 @@ mod tests {
         };
         assert_eq!(run(20), 2, "the tank's two AT mines only");
         assert_eq!(run(60), 0, "control: the tank 60 m off");
+    }
+
+    /// S11a1 Build B (C6): every `s11a1` / `s11a1_derived` name the S11a1
+    /// targets file reads is written by `json_out::s11a1_blocks`, and every
+    /// `S11Counters` and S11a1 `AiCounters` field is in the raw block.
+    /// Control: renaming `gun_observed_pct` in `s11a1_blocks` fails it.
+    #[test]
+    fn s11a1_json_names_match_the_targets_file() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../docs/slices/targets/S11a1.toml");
+        let f = crate::targets::parse(&fs::read_to_string(path).unwrap()).unwrap();
+        let mut one = S11a1Faction::default();
+        one.add(&S11a1Player::default(), 0, 0);
+        let (raw, derived) = crate::json_out::s11a1_blocks(&one);
+        let mut n = 0;
+        for t in &f.targets {
+            for m in [Some(&t.metric), t.exposure.as_ref(), t.control.as_ref()]
+                .into_iter()
+                .flatten()
+            {
+                let parts: Vec<&str> = m.split('.').collect();
+                // Skirmish blocks only (the fortify rows are `fortify10.s11a1`).
+                if parts[0].starts_with("fortify") {
+                    continue;
+                }
+                let Some(k) = parts.iter().position(|p| p.starts_with("s11a1")) else {
+                    continue;
+                };
+                let block = match parts[k] {
+                    "s11a1" => &raw,
+                    "s11a1_derived" => &derived,
+                    other => panic!("{}: unknown block {other}", t.id),
+                };
+                let rest = parts[k + 1..].join(".");
+                assert!(
+                    crate::json_out::lookup(block, &rest).is_some(),
+                    "{}: {m} is not written",
+                    t.id
+                );
+                n += 1;
+            }
+        }
+        assert!(n >= 40, "only {n} s11a1 paths in the targets file");
+        let s11 =
+            serde_json::to_value(frontline_sim::fire_mission::S11Counters::default()).unwrap();
+        for k in s11.as_object().unwrap().keys() {
+            assert!(raw.get(k).is_some(), "S11Counters::{k} is not in `s11a1`");
+        }
+        for k in S11A1_AI {
+            assert!(raw.get(k).is_some(), "AiCounters::{k} is not in `s11a1`");
+        }
+        for k in ["refused_masked", "refused_not_ready"] {
+            assert!(raw.get(k).is_some(), "{k}");
+        }
     }
 
     /// Build A item 7: every `s10c` / `s10c_derived` name the S10c-ai
