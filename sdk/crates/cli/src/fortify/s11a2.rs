@@ -603,7 +603,7 @@ pub fn cb_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<CbRow> 
 
 /// `ff_lift`: bombs, the squad's start beyond the point (m).
 pub const LIFT_ROUNDS: u16 = 12;
-pub const LIFT_START_M: i32 = 90;
+pub const LIFT_START_M: i32 = 130;
 
 /// One `ff_lift` run of player `p` (`ff_safe` the switch): (no own man
 /// hurt by own fire, the mission lifted, bombs fired).
@@ -635,6 +635,12 @@ fn ff_lift_once(args: &FortifyArgs, seed: u64, p: u8, safe: u32) -> Result<(bool
     let hz = w.match_setup().unwrap().tick_hz as u64;
     for _ in 0..2 * hz {
         w.step(&[]);
+    }
+    // Fix B-5: the squad starts outside `lift_m`, so the rule is not met
+    // on the first plan (it must see the squad walk in).
+    let lift = w.match_setup().unwrap().rules.ai.arty.lift_m as i32;
+    if LIFT_START_M <= lift {
+        bail!("{what}: the squad starts inside lift_m {lift}");
     }
     let bombs = |w: &World| -> u32 {
         w.game().unwrap().players()[p as usize]
@@ -685,7 +691,8 @@ fn ff_lift_once(args: &FortifyArgs, seed: u64, p: u8, safe: u32) -> Result<(bool
 }
 
 /// The `ff_lift` row (spec 4 M3): a mortar team's 12-bomb Direct mission
-/// on a point 300 m off; an own rifle squad 90 m beyond the point is sent
+/// on a point 300 m off; an own rifle squad 130 m beyond the point (outside
+/// `lift_m` 100; fix B-5) is sent
 /// onto it as the first bomb leaves; the owner's S3 lift step is driven
 /// each plan (`World::drive_ff_lift`); each faction's mortar in turn.
 /// `clean_runs_pct` (no own man hurt by own fire), `lifted_pct`,
@@ -769,6 +776,13 @@ mod tests {
             Some(1.0),
             "control answer refused"
         );
+        // Fix B-5: the lift row measures (the squad starts outside
+        // `lift_m`) and its control bites.
+        let l = &r.ff_lift;
+        assert_eq!(l.start_m, Some(LIFT_START_M as f64));
+        assert_eq!(l.lifted_pct, Some(100.0), "lifted");
+        assert_eq!(l.clean_runs_pct, Some(100.0), "clean");
+        assert_eq!(l.control.clean_runs_pct, Some(0.0), "control: hurt");
     }
 
     /// One-off: the S11a2 rows on seeds 1-10 (as `fortify-test --seeds

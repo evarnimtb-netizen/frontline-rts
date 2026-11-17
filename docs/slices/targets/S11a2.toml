@@ -3807,7 +3807,8 @@ note = "report: crew men of the marked gun lost to the answer (%); no sourced bo
 # --- T142: the AI lifts its fire before own men walk into it (fortify row ff_lift; Build B chunk 2) ---
 # Source: artillery-on-map.md 10 test 10 ("the AI lifts fire in time in >= 9 of 10 staged
 # assaults"). Owner question S11a2-9 (A): hard. 10 seeds x 2 factions; 12 bombs, the own squad starts
-# 90 m beyond the point and walks onto it (S11a2.md 4 M3). T142c keeps the row honest.
+# 130 m beyond the point (outside lift_m 100; S11a2 fix B-5, was 90) and walks onto it (S11a2.md 4 M3).
+# T142c keeps the row honest.
 [[target]]
 id = "T142a"
 metric = "fortify10.s11a2.ff_lift.clean_runs_pct"
