@@ -73,9 +73,8 @@ pub(super) fn validate_arty(
 ) -> bool {
     let size = Fx::from_int(g.setup.map.size_m);
     let on_map = |p: FxVec2| p.x >= Fx::ZERO && p.y >= Fx::ZERO && p.x <= size && p.y <= size;
-    let ok_squad = |id: &SquadId| {
-        id.0 < g.next_squad && g.squads.get(id).is_none_or(|sq| sq.owner == player)
-    };
+    let ok_squad =
+        |id: &SquadId| id.0 < g.next_squad && g.squads.get(id).is_none_or(|sq| sq.owner == player);
     arty.len() <= MAX_ARTY
         && fo.len() <= MAX_FO
         && fo_lost_at <= tick
@@ -85,7 +84,7 @@ pub(super) fn validate_arty(
         && fo.iter().all(|(id, f)| {
             ok_squad(id)
                 && (f.point as usize) < g.points.len()
-                && f.post.is_none_or(|p| on_map(p))
+                && f.post.is_none_or(on_map)
                 && f.cursor <= FO_CANDIDATES
                 && f.since <= tick
                 && f.retry_at <= tick + 3600 * g.setup.tick_hz.max(1) as u64

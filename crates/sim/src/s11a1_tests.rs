@@ -142,7 +142,10 @@ fn load_rejects_bad_s11a1_state() {
                 }
             }),
         ),
-        ("fo_lost_at in the future", Box::new(move |s| ai(s).fo_lost_at = tick + 1)),
+        (
+            "fo_lost_at in the future",
+            Box::new(move |s| ai(s).fo_lost_at = tick + 1),
+        ),
         (
             "arty key never handed out",
             Box::new(move |s| {
@@ -263,7 +266,10 @@ fn seventeen_vehicle_types_keep_their_kill_rows() {
     // Every type up to the cap keeps both parts.
     for t in [0u16, 14, 15, 16, 4094] {
         let k = kill_class::with_vehicle(kill_class::FRAG, t);
-        assert_eq!((kill_class::base(k), kill_class::vehicle(k)), (kill_class::FRAG, Some(t as usize)));
+        assert_eq!(
+            (kill_class::base(k), kill_class::vehicle(k)),
+            (kill_class::FRAG, Some(t as usize))
+        );
     }
     // Control: the old pack.
     let old = |c: u8, t: u8| (c & 0x0F) | (t.wrapping_add(1) << 4);
@@ -274,7 +280,10 @@ fn seventeen_vehicle_types_keep_their_kill_rows() {
 /// Adds a test-only infantry gun to a setup: the Pak 38 vehicle and squad
 /// cloned as `test:inf_gun` with role `role` (Build B brings the real
 /// leIG 18 and M3). Returns nothing; spawn it by the id.
-pub(super) fn add_test_gun(s: &mut frontline_content::MatchSetup, role: frontline_content::VehicleRole) {
+pub(super) fn add_test_gun(
+    s: &mut frontline_content::MatchSetup,
+    role: frontline_content::VehicleRole,
+) {
     let src = s
         .squad_types
         .iter()
@@ -307,8 +316,18 @@ fn at_gun_ai_ignores_infantry_guns() {
         steps(&mut w, 30 * 40);
         let g = w.game().unwrap();
         let ai = g.ai[1].as_ref().unwrap();
-        (ai.guns.contains_key(&q), g.squads[&q].order.kind() == order0)
+        (
+            ai.guns.contains_key(&q),
+            g.squads[&q].order.kind() == order0,
+        )
     };
-    assert_eq!(run(VehicleRole::InfGun), (false, true), "an inf_gun is left alone");
-    assert!(run(VehicleRole::AtGun).0, "control: an at_gun clone gets a job");
+    assert_eq!(
+        run(VehicleRole::InfGun),
+        (false, true),
+        "an inf_gun is left alone"
+    );
+    assert!(
+        run(VehicleRole::AtGun).0,
+        "control: an at_gun clone gets a job"
+    );
 }

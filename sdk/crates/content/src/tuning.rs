@@ -2410,7 +2410,10 @@ impl FireMissionTuning {
         check_order(
             out,
             table,
-            ("gun_first_round_error_min_m", self.gun_first_round_error_min_m),
+            (
+                "gun_first_round_error_min_m",
+                self.gun_first_round_error_min_m,
+            ),
             ("gun_map_fire_error_min_m", self.gun_map_fire_error_min_m),
         );
     }

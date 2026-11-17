@@ -16,13 +16,13 @@ use serde::{Deserialize, Serialize};
 use crate::issue::Issue;
 use crate::setup::DigProfile;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiFortTuning, AiGunsTuning, AiInfantryTuning,
-    AiArtyTuning, AiMortarTuning, AiObstacleTuning, AiReconTuning, AiSupplyTuning, AiTransportTuning,
-    AiTruckTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning,
-    DrivingTuning, EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning,
-    GunsTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
-    SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning,
-    VehiclePathTuning, check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiArtyTuning, AiAssaultTuning, AiFortTuning, AiGunsTuning,
+    AiInfantryTuning, AiMortarTuning, AiObstacleTuning, AiReconTuning, AiSupplyTuning,
+    AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning,
+    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning,
+    FormationTuning, GunneryTuning, GunsTuning, MortarTuning, RecrewTuning, ShareTuning,
+    SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
+    VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -845,8 +845,8 @@ impl IndirectDef {
             ));
             return;
         }
-        let ok_class = (w.class == WeaponClass::Mortar && w.he.is_some())
-            || w.class == WeaponClass::Cannon;
+        let ok_class =
+            (w.class == WeaponClass::Mortar && w.he.is_some()) || w.class == WeaponClass::Cannon;
         if !ok_class {
             out.push(Issue::new(
                 "indirect",

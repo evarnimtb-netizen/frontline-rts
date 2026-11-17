@@ -130,9 +130,9 @@ fn load_rejects_bad_s11a1_keys() {
     assert!(s.validate().is_empty());
     s.rules.ai.arty.post_rays = 49;
     assert!(
-        s.validate()
-            .iter()
-            .any(|i| i.path.contains("ai.arty.post_rays") || i.message.contains("ai.arty.post_rays")),
+        s.validate().iter().any(
+            |i| i.path.contains("ai.arty.post_rays") || i.message.contains("ai.arty.post_rays")
+        ),
         "{:?}",
         s.validate()
     );
@@ -158,7 +158,8 @@ fn indirect_gun_keys_and_radio_trait_parse() {
     assert_eq!(s.range.0, 3550 << 16);
     // A mortar table is unchanged: no low angle, defaults left to the weapon.
     let m: IndirectDef =
-        toml::from_str("charges_m_s = [75, 105, 130, 152, 174]\nelevation_deg = [45, 87]\n").unwrap();
+        toml::from_str("charges_m_s = [75, 105, 130, 152, 174]\nelevation_deg = [45, 87]\n")
+            .unwrap();
     assert!(!m.low_angle && m.range_m.is_none() && m.spread_mrad.is_none());
     let l = IndirectSetup::lower_for(&m, 1100, frontline_content::Fixed::from_ratio(3, 100));
     assert!(!l.low_angle && l.ok());
@@ -172,7 +173,11 @@ fn indirect_gun_keys_and_radio_trait_parse() {
     low.tan_min = frontline_content::Fixed::ZERO;
     assert!(!low.ok());
     assert_eq!(member_trait::RADIO, 32);
-    assert!(member_trait::NAMES.iter().any(|&(n, b)| n == "radio" && b == 32));
+    assert!(
+        member_trait::NAMES
+            .iter()
+            .any(|&(n, b)| n == "radio" && b == 32)
+    );
     assert_eq!(member_trait::ALL & member_trait::RADIO, member_trait::RADIO);
     assert!(frontline_content::VehicleRole::InfGun.outside_limit());
     assert_eq!(frontline_content::VehicleRole::InfGun.name(), "inf_gun");

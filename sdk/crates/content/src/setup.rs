@@ -30,13 +30,13 @@ use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiFortTuning, AiGunsTuning, AiInfantryTuning,
-    AiArtyTuning, AiMortarTuning, AiObstacleTuning, AiReconTuning, AiSupplyTuning, AiTransportTuning,
-    AiTruckTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning,
-    DrivingTuning, EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning,
-    GunsTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
-    SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning,
-    VehiclePathTuning, check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiArtyTuning, AiAssaultTuning, AiFortTuning, AiGunsTuning,
+    AiInfantryTuning, AiMortarTuning, AiObstacleTuning, AiReconTuning, AiSupplyTuning,
+    AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning,
+    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning,
+    FormationTuning, GunneryTuning, GunsTuning, MortarTuning, RecrewTuning, ShareTuning,
+    SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
+    VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -1481,7 +1481,10 @@ impl ModDefs {
                     IndirectSetup::lower_for(
                         i,
                         w.range_m,
-                        Fixed::from_ratio(w.spread_mrad as i64 * 1000 + w.spread_urad as i64, 1_000_000),
+                        Fixed::from_ratio(
+                            w.spread_mrad as i64 * 1000 + w.spread_urad as i64,
+                            1_000_000,
+                        ),
                     )
                 }),
                 pen: w

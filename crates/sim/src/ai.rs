@@ -205,6 +205,7 @@ pub use transport::{
     AiRideLock, AiRideMeas, AiTransport, MAX_RIDE_MEAS, MAX_TRANSPORTS, TransportPhase,
 };
 
+pub use arty::{AiArty, AiFo, ArtyPhase, MAX_ARTY, MAX_FO};
 pub use breach::{
     AiBreach, BreachEnd, BreachPhase, MAX_BREACH_TRIES, MAX_BREACHES, MAX_WIRE_KNOWN,
 };
@@ -212,7 +213,6 @@ pub use fort::{
     AiFortJob, BUNKER_WHY, FRONT_WHY, FortPhase, FrontLane, MAX_FORT_JOBS, MAX_FORT_TRIES,
     MAX_FRONT_LANES, MINE_WANT_WHY,
 };
-pub use arty::{AiArty, AiFo, ArtyPhase, MAX_ARTY, MAX_FO};
 pub use guns::{AiGun, GunPhase, MAX_GUNS, MAX_RECREW_TRIES};
 pub use obstacles::{
     AiDemolish, AiHabit, AiRefusal, AiSweep, DemolishPhase, DriveArgs, HabitEnd, JobKind,
