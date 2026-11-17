@@ -223,7 +223,19 @@ impl Planner<'_> {
             let gunner = g
                 .mortar_gunner(self.ents, sq)
                 .map_or(m.lead, |g| self.ents.transform[g.index()].pos.xy());
-            let targets = self.mortar_targets(sq, gunner, known, &own);
+            let mut targets = self.mortar_targets(sq, gunner, known, &own);
+            // S11a1 P1: the breach job's focus first (`prep` 1 only).
+            if s.rules.ai.arty.prep != 0 {
+                let w = &s.weapons[s.squad_types[sq.type_idx as usize].weapon as usize];
+                let (min, max) = (
+                    Fx::from(w.range_min) + Fx::from_int(20),
+                    Fx::from(w.range_max) - Fx::from_int(10),
+                );
+                let danger = s.rules.ai.infantry.danger_close_m;
+                if let Some(t) = self.prep_target(gunner, min, max, danger, known, &own) {
+                    targets.insert(0, t);
+                }
+            }
             // 2-4 need rays: with the plan's budget spent a squad with
             // targets waits for the next plan (no map fire before the mode
             // check); it still keeps to its support spot.
@@ -282,6 +294,9 @@ impl Planner<'_> {
                     self.ai.counters.fm_miss_holds += 1;
                 } else if self.knows(best.pos) {
                     self.fire(m.id, best.pos, rounds, mode::MAP as usize);
+                    if best.prep {
+                        self.ai.counters.mortar_prep_missions += 1;
+                    }
                     continue;
                 } else {
                     self.ai.counters.fm_blind_holds += 1;
@@ -384,6 +399,9 @@ impl Planner<'_> {
                 continue;
             }
             self.fire(id, t.pos, rounds, md as usize);
+            if t.prep {
+                self.ai.counters.mortar_prep_missions += 1;
+            }
             if spotter.is_some() && obs == spotter {
                 self.ai.counters.fm_spotter_missions += 1;
                 if let Some(s) = self.ai.spotters.get_mut(&id) {

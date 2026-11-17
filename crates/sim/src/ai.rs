@@ -1212,6 +1212,26 @@ impl MatchState {
         tick: u64,
         out: &mut Vec<crate::Command>,
     ) {
+        // S11a1: a gun mission whose gun is no longer ready when it comes
+        // due (a crew man fell, the gun was packed, its last HE fired) is
+        // withdrawn as a dry mortar mission is (not counted: no layout
+        // change), so the sim refuses no AI gun order (T137).
+        let gun_dry: Vec<SquadId> = self
+            .ai
+            .iter()
+            .flatten()
+            .flat_map(|ai| ai.pending.iter().take_while(|c| c.due <= tick))
+            .filter_map(|c| match c.kind {
+                CommandKind::FireMission { squad, .. } => Some(squad),
+                _ => None,
+            })
+            .filter(|q| {
+                self.squads
+                    .get(q)
+                    .is_some_and(|sq| self.gun_indirect_weapon(sq).is_some())
+                    && !self.gun_ready_for_mission(ents, *q)
+            })
+            .collect();
         let squads = &self.squads;
         let setup = &self.setup;
         for (p, ai) in self.ai.iter_mut().enumerate() {
@@ -1225,6 +1245,9 @@ impl MatchState {
                         let CommandKind::FireMission { squad, .. } = &c.kind else {
                             return true;
                         };
+                        if gun_dry.contains(squad) {
+                            return false;
+                        }
                         let dry = setup.rules.fire_mission.is_some()
                             && squads.get(squad).is_some_and(|sq| {
                                 crate::supply::mortar_bombs(setup, ents, sq).0 == 0
@@ -1240,6 +1263,33 @@ impl MatchState {
             );
             ai.counters.fm_dry_drops += dropped;
         }
+    }
+
+    /// S11a1: whether gun squad `q` is emplaced, its gunner and loader
+    /// seats manned and an HE round aboard (the sim's `NotReady` and
+    /// `NoBombs` checks).
+    fn gun_ready_for_mission(&self, ents: &Entities, q: SquadId) -> bool {
+        let Some(gun) = self
+            .squads
+            .get(&q)
+            .and_then(|sq| sq.members.first().copied())
+        else {
+            return false;
+        };
+        let Some(vs) = self.vehicles.get(&gun) else {
+            return false;
+        };
+        let v = &self.setup.vehicles[vs.type_idx as usize];
+        ents.kind[gun.index()] == crate::ecs::EntityKind::Vehicle
+            && vs
+                .served
+                .as_ref()
+                .is_some_and(|sv| sv.state == crate::vehicle::GunState::Emplaced)
+            && vs.manned(v, frontline_content::SeatRole::Gunner)
+            && vs.manned(v, frontline_content::SeatRole::Loader)
+            && self.gun_he_slot(v).is_some_and(|k| {
+                vs.ammo.get(k as usize).is_some_and(|n| *n > 0) || vs.loaded == Some(k)
+            })
     }
 
     /// Counts a rejected AI command for `player`.

@@ -400,3 +400,161 @@ fn ai_observer_is_rebought_once() {
     assert_eq!(run(20), (1, 2, 1), "lost once, bought again once");
     assert_eq!(run(600), (1, 1, 0), "control: rebuy wait 600 s");
 }
+
+// ------------------------------------------------- P1-P3 (chunk 2) --
+
+/// The S10a-ai breach scene (`s10a_ai_tests` "Build C: breaching"): AI
+/// player 1 (USA) attacks the only point, held by player 0's unarmed
+/// rifle squad and SMG team, across 100 m of wire 35 m out; its assault
+/// section, LMG and rifle squads 130 m out, and (S11a1) a US mortar team
+/// 250 m behind them. `[ai.arty] prep` as given; `edit` last. Returns the
+/// world and the mortar squad.
+fn prep_scene(
+    prep: u32,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> (World, SquadId) {
+    let mut w = flat_world_with(1, |s| {
+        s.players[1].is_ai = true;
+        super::s10a_ai_tests::s10b_ai_off(s);
+        s.map.points.truncate(1);
+        s.factions.iter_mut().for_each(|f| f.start_squads.clear());
+        s.squad_types.iter_mut().for_each(|t| t.ai_weight = 0);
+        s.rules.ai.arty.prep = prep;
+        edit(s);
+    });
+    let (pos, dir) = {
+        let g = w.state.game.as_mut().unwrap();
+        g.points[0].owner = Some(PlayerId(0));
+        let pos: FxVec2 = g.setup.map.points[0].pos.into();
+        (pos, (g.base_of(PlayerId(1)) - pos).normalize_or_zero())
+    };
+    let wire = w
+        .match_setup()
+        .unwrap()
+        .forts
+        .iter()
+        .position(|f| f.id == "ww2:barbed_wire")
+        .unwrap() as u16;
+    let mid = pos + dir * Fx::from_int(35);
+    let half = dir.perp() * Fx::from_int(50);
+    assert!(w.build_now(wire, &[mid - half, mid + half], PlayerId(0)));
+    let at = |w: &mut World, p: u8, card: &str, a: FxVec2| {
+        spawn(w, p, card, a.x.floor_int(), a.y.floor_int())
+    };
+    let rifle = at(&mut w, 0, "ww2:ger_grenadiergruppe", pos);
+    let mg = at(
+        &mut w,
+        0,
+        "ww2:ger_smg_gruppe",
+        pos + dir.perp() * Fx::from_int(15),
+    );
+    for m in members(&w, rifle).into_iter().chain(members(&w, mg)) {
+        w.edit_soldier(m, |k, c| {
+            k.rounds.iter_mut().for_each(|r| *r = 0);
+            k.items.iter_mut().for_each(|n| *n = 0);
+            c.mag = 0;
+        });
+    }
+    let out = pos + dir * Fx::from_int(130);
+    let side = dir.perp() * Fx::from_int(20);
+    at(&mut w, 1, "ww2:usa_assault_section", out);
+    at(&mut w, 1, "ww2:usa_lmg_squad", out - side);
+    at(&mut w, 1, "ww2:usa_rifle_squad", out + side);
+    let mortar = at(
+        &mut w,
+        1,
+        "ww2:usa_mortar_team",
+        pos + dir * Fx::from_int(380),
+    );
+    (w, mortar)
+}
+
+fn ai1(w: &World) -> &crate::ai::AiState {
+    w.game().unwrap().ai[1].as_ref().unwrap()
+}
+
+/// Plays the scene `secs` s; the tick the carrier was first sent (a
+/// `PlaceBangalore` or `CutWire` pending) and the most rounds a mission
+/// of the mortar had fired by then.
+fn carrier_go(w: &mut World, mortar: SquadId, secs: u64) -> (Option<u64>, u16) {
+    let mut most = 0u16;
+    for _ in 0..secs * 30 {
+        w.step(&[]);
+        if let Some(Order::FireMission { m, .. }) =
+            w.game().unwrap().squads.get(&mortar).map(|q| &q.order)
+        {
+            most = most.max(m.fired);
+        }
+        let go = ai1(w).pending.iter().any(|c| {
+            matches!(
+                c.kind,
+                crate::command::CommandKind::PlaceBangalore { .. }
+                    | crate::command::CommandKind::CutWire { .. }
+            )
+        });
+        if go {
+            return (Some(w.tick()), most);
+        }
+    }
+    (None, most)
+}
+
+/// P1: with `prep` 1 the mortar's first target is the breach focus
+/// (`mortar_prep_missions`). Control: `prep` 0: none.
+#[test]
+fn ai_mortar_fires_prep_for_a_breach() {
+    let (mut w, m) = prep_scene(1, |_| {});
+    carrier_go(&mut w, m, 150);
+    let k = &ai1(&w).counters;
+    assert!(k.breaches_started >= 1, "a breach ran");
+    assert!(
+        k.mortar_prep_missions >= 1,
+        "prep missions {}",
+        k.mortar_prep_missions
+    );
+    let (mut w, m) = prep_scene(0, |_| {});
+    carrier_go(&mut w, m, 150);
+    assert_eq!(ai1(&w).counters.mortar_prep_missions, 0, "control: prep 0");
+}
+
+/// P2: the staged job waits for the preparation mission's rounds: the
+/// carrier goes after the prep mission fired `prep_rounds_min`, and the
+/// job counts waits. Control: `prep` 0: no wait counted (the job goes on
+/// the base of fire as before).
+#[test]
+fn ai_breach_waits_for_prep_fire() {
+    let (mut w, m) = prep_scene(1, |_| {});
+    let (go, most) = carrier_go(&mut w, m, 200);
+    let k = ai1(&w).counters.clone();
+    assert!(k.breach_prep_waits > 0, "waits {}", k.breach_prep_waits);
+    assert!(go.is_some(), "the carrier went");
+    assert!(most >= 2, "rounds {most} before the carrier went");
+    assert_eq!(k.breach_prep_timeouts, 0);
+    let (mut w, m) = prep_scene(0, |_| {});
+    carrier_go(&mut w, m, 200);
+    let k = &ai1(&w).counters;
+    assert_eq!(
+        k.breach_prep_waits + k.breach_prep_timeouts,
+        0,
+        "control: prep 0"
+    );
+}
+
+/// P2 bound: a prep mission that never reaches `prep_rounds_min` (50):
+/// the job stops waiting `prep_wait_s` (15) after it began (one
+/// `breach_prep_timeouts`) and the carrier goes. Control: the run above
+/// (2 rounds fired, the wait ends without a timeout).
+#[test]
+fn ai_breach_prep_wait_is_bounded() {
+    let (mut w, m) = prep_scene(1, |s| {
+        s.rules.ai.arty.prep_rounds_min = 50;
+        s.rules.ai.arty.prep_wait_s = 15;
+    });
+    // The mortar's mission can never fire 50 rounds and is still laying
+    // 15 s after the job began: the wait times out.
+    let (go, _) = carrier_go(&mut w, m, 240);
+    let k = ai1(&w).counters.clone();
+    assert!(k.breach_prep_waits > 0, "it waited");
+    assert!(go.is_some(), "the carrier went after the wait");
+    assert_eq!(k.breach_prep_timeouts, 1, "bounded: one timeout");
+}

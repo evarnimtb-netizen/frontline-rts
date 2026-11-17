@@ -335,6 +335,10 @@ impl super::Planner<'_> {
         for id in &ids {
             self.run_arty(*id, known, &own);
         }
+        // P3.
+        if a.prep != 0 {
+            self.lift_mortar_prep(known, &own);
+        }
         // A3.
         if a.fo != 0 {
             self.buy_fo();
@@ -432,7 +436,11 @@ impl super::Planner<'_> {
         let min = Fx::from(w.range_min) + Fx::from_int(20);
         // The table's reach (`range_m`), as the sim's order check reads it.
         let max = Fx::from(ind.range) - Fx::from_int(10);
-        let targets = self.fire_targets(pos, min, max, a.danger_close_m, false, known, own);
+        let mut targets = self.fire_targets(pos, min, max, a.danger_close_m, false, known, own);
+        // P1: the breach job's focus first.
+        if let Some(t) = self.prep_target(pos, min, max, a.danger_close_m, known, own) {
+            targets.insert(0, t);
+        }
         if targets.is_empty() {
             self.ai.arty.insert(id, rec);
             return;
@@ -484,6 +492,9 @@ impl super::Planner<'_> {
                 },
             );
             self.ai.counters.arty_missions += 1;
+            if t.prep {
+                self.ai.counters.arty_prep_missions += 1;
+            }
             rec.missions = rec.missions.saturating_add(1);
             rec.last_order = tick;
             rec.prep = t.prep;
@@ -494,6 +505,63 @@ impl super::Planner<'_> {
             self.ai.counters.arty_no_observer += 1;
         }
         self.ai.arty.insert(id, rec);
+    }
+
+    /// S11a1 P1: the preparation target for a tube at `at` with the band
+    /// `min..=max`, when there is one in the band with no own man within
+    /// `danger_m` of it (score above every scored target; no RNG).
+    pub(super) fn prep_target(
+        &self,
+        at: FxVec2,
+        min: Fx,
+        max: Fx,
+        danger_m: u32,
+        known: &[Known],
+        own: &[FxVec2],
+    ) -> Option<super::mortar::Target> {
+        let f = self.prep_focus(known)?;
+        let d = (f - at).length();
+        let danger = sq_m(Fx::from_int(danger_m.min(2000) as i32));
+        (d >= min && d <= max && !own.iter().any(|o| (*o - f).length_sq_raw() <= danger)).then_some(
+            super::mortar::Target {
+                score: i64::MAX,
+                pos: f,
+                prep: true,
+            },
+        )
+    }
+
+    /// S11a1 P3: a mortar mission on the preparation focus (within
+    /// `prep_near_m`) with an own man within `[ai.arty] danger_close_m` of
+    /// its target is stopped (`arty_lifts`), as A6 stops a gun's.
+    fn lift_mortar_prep(&mut self, known: &[Known], own: &[FxVec2]) {
+        let g = self.g;
+        let a = &g.setup.rules.ai.arty;
+        let Some(f) = self.prep_focus(known) else {
+            return;
+        };
+        let near = sq_m(Fx::from_int(a.prep_near_m.min(2000) as i32));
+        let r = sq_m(Fx::from_int(a.danger_close_m.min(2000) as i32));
+        let lift: Vec<SquadId> = g
+            .squads
+            .iter()
+            .filter(|(id, q)| {
+                q.owner == self.me && !self.ai.arty.contains_key(id) && !self.arty_busy(**id)
+            })
+            .filter_map(|(&id, q)| match q.order {
+                Order::FireMission { target, .. }
+                    if (target - f).length_sq_raw() <= near
+                        && own.iter().any(|o| (*o - target).length_sq_raw() <= r) =>
+                {
+                    Some(id)
+                }
+                _ => None,
+            })
+            .collect();
+        for id in lift {
+            self.ai.emit(self.due, CommandKind::Stop { squad: id });
+            self.ai.counters.arty_lifts += 1;
+        }
     }
 
     /// A3: buys the faction's observer card when a gun is Ready and fewer
