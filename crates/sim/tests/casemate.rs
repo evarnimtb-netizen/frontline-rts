@@ -214,7 +214,9 @@ fn the_first_vehicle_of_each_role_is_found() {
             VehicleRole::Truck,
             VehicleRole::AtGun,
             VehicleRole::AtGun,
-            VehicleRole::Tractor
+            VehicleRole::Tractor,
+            // S11a1: the infantry gun, appended.
+            VehicleRole::InfGun
         ]
     );
     assert_eq!(
@@ -225,7 +227,8 @@ fn the_first_vehicle_of_each_role_is_found() {
             VehicleRole::Transport,
             VehicleRole::Recon,
             VehicleRole::Truck,
-            VehicleRole::AtGun
+            VehicleRole::AtGun,
+            VehicleRole::InfGun
         ]
     );
 }
