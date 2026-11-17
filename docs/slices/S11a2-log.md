@@ -1,36 +1,48 @@
 # S11a2 log (friendly fire from indirect HE, counter-battery by sound, AI safety and counter-fire; at most 150 lines)
 Spec: common `docs/slices/S11a2.md`, stages `S11a2-build-A.md`, `-B.md`; targets `targets/S11a2.toml`; ablations
-`targets/S11a2-ablations/`. Branch `claude/project-thread-e7nsak`, base `<BASE>` = the S11a1 head when Build A starts
-(S11a1 A and B end at `a6c5c72`; Build A writes the real hash here). Another agent may work in this checkout: commit
+`targets/S11a2-ablations/`. Branch `claude/project-thread-e7nsak`, base `<BASE>` = `b74ed58` (the S11a1 head when Build A
+started; neutral base set `target/s11a2-base40`). Another agent may work in this checkout: commit
 only your files (`git commit -m ... -- FILES`), never `git add -A`, never the untracked `.claude/`, `target/`,
 `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Plan done and revised 2026-11-17 (review: 5 major, 5 minor, all verified in the code, none rejected). Nothing built. Next: Build A (`S11a2-build-A.md`), only after S11a1 Build C (and its
-fixes, if the orchestrator runs them first) is committed.**
-- `<BASE>`: not fixed yet. Build A chunk 0 records it, plays the base 40 set into `target/s11a2-base40/` and runs the
-  targets parse check.
-- **The targets file and the five override files were NOT parsed by the CLI** (S11a1 Build C was building in this
-  checkout; no cargo or CLI run was allowed). Checked instead: Python `tomllib` loads all six; 587 targets (552 of
-  S11a1 + 37), no duplicate id, every new row has metric, exposure, exposure_min, control, note and a min or max, and
-  uses only keys the S11a1 rows use; the only old rows changed are T134a-d. Build A chunk 0 step 3 is the real check.
-- SAVE 27, PROTOCOL 14 now; Build A makes SAVE 28 in one layout commit holding everything Build B needs (spec 3).
-- All four switches (`[fire_mission] friendly_fire`, `counter_battery`; `[ai.arty] ff_safe`, `counter_fire`) are 0 through
-  Build A, so A is neutral by default; Build B turns them on one commit at a time.
-- Read from the code at `a6c5c72`, the AI names re-read at Build C's `25436fa` (line numbers are hints: find by name):
-  - own men are skipped in `combat.rs` `burst` (2375) and `fragments` (2594) by `owner == b.player`; a mission round's
-    `BallisticEvent::mission` is not 0; the shell burst is built at 3207; kills are credited at 3399.
-  - `piece_between(lift, body, b.player)` leaves out the burst owner's pieces: an own victim needs every piece counted.
-  - a gun mission round is counted at `gunnery.rs` 1133 (`gun_mission_tick`); `known_by_record` is `fire_mission.rs` 671.
-  - the AI's target scorer is `ai/mortar.rs` `fire_targets`, shared by mortars and guns, with a 35 m own-men test; the
-    spotter stands 35 m short (`spot_for`); the planner's `own` list is positions only; Build C's A6 lift sits in
-    `run_arty` and must be gated by `ff_safe` (S3), or both send `Stop`.
-  - `hurt` records a death only on the killing hit; the fragment code skips own statics and own vehicle frames (F3
-    makes them blockers for an own-fire burst); the mission aim offset has a fixed length (K2 draws its own).
-  - a served gun outside its base is already fed by crates, HQ, dump and truck (`structures.rs` `rearm_forward`); only
-    the own-base skip stands between today and crate-fed guns in base (why crates were left to S11a3).
-- Depends on S11a1 Build C: `run_arty` and its target order, A5 / reserve holds, A6, `fire_targets`. If P1-P3 are
-  never built: R1 sits "before A4", and P1-P3 keep their own contract (`S11a1-build-C.md` chunk 2).
+**State: Build A done 2026-11-17 (both chunks). Next: Build B (`S11a2-build-B.md`). The S11a1 review fixes C-1..C-7 run
+after A (separate "S11a1 fix" commits) and change AI play: Build B's neutral base is the fresh 40 set named below, not A40.**
+- SAVE 28, PROTOCOL 14. All four switches 0 in `skirmish.toml`. Keys and ranges as spec 2 (absent keys: the defaults).
+- Code map: `counter_battery.rs` (`CbSpot`, `MAX_CB_SPOTS`, `cb_note` K1+K3 sharpen, `cb_tick` K2+K3 decay, `near_own_marker`
+  K4, `nearest_soldier`, `whole_second`, `validate_spots`); `cb_note` called in `gunnery.rs` `gun_mission_tick` after
+  `gun_rounds`; `cb_tick` in `world.rs` beside `update_intel`. `Burst::ff` set in `combat.rs` `apply_blows` (the shell
+  burst; false in cook-off and item bursts); scratch lists `DamageCtx::{ff_hit, ff_dead}`, `hurt_by`, kill loop skips
+  `ff_dead`. `Mission::cb` set in `game.rs` `order_gun_mission`; `cb_bursts`/`cb_near_bursts`/`mortar_near_own_bursts` in
+  `fire_mission.rs` `observe_bursts` (live missions only).
+- Reading state: `w.game().unwrap().players()[p].cb` (markers: `marked`, `at`, `err_mm`, `heard_mm`, `shots`) and `.s11a2`
+  (`S11a2Counters`); AI counters in `ai.counters` (`ff_lifts` ... `cb_masked`, all 0 in A). Switches on: setup edit
+  (`s.rules.fire_mission.as_mut().unwrap().friendly_fire = 1`, `s.rules.ai.arty.ff_safe = 1`) or an override file.
+- Test helpers (`s11a2_tests.rs`): `mission_scene` (mortar Direct on an own/enemy squad 300 m off), `cb_scene` (leIG 18 +
+  listener 800 m), `map_fire`, `burst_now` (one burst dealt as the Damage stage would), `lone`, `pose`, `note`, `cb_ticks`.
+- S1 for Build B: the planner reads `self.g.squads` (owner, `nav.goal` via `sq.nav`, lead `members[0]` transform); look
+  at `ai/arty.rs` `run_arty` and `ai/mortar.rs` `fire_targets` by name. `Stop` (`game.rs` `order_stop`) sets a gun or mortar
+  squad's order to `Idle` the tick it applies (AI commands wait their reaction delay first); rounds already in the
+  air still burst and count (test `bombs_in_the_air_still_hurt_after_the_tube_dies`).
+- Not done: nothing of A. Build B: M1-M3, S1-S3, R1-R3, switches on, sets. `ff` on sanity 40 set: below.
+
+## Build A (2026-11-17)
+Commits: `13b9c82` layout + keys, `625b079` ablate/check/doc, `2a43103` F1-F4, `2d4d9b7` fmt, `23fb60b` K1-K4; log.
+Chunk 0: base set `target/s11a2-base40` from `b74ed58` (batch cache = `s11a1-C40`; Germany 15 of 40). Targets parse
+check (CLI): the file loads; 16 pass, 2 miss (T145c/d: no metric yet, Build B), 571 skipped; no change needed.
+Neutrality: `neutral.py base40 s11a2-A40` same 40/40; `... s11a2-Aoff40` (`b_off`) same 40/40 (also after F alone,
+`s11a2-A1-40`). Sanity `friendly_fire = 1` (scratch override): Germany 18 of 40, no match without a winner.
+Check: `tools/check.sh quick 730e67f` all ok, 957 tests (release CLI rebuilt first).
+Built differently from spec, with reasons: the layout commit also holds the keys (the setup is saved and the load
+bounds read `cb_decay_s` / `cb_delay_s`); `mortar_near_own_bursts` is counted always (a report like the gun twin, so
+`ff_off` can read it), for live missions only; `cb_heard` counts once per round heard by anyone; the marker length
+is an integer mm draw in `0..=err_mm`; a spot's `decay_at` is not reset by new evidence (spec K3 as written); F1's
+"grenade" control is the same mortar burst with mission 0 (items set `ff: false` by construction).
+Owner tests left as they are (S11a2-2): statics in the blast (`hit_static` filter), `blast_wire`, `blast_mines`,
+`blast_open_crew`, `blast_tracks`, fragment damage to own frames (the ray still ends there), `frag_wire`, tracks.
+Tests (s11a2_tests.rs 27, s11a2_content.rs 1): layout 2, F 11, K 14 (names in the commits; each with its control,
+seen to fail where the control is a code change: the validate_spots call, the own-statics rule, the own-cover
+exclusion, the ff_dead branch).
 
 ## Plan revision (2026-11-17, after an independent review against `a6c5c72` + `25436fa`: 5 major, 5 minor; all verified)
 1 Save gap: `decay_at` / `mark_at` rounded up to a whole second when set, load bounds in ticks with one second of slack
