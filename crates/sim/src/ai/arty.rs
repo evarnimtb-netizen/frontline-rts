@@ -34,7 +34,9 @@ pub struct AiArty {
     pub last_order: u64,
     /// Missions ordered.
     pub missions: u16,
-    /// The running mission is preparation fire (P1).
+    /// The running mission is preparation fire (P1). Read when the
+    /// mission is withdrawn dry (fix C-1/C-6: `arty_prep_missions` takes
+    /// it back).
     pub prep: bool,
     /// S11a2 R3: the running mission is counter-fire on a marker.
     pub cb: bool,

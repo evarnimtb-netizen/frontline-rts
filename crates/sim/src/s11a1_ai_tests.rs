@@ -312,32 +312,51 @@ fn ai_lifts_gun_fire_when_own_men_close() {
     assert_eq!(lifts, 0, "control: 80 m off");
 }
 
-/// Liveness and neutrality of the switches: with `buy` and `fo` 0 an own
-/// gun and observer team get no record and no command over 40 plans.
-/// Control: `buy` 1 gives the gun a record.
+/// Liveness and neutrality of the switches: with `buy`, `fo` and `prep`
+/// 0 an own gun and observer team get no record, and of the whole AI
+/// command stream over 40 plans no command names either squad or a man of
+/// theirs (review C-6). Controls: `buy` 1 gives the gun a record; `fo`
+/// 1 too, and the team its orders.
 #[test]
 fn ai_all_s11a1_switches_off_emit_nothing_new() {
-    let run = |buy: u32| {
-        let mut w = ai_world(1, buy, 0, |s| s.rules.ai.arty.max_guns = 0);
+    let run = |buy: u32, fo: u32| {
+        let mut w = ai_world(1, buy, fo, |s| {
+            s.rules.ai.arty.max_guns = 0;
+            s.rules.ai.arty.prep = 0;
+        });
         steps(&mut w, 2);
         let q = spawn(&mut w, 0, LEIG, 120, 500);
         let fo = spawn(&mut w, 0, VB, 300, 500);
-        let o0 = (
-            w.game().unwrap().squads[&q].order.kind(),
-            w.game().unwrap().squads[&fo].order.kind(),
-        );
+        let mut names = vec![format!("{q:?}"), format!("{fo:?}")];
+        for m in members(&w, q).into_iter().chain(members(&w, fo)) {
+            names.push(format!("{m:?}"));
+        }
+        // Every command the AI sends (each seq once), as text: a squad
+        // or a man shows as `SquadId(n)` / `SimId(n)`.
+        let mut seen = std::collections::BTreeSet::new();
+        let mut naming = 0u32;
         let plans0 = counters(&w).plans;
         while counters(&w).plans < plans0 + 40 {
             w.step(&[]);
+            for c in &ai(&w).pending {
+                if seen.insert(c.seq) {
+                    let text = format!("{:?}", c.kind);
+                    let names_one = names
+                        .iter()
+                        .any(|n| text.match_indices(n.as_str()).next().is_some());
+                    naming += names_one as u32;
+                }
+            }
         }
-        let o1 = (
-            w.game().unwrap().squads[&q].order.kind(),
-            w.game().unwrap().squads[&fo].order.kind(),
-        );
-        (ai(&w).arty.len() + ai(&w).fo.len(), o0 == o1)
+        (ai(&w).arty.len() + ai(&w).fo.len(), naming, seen.len())
     };
-    assert_eq!(run(0), (0, true));
-    assert_eq!(run(1).0, 1, "control: buy 1 keeps a record");
+    let (records, naming, sent) = run(0, 0);
+    assert_eq!((records, naming), (0, 0), "nothing new");
+    assert!(sent > 0, "the AI did send commands");
+    assert_eq!(run(1, 0).0, 1, "control: buy 1 keeps a record");
+    let (records, naming, _) = run(1, 1);
+    assert_eq!(records, 2, "control: and fo 1 another");
+    assert!(naming > 0, "control: fo 1 orders the team");
 }
 
 /// Determinism (spec 5): the A4 scene runs the same on 1 and 4 threads,
