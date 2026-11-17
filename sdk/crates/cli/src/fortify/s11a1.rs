@@ -570,4 +570,15 @@ mod tests {
         );
         assert!(r.breach_prep.gap_opened_pct.is_none());
     }
+
+    /// One-off: the S11a1 rows on seeds 1-10 (as `fortify-test --seeds
+    /// 10`), with their wall time; run by hand in release.
+    #[test]
+    #[ignore]
+    fn s11a1_rows_one_off() {
+        let t = std::time::Instant::now();
+        let r = s11a1_rows(&FortifyArgs::default(), 1..11).unwrap();
+        eprintln!("{}", serde_json::to_string(&r).unwrap());
+        eprintln!("s11a1 rows wall s: {:.1}", t.elapsed().as_secs_f64());
+    }
 }
