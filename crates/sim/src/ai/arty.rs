@@ -675,7 +675,13 @@ impl super::Planner<'_> {
             rec.point = point;
         }
         let near = sq_m(Fx::from_int(FO_CLEAR_M));
-        if rec.post.is_some() && known.iter().any(|k| (k.pos - lead).length_sq_raw() <= near) {
+        // Fix C-3: at most once a `repath_s` (`since` is the post's
+        // tick), not a new search and move every plan.
+        let repath = s.rules.ai.guns.repath_s as u64 * hz;
+        if rec.post.is_some()
+            && tick >= rec.since + repath
+            && known.iter().any(|k| (k.pos - lead).length_sq_raw() <= near)
+        {
             reset(&mut rec);
         }
         if rec.retry_at != 0 && tick >= rec.retry_at {
@@ -750,7 +756,6 @@ impl super::Planner<'_> {
             } else {
                 let on_way = matches!(sq.order, Order::Move { target }
                     if (target - post).length_sq_raw() <= sq_m(Fx::from_int(FO_ARRIVED_M)));
-                let repath = s.rules.ai.guns.repath_s as u64 * hz;
                 if !on_way && tick >= rec.since + repath {
                     self.ai.emit(
                         self.due,

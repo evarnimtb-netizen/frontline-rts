@@ -698,3 +698,71 @@ fn ai_rebuys_a_lost_gun_inside_the_pot() {
     assert_eq!(run(true), (2, 1), "bought again");
     assert_eq!(run(false), (1, 1), "control: not lost");
 }
+
+/// Review fix C-3 (A3): a known enemy within `FO_CLEAR_M` of the
+/// observer team clears its post at most once a `[ai.guns] repath_s`,
+/// not every plan (each new post is a new search and a new `Move`).
+/// The team and the enemy are held in place. Control: no enemy near:
+/// the post stays. (With the fix undone the posts came one a plan.)
+#[test]
+fn observer_post_reset_waits_a_repath() {
+    let run = |enemy: bool| {
+        let mut w = ai_world(1, 1, 1, |s| s.rules.ai.arty.max_guns = 0);
+        steps(&mut w, 2);
+        spawn(&mut w, 0, LEIG, 120, 500);
+        steps(&mut w, 30 * 30);
+        let fo = own_of(&w, VB)[0];
+        let end = w.tick() + 30 * 120;
+        while !ai(&w).fo[&fo].arrived {
+            assert!(w.tick() < end, "never at the post");
+            w.step(&[]);
+        }
+        let post = ai(&w).fo[&fo].post.unwrap();
+        let mut men = w.game().unwrap().squads[&fo].members.clone();
+        if enemy {
+            let (x, y) = (post.x.round_int() + 60, post.y.round_int());
+            let e = spawn(&mut w, 1, "ww2:usa_rifle_squad", x, y);
+            men.extend(w.game().unwrap().squads[&e].members.clone());
+        }
+        let held: Vec<_> = men
+            .iter()
+            .map(|m| w.entities().transform[m.index()])
+            .collect();
+        let mut posts = Vec::new();
+        let mut moves = 0u32;
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..30 * 20 {
+            for (m, t) in men.iter().zip(&held) {
+                w.state.entities.transform[m.index()] = *t;
+                w.state.entities.combat[m.index()].hp = 100;
+            }
+            let k = counters(&w).fo_posts;
+            w.step(&[]);
+            if counters(&w).fo_posts > k {
+                posts.push(w.tick());
+            }
+            for c in &ai(&w).pending {
+                let to_fo = matches!(c.kind, CommandKind::Move { squad, .. } if squad == fo);
+                if to_fo && seen.insert(c.seq) {
+                    moves += 1;
+                }
+            }
+        }
+        (posts, moves)
+    };
+    let (posts, moves) = run(true);
+    assert!(!posts.is_empty(), "the enemy clears the post");
+    let repath = 30 * w_repath();
+    assert!(
+        posts.windows(2).all(|p| p[1] - p[0] >= repath),
+        "one reset a repath: {posts:?}"
+    );
+    assert_eq!(moves as usize, posts.len(), "one move a post");
+    assert_eq!(run(false), (vec![], 0), "control: no enemy near");
+}
+
+/// `[ai.guns] repath_s` of the default rules.
+fn w_repath() -> u64 {
+    let w = ai_world(1, 0, 0, |_| {});
+    w.match_setup().unwrap().rules.ai.guns.repath_s as u64
+}
