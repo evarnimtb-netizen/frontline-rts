@@ -536,16 +536,17 @@ impl super::Planner<'_> {
         )
     }
 
-    /// S11a1 P3: a mortar mission on the preparation focus (within
-    /// `prep_near_m`) with an own man within `[ai.arty] danger_close_m` of
-    /// its target is stopped (`arty_lifts`), as A6 stops a gun's.
+    /// S11a1 P3: a mortar mission ordered as preparation (fix C-4: aimed
+    /// at the focus itself, as P1 aims; not any mission within
+    /// `prep_near_m` of it) with an own man within `[ai.arty]
+    /// danger_close_m` of its target is stopped (`arty_lifts`), as A6
+    /// stops a gun's. P1 picks with the same distance.
     fn lift_mortar_prep(&mut self, known: &[Known], own: &[FxVec2]) {
         let g = self.g;
         let a = &g.setup.rules.ai.arty;
         let Some(f) = self.prep_focus(known) else {
             return;
         };
-        let near = sq_m(Fx::from_int(a.prep_near_m.min(2000) as i32));
         let r = sq_m(Fx::from_int(a.danger_close_m.min(2000) as i32));
         let lift: Vec<SquadId> = g
             .squads
@@ -555,8 +556,7 @@ impl super::Planner<'_> {
             })
             .filter_map(|(&id, q)| match q.order {
                 Order::FireMission { target, .. }
-                    if (target - f).length_sq_raw() <= near
-                        && own.iter().any(|o| (*o - target).length_sq_raw() <= r) =>
+                    if target == f && own.iter().any(|o| (*o - target).length_sq_raw() <= r) =>
                 {
                     Some(id)
                 }

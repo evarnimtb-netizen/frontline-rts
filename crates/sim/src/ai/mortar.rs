@@ -231,7 +231,9 @@ impl Planner<'_> {
                     Fx::from(w.range_min) + Fx::from_int(20),
                     Fx::from(w.range_max) - Fx::from_int(10),
                 );
-                let danger = s.rules.ai.infantry.danger_close_m;
+                // Fix C-4: P3's distance (`[ai.arty]`), so P3 does not
+                // lift what P1 just ordered.
+                let danger = s.rules.ai.arty.danger_close_m;
                 if let Some(t) = self.prep_target(gunner, min, max, danger, known, &own) {
                     targets.insert(0, t);
                 }
