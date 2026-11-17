@@ -5,29 +5,62 @@ ablations `targets/S11a1-ablations/`. Branch `claude/project-thread-e7nsak`, bas
 `git add -A`, never the untracked `.claude/`, `target/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Build B done 2026-11-17 (content, A review fixes A-1..A-6, rows, JSON). Next: orchestrator gate T128-T130, then Build C (`-build-C.md`).**
-- SAVE 27, PROTOCOL 14. Neutral base `target/s11a1-base40/skirmish40.json`; Build B sets in `target/s11a1-B40/`.
-- Cards (roster end, `ai_weight` 0): `ww2:ger_leig18_squad` (vehicle `ww2:ger_leig18`, crew `ger_leig18_crew`),
-  `ww2:usa_105mm_m3_squad` (`usa_105mm_m3`, crew `usa_105mm_m3_crew`), `ww2:ger_vb_trupp`, `ww2:usa_fo_party` (tag
-  `observer`). Weapons `ww2:leig18`, `ww2:m3_105mm`; rounds `ww2:75mm_igr18`, `ww2:105mm_m1_he` (the only ammo slot).
-- **`buy_role_within` needs `ai_weight` > 0**: it takes the first roster card with weight > 0 and the role. Build C
-  must set the two gun cards to 5 (as the S9 gun cards) in its own commit; the mix never picks `inf_gun` (`mix_slot`
-  skips the role), so 5 is safe. Observer cards: A3 buys by trait, keep weight 0 or give them their own path.
-- Test recipe: a real gun arrives emplaced and crewed from `spawn_squad_at` / `s6_tests::spawn(w, p, card, x, y)`
-  (facing +x); `s11a1_tests.rs` `crest_gun(card, crest)` (crest band at x 500, gun at (50,500)), `order`, `mission`,
-  `run_out`. Observer team: spawn `ww2:usa_fo_party` / `ger_vb_trupp`; beyond `observer_link_m` 150 it links by radio
-  (crew commander slot has `radio`; `leader` may only be on slot 0, so the crew leader is the gunner slot).
-- Known ground for a mission: a seeing observer, or `World::mark_intel`. Map fire: `observe_*_m` 0.
-- Row code: `sdk/crates/cli/src/fortify/s11a1.rs` (`gun_fm`, `mask`, `barrage`; `breach_prep` and `breach_prep_gun`
-  print null keys: Build C fills `BreachPrepRow`). Rows run per seed on threads (`par_seeds`); left out with
-  `--no-s10b-ai`. One-off: `cargo test --release -p frontline-cli s11a1_rows_one_off -- --ignored --nocapture`.
-- JSON: `factions.<f>.s11a1` (S11Counters by name, arrays by mode, every S11a1 AiCounters name, `refused_masked`,
-  `refused_not_ready`, `kills`, `income_mp`, `matches_with_*`, `gun_kills_in_tank_he` true) and `s11a1_derived` (spec
-  7). `gun_refused_total` = masked + not_ready (other gun refusal kinds are counted nowhere since A-3: if C needs them,
-  an AiCounters field is a layout change). `fo_bought_matches_pct` reads `fo_buys` (AI only).
-- Gun kills still count as `tank_he` in `kills_by` / `tank_mp_killed` (the JSON flag says so); `gun_kills` separate.
-- leIG at 300 m has only low roots (every high root > 73 deg); behind a 25 m crest it needs 450 m (G2 test).
-- `neutral.py`: keys `s11a1*` the base lacks are skipped; a list that grew with a zero tail equals the base.
+**State: Build C done 2026-11-17 (both chunks; review B-1..B-4 fixed, B-5 not). Next: orchestrator measure 480 + ablations, Review, Fix, verify, Docs.**
+- SAVE 27, PROTOCOL 14 (no layout change in C). `[ai.arty]` `buy`, `fo`, `prep` 1 in `skirmish.toml`; gun cards `ai_weight` 5.
+- Planner `crates/sim/src/ai/arty.rs` (module notes in the "Build C" comment); called in `ai.rs` `plan`: `take_arty` after
+  `take_guns`, `buy_arty` after `buy_gun`, `arty` after `mortars`. `held_pots()` = `gun_pot` + `arty_pot` (ai.rs buy, fort.rs x2).
+  Scorer `mortar.rs` `fire_targets` (generic; guns: no noise, band `range_min+20..range_m-10`, `[ai.arty] danger_close_m`).
+- P1 `breach.rs` `prep_focus` (first job in Stage/Suppress with a focus), `arty.rs` `prep_target`; P2 `breach.rs` `prep_wait`
+  (only gates `covered`; no mission near the focus: no wait); P3 `arty.rs` `lift_mortar_prep`. With `prep` 1
+  `drive_breach` also runs `mortars` and `arty` for the player's other tubes (fortify hook only; no tube: nothing).
+- Orders the AI emits: gun squad `Emplace` (A2, once per `[ai.guns] repath_s`), `FireMission` (A4, only when not on a
+  mission and no command pending), `Stop` (A6 lift, once: the next plan sees Idle); observer squad `Move` to the post (at
+  the search's end; again only when off-track after `repath_s`), `SetStance` crouch (once on arrival); `CallIn` gun / observer
+  (A1 / A3, pending call-ins counted). Mortar squads: `Stop` (P3, pending-checked). Gun missions not ready at due time are
+  withdrawn in `take_ai_commands` (not counted: no layout change).
+- Tests: `crates/sim/src/s11a1_ai_tests.rs` (13). Recipe there: `ai_world`, `fire_scene` (disarmed target squad, VB-Trupp
+  100 m from it, intel marked), `prep_scene` (the S10a-ai breach scene + a US mortar 380 m out).
+- Sets: `target/s11a1-C40/` (default, `skirmish40_a_off.json`), `target/s11a1-C40off/`, `target/s11a1-C40-{arty,prep,fo}_off/`.
+- Open: T131 MISS (the base `breach_ai` row is 0 %, not the 30 % the spec quotes; the job is given up before smoke in all
+  20 runs, prep or not); the mortar prep variant never fired (prep_fired 0 %: not diagnosed); B-5; `arty_pot_is_kept_from_other_buys`,
+  `ai_rebuys_a_lost_gun_inside_the_pot`, `ai_gun_orders_nothing_the_sim_refuses` (10 min) not written (the 40 set reads refused 0).
+
+## Build C (2026-11-17)
+Commits: `afd7891` B-2, `25436fa` planner A1-A6, `dafa3ef` B-1, `1c70fad` B-3/B-4, `8015d6e` tests, `fe3ff69` weights + `buy`/`fo`
+on, `4df680c` P1-P3 + withdraw, `54bfb12` breach rows, `f09d1c9` `prep` on; log commit.
+Review fixes. B-1: CLI counts every refusal event of a gun squad (`S11a1Player::gun_refused`) -> `gun_refused_total`.
+B-2: the mask reads steps 2..=16 at +0.5 m, 17..=19 and the point 5 m short of the aim at -2 m (a flat shot into a trench
+passes under the lip; a crest's shadow does not); an aim point (with the aim error) in the shadow ends the mission unfired.
+Test `accepted_leig_points_behind_a_crest_are_hit` (control: the Build A rule accepts x 523 and bursts 14 m short). Rows
+after B-2: T128 600 %, T129 M3 masked 100 % (control 0), leIG fired over 90 % (one seed holds: no clear arc), T130 11.8 %
+(T130b has min 0, it cannot fail). T129 note: the gun is 530 m from the target (the high-root band starts near 482 m).
+B-3: only lists named `refused` may grow; B-4: an `s11a1` block the base lacks must be 0 but for `matches`, `kills`,
+`income_mp`, `gun_kills_in_tank_he` (tests with controls in `test_neutral.py`). B-5 not done (barrage control unchanged).
+Rules as built (tests, control in brackets): A1 `ai_buys_an_infantry_gun_inside_its_budget` (buy 0; income 1 %); A2
+`ai_emplaces_its_infantry_gun` (buy 0); A3 `ai_buys_one_observer_for_its_gun` (fo 0; also: only A3 orders),
+`ai_observer_post_search_fails_behind_a_ridge_and_is_bounded` (flat: the test above), `ai_observer_is_rebought_once` (rebuy
+600 s); A4 `ai_gun_fires_an_observed_mission_through_its_observer` (radio man dead); A5 `ai_gun_stops_at_its_shell_budget`
+(100 %); A6 `ai_lifts_gun_fire_when_own_men_close` (80 m); `ai_all_s11a1_switches_off_emit_nothing_new` (buy 1);
+`ai_arty_deterministic_threads_and_save_load` (1/4 threads, saves at 1, 12, 25 s; control radio dead); P1
+`ai_mortar_fires_prep_for_a_breach` (prep 0); P2 `ai_breach_waits_for_prep_fire` (prep 0), `ai_breach_prep_wait_is_bounded`
+(control: the run before, no timeout). Mortar decisions unchanged: the neutral run (no separate unit test).
+Decisions: the post search has its own `post_rays` (spec 6), not the mortars' budget; observer cards found by trait
+(observer + radio, no vehicle), bought outside the pots but never into them; gun band uses the table `range_m` (the
+weapon's direct `range_max` hid every target); A6 lifts any AI gun mission; a P2 timeout or the rounds set `prep_at` once.
+40 sets (seeds 1-20 both bases; Germany wins of 40): base 16, default 15 (37.5 %), arty_off 16, prep_off 15 (equal to
+default: no breach job starts, spec 0), fo_off 11 (27.5 %: guns without observers fire 0.3 / 0.25 rounds a match).
+`neutral.py base40 C40off` (a_off): `same 40/40`; also after chunk 1 (`C1off40`). HE share mean 20.3 (max 31.4).
+Default 40, Germany / USA: gun bought 100 / 100 %, fired 95 / 85 % of those, missions 6.1 / 3.2 a match (observed 235 / 122,
+map 8 / 5: the sim falls to map when the observer is lost in the delay), rounds 20.1 / 9.1 a match, observed 86.3 / 80.1 %,
+kills 86 / 99 (3.2 / 2.9 % of kills), shells 2.7 / 4.5 % of income (budget holds 0), near-own bursts 0.05 / 0.2 a match,
+refused 0 / 0, observers lost 0.08 / 0.1 a match, post fails 43 / 45 %, no-observer plans 95 / 97 %, lifts 42 / 40,
+prep missions 0 / 0, breaches started 0. Balance: the guns do not tilt to Germany on 40 (15 vs 16 of base).
+Breach rows (`fortify-test`, 10 seeds x both sides, value / control prep 0): mortar gap 0 / 0, placed 0 / 0, attackers
+lost 76.8 / 76.8 %, prep fired 0 %; gun gap 0 / 0, placed 0 / 0, attackers 77.7 / 77.7 %, prep fired 35 %.
+Other files touched: tests found with the artillery AI off keep it off (`s10a_tests` empty-fort fight, `tests/s5a_ai.rs`
+`ai_setup`, `tests/save_fuzz.rs` `setup`); `tests/ai.rs` accepts an infantry gun's mission; content test card weights.
+Check: `tools/check.sh quick 730e67f` all ok, 929 tests (release CLI rebuilt). Full `fortify-test --seeds 10` into
+`target/s11a1-C40/fortify10.json` (background; targets below when it lands).
 
 ## Build B (2026-11-17)
 Commits: `6f22f00` content + fix A-1, `c2afd8c` A-2..A-6, `6a8db14` rows / JSON / neutral.py / doc, `2097289` rows
