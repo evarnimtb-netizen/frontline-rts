@@ -24,6 +24,9 @@ fn setup(edit: impl FnOnce(&mut MatchSetup)) -> MatchSetup {
     frontline_sim::scenarios::staging(&mut s, true);
     s.players[1].is_ai = true;
     s.rules.start_manpower = 0;
+    // S11a2 Build B: the spotter scenes observe only to 100 m, inside the
+    // `ff_safe` stand-off window (70-90 m); they keep the S5b stand-off.
+    s.rules.ai.arty.ff_safe = 0;
     s.rules
         .fire_mission
         .as_mut()

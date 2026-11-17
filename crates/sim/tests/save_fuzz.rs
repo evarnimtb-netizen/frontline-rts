@@ -45,6 +45,17 @@ fn setup(seed: u64) -> MatchSetup {
         s.rules.ai.arty.fo,
         s.rules.ai.arty.prep,
     ) = (0, 0, 0);
+    // S11a2 Build B: likewise friendly fire, markers, the own-men rule and
+    // counter-fire off (the states at fixed ticks; S11a2 state is fuzzed in
+    // the staged save).
+    s.rules.ai.arty.ff_safe = 0;
+    s.rules.ai.arty.counter_fire = 0;
+    let fm = s
+        .rules
+        .fire_mission
+        .as_mut()
+        .expect("ww2 has [fire_mission]");
+    (fm.friendly_fire, fm.counter_battery) = (0, 0);
     s
 }
 
