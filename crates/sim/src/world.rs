@@ -1448,6 +1448,8 @@ impl World {
                 seed,
                 tick,
                 fallen: Vec::new(),
+                ff_dead: Vec::new(),
+                ff_hit: Vec::new(),
             };
             game.as_mut().expect("match world").apply_blows(
                 &mut ctx,
@@ -5449,6 +5451,8 @@ mod tests {
             seed: 1,
             tick,
             fallen: Vec::new(),
+            ff_dead: Vec::new(),
+            ff_hit: Vec::new(),
         };
         let g = game.as_mut().unwrap();
         g.deal(
@@ -5564,6 +5568,8 @@ mod tests {
                 seed: 1,
                 tick: 9,
                 fallen: Vec::new(),
+                ff_dead: Vec::new(),
+                ff_hit: Vec::new(),
             };
             let g = state.game.as_mut().unwrap();
             let ko = g.deal(

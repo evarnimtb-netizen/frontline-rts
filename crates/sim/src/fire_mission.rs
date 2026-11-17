@@ -913,23 +913,26 @@ impl MatchState {
             }
             let off = mi.offset.length();
             let map = mi.mode == mode::MAP;
+            // Bursts within `[ai.arty] danger_close_m` of an own man (a
+            // report; S11a1 for guns, S11a2 for mortars).
+            let r = m(self.setup.rules.ai.arty.danger_close_m);
+            let p = b.pos.xy();
+            let near = self.squads.values().any(|q| {
+                q.owner.0 as usize == owner
+                    && q.members.iter().any(|&mm| {
+                        let i = mm.index();
+                        ents.kind[i] == EntityKind::Soldier
+                            && ents.combat[i].hp > 0
+                            && within(ents.transform[i].pos.xy(), p, r)
+                    })
+            });
             // S11a1: a gun's bursts count in `S11Counters` only.
             if gun {
-                // Bursts within `danger_close_m` of an own man (a report).
-                let r = m(self.setup.rules.ai.arty.danger_close_m);
-                let p = b.pos.xy();
-                let near = self.squads.values().any(|q| {
-                    q.owner.0 as usize == owner
-                        && q.members.iter().any(|&mm| {
-                            let i = mm.index();
-                            ents.kind[i] == EntityKind::Soldier
-                                && ents.combat[i].hp > 0
-                                && within(ents.transform[i].pos.xy(), p, r)
-                        })
-                });
                 let c = &mut self.players[owner].s11;
                 c.near_own_bursts = c.near_own_bursts.saturating_add(near as u32);
             } else {
+                let c = &mut self.players[owner].s11a2;
+                c.mortar_near_own_bursts = c.mortar_near_own_bursts.saturating_add(near as u32);
                 let c = &mut self.players[owner].fm;
                 if seen {
                     c.seen += 1;

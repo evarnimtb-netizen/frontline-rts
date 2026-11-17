@@ -2275,6 +2275,10 @@ pub(crate) struct Burst<'a> {
     pub inside: Option<(SimId, u8)>,
     /// S10b R20: a demolition charge tamped against this piece.
     pub piece: Option<u32>,
+    /// S11a2 F1: a fire-mission round's burst with `friendly_fire` on: it
+    /// hurts the firing player's own men (blast, suppression, fragments),
+    /// and own statics and hulls stop its fragments undamaged.
+    pub ff: bool,
 }
 
 /// Mutable world parts the damage stage needs.
@@ -2289,6 +2293,13 @@ pub(crate) struct DamageCtx<'a> {
     /// S8a: passengers dropped to 0 HP inside a vehicle (`damage::deal`),
     /// killed with the rest at the end of the Damage stage.
     pub fallen: Vec<Fallen>,
+    /// S11a2 F4: own men killed by an own fire-mission burst this tick
+    /// (pushed on the killing hit only); the kill loop credits no kill
+    /// for them.
+    pub ff_dead: Vec<SimId>,
+    /// S11a2 F4: own men hit by the burst being dealt (scratch, cleared
+    /// per burst).
+    pub ff_hit: Vec<SimId>,
 }
 
 /// A soldier at 0 HP this tick: `(victim, killer's player, kill class)`.
@@ -2296,6 +2307,7 @@ pub(crate) type Fallen = (SimId, u8, u16);
 
 /// Takes `dmg` hit points from soldier `id`; one who drops to 0 joins
 /// `dead` with the player who killed him and the `game::kill_class`.
+/// Returns whether this hit killed him (S11a2 F4).
 fn hurt(
     ents: &mut Entities,
     hash: &mut HashCache,
@@ -2303,16 +2315,30 @@ fn hurt(
     id: SimId,
     dmg: u32,
     by: (u8, u16),
-) {
+) -> bool {
     let c = &mut ents.combat[id.index()];
     if c.hp == 0 {
-        return;
+        return false;
     }
     c.hp = c.hp.saturating_sub(dmg.min(u16::MAX as u32) as u16);
-    if c.hp == 0 {
+    let killed = c.hp == 0;
+    if killed {
         dead.push((id, by.0, by.1));
     }
     hash.mark_entity_chunk(id.chunk());
+    killed
+}
+
+/// S11a2 F4: [`hurt`] by burst `b`; an own man hit by an own mission burst
+/// is noted (`ff_hit`) and, on the killing hit, joins `ff_dead`.
+fn hurt_by(ctx: &mut DamageCtx, dead: &mut Vec<Fallen>, b: &Burst, id: SimId, dmg: u32) {
+    let killed = hurt(ctx.ents, ctx.hash, dead, id, dmg, (b.player, b.class));
+    if b.ff && ctx.ents.owner[id.index()].0 == b.player {
+        ctx.ff_hit.push(id);
+        if killed {
+            ctx.ff_dead.push(id);
+        }
+    }
 }
 
 /// Most fragment rays thrown in one tick (S3b engine budget): when this
@@ -2370,9 +2396,12 @@ impl MatchState {
             .for_each_near(pos.xy(), supp_r.max(blast_r), |id| ids.push(id));
         ids.sort_unstable();
         ids.dedup();
+        ctx.ff_hit.clear();
         for id in ids {
             let i = id.index();
-            if ctx.ents.kind[i] != EntityKind::Soldier || ctx.ents.owner[i].0 == b.player {
+            // S11a2 F2: an own mission burst spares no own man.
+            let own = ctx.ents.owner[i].0 == b.player;
+            if ctx.ents.kind[i] != EntityKind::Soldier || (own && !b.ff) {
                 continue;
             }
             let c = ctx.ents.combat[i];
@@ -2384,10 +2413,12 @@ impl MatchState {
             if dist > supp_r && dist > blast_r {
                 continue;
             }
-            // S10a: overhead cover: no piece of another player between.
+            // S10a: overhead cover: no piece of another player between
+            // (S11a2 F2: an own victim is covered by any piece, his own too).
+            let skip_owner = if own { u8::MAX } else { b.player };
             let clear = ctx.terrain.line_of_sight(lift, body)
                 && self.out_of_box(b, lift, body)
-                && !self.piece_between(lift, body, b.player);
+                && !self.piece_between(lift, body, skip_owner);
             if dist <= supp_r {
                 let mut add = (b.suppression as i64 * 1000 * (supp_r - dist).raw() as i64
                     / supp_r.raw().max(1) as i64) as u32;
@@ -2400,7 +2431,7 @@ impl MatchState {
             }
             // Overpressure: close in, with a clear line.
             if clear && dist <= blast_r {
-                hurt(ctx.ents, ctx.hash, dead, id, b.damage, (b.player, b.class));
+                hurt_by(ctx, dead, b, id, b.damage);
             }
         }
         // S10b R20: a demolition charge's piece takes its tamped damage
@@ -2455,6 +2486,23 @@ impl MatchState {
             self.blast_mines(ctx.terrain, pos.xy(), lift, blast_r, ctx.tick);
         }
         self.fragments(ctx, b, rays, struck, rules, dead, fires, events);
+        // S11a2 F4: the burst's own hits (wounds: men hit and still alive).
+        if b.ff && !ctx.ff_hit.is_empty() {
+            let mut hit = std::mem::take(&mut ctx.ff_hit);
+            hit.sort_unstable();
+            hit.dedup();
+            let wounds = hit
+                .iter()
+                .filter(|id| ctx.ents.combat[id.index()].hp > 0)
+                .count() as u32;
+            if let Some(p) = self.players.get_mut(b.player as usize) {
+                let c = &mut p.s11a2;
+                c.ff_bursts = c.ff_bursts.saturating_add(1);
+                c.ff_wounds = c.ff_wounds.saturating_add(wounds);
+            }
+            hit.clear();
+            ctx.ff_hit = hit;
+        }
         // S7: the exposed crew of open-topped vehicles.
         self.blast_open_crew(
             ctx,
@@ -2590,8 +2638,9 @@ impl MatchState {
         for id in ids {
             let i = id.index();
             let c = &ctx.ents.combat[i];
+            // S11a2 F3: an own mission burst's fragments find own men too.
             if ctx.ents.kind[i] != EntityKind::Soldier
-                || ctx.ents.owner[i].0 == b.player
+                || (ctx.ents.owner[i].0 == b.player && !b.ff)
                 || c.hp == 0
             {
                 continue;
@@ -2632,14 +2681,15 @@ impl MatchState {
             Purpose::FRAGMENT
         };
         // S6: live static boxes within reach not of this burst's player:
-        // (index, frame).
+        // (index, frame). S11a2 F3: an own mission burst's rays stop at own
+        // boxes too (they take nothing: see the hit below).
         let statics: Vec<(usize, crate::vehicle::BoxFrame)> = self
             .statics
             .0
             .iter()
             .enumerate()
             .filter(|(_, sb)| {
-                sb.owner != b.player
+                (sb.owner != b.player || b.ff)
                     && sb.reach >= Fx::ZERO
                     && armour::segment_near(o, FxVec3::ZERO, sb.frame.center, reach + sb.reach)
             })
@@ -2765,7 +2815,9 @@ impl MatchState {
                 && boxed.is_none_or(|(bt, _, _)| st < bt)
                 && man.is_none_or(|(ms, _)| st < ms)
             {
-                if ctx.terrain.segment_hit(o, o + d * st).is_none() {
+                // S11a2 F3: an own box only stops the ray.
+                let own_box = self.statics.0.get(k).is_some_and(|sb| sb.owner == b.player);
+                if !own_box && ctx.terrain.segment_hit(o, o + d * st).is_none() {
                     let lost = Fx::from_int(100 - he.frag_far_pct.min(100) as i32).mul(st);
                     let pct = (Fx::from_int(100) - lost).max(Fx::ZERO);
                     let dmg = (he.frag_damage as i64 * pct.raw() as i64 / (100i64 << Fx::FRAC_BITS))
@@ -2891,7 +2943,7 @@ impl MatchState {
                     &mut ctx.ents.combat[id.index()],
                     rules.hit_suppression * 1000,
                 );
-                hurt(ctx.ents, ctx.hash, dead, id, dmg, (b.player, b.class));
+                hurt_by(ctx, dead, b, id, dmg);
                 ctx.stats.frag_hits += 1;
             }
         }
@@ -3215,6 +3267,14 @@ impl MatchState {
                 class: self.round_class(ctx.ents, e.weapon, e.ammo, e.shooter),
                 piece: None,
                 inside: None,
+                // S11a2 F1: a fire-mission round (mortar or gun, any mode).
+                ff: e.mission != 0
+                    && self
+                        .setup
+                        .rules
+                        .fire_mission
+                        .as_ref()
+                        .is_some_and(|f| f.friendly_fire != 0),
             };
             let rays = frag_share(he.frag_count, requested);
             ctx.stats.frag_rays_capped += (he.frag_count - rays) as u64;
@@ -3267,6 +3327,7 @@ impl MatchState {
                 class,
                 inside: None,
                 piece: None,
+                ff: false,
             };
             let rays = frag_share(bl.blast.frag_count, requested);
             self.burst(
@@ -3327,6 +3388,7 @@ impl MatchState {
                         .filter(|i| self.vderived.frame(i.vehicle).is_some())
                         .map(|i| (i.vehicle, i.part)),
                     piece: demo_piece,
+                    ff: false,
                 };
                 // S7: inside an open box, its inner rays first.
                 if b.inside.is_some() {
@@ -3396,6 +3458,7 @@ impl MatchState {
         }
         dead.append(&mut ctx.fallen);
         dead.sort_unstable();
+        ctx.ff_dead.sort_unstable();
         for (id, by, class) in dead {
             if !mine_dead.is_empty()
                 && mine_dead.contains(&id)
@@ -3409,6 +3472,15 @@ impl MatchState {
             }
             self.kill(ctx.ents, ctx.hash, id, rules.corpse_ticks);
             ctx.stats.deaths += 1;
+            // S11a2 F4: killed by his own side's mission burst: a loss (in
+            // `kill`) and no kill; mortar or gun by the burst's class.
+            if !ctx.ff_dead.is_empty() && ctx.ff_dead.binary_search(&id).is_ok() {
+                if let Some(p) = self.players.get_mut(by as usize) {
+                    let k = (kill_class::base(class) != kill_class::MORTAR) as usize;
+                    p.s11a2.ff_kills[k] = p.s11a2.ff_kills[k].saturating_add(1);
+                }
+                continue;
+            }
             if let Some(p) = self.players.get_mut(by as usize) {
                 p.kills += 1;
                 p.kills_by[kill_class::base(class) as usize] += 1;
@@ -3982,6 +4054,8 @@ mod tests {
                 seed: 1,
                 tick: 1,
                 fallen: Vec::new(),
+                ff_dead: Vec::new(),
+                ff_hit: Vec::new(),
             };
             let ev = [BallisticEvent {
                 weapon: mortar,
@@ -4154,6 +4228,8 @@ mod tests {
             seed: 1,
             tick: 1,
             fallen: Vec::new(),
+            ff_dead: Vec::new(),
+            ff_hit: Vec::new(),
         };
         let mg = r
             .game
