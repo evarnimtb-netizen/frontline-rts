@@ -466,6 +466,47 @@ fn ai_counter_fire_waits_for_new_evidence() {
     );
 }
 
+/// Fix B-3: the evidence answered is tied to no marker, so a switch to a
+/// sharper marker with fewer shots than the last one answered is new
+/// evidence (`shots != cb_shots`), not stale. Control: no second marker:
+/// no second mission.
+#[test]
+fn ai_counter_fire_answers_a_new_marker_with_fewer_shots() {
+    const B: (i32, i32) = (450, 750);
+    let run = |second: bool| {
+        let (mut w, gun) = cf_scene(1, 0, LEIG, 100, MARK, false, |_| {});
+        give_marker(&mut w, 0, c(MARK.0, MARK.1), 40, 5);
+        let mut sent = Sent::default();
+        plans(&mut w, 20, &mut sent);
+        assert_eq!(sent.missions_near(gun, c(MARK.0, MARK.1), 1), 1);
+        if second {
+            let hz = 30;
+            let sec = w.tick().div_ceil(hz) * hz;
+            assert!(w.edit_player(PlayerId(0), |pl| {
+                pl.cb.push(crate::counter_battery::CbSpot {
+                    of: 1,
+                    pos: c(B.0, B.1),
+                    at: c(B.0, B.1),
+                    err_mm: 20_000,
+                    heard_mm: 800_000,
+                    evidence: 3,
+                    shots: 2,
+                    decay_at: sec + 300 * hz,
+                    mark_at: 0,
+                    marked: true,
+                });
+            }));
+        }
+        plans(&mut w, 40, &mut sent);
+        (
+            sent.missions_near(gun, c(B.0, B.1), 1),
+            counters(&w).cb_missions,
+        )
+    };
+    assert_eq!(run(true), (1, 2), "the sharper marker is answered");
+    assert_eq!(run(false), (0, 1), "control: no new marker, no new mission");
+}
+
 /// R2: the flat M3 behind a crest cannot answer a marker beyond it: the
 /// AI sends no order (`cb_masked` 1, the evidence spent: once), the sim
 /// refuses nothing. Control: no crest: the mission.

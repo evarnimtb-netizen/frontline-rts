@@ -591,7 +591,8 @@ impl super::Planner<'_> {
     /// an enemy gun, as (marker, its `shots`), when `counter_fire` is 1, it
     /// is no wider than `cb_max_error_m` (else `cb_wide_holds`) and it has
     /// new evidence since the gun's last counter-fire order or refusal
-    /// (else `cb_stale_holds`).
+    /// (else `cb_stale_holds`): its `shots` differ from the ones last
+    /// answered and are not 0.
     fn cb_candidate(&mut self, rec: &AiArty) -> Option<(FxVec2, u32)> {
         let g = self.g;
         let a = &g.setup.rules.ai.arty;
@@ -610,7 +611,11 @@ impl super::Planner<'_> {
             self.ai.counters.cb_wide_holds += 1;
             return None;
         }
-        if best.shots <= rec.cb_shots {
+        // New evidence: shots other than the ones last answered (a spot's
+        // `shots` never fall, so `!=` also sees a switch to another
+        // marker with fewer shots; fix B-3). A spot with no shots was
+        // heard only from counter-fire rounds (fix B-1): nothing to answer.
+        if best.shots == 0 || best.shots == rec.cb_shots {
             self.ai.counters.cb_stale_holds += 1;
             return None;
         }
