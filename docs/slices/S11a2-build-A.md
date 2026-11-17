@@ -19,13 +19,13 @@ validation only), `crates/sim/src/ai/arty.rs` (the two `AiArty` fields, their va
 S11a2 dry-run step); `docs/STATE.md` "Versions" line; `docs/slices/targets/S11a2.toml` only to fix what the CLI refuses to parse (say so in the
 log); `docs/slices/S11a2-log.md`.
 
-Start from: `combat.rs` (`Burst` 2260, `hurt` 2299, `MatchState::burst` 2350: the owner skip at 2375 and `piece_between`; `fragments` 2529: the men
-list at 2590-2606; where the shell burst is built, 3192-3231; the kill loop 3397-3424); `fire_mission.rs` (`Mission` 80, `S11Counters` 260,
-`known_by_record` 671, `observe_bursts` 813: the gun branch at 880-896); `gunnery.rs` `gun_mission_tick` 872 (the round counters at 1133);
-`game.rs` (`PlayerState` 406, `order_gun_mission` 1738, the load checks of a gun squad's mission added by S11a1 A); `world.rs` (`SAVE_VERSION` 467,
-the Status-stage calls at 1538-1559); `rng.rs` (purposes end at 38); S11a1 A's layout commit `9ed0bf0` as the pattern for a SAVE bump with
-counters, AI fields, validation, hash and the fuzz staged save; `tuning.rs` `FireMissionTuning` and the `[ai.arty]` table S11a1 A added (every place
-a new key touches).
+Start from (line numbers are of `a6c5c72`; S11a1 Build C and its fixes moved some files: find every item by name with `tools/outline.sh`):
+`combat.rs` (`Burst`, `hurt`: it pushes a death only on the killing hit; `MatchState::burst`: the owner skip and `piece_between`; `fragments`:
+the men list, the own-statics skip and the own-frame skip `f.owner.0 == b.player`; where the shell burst is built; the kill loop);
+`fire_mission.rs` (`Mission`, `S11Counters`, `known_by_record`, `observe_bursts`: the gun branch, `update_intel`: the whole-second gate);
+`gunnery.rs` `gun_mission_tick` (where `gun_rounds[mode]` counts); `game.rs` (`PlayerState`, `order_gun_mission`: the aim offset has a FIXED
+length, which K2 must not copy; the load checks of a gun squad's mission); `world.rs` (`SAVE_VERSION`, the Status-stage calls); `rng.rs`
+(purposes end at 38); S11a1 A's layout commit `9ed0bf0` as the pattern for a SAVE bump; `tuning.rs` `FireMissionTuning` and the `[ai.arty]` table.
 
 ## Chunk 0 (before any edit, 5 minutes): the base set and the targets file
 1. `git log --oneline | head -5`, `git status --short`: the tree must be clean of S11a1 work in progress. If Build C's files are uncommitted, stop
@@ -38,8 +38,8 @@ a new key touches).
    fixed in the file now and logged.
 
 ## Chunk 1: one layout commit, keys, friendly fire
-1. Layout commit (nothing else in it): `SAVE_VERSION` 27 -> 28; every saved field of spec 3 at its zero default (`Mission::cb`, `S11bCounters`,
-   `PlayerState::s11b`, `PlayerState::cb` with `CbSpot` and `MAX_CB_SPOTS` in the new `counter_battery.rs`, the two `AiArty` fields, the six
+1. Layout commit (nothing else in it): `SAVE_VERSION` 27 -> 28; every saved field of spec 3 at its zero default (`Mission::cb`, `S11a2Counters`,
+   `PlayerState::s11a2`, `PlayerState::cb` with `CbSpot` and `MAX_CB_SPOTS` in the new `counter_battery.rs`, the two `AiArty` fields, the six
    `AiCounters` fields); load validation and hash for each; `save_fuzz.rs` staged save gains the four items of spec 3;
    `load_rejects_bad_s11a2_state` (one case per check), `s11a2_layout_roundtrips_and_hashes`. `PROTOCOL_VERSION` stays 14: say so in the commit
    text. `STATE.md` "Versions" line. Commit.
@@ -47,8 +47,8 @@ a new key touches).
    `docs/modding/tuning.md`; `load_rejects_bad_s11a2_keys` (one widened range must fail). `tools/ablate.sh`: the folder `S11a2-ablations` (mode
    `s11a2`: the S10c listing rules, allowed keys of spec 2, neutral file `b_off`, `NEUTRAL_BASE` default `target/s11a2-base40`) and the dry-run step
    in `tools/check.sh quick` beside the S11a1 one. BASELINE and snapshot refreshed (new keys only). Commit.
-3. F1-F4 in this order, each with its tests (spec 4): `Burst::ff`; the two owner tests; the roof rule for an own victim; the scratch list in
-   `DamageCtx` and the kill loop; `ff_kills`, `ff_wounds`, `ff_bursts`, `mortar_near_own_bursts`. Read every other use of `b.player` as an owner
+3. F1-F4 in this order, each with its tests (spec 4): `Burst::ff`; the two owner tests; the roof rule for an own victim; own statics and own
+   vehicle frames as ray blockers without damage (F3); `hurt` returning "killed", the scratch list in `DamageCtx` and the kill loop; `ff_kills`, `ff_wounds`, `ff_bursts`, `mortar_near_own_bursts`. Read every other use of `b.player` as an owner
    test in `burst` and `fragments` and leave it (vehicles, statics, wire, tracks: spec F2); list the ones left in the log. The scene helper for
    tests: a `ww2:ger_mortar_team` / `ww2:usa_mortar_team` Direct mission on a point 300 m off on flat ground (`s6_tests::spawn`), a rifle squad
    halted on the point.
@@ -57,7 +57,8 @@ differ); return if more than 45 self-counted turns are used (then chunk 2 is a n
 
 ## Chunk 2: sound evidence, markers, knowledge
 4. K1 in `counter_battery.rs` (`cb_note`) with the one call in `gun_mission_tick`; K2 and K3 in `cb_tick`, called beside `update_intel`;
-   `Purpose::CB_MARK` (39). Tests of spec 4 K1-K3 (helpers to fire N gun mission rounds exist in `s11a1_tests.rs`: `crest_gun`,
+   `Purpose::CB_MARK` (39); `decay_at` and `mark_at` rounded up to a whole second when set, the load bounds in ticks (spec 3); the marker
+   offset with a uniform length (spec K2). Tests of spec 4 K1-K3 (helpers to fire N gun mission rounds exist in `s11a1_tests.rs`: `crest_gun`,
    `order`, `mission`, `run_out`; the listener is a rifle squad of the other player 800 m from the gun; map fire with `World::mark_intel`).
 5. K4: `known_by_record`, `Mission::cb` in `order_gun_mission`, the four counters (`cb_missions`, `cb_rounds`, `cb_bursts`, `cb_near_bursts`); its
    three tests. The load check accepts `cb` only on a gun squad's mission.
@@ -77,7 +78,7 @@ Tests that must exist at the end (each names its control in a comment): the F1-F
 `<BASE>` hash; commits; SAVE 28 / PROTOCOL 14; test count from `check.sh`; `neutral.py` lines for A40 and Aoff40; the parse check result of chunk
 0; a code map of the new functions (`cb_note`, `cb_tick`, the scratch list's name, where `Burst::ff` is set, where `Mission::cb` is set); the owner
 tests left untouched (F2); any rule built differently from spec 4, with the reason; what Build B needs: how a test or a fortify row reads a
-player's markers and `S11bCounters`, how it turns the switches on, the name of the planner's own-men list in Build C's code, and whether `Stop`
+player's markers and `S11a2Counters`, how it turns the switches on, how S1 can read a squad's `nav.goal` and lead from the planner, and whether `Stop`
 on a gun or mortar squad ends its mission in one tick. Not done items by rule id.
 If a step cannot be finished: its switch stays 0 (it is 0 anyway), the neutrality proof is kept, and the log's top block says so first. Friendly
 fire (chunk 1) is worth more than markers (chunk 2): if only one fits, it is chunk 1, complete and tested. Never leave the tree with a red

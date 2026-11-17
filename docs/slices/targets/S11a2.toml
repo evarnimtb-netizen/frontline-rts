@@ -3487,7 +3487,8 @@ note = "of the matches with a gun; exposure: matches with a gun (%); control: a_
 
 # --- T134: its rounds are observed, not map fire ----------------------------
 # S11a2: counter-fire rounds (map fire on a sound marker, D 4.3, D 10 test 12) count with the
-# observed ones (S11a2-7 (A)); every other unobserved round still counts against the row.
+# observed ones (S11a2-7 (A)); every other unobserved round still counts against the row. The metric
+# is (direct + observed + counter-fire rounds fired as map fire) / all: no round counts twice.
 # Source: T11 (AI mortar rounds observed or direct >= 80 %); artillery-on-map.md 4.1.
 [[target]]
 id = "T134a"
@@ -3741,30 +3742,41 @@ note = "report: the own squad's losses (%); exposure: bombs fired (10 seeds x 2 
 
 # --- T140: a gun is found by sound (fortify row cb) ---------------------------------------
 # Source: artillery-on-map.md 4.3 (cb_rounds_to_mark 3, cb_delay_s 15, cb_error_pct 15, step 80,
-# floor 5), 10 test 5. A leIG 18 fires 8 rounds; the nearest enemy man stands 800 m from the gun.
+# floor 5), 10 test 5. A leIG 18 and a 105 mm M3 (10 seeds each) fire 8 rounds; the nearest enemy
+# man stands 800 m from the gun.
 [[target]]
 id = "T140a"
 metric = "fortify10.s11a2.cb.marked_pct"
 min = 100
 exposure = "fortify10.s11a2.cb.rounds_fired"
-exposure_min = 80
+exposure_min = 160
 control = "fortify10.s11a2.cb.control.marked_pct"
 note = "seeds where the enemy holds a marker 15 s after the third round; exposure: rounds fired; control: counter_battery 0 (0)"
 [[target]]
 id = "T140b"
-metric = "fortify10.s11a2.cb.first_error_pct"
-max = 15
+metric = "fortify10.s11a2.cb.mean_error_pct"
+min = 3
+max = 12
 exposure = "fortify10.s11a2.cb.marked_pct"
 exposure_min = 100
-control = "fortify10.s11a2.cb.control.first_error_pct"
-note = "the worst seed's first marker miss as % of the listener distance; exposure: seeds marked (%); control: counter_battery 0 (null)"
+control = "fortify10.s11a2.cb.control.mean_error_pct"
+note = "mean first marker miss as % of the listener distance the sim used (CbSpot heard_mm), 20 markers; a uniform length to 15 % gives 7.5 +- 1; a fixed-length draw gives 15, a marker on the gun 0: both fail; exposure: seeds marked (%); control: counter_battery 0 (null)"
+[[target]]
+id = "T140d"
+metric = "fortify10.s11a2.cb.worst_error_pct"
+max = 15
+kind = "report"
+exposure = "fortify10.s11a2.cb.marked_pct"
+exposure_min = 100
+control = "fortify10.s11a2.cb.control.worst_error_pct"
+note = "report: the worst first marker miss (%); holds by construction (the draw is bounded by the error), so not a hard row; control: counter_battery 0 (null)"
 [[target]]
 id = "T140c"
 metric = "fortify10.s11a2.cb.last_error_m"
 max = 45
 kind = "report"
 exposure = "fortify10.s11a2.cb.rounds_fired"
-exposure_min = 80
+exposure_min = 160
 control = "fortify10.s11a2.cb.control.last_error_m"
 note = "report: mean marker miss after 8 rounds (derived: 15 % x 0.8^5 is under the 5 % floor, 40 m at 800 m); control: counter_battery 0 (null)"
 
@@ -3792,7 +3804,8 @@ note = "report: crew men of the marked gun lost to the answer (%); no sourced bo
 
 # --- T142: the AI lifts its fire before own men walk into it (fortify row ff_lift; Build B chunk 2) ---
 # Source: artillery-on-map.md 10 test 10 ("the AI lifts fire in time in >= 9 of 10 staged
-# assaults"). Owner question S11a2-9 (A): hard. 10 seeds x 2 factions.
+# assaults"). Owner question S11a2-9 (A): hard. 10 seeds x 2 factions; 12 bombs, the own squad starts
+# 90 m beyond the point and walks onto it (S11a2.md 4 M3). T142c keeps the row honest.
 [[target]]
 id = "T142a"
 metric = "fortify10.s11a2.ff_lift.clean_runs_pct"
@@ -3810,6 +3823,14 @@ exposure = "fortify10.s11a2.ff_lift.rounds_fired"
 exposure_min = 20
 control = "fortify10.s11a2.ff_lift.control.lifted_pct"
 note = "report: runs where the mission was stopped by the AI; control: ff_safe 0 (0)"
+[[target]]
+id = "T142c"
+metric = "fortify10.s11a2.ff_lift.control.clean_runs_pct"
+max = 50
+exposure = "fortify10.s11a2.ff_lift.control.rounds_fired"
+exposure_min = 120
+control = "fortify10.s11a2.ff_lift.clean_runs_pct"
+note = "the control must bite: without the rule (ff_safe 0) the squad walks into its own bombs in at least half of the runs, else T142a passes by construction; exposure: bombs the control fired (20 runs, 12 a mission); control: the row with the rule"
 
 # --- T143: own-fire deaths in AI matches (report with a bound) --------------------------------
 # Source: Q22; S11a2.md 8.3. The bound 1 a match is a plan bound (as T138e), not a design figure.
