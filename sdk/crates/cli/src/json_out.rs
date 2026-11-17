@@ -910,6 +910,8 @@ pub fn fortify(r: &FortifyReport) -> Value {
         "s10b_ai": serde_json::to_value(&r.s10b_ai).unwrap_or_default(),
         // S10c-ai Build C chunk 2 (C7): `fortify10.s10c.belt.*`.
         "s10c": serde_json::to_value(&r.s10c).unwrap_or_default(),
+        // S11a1 Build B (C5): `fortify10.s11a1.{gun_fm,mask,barrage,breach_prep}.*`.
+        "s11a1": serde_json::to_value(&r.s11a1).unwrap_or_default(),
         "hard_failed": checks.iter().filter(|c| c["pass"] == json!(false)).count(),
         "checks": checks,
         "rows": rows,
