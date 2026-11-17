@@ -1643,7 +1643,7 @@ gun_break_m = 150            # m (G6): a seen enemy this close to the gun ends i
 # --- S11a2: friendly fire and counter-battery by sound (docs/slices/S11a2.md 2; D 4.3, D 6.3) ---
 # Both switches stay 0 until S11a2 Build B (ablations ff_off, cb_off).
 friendly_fire = 1            # F1 switch: mortar and gun mission bursts hurt own men (Q22; D 8 friendly_fire_indirect)
-counter_battery = 0          # K1 switch: infantry-gun mission rounds leave sound evidence with the enemy (D 4.3)
+counter_battery = 1          # K1 switch: infantry-gun mission rounds leave sound evidence with the enemy (D 4.3)
 cb_rounds_to_mark = 3        # K2: rounds heard from one spot before it is marked (D 8, gun)
 cb_decay_s = 300             # s (K3): a spot loses one piece of evidence this often; at none it goes with its marker (D 8)
 cb_delay_s = 15              # s (K2): the marker comes this long after the marking round (D 8)

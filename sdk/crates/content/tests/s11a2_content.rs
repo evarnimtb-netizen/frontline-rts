@@ -40,7 +40,7 @@ fn load_rejects_bad_s11a2_keys() {
             fm.cb_decay_s,
             fm.cb_delay_s
         ),
-        (1, 0, 3, 300, 15)
+        (1, 1, 3, 300, 15)
     );
     assert_eq!(
         (

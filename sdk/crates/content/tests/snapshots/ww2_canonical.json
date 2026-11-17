@@ -2261,7 +2261,7 @@
         "cb_near_m": 20,
         "cb_reset_m": 75,
         "cb_rounds_to_mark": 3,
-        "counter_battery": 0,
+        "counter_battery": 1,
         "direct_s": 4,
         "ffe_error_m": 10,
         "fire_direction_s": 10,
