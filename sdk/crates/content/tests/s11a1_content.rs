@@ -52,7 +52,17 @@ fn load_rejects_bad_s11a1_keys() {
         (3, 25, 6, 50, 150)
     );
     assert_eq!(s.rules.supply.as_ref().unwrap().arty_base_rearm, 1);
-    assert_eq!(s.rules.ai.arty, AiArtyTuning::default());
+    // Build C: ww2 turns the three switches on; every other key is the
+    // default.
+    assert_eq!(
+        s.rules.ai.arty,
+        AiArtyTuning {
+            buy: 1,
+            fo: 1,
+            prep: 1,
+            ..AiArtyTuning::default()
+        }
+    );
     assert_eq!(FireMissionTuning::KEYS.len(), 35);
     assert_eq!(AiArtyTuning::KEYS.len(), 21);
     assert!(
@@ -68,6 +78,7 @@ fn load_rejects_bad_s11a1_keys() {
     let fm = s.rules.fire_mission.as_ref().unwrap();
     assert_eq!((fm.gun_missions, fm.radio_link, fm.mask), (0, 0, 0));
     assert_eq!(s.rules.supply.as_ref().unwrap().arty_base_rearm, 1);
+    // The switches off: every key the default.
     assert_eq!(s.rules.ai.arty, AiArtyTuning::default());
     // An override reaches the setup.
     let on = write("on", "[ai.arty]\nbuy = 1\npost_rays = 48\n");
