@@ -507,6 +507,27 @@ fn ai_counter_fire_answers_a_new_marker_with_fewer_shots() {
     assert_eq!(run(false), (0, 1), "control: no new marker, no new mission");
 }
 
+/// Fix B-4: the own-men check of counter-fire looks within
+/// `danger_close_m` (50) plus the aim error the sim uses (the marker's 40
+/// m, under the map-fire error): an own man 70 m from the marker holds
+/// it. Control: 120 m off: the mission.
+#[test]
+fn ai_counter_fire_spares_own_men_within_the_aim_error() {
+    let run = |dx: i32| {
+        let (mut w, gun) = cf_scene(1, 0, LEIG, 100, MARK, false, |_| {});
+        let own = spawn(&mut w, 0, WALKER, MARK.0 + dx, MARK.1);
+        unarm(&mut w, own);
+        let mut sent = Sent::default();
+        plans(&mut w, 20, &mut sent);
+        (
+            sent.missions_near(gun, c(MARK.0, MARK.1), 1),
+            counters(&w).cb_missions,
+        )
+    };
+    assert_eq!(run(70), (0, 0), "own man inside 50 + 40 m");
+    assert_eq!(run(120), (1, 1), "control: own man outside");
+}
+
 /// R2: the flat M3 behind a crest cannot answer a marker beyond it: the
 /// AI sends no order (`cb_masked` 1, the evidence spent: once), the sim
 /// refuses nothing. Control: no crest: the mission.

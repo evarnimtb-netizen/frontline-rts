@@ -158,8 +158,22 @@ pub(super) fn own_near(
     target: FxVec2,
     firing: Option<SquadId>,
 ) -> bool {
+    let d = Fx::from_int(g.setup.rules.ai.arty.danger_close_m.min(2000) as i32);
+    own_near_within(g, ents, me, target, firing, d)
+}
+
+/// [`own_near`] with the distance `danger_m` in place of `danger_close_m`
+/// (counter-fire adds its aim error; fix B-4).
+pub(super) fn own_near_within(
+    g: &MatchState,
+    ents: &crate::ecs::Entities,
+    me: PlayerId,
+    target: FxVec2,
+    firing: Option<SquadId>,
+    danger_m: Fx,
+) -> bool {
     let a = &g.setup.rules.ai.arty;
-    let danger = sq_m(Fx::from_int(a.danger_close_m.min(2000) as i32));
+    let danger = sq_m(danger_m);
     let lift = sq_m(Fx::from_int(a.lift_m.min(2000) as i32));
     g.squads.iter().any(|(&id, q)| {
         if q.owner != me || Some(id) == firing || q.members.is_empty() {
@@ -519,8 +533,8 @@ impl super::Planner<'_> {
             return;
         }
         // S11a2 R2 (last gates), R3: counter-fire before the A4 targets.
-        if let Some((at, shots)) = marker
-            && self.counter_fire(id, at, shots, rounds, &mut rec)
+        if let Some((at, shots, err_mm)) = marker
+            && self.counter_fire(id, pos, at, shots, err_mm, rounds, &mut rec)
         {
             self.ai.arty.insert(id, rec);
             return;
@@ -593,7 +607,7 @@ impl super::Planner<'_> {
     /// new evidence since the gun's last counter-fire order or refusal
     /// (else `cb_stale_holds`): its `shots` differ from the ones last
     /// answered and are not 0.
-    fn cb_candidate(&mut self, rec: &AiArty) -> Option<(FxVec2, u32)> {
+    fn cb_candidate(&mut self, rec: &AiArty) -> Option<(FxVec2, u32, u32)> {
         let g = self.g;
         let a = &g.setup.rules.ai.arty;
         if a.counter_fire == 0 {
@@ -619,22 +633,40 @@ impl super::Planner<'_> {
             self.ai.counters.cb_stale_holds += 1;
             return None;
         }
-        Some((best.at, best.shots))
+        Some((best.at, best.shots, best.err_mm))
     }
 
-    /// S11a2 R2 (own men, the sim's refusal) and R3 for gun squad `id`:
-    /// map fire of `rounds` on the marker `at` (true when ordered). A
-    /// refusal counts `cb_masked` and spends the evidence (`cb_shots`).
+    /// S11a2 R2 (own men, the sim's refusal) and R3 for gun squad `id` at
+    /// `gun`: map fire of `rounds` on the marker `at` with error `err_mm`
+    /// (true when ordered). Own men are looked for within `danger_close_m`
+    /// plus the aim error the sim will use (fix B-4: map fire aims with
+    /// the marker's error, at most the map-fire error; observed fire with
+    /// the first-round error). A refusal counts `cb_masked` and spends the
+    /// evidence (`cb_shots`).
+    #[allow(clippy::too_many_arguments)]
     fn counter_fire(
         &mut self,
         id: SquadId,
+        gun: FxVec2,
         at: FxVec2,
         shots: u32,
+        err_mm: u32,
         rounds: u16,
         rec: &mut AiArty,
     ) -> bool {
         let g = self.g;
-        if self.own_near(at, Some(id)) {
+        let aim = g.setup.rules.fire_mission.as_ref().map_or(Fx::ZERO, |fm| {
+            let d = (at - gun).length();
+            let (md, _) = g.mode_for(self.ents, self.terrain, id, gun, at, self.tick);
+            if md == crate::fire_mission::mode::MAP {
+                crate::fire_mission::start_error_for(fm, true, d, true)
+                    .min(crate::counter_battery::from_mm(err_mm))
+            } else {
+                crate::fire_mission::start_error_for(fm, false, d, true)
+            }
+        });
+        let danger = Fx::from_int(g.setup.rules.ai.arty.danger_close_m.min(2000) as i32) + aim;
+        if own_near_within(g, self.ents, self.me, at, Some(id), danger) {
             return false;
         }
         if g.mission_refusal(self.ents, self.terrain, id, at, rounds, self.tick)
