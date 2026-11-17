@@ -3245,6 +3245,7 @@ impl MatchState {
                 mbursts.push(crate::fire_mission::MissionBurst {
                     mission: e.mission,
                     pos,
+                    player: e.player,
                 });
             }
             let Some((he, damage, suppression)) = self.event_blast(e) else {

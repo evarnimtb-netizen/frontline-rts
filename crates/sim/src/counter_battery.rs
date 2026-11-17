@@ -62,7 +62,7 @@ fn mm(v: FxVec2) -> u32 {
 }
 
 /// A length in mm as metres.
-fn from_mm(v: u32) -> Fx {
+pub(crate) fn from_mm(v: u32) -> Fx {
     Fx::from_raw((((v as u64) << 16) / 1000).min(i32::MAX as u64) as i32)
 }
 
@@ -284,16 +284,24 @@ impl MatchState {
 
     /// K4: player `p` holds a marker within `intel_snap_m` of `pt`.
     pub(crate) fn near_own_marker(&self, p: PlayerId, pt: FxVec2) -> bool {
-        let Some(fm) = self.setup.rules.fire_mission.as_ref() else {
-            return false;
-        };
+        self.own_marker_err(p, pt).is_some()
+    }
+
+    /// K4: the error (mm) of player `p`'s marker nearest `pt` within
+    /// `intel_snap_m` (ties: the lower index), if any.
+    pub(crate) fn own_marker_err(&self, p: PlayerId, pt: FxVec2) -> Option<u32> {
+        let fm = self.setup.rules.fire_mission.as_ref()?;
         let snap = Fx::from_int(fm.intel_snap_m as i32);
         let r = FxVec2::new(snap, Fx::ZERO).length_sq_raw();
-        self.players.get(p.0 as usize).is_some_and(|pl| {
-            pl.cb
-                .iter()
-                .any(|s| s.marked && (s.at - pt).length_sq_raw() <= r)
-        })
+        let pl = self.players.get(p.0 as usize)?;
+        let mut best: Option<(u64, u32)> = None;
+        for s in pl.cb.iter().filter(|s| s.marked) {
+            let d = (s.at - pt).length_sq_raw();
+            if d <= r && best.is_none_or(|(bd, _)| d < bd) {
+                best = Some((d, s.err_mm));
+            }
+        }
+        best.map(|(_, e)| e)
     }
 }
 

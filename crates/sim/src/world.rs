@@ -899,7 +899,7 @@ impl World {
                     .slots()
                     .iter()
                     .flatten()
-                    .any(|p| p.mission >= g.next_mission)
+                    .any(|p| p.mission & !crate::fire_mission::CB_ROUND >= g.next_mission)
                 {
                     return Err(err("projectile of an unknown fire mission"));
                 }

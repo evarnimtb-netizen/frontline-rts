@@ -1163,8 +1163,8 @@ pub fn s11a1_blocks(c: &crate::skirmish::S11a1Faction) -> (Value, Value) {
 /// sim's own `cb_missions` counts every mission on a marker, any
 /// player); `matches_with_marker`, `matches_with_counter_fire`) and
 /// `s11a2_derived` (spec 7 names; null where the denominator is 0).
-/// Counter-fire bursts after the mission ended are not counted
-/// (`cb_bursts`, `cb_near_bursts`: live missions only).
+/// Counter-fire bursts count also after the mission ended (`cb_bursts`,
+/// `cb_near_bursts`; S11a2 fix B-2).
 pub fn s11a2_blocks(c: &crate::skirmish::S11a2Faction) -> (Value, Value) {
     use frontline_sim::fire_mission::mode;
     let n = c.matches.max(1) as f64;

@@ -1103,7 +1103,13 @@ impl MatchState {
             ttl: ttl.clamp(2, u16::MAX as i32) as u16,
             he: true,
             ammo,
-            mission: m.id,
+            // S11a2 fix B-2: a counter-fire round carries the flag.
+            mission: m.id
+                | if m.cb {
+                    crate::fire_mission::CB_ROUND
+                } else {
+                    0
+                },
         });
         let reload_ticks = reload_of(&self.vehicles[&id], v, setup);
         let vs = self.vehicles.get_mut(&id).expect("listed");

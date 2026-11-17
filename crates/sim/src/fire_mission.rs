@@ -325,9 +325,19 @@ pub struct S11a2Counters {
 /// One burst of a mission round (Damage stage), for the observation pass.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct MissionBurst {
+    /// The round's mission id as the projectile carries it (with
+    /// [`CB_ROUND`] for a counter-fire round).
     pub mission: u32,
     pub pos: FxVec3,
+    /// The firing player.
+    pub player: u8,
 }
+
+/// S11a2 fix B-2: the high bit of a projectile's `mission` marks a round
+/// of a counter-fire mission, so its burst counts (`cb_bursts`,
+/// `cb_near_bursts`) after the mission ended too. Mission ids stay below
+/// it (`next_mission` counts missions).
+pub(crate) const CB_ROUND: u32 = 1 << 31;
 
 /// One entry of the diagnostic burst log (`World::enable_burst_log`,
 /// mortar-bench): not saved, not hashed, never read by the sim.
@@ -847,6 +857,26 @@ impl MatchState {
         }
     }
 
+    /// S11a2 K4: player `owner`'s counter-fire burst at `p` counts
+    /// `cb_bursts`, and `cb_near_bursts` within `cb_near_m` of a living
+    /// enemy infantry gun (a report; live or ended mission, fix B-2).
+    fn count_cb_burst(&mut self, ents: &Entities, fm: &FireMissionTuning, owner: usize, p: FxVec2) {
+        let r = m(fm.cb_near_m);
+        let near = self.vehicles.iter().any(|(&v, vs)| {
+            ents.kind.get(v.index()) == Some(&EntityKind::Vehicle)
+                && ents.owner[v.index()].0 as usize != owner
+                && self.setup.vehicles[vs.type_idx as usize].role
+                    == frontline_content::VehicleRole::InfGun
+                && within(ents.transform[v.index()].pos.xy(), p, r)
+        });
+        let Some(pl) = self.players.get_mut(owner) else {
+            return;
+        };
+        let c = &mut pl.s11a2;
+        c.cb_bursts = c.cb_bursts.saturating_add(1);
+        c.cb_near_bursts = c.cb_near_bursts.saturating_add(near as u32);
+    }
+
     /// S5b: the linked observers of the missions whose rounds burst this
     /// tick look for the burst (Damage stage, serial, burst order). A seen
     /// burst of an observed or direct mission shrinks its aim offset; the
@@ -863,15 +893,22 @@ impl MatchState {
         };
         let hz = self.setup.tick_hz as u64;
         for b in bursts {
-            let Some((&id, _)) = self.squads.iter().find(
-                |(_, sq)| matches!(&sq.order, Order::FireMission { m, .. } if m.id == b.mission),
-            ) else {
+            let mid = b.mission & !CB_ROUND;
+            let Some((&id, _)) = self
+                .squads
+                .iter()
+                .find(|(_, sq)| matches!(&sq.order, Order::FireMission { m, .. } if m.id == mid))
+            else {
                 // The mission ended (its last round is still in the air, or
-                // the squad got another order): nobody adjusts on it.
+                // the squad got another order): nobody adjusts on it. A
+                // counter-fire round's burst still counts (fix B-2).
+                if b.mission & CB_ROUND != 0 {
+                    self.count_cb_burst(ents, &fm, b.player as usize, b.pos.xy());
+                }
                 if let Some(log) = self.burst_log.as_mut() {
                     log.push(BurstRecord {
                         tick,
-                        mission: b.mission,
+                        mission: mid,
                         pos: b.pos,
                         seen: false,
                         live: false,
@@ -935,20 +972,10 @@ impl MatchState {
             // S11a1: a gun's bursts count in `S11Counters` only.
             if gun {
                 // S11a2 K4: a counter-fire burst, near a living enemy
-                // infantry gun or not (a report; live missions only).
-                let cb_near = mcb && {
-                    let r = m(fm.cb_near_m);
-                    self.vehicles.iter().any(|(&v, vs)| {
-                        ents.kind.get(v.index()) == Some(&EntityKind::Vehicle)
-                            && ents.owner[v.index()].0 as usize != owner
-                            && self.setup.vehicles[vs.type_idx as usize].role
-                                == frontline_content::VehicleRole::InfGun
-                            && within(ents.transform[v.index()].pos.xy(), p, r)
-                    })
-                };
-                let c = &mut self.players[owner].s11a2;
-                c.cb_bursts = c.cb_bursts.saturating_add(mcb as u32);
-                c.cb_near_bursts = c.cb_near_bursts.saturating_add(cb_near as u32);
+                // infantry gun or not (a report).
+                if mcb {
+                    self.count_cb_burst(ents, &fm, owner, p);
+                }
                 let c = &mut self.players[owner].s11;
                 c.near_own_bursts = c.near_own_bursts.saturating_add(near as u32);
             } else {
@@ -964,7 +991,7 @@ impl MatchState {
             if let Some(log) = self.burst_log.as_mut() {
                 log.push(BurstRecord {
                     tick,
-                    mission: b.mission,
+                    mission: mid,
                     pos: b.pos,
                     seen,
                     live: true,

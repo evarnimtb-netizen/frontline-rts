@@ -992,6 +992,73 @@ fn counter_fire_rounds_add_evidence_but_no_shots() {
     assert_eq!(run(false), (3, 3), "control: not counter-fire");
 }
 
+/// Player 0 holds a marker of player 1's gun at [`MAP_TARGET`] with
+/// error `err_m`.
+fn own_marker(w: &mut World, err_m: u32) {
+    let at = c(MAP_TARGET.0, MAP_TARGET.1);
+    let sec = w.tick().div_ceil(30) * 30;
+    assert!(w.edit_player(PlayerId(0), |pl| {
+        pl.cb = vec![CbSpot {
+            of: 1,
+            pos: at,
+            at,
+            err_mm: err_m * 1000,
+            heard_mm: 800_000,
+            evidence: 3,
+            shots: 3,
+            decay_at: sec + 30 * 300,
+            mark_at: 0,
+            marked: true,
+        }];
+    }));
+}
+
+/// Fix B-2: with `counter_fire` 1, map fire on a marker aims with the
+/// marker's error (the start offset at most `err_mm`), not the map-fire
+/// error (at least `gun_map_fire_error_min_m` 50 m). Control
+/// `counter_fire` 0: the map-fire error. 8 seeds.
+#[test]
+fn counter_fire_aims_with_the_marker_error() {
+    let run = |cf: u32, seed: u64| {
+        let (mut w, gun, _) = cb_scene(1, |s| {
+            s.seed = seed;
+            s.rules.ai.arty.counter_fire = cf;
+        });
+        own_marker(&mut w, 12);
+        map_fire(&mut w, gun, 1);
+        let m = mission(&w, gun).expect("accepted");
+        assert!(m.cb && m.mode == crate::fire_mission::mode::MAP);
+        m.offset.length()
+    };
+    for seed in 1..=8 {
+        assert!(run(1, seed) <= Fx::from_int(12), "seed {seed}");
+        let off = run(0, seed);
+        assert!(off > Fx::from_int(49), "control, seed {seed}: {off:?}");
+    }
+}
+
+/// Fix B-2: every burst of a counter-fire mission counts (`cb_bursts`),
+/// also the ones that land after the mission ended (most rounds of a
+/// short mission). Control: the same map fire with no marker: none.
+#[test]
+fn counter_fire_bursts_count_after_the_mission_ended() {
+    let run = |marker: bool| {
+        let (mut w, gun, _) = cb_scene(1, |_| {});
+        if marker {
+            own_marker(&mut w, 12);
+        }
+        map_fire(&mut w, gun, 4);
+        run_out(&mut w, gun, 300);
+        let live = pl(&w, 0).s11a2.cb_bursts;
+        steps(&mut w, 60 * 30);
+        (live, pl(&w, 0).s11a2.cb_bursts)
+    };
+    let (live, all) = run(true);
+    assert!(live < 4, "some rounds were in the air at the end: {live}");
+    assert_eq!(all, 4, "every burst counts");
+    assert_eq!(run(false), (0, 0), "control: not counter-fire");
+}
+
 /// K1 (D 10 test 5): a gun that hops 60 m keeps its spot; 80 m (beyond
 /// `cb_reset_m` 75) starts a new one, unless the spot's marker error is
 /// wider than the hop.

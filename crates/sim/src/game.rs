@@ -1770,6 +1770,16 @@ impl MatchState {
             .flatten()
             .filter(|c| c.offset.length() < err)
             .map(|c| c.offset);
+        // S11a2 K4: aimed at one of the player's markers (counter-fire).
+        let cb_err = self.own_marker_err(p, target);
+        // Fix B-2: with `[ai.arty] counter_fire` 1, map fire on a marker
+        // aims with the marker's own error (the marker already carries the
+        // uncertainty of where the gun is; the map-fire error on top would
+        // count it twice): a length uniform in `0..=err_mm`, at most the
+        // map-fire error.
+        let cb_aim = cb_err.filter(|_| {
+            mode0 == mode::MAP && remembered.is_none() && self.setup.rules.ai.arty.counter_fire != 0
+        });
         let offset = match remembered {
             Some(o) => o,
             None => {
@@ -1781,7 +1791,14 @@ impl MatchState {
                 );
                 let a = rng.range_fx(Fx::ZERO, Fx::TAU);
                 let (sn, cs) = a.sin_cos();
-                FxVec2::new(cs.mul(err), sn.mul(err))
+                let len = match cb_aim {
+                    Some(e) => {
+                        let mm = rng.range_i32(0, e.min(i32::MAX as u32) as i32) as u32;
+                        crate::counter_battery::from_mm(mm).min(err)
+                    }
+                    None => err,
+                };
+                FxVec2::new(cs.mul(len), sn.mul(len))
             }
         };
         let prep = if mode0 == mode::DIRECT {
@@ -1799,8 +1816,7 @@ impl MatchState {
             ready_at: ctx.tick + prep as u64 * hz as u64,
             observer: obs,
             ranged: remembered.is_some(),
-            // S11a2 K4: aimed at one of the player's markers.
-            cb: self.near_own_marker(p, target),
+            cb: cb_err.is_some(),
             ..Mission::default()
         };
         self.next_mission += 1;
