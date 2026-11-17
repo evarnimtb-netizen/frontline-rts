@@ -430,7 +430,8 @@ impl super::Planner<'_> {
             return;
         };
         let min = Fx::from(w.range_min) + Fx::from_int(20);
-        let max = Fx::from(ind.range).min(Fx::from(w.range_max)) - Fx::from_int(10);
+        // The table's reach (`range_m`), as the sim's order check reads it.
+        let max = Fx::from(ind.range) - Fx::from_int(10);
         let targets = self.fire_targets(pos, min, max, a.danger_close_m, false, known, own);
         if targets.is_empty() {
             self.ai.arty.insert(id, rec);
