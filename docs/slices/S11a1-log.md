@@ -59,8 +59,10 @@ Breach rows (`fortify-test`, 10 seeds x both sides, value / control prep 0): mor
 lost 76.8 / 76.8 %, prep fired 0 %; gun gap 0 / 0, placed 0 / 0, attackers 77.7 / 77.7 %, prep fired 35 %.
 Other files touched: tests found with the artillery AI off keep it off (`s10a_tests` empty-fort fight, `tests/s5a_ai.rs`
 `ai_setup`, `tests/save_fuzz.rs` `setup`); `tests/ai.rs` accepts an infantry gun's mission; content test card weights.
-Check: `tools/check.sh quick 730e67f` all ok, 929 tests (release CLI rebuilt). Full `fortify-test --seeds 10` into
-`target/s11a1-C40/fortify10.json` (background; targets below when it lands).
+Check: `tools/check.sh quick 730e67f` all ok, 929 tests (release CLI rebuilt). Full `fortify-test --seeds 10` (1,616 s)
+`target/s11a1-C40/fortify10.json`; `targets --from-json target/s11a1-C40`: 84 pass, 9 miss (hard 0), 2 unexposed.
+T128a/b, T129a, T130a/b, T137e/f PASS; T129b 90 MISS (report); T131a/b UNEXPOSED (mortar prep fired 0 %, min 80), T131c
+76.8 MISS (report), T131d (gun) 0 MISS (report, exposure 35 %). T132-T138 on 160 sets: the orchestrator's 480.
 
 ## Build B (2026-11-17)
 Commits: `6f22f00` content + fix A-1, `c2afd8c` A-2..A-6, `6a8db14` rows / JSON / neutral.py / doc, `2097289` rows
