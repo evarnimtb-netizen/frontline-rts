@@ -6,25 +6,56 @@ only your files (`git commit -m ... -- FILES`), never `git add -A`, never the un
 `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Build B done 2026-11-17 (`f705d08`..HEAD). All four switches 1 in ww2. BALANCE STOP RULE TRIPPED on the 40 set (owner):
-default Germany 21/40 (52.5 %) vs `ff_off` 18/40 (45.0 %) on the same seeds = 7.5 points (13 paired flips, 8 to Germany; a 40 set
-has 11-15 points of noise). Not tuned. The orchestrator's paired 480 decides; until then the slice is held for the owner.**
-- Risk 6 is live: `cb_shell_share_pct` 80.6 (Germany) / 90.8 (USA) on the default 40 set, above the plan bound 50 (T148c/d, report).
-  Counter-fire runs before A4 and fires again on every new enemy round once the marker is under 60 m; near bursts 0 %. Read
-  `counter_fire_off` first (spec 10 risk 6). It went through the reserve and A5 budget as built.
-- SAVE 28, PROTOCOL 14 (no new save field). Neutral base still `target/s11a2-base40-fix`; `b_off` = it 40/40.
-- Orchestrator to run: `ff_safe_off`, `cb_off`, `counter_fire_off`, `a_off`+`b_off` against `730e67f`, the 160/480 sets, a fresh
-  fortify10 (the one in `target/s11a2-B40` is chunk 1's: `ff_lift` null, T142 SKIP; values below from `s11a2_rows_one_off`).
+**State: Fix of Build B done 2026-11-17 (`11f5bb0`..HEAD, findings B-1..B-7 all done). All four switches 1 in ww2. Balance on the
+40 set now: default Germany 19/40 (47.5 %), `counter_fire_off` 18/40 (45.0 %); Build B's `ff_off` 18/40 (not replayed). The stop
+rule's paired 480 is still the orchestrator's; the slice stays held for the owner until then.**
+- Counter-fire share of gun rounds (default 40 set): Germany 27.7 %, USA 62.3 % (plan bound 50, T148c/d report). The loop is gone
+  (B-1); USA stays over the bound because its M3 has few observed targets (207 observed + 43 plain map rounds in 40 matches)
+  while it hears about 790 German rounds: R2 now answers every `cb_rounds_to_mark` (3) new rounds with up to 4. If the owner wants
+  the bound hard, the next knob is outside the spec's keys (rounds per answer = new shots, or a per-gun counter-fire budget).
+- Near bursts now count (B-2): 42.0 % (Ger) / 33.2 % (USA) of counter-fire bursts within `cb_near_m` of an enemy gun; the `cb`
+  row answer 22.5 %, crew loss still 0 % (the answer row has no metric of crews hit in matches; add one in S11a3 if wanted).
+- SAVE 28, PROTOCOL 14 (no new save field, no new key). Neutral base `target/s11a2-base40-fix`; `b_off` = it 40/40 (Fix).
+- Orchestrator to run: `ff_safe_off`, `cb_off`, `ff_off` on the fixed binary, the 160/480 sets, a fresh fortify10 (T142 rows
+  now measure: seeds 1-10 clean 100 %, lifted 100 %, 20 bombs; control clean 0 %, 240 bombs: T142a-c pass).
 - Weakness: with ff_safe the spotter must stand 70 m to `observe_leader_m - 10` from the target (400 in ww2: fine; a mod with a
   short observe range gets no spotter). The `ff` row's own_vs_enemy 104.8 % is the blast as built, not tuned.
-- `ff_safe_off` reading (A-3): with friendly fire on and `ff_safe` 0 the AI shells its own assault (P3 and A6 run as in S11a1,
-  no S3 lift, no S2 filter).
-- Tick check (A-5): `fire_mission.rs` about 921-934 scans every squad and own soldier per mortar burst even with the switch 0
-  (`mortar_near_own_bursts`); measure it in `verify.sh`. Default 40 set tick p99 2.74 ms (b_off 2.39).
-- Code map B: `ai/arty.rs` `own_near` (free fn, S1), `ff_lift` (S3), `cb_candidate` / `counter_fire` (R1-R3), `run_arty` order
-  P1 alone -> counter-fire -> A4; `ai/mortar.rs` `fire_targets(.., firing)` (S2, `ff_holds`), `spot_for` stand-off;
-  `ai.rs` `plan` calls `ff_lift` before `mortars`; `World::drive_ff_lift`; rows in `sdk/crates/cli/src/fortify/s11a2.rs`;
-  AI tests `crates/sim/src/s11a2_ai_tests.rs`.
+- Tick check (A-5): `fire_mission.rs` `observe_bursts` scans every squad and own soldier per mortar burst even with the switch 0
+  (`mortar_near_own_bursts`); measure it in `verify.sh`.
+- Code map: `ai/arty.rs` `own_near` / `own_near_within` (S1; reads the AI's pending Move/AttackMove, B-6), `ff_lift` (S3),
+  `cb_candidate` (R1, R2 first gates: shots >= answered + `cb_rounds_to_mark`, or fewer = another marker), `counter_fire` (own men
+  within `danger_close_m` + aim error, B-4); `counter_battery.rs` `cb_note(.., cb)`, `own_marker_err`; `game.rs`
+  `order_gun_mission` (cb aim, B-2); `fire_mission.rs` `CB_ROUND`, `count_cb_burst`; rows `sdk/crates/cli/src/fortify/s11a2.rs`.
+
+## Fix of Build B (2026-11-17; independent review of Build B: 1 blocker, 2 major, 4 minor; all verified in the code)
+Commits: `11f5bb0` B-1, `792afbb` B-3, `c4938cb` B-2, `4feaa7d` B-4, `60461a0` B-6, `d80e28a` B-1 (2/2), `1a587fd` B-5, `db577e6` B-7.
+B-1 (blocker) counter-fire fed itself: every counter-fire round added `shots` with the enemy, so one heard round ordered a 4-round
+answer, and so on. Decided: a round of a `cb` mission adds evidence (the firer's marker still forms and sharpens: counter-fire is
+heard) but no `shots`; R2 skips a spot with 0 shots. Evidence stays (markers no longer immortal once the loop is gone: a gun that
+stops firing loses its marker by decay). The first 40 set after it still showed USA at 68.2 %, so R2 also needs
+`cb_rounds_to_mark` new shots (as the review asked): 62.3 % after. The load check drops "marked needs a shot". Tests
+`counter_fire_rounds_add_evidence_but_no_shots` (control: no marker, shots 3), `ai_counter_fire_waits_for_new_evidence` (2 new
+rounds held, control 3: a mission).
+B-2: with `[ai.arty] counter_fire` 1 map fire on an own marker aims with the marker's error: bearing then a length uniform in
+`0..=err_mm` (two draws of `MISSION_AIM`), at most the map-fire error (so the load bound holds); no new key. Bursts of ended
+counter-fire missions count: the round's projectile carries `CB_ROUND` (bit 31) in its mission id (no layout change; the load
+check and the burst log mask it). JSON docs and `tuning.md` updated. Tests `counter_fire_aims_with_the_marker_error` (8 seeds;
+control `counter_fire` 0: >= 49 m), `counter_fire_bursts_count_after_the_mission_ended` (4 of 4, fewer live; control no marker: 0).
+B-3: R2 new evidence is `shots >= cb_shots + cb_rounds_to_mark` or `shots < cb_shots` (fewer = another marker). Test
+`ai_counter_fire_answers_a_new_marker_with_fewer_shots` (control: no second marker, no mission).
+B-4: counter-fire's own-men check uses `danger_close_m` + the aim error the sim will use (map: min(err, map-fire error); observed:
+first-round error). Test `ai_counter_fire_spares_own_men_within_the_aim_error` (70 m held; control 120 m: fires).
+B-5: the `ff_lift` squad starts 130 m out (outside `lift_m` 100; the run bails if not); targets comment updated; the row test checks
+lifted/clean 100 and control clean 0 on seed 1. Rows 1-10 as above (T142a-c pass).
+B-6: S1 (ii) also reads the AI's own pending `Move` / `AttackMove` (the plan's own and earlier ones not yet applied); the mortar
+scorer passes a copy (only with `ff_safe` 1). Test `own_near_sees_a_pending_move_onto_the_target` (control: no pending: false).
+B-7: S5b `the_ai_sends_a_spotter_with_ff_safe` (leader observes to 150 m; the 100 m scene has no stand-off); save_fuzz
+`save_roundtrip_carries_s11a2_state` (shipped switches, arty AI on: a save at tick 17400 holds a marker and an answered one, hash,
+bytes and a 2-thread continued run equal). The old played saves stay with the switches off.
+Sets (`BATCH_JOBS=4`, seeds 1-20 both bases, `target/s11a2-F40`): default Germany 19/40; gun rounds Ger obs 467 / map 320 / cb 218
+(27.7 %), USA 207 / 435 / 400 (62.3 %); markers 0.975 / 0.975 a match; near bursts 86 of 205 / 131 of 394; ff_kills 0 / 0; ff_lifts
+6.15 / 3.85 a match; refused 0. `counter_fire_off` Germany 18/40. `neutral.py base40-fix s11a2-Foff40`: same 40/40.
+Check: `tools/check.sh quick 730e67f` all ok, 982 tests (release CLI rebuilt first).
 
 ## Build B (2026-11-17)
 Commits: `f705d08` M1 JSON, `8ad7075` fix A-1/A-2, `7a3f240` M2 rows, `d7d075b` S1-S3 (+fix A-3), `0ca316e` ff + ff_safe on,
