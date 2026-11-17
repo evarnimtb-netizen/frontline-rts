@@ -3068,9 +3068,11 @@ impl MatchSetup {
             );
             if let Some(ind) = &w.indirect {
                 check(
-                    ind.ok() && w.class == WeaponClass::Mortar && w.he.is_some(),
+                    ind.ok()
+                        && ((w.class == WeaponClass::Mortar && w.he.is_some())
+                            || (ind.low_angle && w.class == WeaponClass::Cannon)),
                     "weapons.indirect",
-                    "charges or elevation limits out of range, or not a mortar",
+                    "charges or elevation limits out of range, or not a mortar (or low-angle gun)",
                 );
             }
             let launcher = w.class == WeaponClass::Launcher;

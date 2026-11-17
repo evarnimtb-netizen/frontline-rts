@@ -128,7 +128,13 @@ slot unmanned), `no_bombs` (no HE round in the rack), `unknown_ground`,
 `S11Counters`, never in the mortar counters. Radio (`radio_link`): an
 observer whose squad has a living `radio` man near him is linked when the
 firing unit also has a living `radio` man within `observer_link_m` of the
-tube (a gun: its crew squad).
+tube (a gun: its crew squad). The gun's weapon is a `cannon`; with a
+low-angle table its main mount may elevate to 89 deg (60 otherwise). The
+mission ends (order Idle, ranging memory kept) when its rounds or its HE
+are spent, no solution is left, the gun is packed, pushed, hitched,
+abandoned or captured, its crew is ordered off, or a seen enemy comes
+within `gun_break_m` (direct fire resumes). With `[supply]
+arty_base_rearm` 0 an `inf_gun` gets nothing in its base zone.
 
 ## The AI (`[ai.mortar]`, S5b Part B)
 

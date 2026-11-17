@@ -2,7 +2,7 @@
 //! and its load checks, the widened kill class, and the sim rules G1-G7.
 //! Each test names its control: the edit that makes it fail.
 
-use super::s6_tests::{flat_world_with, spawn, steps};
+use super::s6_tests::{flat_world_with, members, spawn, steps};
 use super::*;
 use crate::ai::{AiArty, AiBreach, AiFo, ArtyPhase, BreachPhase, MAX_ARTY, MAX_FO};
 use crate::game::kill_class;
@@ -330,4 +330,610 @@ fn at_gun_ai_ignores_infantry_guns() {
         run(VehicleRole::AtGun).0,
         "control: an at_gun clone gets a job"
     );
+}
+
+// ------------------------------------------------------- gun missions --
+
+use crate::command::{Command, CommandKind};
+use crate::fire_mission::{FireMissionRefusal, mode, phase};
+use crate::vehicle::GunState;
+use frontline_content::{SeatRole, VehicleRole};
+
+/// The test-only indirect gun: [`add_test_gun`] (role `inf_gun`) whose
+/// main weapon gets an `[indirect]` table (the leIG 18's charges, band
+/// `lo..=hi` deg, `low_angle`, 3550 m, 8 mrad), minimum range `min_m`, and
+/// a mount elevation of -10..`hi` (Build B brings the real leIG 18).
+pub(super) fn add_indirect_gun(
+    s: &mut frontline_content::MatchSetup,
+    lo: u32,
+    hi: u32,
+    min_m: i32,
+) {
+    use frontline_content::Fixed;
+    use frontline_content::defs::IndirectDef;
+    use frontline_content::setup::IndirectSetup;
+    add_test_gun(s, VehicleRole::InfGun);
+    let vi = s.vehicles.len() - 1;
+    let wi = s.vehicles[vi].mounts[0].weapon as usize;
+    let mut w = s.weapons[wi].clone();
+    w.id = "test:inf_gun_main".into();
+    w.indirect = Some(IndirectSetup::lower(&IndirectDef {
+        charges_m_s: vec![92, 120, 150, 180, 210],
+        elevation_deg: [lo, hi],
+        low_angle: true,
+        range_m: Some(3550),
+        spread_mrad: Some(8),
+    }));
+    w.range_min = Fixed::from_int(min_m);
+    w.range_max = Fixed::from_int(3550);
+    s.weapons.push(w);
+    let nw = (s.weapons.len() - 1) as u16;
+    let m = &mut s.vehicles[vi].mounts[0];
+    m.weapon = nw;
+    m.elevation_deg = [-10, hi as i32];
+    let t = s.squad_types.last_mut().unwrap();
+    t.weapon = nw;
+    t.small_arms = nw;
+}
+
+/// A gun mission scene on flat ground: player 0's test gun at (300, 500)
+/// facing +x and a Grenadier squad at (330, 500) whose leader observes
+/// (by voice: within `observer_link_m` of the tube). `edit` changes the
+/// setup first.
+struct Scene {
+    w: World,
+    sq: SquadId,
+    gun: SimId,
+}
+
+fn scene_with(
+    threads: usize,
+    lo: u32,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> Scene {
+    let mut w = flat_world_with(threads, |s| {
+        add_indirect_gun(s, lo, 73, 0);
+        edit(s);
+    });
+    steps(&mut w, 2);
+    let sq = spawn(&mut w, 0, "test:inf_gun", 300, 500);
+    spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 330, 500);
+    steps(&mut w, 30);
+    let gun = w.game().unwrap().squads[&sq].members[0];
+    Scene { w, sq, gun }
+}
+
+fn scene() -> Scene {
+    scene_with(1, 0, |_| {})
+}
+
+const TARGET: (i32, i32) = (650, 500);
+
+/// Orders the mission; the refusal of this tick, if any.
+fn order(w: &mut World, sq: SquadId, at: FxVec2, rounds: u16) -> Option<FireMissionRefusal> {
+    w.step(&[Command {
+        player: PlayerId(0),
+        seq: 1,
+        kind: CommandKind::FireMission {
+            squad: sq,
+            target: at,
+            rounds,
+        },
+    }]);
+    w.snapshot()
+        .fire_mission_refusals
+        .iter()
+        .find(|e| e.squad == sq)
+        .map(|e| e.refusal)
+}
+
+fn mission(w: &World, sq: SquadId) -> Option<crate::fire_mission::Mission> {
+    match &w.game().unwrap().squads[&sq].order {
+        Order::FireMission { m, .. } => Some(*m),
+        _ => None,
+    }
+}
+
+/// The gun's HE rounds, the one in the breech included.
+fn he_rounds(w: &World, gun: SimId) -> u16 {
+    let vs = &w.game().unwrap().vehicles[&gun];
+    vs.ammo[1] + (vs.loaded == Some(1)) as u16
+}
+
+fn s11(w: &World) -> crate::fire_mission::S11Counters {
+    w.game().unwrap().players[0].s11
+}
+
+/// Steps until the squad's mission ends (at most `s` seconds).
+fn run_out(w: &mut World, sq: SquadId, s: u64) {
+    let end = w.tick() + s * 30;
+    while mission(w, sq).is_some() {
+        assert!(w.tick() < end, "the mission did not end within {s} s");
+        w.step(&[]);
+    }
+}
+
+/// G1: an emplaced, manned gun with an `[indirect]` main weapon takes a
+/// fire mission (Direct: the crew's leader sees the point, by voice).
+/// Control: `gun_missions` 0 refuses it `NotMortar`.
+#[test]
+fn gun_takes_a_fire_mission() {
+    let mut s = scene();
+    assert_eq!(order(&mut s.w, s.sq, c(TARGET.0, TARGET.1), 4), None);
+    let m = mission(&s.w, s.sq).expect("the gun is on the mission");
+    assert_eq!((m.mode, m.phase), (mode::DIRECT, phase::LAYING));
+    assert_eq!(s11(&s.w).gun_missions, [1, 0, 0]);
+    let g = s.w.game().unwrap();
+    assert_eq!(
+        g.players[0].fm.missions,
+        [0, 0, 0],
+        "a gun counts in s11 only"
+    );
+    // Control.
+    let mut s = scene_with(1, 0, |s| {
+        s.rules.fire_mission.as_mut().unwrap().gun_missions = 0
+    });
+    assert_eq!(
+        order(&mut s.w, s.sq, c(TARGET.0, TARGET.1), 4),
+        Some(FireMissionRefusal::NotMortar)
+    );
+    assert!(mission(&s.w, s.sq).is_none());
+}
+
+/// G1 refusals in the spec's order, one scene each. Control: the same gun
+/// emplaced and manned accepts (last). `Masked` is the solver's
+/// (`indirect.rs` `flat_gun_is_masked_behind_a_crest`).
+#[test]
+fn gun_mission_refusals_in_order() {
+    let mut s = scene();
+    let (w, sq, gun) = (&mut s.w, s.sq, s.gun);
+    let t = c(TARGET.0, TARGET.1);
+    let size = w.match_setup().unwrap().map.size_m;
+    assert_eq!(
+        order(w, sq, c(-5, 500), 4),
+        Some(FireMissionRefusal::OffMap)
+    );
+    assert_eq!(order(w, sq, t, 0), Some(FireMissionRefusal::Rounds));
+    w.edit_vehicle(gun, |vs| {
+        vs.served.as_mut().unwrap().state = GunState::Limbered
+    });
+    assert_eq!(order(w, sq, t, 4), Some(FireMissionRefusal::NotReady));
+    w.edit_vehicle(gun, |vs| {
+        vs.served.as_mut().unwrap().state = GunState::Emplaced
+    });
+    let (ammo, loaded) = {
+        let vs = &w.game().unwrap().vehicles[&gun];
+        (vs.ammo.clone(), vs.loaded)
+    };
+    w.edit_vehicle(gun, |vs| {
+        vs.ammo[1] = 0;
+        if vs.loaded == Some(1) {
+            vs.loaded = None;
+        }
+    });
+    assert_eq!(order(w, sq, t, 4), Some(FireMissionRefusal::NoBombs));
+    w.edit_vehicle(gun, |vs| {
+        vs.ammo = ammo.clone();
+        vs.loaded = loaded;
+    });
+    assert_eq!(
+        order(w, sq, c(300, size - 30), 4),
+        Some(FireMissionRefusal::UnknownGround)
+    );
+    // A high-angle-only gun (60..73 deg) cannot fire 40 m; with a minimum
+    // range it is inside it.
+    for (min, want) in [
+        (0, FireMissionRefusal::CannotReach),
+        (100, FireMissionRefusal::InsideMinimum),
+    ] {
+        let mut h = flat_world_with(1, |s| add_indirect_gun(s, 60, 73, min));
+        steps(&mut h, 2);
+        let q = spawn(&mut h, 0, "test:inf_gun", 300, 500);
+        spawn(&mut h, 0, "ww2:ger_grenadiergruppe", 330, 500);
+        steps(&mut h, 30);
+        assert_eq!(order(&mut h, q, c(340, 500), 4), Some(want));
+    }
+    // Control.
+    assert_eq!(order(w, sq, t, 4), None);
+}
+
+/// G3: rounds leave `vs.ammo`, the bursts carry the mission id, the rounds
+/// count in `S11Counters` only. Control: no HE left refuses `NoBombs`.
+#[test]
+fn gun_mission_fires_counted_he() {
+    let mut s = scene();
+    s.w.enable_burst_log();
+    let he0 = he_rounds(&s.w, s.gun);
+    assert_eq!(order(&mut s.w, s.sq, c(TARGET.0, TARGET.1), 4), None);
+    let id = mission(&s.w, s.sq).unwrap().id;
+    run_out(&mut s.w, s.sq, 180);
+    steps(&mut s.w, 30 * 10);
+    assert_eq!(he_rounds(&s.w, s.gun), he0 - 4);
+    let k = s11(&s.w);
+    assert_eq!(k.gun_rounds.iter().sum::<u32>(), 4);
+    assert_eq!(k.low_rounds + k.high_rounds, 4);
+    let g = s.w.game().unwrap();
+    assert_eq!(g.players[0].fm.bombs, [0, 0, 0], "not in FmCounters");
+    let log = s.w.take_burst_log();
+    assert_eq!(log.iter().filter(|b| b.mission == id).count(), 4, "{log:?}");
+    // Control.
+    let mut s = scene();
+    s.w.edit_vehicle(s.gun, |vs| {
+        vs.ammo[1] = 0;
+        if vs.loaded == Some(1) {
+            vs.loaded = None;
+        }
+    });
+    assert_eq!(
+        order(&mut s.w, s.sq, c(TARGET.0, TARGET.1), 4),
+        Some(FireMissionRefusal::NoBombs)
+    );
+}
+
+/// G3: with the loader gone the gun fires nothing until the S9 slot swap
+/// fills his seat. Control: the full crew fires at the ready time
+/// (`gun_mission_fires_counted_he`), and after the swap this gun fires.
+#[test]
+fn gun_mission_waits_for_the_crew() {
+    let mut s = scene();
+    assert_eq!(order(&mut s.w, s.sq, c(TARGET.0, TARGET.1), 4), None);
+    let ready = mission(&s.w, s.sq).unwrap().ready_at;
+    while s.w.tick() + 1 < ready {
+        s.w.step(&[]);
+    }
+    let vt = s.w.game().unwrap().vehicles[&s.gun].type_idx as usize;
+    let v = s.w.match_setup().unwrap().vehicles[vt].clone();
+    let k = v
+        .seats
+        .iter()
+        .position(|st| st.role == SeatRole::Loader)
+        .unwrap();
+    let slots = s.w.game().unwrap().vehicles[&s.gun]
+        .served
+        .clone()
+        .unwrap()
+        .slots;
+    let loader = slots[k].man.unwrap();
+    s.w.edit_unit(loader, |u| u.serving = None);
+    s.w.step(&[]);
+    let manned = |w: &World| w.game().unwrap().vehicles[&s.gun].manned(&v, SeatRole::Loader);
+    assert!(!manned(&s.w));
+    let mut waited = 0;
+    while !manned(&s.w) {
+        assert_eq!(
+            s11(&s.w).gun_rounds.iter().sum::<u32>(),
+            0,
+            "fired without a loader"
+        );
+        s.w.step(&[]);
+        waited += 1;
+        assert!(waited < 30 * 60, "no slot swap");
+    }
+    assert!(waited > 30, "the swap took time");
+    steps(&mut s.w, 30 * 20);
+    assert!(
+        s11(&s.w).gun_rounds.iter().sum::<u32>() > 0,
+        "fires after the swap"
+    );
+}
+
+/// Player 1's riflemen at `(x, y)`, held where they stand.
+fn enemy(w: &mut World, x: i32, y: i32) -> SquadId {
+    spawn(w, 1, "ww2:usa_rifle_squad", x, y)
+}
+
+/// An enemy tank for direct-fire scenes (seen at 300 m; riflemen at that
+/// range are not).
+const TANK: &str = "ww2:usa_m4a3_75_squad";
+
+/// G3: a gun on a mission picks no main-gun target: a seen enemy tank
+/// 300 m off draws no direct round. Control: Idle, it fires at them.
+#[test]
+fn gun_on_mission_fires_no_direct_round() {
+    let run = |mission: bool| {
+        let mut s = scene();
+        spawn(&mut s.w, 1, TANK, 600, 540);
+        if mission {
+            assert_eq!(order(&mut s.w, s.sq, c(650, 420), 50), None);
+        }
+        steps(&mut s.w, 30 * 10);
+        s11(&s.w).gun_direct_rounds
+    };
+    assert_eq!(run(true), 0);
+    assert!(run(false) > 0, "control: the idle gun fires");
+}
+
+/// G3 counter split (review 6): an `inf_gun` fires direct rounds into
+/// `gun_direct_rounds`, not `s9.gun_rounds`. Control: the same clone as an
+/// `at_gun` counts in `s9`.
+#[test]
+fn infantry_gun_counts_only_in_s11() {
+    let run = |role: VehicleRole| {
+        let mut w = flat_world_with(1, |s| add_test_gun(s, role));
+        steps(&mut w, 2);
+        spawn(&mut w, 0, "test:inf_gun", 300, 500);
+        spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 330, 500);
+        spawn(&mut w, 1, TANK, 600, 540);
+        steps(&mut w, 30 * 10);
+        let p = &w.game().unwrap().players[0];
+        (p.s9.gun_rounds, p.s11.gun_direct_rounds)
+    };
+    let (s9, s11) = run(VehicleRole::InfGun);
+    assert!(s9 == 0 && s11 > 0, "inf_gun: s9 {s9}, s11 {s11}");
+    let (s9, s11) = run(VehicleRole::AtGun);
+    assert!(s9 > 0 && s11 == 0, "control at_gun: s9 {s9}, s11 {s11}");
+}
+
+/// G3 save and threads: saves in Laying, in Adjust with a round in the
+/// air, and in Effect all load and go on as the unbroken run; 1 and 4
+/// threads agree. Control: the hash moves with the mission (a mission
+/// field edit changes it, `s5b_fire_mission_state_is_saved_hashed_and_checked`).
+#[test]
+fn gun_mission_deterministic_threads_and_save_load() {
+    let go = |threads: usize| {
+        let mut s = scene_with(threads, 0, |_| {});
+        assert_eq!(order(&mut s.w, s.sq, c(TARGET.0, TARGET.1), 6), None);
+        let mut saves = Vec::new();
+        let mut seen = [false; 3];
+        for _ in 0..30 * 120 {
+            let k = match mission(&s.w, s.sq) {
+                Some(m) if m.phase == phase::LAYING => Some(0),
+                Some(m) if m.phase == phase::ADJUST && m.wait_burst => Some(1),
+                Some(m) if m.phase == phase::EFFECT => Some(2),
+                _ => None,
+            };
+            if let Some(k) = k
+                && !seen[k]
+            {
+                seen[k] = true;
+                saves.push((s.w.tick(), s.w.save()));
+            }
+            s.w.step(&[]);
+        }
+        assert_eq!(seen, [true; 3], "every phase was saved");
+        (s.w.full_state_hash(), s.w.tick(), saves)
+    };
+    let (h1, end, saves) = go(1);
+    let (h4, _, _) = go(4);
+    assert_eq!(h1, h4, "1 and 4 threads");
+    for (t, bytes) in saves {
+        let mut w = World::load(&bytes, 1).unwrap_or_else(|e| panic!("save at {t}: {e:?}"));
+        while w.tick() < end {
+            w.step(&[]);
+        }
+        assert_eq!(
+            w.full_state_hash(),
+            h1,
+            "the save at tick {t} goes on as the run"
+        );
+    }
+}
+
+/// G3 memory (review 3): a direct gun mission with seen rounds leaves
+/// its offset in the squad's ranging memory, from the gun's position.
+/// Control: a map-fire mission (observers see only 50 m; the point known
+/// from a squad by the target, not linked) leaves none.
+#[test]
+fn gun_mission_leaves_ranging_memory() {
+    let mut s = scene();
+    assert_eq!(order(&mut s.w, s.sq, c(TARGET.0, TARGET.1), 4), None);
+    run_out(&mut s.w, s.sq, 180);
+    let r = &s.w.game().unwrap().squads[&s.sq].ranging;
+    assert_eq!(r.len(), 1, "{r:?}");
+    assert_eq!(r[0].from, c(300, 500));
+    assert!(r[0].seen > 0);
+    // Control.
+    let mut s = scene_with(1, 0, |s| {
+        s.rules.fire_mission.as_mut().unwrap().observe_leader_m = 50;
+    });
+    spawn(
+        &mut s.w,
+        0,
+        "ww2:ger_grenadiergruppe",
+        TARGET.0 - 10,
+        TARGET.1,
+    );
+    steps(&mut s.w, 30);
+    assert_eq!(order(&mut s.w, s.sq, c(TARGET.0, TARGET.1), 2), None);
+    assert_eq!(mission(&s.w, s.sq).unwrap().mode, mode::MAP);
+    run_out(&mut s.w, s.sq, 180);
+    assert!(s.w.game().unwrap().squads[&s.sq].ranging.is_empty());
+}
+
+/// G4: a gun's map-fire error is twice the observed one at 600 m (36 m ->
+/// the 50 m floor against the 25 m floor). Control: a mortar at the same
+/// range keeps the mortar keys (48 m / 18 m).
+#[test]
+fn gun_map_error_is_twice_the_observed() {
+    use crate::fire_mission::start_error_for;
+    let w = flat_world_with(1, |_| {});
+    let fm = w.match_setup().unwrap().rules.fire_mission.clone().unwrap();
+    let d = Fx::from_int(600);
+    assert_eq!(start_error_for(&fm, false, d, true), Fx::from_int(25));
+    assert_eq!(start_error_for(&fm, true, d, true), Fx::from_int(50));
+    let mortar = (
+        start_error_for(&fm, true, d, false),
+        start_error_for(&fm, false, d, false),
+    );
+    assert_eq!(mortar.0.round_int(), 48);
+    assert_eq!(mortar.1.round_int(), 18);
+}
+
+/// G6: packing the gun ends its mission (order Idle). Control: left
+/// alone it is still on it.
+#[test]
+fn gun_mission_ends_when_packed() {
+    for pack in [true, false] {
+        let mut s = scene();
+        assert_eq!(order(&mut s.w, s.sq, c(TARGET.0, TARGET.1), 50), None);
+        steps(&mut s.w, 30 * 5);
+        if pack {
+            s.w.step(&[Command {
+                player: PlayerId(0),
+                seq: 2,
+                kind: CommandKind::PackGun { guns: vec![s.gun] },
+            }]);
+        }
+        steps(&mut s.w, 5);
+        assert_eq!(mission(&s.w, s.sq).is_none(), pack, "packed: {pack}");
+        if pack {
+            assert_eq!(s.w.game().unwrap().squads[&s.sq].order, Order::Idle);
+        }
+    }
+}
+
+/// G6: a seen enemy within `gun_break_m` (150 m) ends the mission and
+/// counts a break. Control: at 200 m it goes on.
+#[test]
+fn gun_mission_breaks_for_self_defence() {
+    for (dx, breaks) in [(100, true), (200, false)] {
+        let mut s = scene();
+        assert_eq!(order(&mut s.w, s.sq, c(650, 420), 50), None);
+        steps(&mut s.w, 30);
+        enemy(&mut s.w, 300 + dx, 560);
+        steps(&mut s.w, 30 * 3);
+        assert_eq!(mission(&s.w, s.sq).is_none(), breaks, "enemy at {dx} m");
+        assert_eq!(s11(&s.w).gun_breaks, breaks as u32);
+    }
+}
+
+/// A test observer team type (`test:fo`): the Grenadier squad with the
+/// leader an `observer` and the next slot a `radio` man; and the gun
+/// crews' first slot a `radio` man.
+fn add_fo(s: &mut frontline_content::MatchSetup) {
+    use frontline_content::setup::member_trait;
+    let src = s
+        .squad_types
+        .iter()
+        .position(|t| t.id == "ww2:ger_grenadiergruppe")
+        .unwrap();
+    let mut t = s.squad_types[src].clone();
+    t.id = "test:fo".into();
+    let lead = t
+        .members
+        .iter()
+        .position(|m| m.traits & member_trait::LEADER != 0)
+        .unwrap();
+    t.members[lead].traits |= member_trait::OBSERVER;
+    let r = (lead + 1) % t.members.len();
+    t.members[r].traits |= member_trait::RADIO;
+    s.squad_types.push(t);
+    for t in s.squad_types.iter_mut().filter(|t| t.id.ends_with("_crew")) {
+        t.members[0].traits |= member_trait::RADIO;
+    }
+}
+
+/// The men of squad `q` whose slot has trait `bit`.
+fn with_trait(w: &World, q: SquadId, bit: u8) -> Vec<SimId> {
+    let g = w.game().unwrap();
+    let ty = &w.match_setup().unwrap().squad_types[g.squads[&q].type_idx as usize];
+    members(w, q)
+        .into_iter()
+        .filter(|m| ty.members[w.entities().kit[m.index()].slot as usize].traits & bit != 0)
+        .collect()
+}
+
+/// G5: an observer 600 m from the gun who sees the point is linked by
+/// radio: Observed. Controls: `radio_link` 0, the FO's radio man dead, the
+/// gun crew's radio man dead: Map.
+#[test]
+fn radio_links_an_observer_across_the_map() {
+    use frontline_content::setup::member_trait;
+    let target = c(1000, 520);
+    let run = |radio: bool, kill: u8| {
+        let mut w = flat_world_with(1, |s| {
+            add_indirect_gun(s, 0, 73, 0);
+            add_fo(s);
+            s.rules.fire_mission.as_mut().unwrap().radio_link = radio as u32;
+        });
+        steps(&mut w, 2);
+        let sq = spawn(&mut w, 0, "test:inf_gun", 300, 500);
+        let fo = spawn(&mut w, 0, "test:fo", 900, 500);
+        steps(&mut w, 30);
+        let gun = w.game().unwrap().squads[&sq].members[0];
+        let crew = w.game().unwrap().vehicles[&gun]
+            .served
+            .as_ref()
+            .unwrap()
+            .crew
+            .unwrap();
+        let dead = match kill {
+            1 => with_trait(&w, fo, member_trait::RADIO),
+            2 => with_trait(&w, crew, member_trait::RADIO),
+            _ => Vec::new(),
+        };
+        if kill != 0 {
+            assert!(!dead.is_empty());
+        }
+        for m in dead {
+            assert!(w.kill_soldier(m));
+        }
+        steps(&mut w, 2);
+        let g = w.game().unwrap();
+        let gp = w.entities().transform[gun.index()].pos.xy();
+        g.mode_for(w.entities(), w.terrain(), sq, gp, target, w.tick())
+            .0
+    };
+    assert_eq!(run(true, 0), mode::OBSERVED);
+    assert_eq!(run(false, 0), mode::MAP, "control: radio_link 0");
+    assert_eq!(run(true, 1), mode::MAP, "control: the FO's radio man dead");
+    assert_eq!(run(true, 2), mode::MAP, "control: the gun's radio man dead");
+}
+
+/// G5: the radio reveals nothing: an enemy 700 m from the FO (inside his
+/// observe range, beyond any sight) stays unseen. Control: one 100 m from
+/// him is seen.
+#[test]
+fn radio_does_not_reveal() {
+    let mut w = flat_world_with(1, |s| {
+        add_indirect_gun(s, 0, 73, 0);
+        add_fo(s);
+    });
+    steps(&mut w, 2);
+    spawn(&mut w, 0, "test:inf_gun", 300, 500);
+    spawn(&mut w, 0, "test:fo", 900, 500);
+    let far = enemy(&mut w, 900, 1200);
+    let near = enemy(&mut w, 1000, 500);
+    steps(&mut w, 30 * 5);
+    let seen = |q: SquadId| {
+        members(&w, q)
+            .iter()
+            .any(|m| w.entities().combat[m.index()].seen_by & 1 != 0)
+    };
+    assert!(!seen(far), "the radio revealed an enemy");
+    assert!(seen(near), "control: the near enemy is seen");
+}
+
+/// G7: with `arty_base_rearm` 0 an infantry gun in its base gets no
+/// rounds back. Control 1: rounds return and their price (paid from the
+/// shells stock) counts in `gun_shell_micro`.
+#[test]
+fn infantry_gun_does_not_rearm_in_base_when_switched_off() {
+    let run = |on: u32| {
+        let mut w = flat_world_with(1, |s| {
+            add_test_gun(s, VehicleRole::InfGun);
+            s.rules.supply.as_mut().unwrap().arty_base_rearm = on;
+        });
+        steps(&mut w, 2);
+        let s = w.match_setup().unwrap();
+        let base = s.map.bases[s.players[0].base as usize].center;
+        let at = FxVec2::from(base);
+        let (x, y) = (at.x.round_int(), at.y.round_int());
+        let q = spawn(&mut w, 0, "test:inf_gun", x, y);
+        let gun = members(&w, q)[0];
+        steps(&mut w, 2);
+        w.edit_vehicle(gun, |vs| vs.ammo[1] = 2);
+        let mp0 = w.game().unwrap().players[0].manpower;
+        steps(&mut w, 30 * 120);
+        let g = w.game().unwrap();
+        (
+            g.vehicles[&gun].ammo[1],
+            g.players[0].manpower < mp0,
+            g.players[0].s11.gun_shell_micro,
+        )
+    };
+    let (he, _, micro) = run(0);
+    assert_eq!((he, micro), (2, 0), "switched off");
+    let (he, _, micro) = run(1);
+    assert!(he > 2 && micro > 0, "control: {he} {micro}");
 }

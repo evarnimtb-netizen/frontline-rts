@@ -920,10 +920,16 @@ impl MatchState {
                     .supply
                     .map_or((SupplyKind::Shells, 0), |s| (s.kind, s.g));
                 let price = micro_price(&self.setup, kd, g) * v.rack_price_pct as u64 / 100;
+                let inf = v.role == frontline_content::VehicleRole::InfGun;
                 if self.pay(owner, kd, price, tick) {
                     let vs = self.vehicles.get_mut(&id).expect("listed");
                     vs.ammo[k] += 1;
                     vs.supply_due &= !bit;
+                    // S11a1: an infantry gun's shells bought in base.
+                    if inf {
+                        let c = &mut self.players[owner].s11;
+                        c.gun_shell_micro = c.gun_shell_micro.saturating_add(price);
+                    }
                 }
             }
         }

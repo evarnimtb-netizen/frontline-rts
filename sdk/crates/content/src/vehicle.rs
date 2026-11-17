@@ -4077,8 +4077,14 @@ pub(crate) fn check_vehicle(
         {
             return Some("vehicles.mounts: main gun not first, wrong class or seat");
         }
+        // S11a1: a gun with a low-angle `[indirect]` table elevates to 89.
+        let top = if ws.indirect.as_ref().is_some_and(|i| i.low_angle) {
+            89
+        } else {
+            60
+        };
         let elev_ok = !main
-            || ((-30..=0).contains(&w.elevation_deg[0]) && (1..=60).contains(&w.elevation_deg[1]));
+            || ((-30..=0).contains(&w.elevation_deg[0]) && (1..=top).contains(&w.elevation_deg[1]));
         let ammo_ok = if main {
             (1..=MAX_MAIN_AMMO).contains(&w.ammo.len())
                 && w.ammo

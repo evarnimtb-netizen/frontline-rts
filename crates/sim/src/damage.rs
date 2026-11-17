@@ -1553,8 +1553,16 @@ impl MatchState {
                     repair_step(vs, v, k);
                 }
             }
-            // Base repair, rearm and crew.
-            if in_base {
+            // Base repair, rearm and crew. S11a1 G7: none for an infantry
+            // gun with `arty_base_rearm` 0.
+            let no_base = v.role == frontline_content::VehicleRole::InfGun
+                && self
+                    .setup
+                    .rules
+                    .supply
+                    .as_ref()
+                    .is_some_and(|s| s.arty_base_rearm == 0);
+            if in_base && !no_base {
                 vs.base_ticks = vs.base_ticks.saturating_add(1);
                 let n = vs.base_ticks as u64;
                 for c in &v.components {

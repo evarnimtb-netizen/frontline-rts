@@ -1417,7 +1417,11 @@ impl MatchState {
             return Some(FireMissionRefusal::OffMap);
         }
         let ty = &self.setup.squad_types[sq.type_idx as usize];
-        if !ty.has(Capability::FireMission) || ty.vehicle.is_some() {
+        if ty.vehicle.is_some() {
+            // S11a1 G1: a served gun with an `[indirect]` main weapon.
+            return self.gun_mission_refusal(ents, terrain, sq, target, rounds, tick);
+        }
+        if !ty.has(Capability::FireMission) {
             return Some(FireMissionRefusal::NotMortar);
         }
         if !(1..=MAX_MISSION_ROUNDS).contains(&rounds) {
@@ -1458,6 +1462,131 @@ impl MatchState {
         None
     }
 
+    /// S11a1: the `[indirect]` weapon of squad `sq` when it is a served
+    /// gun whose main weapon has one (read from the setup only, so the
+    /// load checks can use it).
+    pub(crate) fn gun_indirect_weapon(&self, sq: &Squad) -> Option<u16> {
+        let ty = self.setup.squad_types.get(sq.type_idx as usize)?;
+        let v = self.setup.vehicles.get(ty.vehicle? as usize)?;
+        let main = v.main_gun().filter(|_| v.served())?;
+        self.setup
+            .weapons
+            .get(main.weapon as usize)?
+            .indirect
+            .as_ref()
+            .map(|_| main.weapon)
+    }
+
+    /// S11a1: the main-gun ammo slot of gun type `v` that holds HE (the
+    /// first with `mechanism = "he"`).
+    pub(crate) fn gun_he_slot(&self, v: &frontline_content::vehicle::VehicleSetup) -> Option<u8> {
+        v.main_gun()?
+            .ammo
+            .iter()
+            .position(|a| {
+                self.setup
+                    .ammo
+                    .get(a.ammo as usize)
+                    .is_some_and(|x| x.mechanism == frontline_content::AmmoMechanism::He)
+            })
+            .map(|k| k as u8)
+    }
+
+    /// S11a1 G2: the mount of gun `gun` as the solver checks it (the hull
+    /// where it stands, the mount's elevation limits) and its muzzle.
+    pub(crate) fn gun_mount(
+        &self,
+        ents: &Entities,
+        gun: SimId,
+    ) -> Option<(crate::indirect::GunMount, crate::fx::FxVec3)> {
+        let vs = self.vehicles.get(&gun)?;
+        let v = self.setup.vehicles.get(vs.type_idx as usize)?;
+        let main = v.main_gun()?;
+        let [lo, hi] = main.elevation_deg;
+        let (hull, muzzle) = match self.vderived.frame(gun) {
+            Some(f) => (f.hull.axes, crate::gunnery::main_muzzle(f, vs, main)),
+            None => {
+                let t = ents.transform[gun.index()];
+                (
+                    crate::vehicle::Basis::hull(t.yaw, vs.pitch, vs.roll),
+                    t.pos + crate::fx::FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::ONE),
+                )
+            }
+        };
+        Some((
+            crate::indirect::GunMount {
+                hull,
+                lo: crate::armour::deg(lo),
+                hi: crate::armour::deg(hi),
+            },
+            muzzle,
+        ))
+    }
+
+    /// S11a1 G1: the refusal a gun squad's fire mission would get now, in
+    /// the spec's order (`OffMap` was checked by the caller): `NotMortar`,
+    /// `Rounds`, `NotReady`, `NoBombs`, `UnknownGround`, then the solver's
+    /// `InsideMinimum` / `CannotReach` / `Masked`.
+    fn gun_mission_refusal(
+        &self,
+        ents: &Entities,
+        terrain: &Heightfield,
+        sq: &Squad,
+        target: FxVec2,
+        rounds: u16,
+        tick: u64,
+    ) -> Option<FireMissionRefusal> {
+        let fm = match self.setup.rules.fire_mission.as_ref() {
+            Some(fm) if fm.gun_missions != 0 => fm,
+            _ => return Some(FireMissionRefusal::NotMortar),
+        };
+        let Some(wi) = self.gun_indirect_weapon(sq) else {
+            return Some(FireMissionRefusal::NotMortar);
+        };
+        if !(1..=MAX_MISSION_ROUNDS).contains(&rounds) {
+            return Some(FireMissionRefusal::Rounds);
+        }
+        let gun = *sq.members.first()?;
+        let Some(vs) = self.vehicles.get(&gun) else {
+            return Some(FireMissionRefusal::NotMortar);
+        };
+        let v = &self.setup.vehicles[vs.type_idx as usize];
+        let emplaced = vs
+            .served
+            .as_ref()
+            .is_some_and(|sv| sv.state == vehicle::GunState::Emplaced);
+        if ents.kind[gun.index()] != EntityKind::Vehicle
+            || !emplaced
+            || !vs.manned(v, frontline_content::SeatRole::Gunner)
+            || !vs.manned(v, frontline_content::SeatRole::Loader)
+        {
+            return Some(FireMissionRefusal::NotReady);
+        }
+        let he = self.gun_he_slot(v);
+        if !he.is_some_and(|k| {
+            vs.ammo.get(k as usize).is_some_and(|n| *n > 0) || vs.loaded == Some(k)
+        }) {
+            return Some(FireMissionRefusal::NoBombs);
+        }
+        if !self.known_point(ents, terrain, sq.owner, target, tick) {
+            return Some(FireMissionRefusal::UnknownGround);
+        }
+        let w = &self.setup.weapons[wi as usize];
+        let ind = w.indirect.as_ref()?;
+        let (mount, from) = self.gun_mount(ents, gun)?;
+        let to = target.extend(terrain.height_at(target));
+        crate::indirect::solve_gun(
+            ind,
+            from,
+            to,
+            terrain,
+            fm.mask != 0,
+            Some(&mount),
+            w.range_min.into(),
+        )
+        .err()
+    }
+
     fn order_fire_mission(
         &mut self,
         ctx: &mut Ctx,
@@ -1470,7 +1599,17 @@ impl MatchState {
             return false;
         }
         if let Some(r) = self.mission_refusal(ctx.ents, ctx.terrain, id, target, rounds, ctx.tick) {
+            // S11a1: the two gun refusals also count in `S11Counters`.
+            let c = &mut self.players[p.0 as usize].s11;
+            match r {
+                FireMissionRefusal::Masked => c.masked += 1,
+                FireMissionRefusal::NotReady => c.not_ready += 1,
+                _ => {}
+            }
             return self.refuse_mission(p, id, r);
+        }
+        if self.gun_indirect_weapon(&self.squads[&id]).is_some() {
+            return self.order_gun_mission(ctx, p, id, target, rounds);
         }
         let ty = &self.setup.squad_types[self.squads[&id].type_idx as usize];
         let w = &self.setup.weapons[ty.weapon as usize];
@@ -1570,6 +1709,77 @@ impl MatchState {
                 .clamp(target - facing * max.mul_int(9).div_int(10));
             self.request_path(id, spot);
         }
+        true
+    }
+
+    /// S11a1 G3: a gun squad's accepted fire mission: the mode, the start
+    /// error with the `gun_*` keys (G4), the ranging memory, laying time
+    /// `gun_fire_direction_s` (`direct_s` when Direct). The gun holds where
+    /// it stands. Counted in `S11Counters` only.
+    fn order_gun_mission(
+        &mut self,
+        ctx: &mut Ctx,
+        p: PlayerId,
+        id: SquadId,
+        target: FxVec2,
+        rounds: u16,
+    ) -> bool {
+        let Some(fm) = self.setup.rules.fire_mission.clone() else {
+            return false;
+        };
+        let gun = self.squads[&id].members[0];
+        let gp = ctx.ents.transform[gun.index()].pos.xy();
+        let (mode0, obs) = self.mode_for(ctx.ents, ctx.terrain, id, gp, target, ctx.tick);
+        let hz = self.setup.tick_hz;
+        let err = crate::fire_mission::start_error_for(
+            &fm,
+            mode0 == mode::MAP,
+            (target - gp).length(),
+            true,
+        );
+        let mut cells = std::mem::take(&mut self.squads.get_mut(&id).expect("owned").ranging);
+        crate::fire_mission::prune_ranging(&mut cells, &fm, ctx.tick, hz, gp);
+        let remembered = (mode0 != mode::MAP)
+            .then(|| crate::fire_mission::ranged_cell(&cells, &fm, target))
+            .flatten()
+            .filter(|c| c.offset.length() < err)
+            .map(|c| c.offset);
+        let offset = match remembered {
+            Some(o) => o,
+            None => {
+                let mut rng = crate::rng::RngStream::new(
+                    self.setup.seed,
+                    ctx.tick,
+                    SimId(id.0),
+                    crate::rng::Purpose::MISSION_AIM,
+                );
+                let a = rng.range_fx(Fx::ZERO, Fx::TAU);
+                let (sn, cs) = a.sin_cos();
+                FxVec2::new(cs.mul(err), sn.mul(err))
+            }
+        };
+        let prep = if mode0 == mode::DIRECT {
+            fm.direct_s
+        } else {
+            fm.gun_fire_direction_s
+        };
+        let m = Mission {
+            id: self.next_mission,
+            mode: mode0,
+            phase: phase::LAYING,
+            offset,
+            err0: offset.length(),
+            order_tick: ctx.tick,
+            ready_at: ctx.tick + prep as u64 * hz as u64,
+            observer: obs,
+            ranged: remembered.is_some(),
+            ..Mission::default()
+        };
+        self.next_mission += 1;
+        self.players[p.0 as usize].s11.gun_missions[mode0 as usize] += 1;
+        let sq = self.squads.get_mut(&id).expect("owned");
+        sq.ranging = cells;
+        sq.order = Order::FireMission { target, rounds, m };
         true
     }
 
@@ -2253,12 +2463,16 @@ impl MatchState {
                         && ents.owner[v.index()] == sq.owner
                         && self.vehicles.get(&v).is_some_and(|vs| vs.type_idx == vt)
                 };
+                // S11a1: a served gun with an `[indirect]` main weapon may
+                // hold a fire mission (checked in `mission_ok`).
+                let gun_fm = matches!(sq.order, Order::FireMission { .. })
+                    && self.gun_indirect_weapon(sq).is_some();
                 if !ok
                     || sq.focus.is_some()
-                    || matches!(
+                    || (matches!(
                         sq.order,
                         Order::Dig { .. } | Order::FireMission { .. } | Order::Suppress { .. }
-                    )
+                    ) && !gun_fm)
                 {
                     return Err("vehicle squad is inconsistent");
                 }
@@ -2486,11 +2700,14 @@ impl MatchState {
         let on_map = |p: FxVec2| p.x >= Fx::ZERO && p.y >= Fx::ZERO && p.x <= size && p.y <= size;
         let ty = &s.squad_types[sq.type_idx as usize];
         let fm = s.rules.fire_mission.as_ref();
+        // S11a1: a gun squad's mission and memory are its main weapon's.
+        let gun_wi = self.gun_indirect_weapon(sq);
+        let can_fire = ty.has(Capability::FireMission) || gun_wi.is_some();
         let cells_ok = match fm {
             None => sq.ranging.is_empty(),
             Some(fm) => {
                 sq.ranging.len() <= fm.ranging_max_cells as usize
-                    && (sq.ranging.is_empty() || ty.has(Capability::FireMission))
+                    && (sq.ranging.is_empty() || can_fire)
                     && sq.ranging.iter().all(|c| {
                         c.at <= tick
                             && on_map(c.target)
@@ -2505,16 +2722,30 @@ impl MatchState {
         let Order::FireMission { target, rounds, m } = &sq.order else {
             return true;
         };
-        if !ty.has(Capability::FireMission) || !on_map(*target) || *rounds > MAX_MISSION_ROUNDS {
+        if !can_fire || !on_map(*target) || *rounds > MAX_MISSION_ROUNDS {
             return false;
         }
         let Some(fm) = fm else {
-            return *m == Mission::default();
+            return *m == Mission::default() && gun_wi.is_none();
         };
-        let w = &s.weapons[ty.weapon as usize];
+        let w = &s.weapons[gun_wi.unwrap_or(ty.weapon) as usize];
         let charges = w.indirect.as_ref().map_or(1, |i| i.charges.len());
         let hz = s.tick_hz as u64;
-        let prep = fm.fire_direction_s.max(fm.direct_s).max(fm.adjust_wait_s) as u64 * hz;
+        let prep = fm
+            .fire_direction_s
+            .max(fm.direct_s)
+            .max(fm.adjust_wait_s)
+            .max(if gun_wi.is_some() {
+                fm.gun_fire_direction_s
+            } else {
+                0
+            }) as u64
+            * hz;
+        let adjust_max = if gun_wi.is_some() {
+            fm.gun_adjust_rounds_max
+        } else {
+            fm.adjust_rounds_max
+        };
         // The burst deadline is the flight plus 4 s (`combat.rs`); the
         // weapon's longest possible flight bounds it (Review L1).
         let flight_s = w
@@ -2529,7 +2760,7 @@ impl MatchState {
             && m.order_tick <= tick
             && m.ready_at <= tick + prep
             && m.burst_by <= tick + burst_window
-            && m.adjust as u32 <= fm.adjust_rounds_max
+            && m.adjust as u32 <= adjust_max
             && (m.charge as usize) < charges
             && m.offset.length() <= crate::fire_mission::max_error(fm, s.map.size_m)
             && m.err0 <= crate::fire_mission::max_error(fm, s.map.size_m)

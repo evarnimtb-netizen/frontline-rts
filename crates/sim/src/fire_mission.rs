@@ -337,10 +337,27 @@ pub(crate) fn start_error(fm: &FireMissionTuning, map: bool, d: Fx) -> Fx {
     Fx::from_raw((d.raw() as i64 * pct as i64 / 100) as i32).max(m(min))
 }
 
+/// G4: the start error of a mission, gun keys for a gun (`gun_*`), the
+/// mortar keys otherwise (same as `start_error`).
+pub(crate) fn start_error_for(fm: &FireMissionTuning, map: bool, d: Fx, gun: bool) -> Fx {
+    if !gun {
+        return start_error(fm, map, d);
+    }
+    let (pct, min) = if map {
+        (fm.gun_map_fire_error_pct, fm.gun_map_fire_error_min_m)
+    } else {
+        (fm.gun_first_round_error_pct, fm.gun_first_round_error_min_m)
+    };
+    Fx::from_raw((d.raw() as i64 * pct as i64 / 100) as i32).max(m(min))
+}
+
 /// The largest start error any mission can have on this map (load check).
 pub(crate) fn max_error(fm: &FireMissionTuning, map_size: i32) -> Fx {
     let diag = Fx::from_int(map_size).mul_int(3).div_int(2);
-    start_error(fm, true, diag).max(start_error(fm, false, diag))
+    start_error(fm, true, diag)
+        .max(start_error(fm, false, diag))
+        .max(start_error_for(fm, true, diag, true))
+        .max(start_error_for(fm, false, diag, true))
 }
 
 impl MatchState {
@@ -372,6 +389,17 @@ impl MatchState {
                     .he
                     .is_some()
         })
+    }
+
+    /// S11a1: where squad `sq`'s tube stands: its mortar gunner, or for a
+    /// gun squad with an `[indirect]` main gun, the gun.
+    pub(crate) fn tube_pos(&self, ents: &Entities, sq: &Squad) -> Option<FxVec2> {
+        if self.gun_indirect_weapon(sq).is_some() {
+            let g = *sq.members.first()?;
+            return Some(ents.transform[g.index()].pos.xy());
+        }
+        self.mortar_gunner(ents, sq)
+            .map(|g| ents.transform[g.index()].pos.xy())
     }
 
     /// The observers of squad `q` (`(man, observe range)`): its leader and
@@ -425,9 +453,57 @@ impl MatchState {
         )
     }
 
+    /// S11a1: the firing unit of squad `id`: its squads (a gun squad and
+    /// the crew squad serving it; a mortar squad alone) and the man whose
+    /// voice gives Direct (the crew's leader; the mortar squad's leader).
+    pub(crate) fn firing_unit(
+        &self,
+        ents: &Entities,
+        id: SquadId,
+    ) -> (Vec<SquadId>, Option<SimId>) {
+        let Some(sq) = self.squads.get(&id) else {
+            return (Vec::new(), None);
+        };
+        if self.gun_indirect_weapon(sq).is_none() {
+            return (vec![id], self.squad_leader(ents, sq));
+        }
+        let crew = sq
+            .members
+            .first()
+            .and_then(|g| self.vehicles.get(g))
+            .and_then(|vs| vs.served.as_ref())
+            .and_then(|sv| sv.crew)
+            .filter(|q| self.squads.get(q).is_some_and(|c| c.owner == sq.owner));
+        match crew {
+            Some(q) => (vec![id, q], self.squad_leader(ents, &self.squads[&q])),
+            None => (vec![id], None),
+        }
+    }
+
+    /// S11a1 G5: the living men of squad `q` with the `radio` trait.
+    fn radio_men(&self, ents: &Entities, q: &Squad) -> impl Iterator<Item = SimId> {
+        let ty = &self.setup.squad_types[q.type_idx as usize];
+        let any = ty
+            .members
+            .iter()
+            .any(|s| s.traits & member_trait::RADIO != 0);
+        q.members.iter().copied().filter(move |&mm| {
+            let i = mm.index();
+            any && ents.kind[i] == EntityKind::Soldier
+                && ents.combat[i].hp > 0
+                && ty
+                    .members
+                    .get(ents.kit[i].slot as usize)
+                    .is_some_and(|s| s.traits & member_trait::RADIO != 0)
+        })
+    }
+
     /// Linked observers of squad `id` whose observe range reaches `point`:
     /// `(direct, man)`, the own non-detached leader first, then ascending
-    /// id.
+    /// id. Linked: within `observer_link_m` of the tube at `gunner` (voice),
+    /// or (S11a1 G5, `radio_link` 1) a living `radio` man of the
+    /// observer's squad within the link of him and one of the firing unit
+    /// within the link of the tube.
     fn linked(
         &self,
         ents: &Entities,
@@ -439,8 +515,14 @@ impl MatchState {
         let Some(sq) = self.squads.get(&id) else {
             return Vec::new();
         };
-        let own_leader = self.squad_leader(ents, sq);
+        let (unit, own_leader) = self.firing_unit(ents, id);
         let link = m(fm.observer_link_m);
+        let at = |o: SimId| ents.transform[o.index()].pos.xy();
+        let unit_radio = fm.radio_link != 0
+            && unit.iter().any(|q| {
+                self.radio_men(ents, &self.squads[q])
+                    .any(|r| within(at(r), gunner, link))
+            });
         let mut obs = Vec::new();
         let mut out = Vec::new();
         for (&qid, q) in &self.squads {
@@ -450,11 +532,17 @@ impl MatchState {
             obs.clear();
             self.observers_of(ents, fm, q, &mut obs);
             for &(o, r) in &obs {
-                let at = ents.transform[o.index()].pos.xy();
-                if !within(at, gunner, link) || !within(at, point, r) {
+                let p = at(o);
+                if !within(p, point, r) {
                     continue;
                 }
-                let direct = qid == id && Some(o) == own_leader && !ents.unit[o.index()].detached;
+                if !within(p, gunner, link)
+                    && !(unit_radio && self.radio_men(ents, q).any(|x| within(at(x), p, link)))
+                {
+                    continue;
+                }
+                let direct =
+                    unit.contains(&qid) && Some(o) == own_leader && !ents.unit[o.index()].detached;
                 out.push((direct, o));
             }
         }
@@ -755,9 +843,8 @@ impl MatchState {
             let Order::FireMission { target, m: mi, .. } = sq.order else {
                 continue;
             };
-            let gunner = self
-                .mortar_gunner(ents, sq)
-                .map(|g| ents.transform[g.index()].pos.xy());
+            let gunner = self.tube_pos(ents, sq);
+            let gun = self.gun_indirect_weapon(sq).is_some();
             let seen = mi.mode != mode::MAP
                 && gunner.is_some_and(|g| {
                     let cands = self.linked(ents, &fm, id, g, b.pos.xy());
@@ -790,11 +877,29 @@ impl MatchState {
             }
             let off = mi.offset.length();
             let map = mi.mode == mode::MAP;
-            let c = &mut self.players[owner].fm;
-            if seen {
-                c.seen += 1;
-            } else if !map {
-                c.unseen += 1;
+            // S11a1: a gun's bursts count in `S11Counters` only.
+            if gun {
+                // Bursts within `danger_close_m` of an own man (a report).
+                let r = m(self.setup.rules.ai.arty.danger_close_m);
+                let p = b.pos.xy();
+                let near = self.squads.values().any(|q| {
+                    q.owner.0 as usize == owner
+                        && q.members.iter().any(|&mm| {
+                            let i = mm.index();
+                            ents.kind[i] == EntityKind::Soldier
+                                && ents.combat[i].hp > 0
+                                && within(ents.transform[i].pos.xy(), p, r)
+                        })
+                });
+                let c = &mut self.players[owner].s11;
+                c.near_own_bursts = c.near_own_bursts.saturating_add(near as u32);
+            } else {
+                let c = &mut self.players[owner].fm;
+                if seen {
+                    c.seen += 1;
+                } else if !map {
+                    c.unseen += 1;
+                }
             }
             if let Some(log) = self.burst_log.as_mut() {
                 log.push(BurstRecord {

@@ -1246,7 +1246,7 @@ impl MatchState {
     }
 
     /// Stores a squad's mission state.
-    fn set_mission(&mut self, id: SquadId, m: crate::fire_mission::Mission) {
+    pub(crate) fn set_mission(&mut self, id: SquadId, m: crate::fire_mission::Mission) {
         if let Some(sq) = self.squads.get_mut(&id)
             && let Order::FireMission { m: sm, .. } = &mut sq.order
         {
@@ -1257,11 +1257,7 @@ impl MatchState {
     /// Ends a squad's mission (`Idle`); an observed or direct mission with
     /// a seen round leaves its final offset in the ranging memory.
     pub(crate) fn end_mission(&mut self, id: SquadId, ents: &Entities, tick: u64) {
-        let gunner = self
-            .squads
-            .get(&id)
-            .and_then(|sq| self.mortar_gunner(ents, sq))
-            .map(|g| ents.transform[g.index()].pos.xy());
+        let gunner = self.squads.get(&id).and_then(|sq| self.tube_pos(ents, sq));
         let fm = self.setup.rules.fire_mission.clone();
         let Some(sq) = self.squads.get_mut(&id) else {
             return;

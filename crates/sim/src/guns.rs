@@ -639,6 +639,12 @@ impl MatchState {
         let (Some(v), Some(ps)) = (self.setup.vehicles.get(t), self.setup.players.get(by)) else {
             return;
         };
+        // S11a1: kills by an infantry gun (any round).
+        if v.role == frontline_content::VehicleRole::InfGun
+            && let Some(p) = self.players.get_mut(by)
+        {
+            p.s11.gun_kills = p.s11.gun_kills.saturating_add(n);
+        }
         if v.served()
             && v.faction != ps.faction
             && let Some(p) = self.players.get_mut(by)
@@ -919,7 +925,12 @@ impl MatchState {
         if !self.setup.vehicles[v as usize].served() {
             return;
         }
-        self.players[p.0 as usize].s9.guns_bought += 1;
+        // S11a1: an infantry gun counts in `s11` only.
+        if self.setup.vehicles[v as usize].role == frontline_content::VehicleRole::InfGun {
+            self.players[p.0 as usize].s11.guns_bought += 1;
+        } else {
+            self.players[p.0 as usize].s9.guns_bought += 1;
+        }
         let gun = self.squads[&q].members[0];
         let Some(tc) = tow_card else {
             let sv = self
@@ -1491,6 +1502,15 @@ impl MatchState {
         }
         if let Some(p) = self.players.get_mut(owner.0 as usize) {
             p.s9.guns_neutral += 1;
+        }
+        // S11a1 G6: an abandoned gun's fire mission ends.
+        if let Some(q) = ctx.ents.squad[i]
+            && self
+                .squads
+                .get(&q)
+                .is_some_and(|sq| matches!(sq.order, Order::FireMission { .. }))
+        {
+            self.end_mission(q, ctx.ents, ctx.tick);
         }
         self.abandon(ctx, id, crate::bail::AB_GUN, events);
     }

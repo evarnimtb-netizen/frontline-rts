@@ -5,41 +5,47 @@ ablations `targets/S11a1-ablations/`. Branch `claude/project-thread-e7nsak`, bas
 `git add -A`, never the untracked `.claude/`, `target/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Plan done 2026-11-16. Nothing built. Next: Build A (`S11a1-build-A.md`), starting with its chunk 0.**
-- Versions now: SAVE_VERSION 26, PROTOCOL 14. Build A makes the one bump of this slice: SAVE 27; PROTOCOL stays 14.
-- Base for every neutrality proof: `target/s11a1-base40/skirmish40.json`, played by Build A chunk 0 from the
-  unchanged tree (`BATCH_JOBS=4 tools/batch.sh ...`, command in the stage file). `target/s10c-F3-40/skirmish40.json`
-  is the same set from code `c1302b3` if the cache is gone (compare the two with `neutral.py` first).
-- The owner is asleep: questions S11a1-1..9 are in `docs/TODO.md`, each assumed on (A). Do not ask anyone; a new
-  question goes into the log's top block and into `docs/TODO.md` with a recommended (A) and the same mark.
-- Gate "S11a only if S5 and S6 met their HE-share targets": met (13.3-13.9 % and 19.4 % against 26.3 %; now 19.8 %).
-- Targets file parses (2026-11-16): `target/release/frontline-cli targets docs/slices/targets/S11a1.toml
-  --from-json EMPTY_DIR` prints 552 SKIP lines, exit 0. The six override files name keys that do not exist before
-  Build A's key commit: nothing loads them until then (`tools/check.sh` gets its S11a1 dry-run step in Build A).
-- Code facts the plan rests on (read 2026-11-16, check before relying on a line number):
-  - A mortar mission is `Order::FireMission { target, rounds, m: Mission }` on the squad; `game.rs`
-    `mission_refusal` 1402 and `order_fire_mission` 1457; fired in `combat.rs` `fire_mission_tick` 1039 by the man
-    `mortar_gunner` returns; bombs through `supply::take_bomb`; the `FireRequest` carries `mission: m.id`.
-  - `indirect::solve` takes only the high root `(r + sqrt)/(2a)` of each charge: a +30 deg gun has no solution
-    today. `IndirectDef.elevation_deg` is `[u32; 2]`.
-  - A served gun is a vehicle squad of one (`guns.rs` `is_gun_squad`); its crew is a separate infantry squad in
-    `Served` slots; rounds in `VehicleState::ammo`; it rearms in base, at an HQ, dump or truck through
-    `base_ticks` and `supply.rs` `rearm_vehicles` 845 at the shells price.
-  - `fire_mission.rs` `linked` 389 knows the voice link only; trait `observer` (1,200 m) exists and no ww2 unit
-    has it; `squad_leader` returns `None` for a vehicle squad.
-  - `vehicle.rs` 4020 requires `served() == (role == AtGun)`. The AI's AT-gun BUY selects by role (`ai/guns.rs`
-    1180-1226), but `take_guns` 400-405, `gun_jobs` 448-455 and `gun_recrews` take every `vs.served` gun: Build A
-    splits them by role. `outside_limit` (`vehicle.rs` 385) must list the new role.
-  - ww2 has 15 vehicle defs = `kill_class::MAX_VEHICLE_TYPES` (`game.rs` 548), sorted by id; the class u8 is
-    saved (`structures.rs` 129). Two more defs need the widening of spec 3 in the SAVE 27 commit.
-  - The load check `game.rs` 2484-2531 and `end_mission` (`combat.rs` 1260) assume a mortar squad.
-  - `ai/breach.rs` `run_breach` 487: phase Stage leaves on `covered` (a base of fire, or twice `suppress_lead_s`);
-    `breach_max_s` 180; breach jobs start 0 times in 480 matches (the front wire is rounded).
-  - `tools/neutral.py` compares `per_match` records field by field; S10c-ai added the rule "a key starting `s10c`
-    that BASE lacks is skipped" (Build B adds the same for `s11a1`).
-- Stop rules for every stage: red `check.sh quick` is never left; a non-neutral `a_off` 40 set is a bug to find;
-  no value of lethality, armour, penetration or price is changed to reach a target (owner rule: features first,
-  cost and availability before stats).
+**State: Build A done 2026-11-17 (all of G1-G7, every switch at its spec default). Next: Build B (`-build-B.md`).**
+- SAVE 27, PROTOCOL 14. Neutral base `target/s11a1-base40/skirmish40.json` (= `target/s10c-F3-40`).
+- Code map: `indirect.rs` `solve_gun` (candidates, mount pitch, `arc_clear`); `game.rs` `gun_mission_refusal`,
+  `order_gun_mission`, `gun_indirect_weapon`, `gun_he_slot`, `gun_mount`; `gunnery.rs` `gun_mission_tick` (called
+  first in `gun_one`, which then picks no main-gun target); `fire_mission.rs` `firing_unit` + `radio_men` (used by
+  `linked`), `tube_pos` (used by `observe_bursts`, `end_mission`), `start_error_for` (G4).
+- `sq.order` arms: none needed a new `FireMission` arm; `fire_mortars`/`fire_mission_tick` return at once for a
+  gun squad (`mortar_gunner` None); `combat.rs` 152, `world.rs` 6485/6572/6636 and `ai/mortar.rs` 216/730 read
+  mortar squads only. Added: the vehicle-squad load check and `mission_ok` accept a gun's mission.
+- A gun test scene: `s11a1_tests.rs` `add_indirect_gun(setup, lo, hi, min_m)` (Pak 38 clone `test:inf_gun`, leIG
+  charges, mount -10..hi, squad weapon = the new weapon), `scene_with(threads, lo, edit)` (gun at (300,500), Grenadiers
+  at (330,500)), `order`, `mission`, `run_out`; `add_fo` gives `test:fo` and radio men to every `*_crew`.
+- `[indirect]` for a gun (weapon class `cannon`, main mount up to 89 deg with `low_angle`): `charges_m_s = [92, 120,
+  150, 180, 210]`, `elevation_deg = [0, 73]`, `low_angle = true`, `range_m = 3550`, `spread_mrad = 8`.
+- **Build B must** print `FmCounters::refused` as a map by name (or let `neutral.py` skip it): it grew 7 -> 9 items
+  (`masked`, `not_ready`), so `neutral.py` says `DIFFERENT, same 40/40` on that one key; every match is equal.
+- Direct mode for a gun is the crew squad's leader by voice (he is an observer at `observe_leader_m`).
+- Gun refusals still add to `fm.refused` (the order event is shared); `masked`/`not_ready` also count in `s11`.
+- AI: `inf_gun` guns are parked in `take_guns` (no list) until Build C; the mix never buys `inf_gun`.
+- Riflemen 200 m off are not seen by a gun crew on flat ground in tests; use a tank for direct-fire scenes.
+
+## Build A (2026-11-17)
+Commits: `9ed0bf0` layout (SAVE 27, kill class u16, S11 counters, AI records), `84a972a` keys / schema / radio /
+inf_gun / AT-gun split, `030e6ff` G2 solver, then G1-G7 (gun missions, radio, ends, rearm, counters).
+Tests (control in brackets): `seventeen_vehicle_types_keep_their_kill_rows` (old u8 pack), `load_rejects_bad_s11a1_state`
+(staged save loads), `s11a1_layout_roundtrips_and_hashes`, `at_gun_ai_ignores_infantry_guns` (at_gun clone gets a
+job), `load_rejects_bad_s11a1_keys` (`gun_break_m` widened: failed), `indirect_gun_keys_and_radio_trait_parse` (band to
+90), six G2 tests in `indirect.rs` (M3 masked; level ground), `gun_takes_a_fire_mission` (`gun_missions` 0),
+`gun_mission_refusals_in_order` (accepts last), `gun_mission_fires_counted_he` (no HE), `gun_mission_waits_for_the_crew`
+(loader check removed: failed), `gun_on_mission_fires_no_direct_round` (Idle fires), `infantry_gun_counts_only_in_s11`
+(at_gun in s9), `gun_mission_deterministic_threads_and_save_load`, `gun_mission_leaves_ranging_memory` (map fire: none),
+`gun_map_error_is_twice_the_observed` (mortar keys), `gun_mission_ends_when_packed` (not packed), `gun_mission_breaks_for_self_defence`
+(200 m), `radio_links_an_observer_across_the_map` (three controls), `radio_does_not_reveal` (near enemy seen),
+`infantry_gun_does_not_rearm_in_base_when_switched_off` (1 rearms).
+Neutral: `neutral.py base40 A40` and `... Aoff40`: `DIFFERENT, same 40/40`, the only key `s5b.refused` 7 -> 9 items.
+Deviations: the mask never reads the last fifth of a flight (steps 17-20, spec); `Masked` in the sim is tested
+through the solver test, not a cratered map; the crew-ordered-off end is "crew link released" (`sv.crew` None);
+unit orders that take one man off make the gun wait, not end; `InsideMinimum` only when no candidate exists (a
+low-angle gun always has one at short range); `IndirectDef` literals in `indirect.rs` tests gained `..Default`;
+the setup check accepts `[indirect]` on a `cannon` with `low_angle`, and mount elevation to 89 for it.
+Check: `tools/check.sh quick 730e67f` all ok, 907 tests passed (release CLI rebuilt first).
 
 ## Plan revision (2026-11-16, after an independent review: 1 blocker, 6 major, 4 minor; all verified in the code, none rejected)
 Spec 3: kill-class carrier widened in the SAVE 27 commit (15-type cap), `fo_lost_at`, `guns_bought`,
