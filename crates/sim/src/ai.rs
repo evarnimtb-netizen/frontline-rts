@@ -1224,8 +1224,9 @@ impl MatchState {
     ) {
         // S11a1: a gun mission whose gun is no longer ready when it comes
         // due (a crew man fell, the gun was packed, its last HE fired) is
-        // withdrawn as a dry mortar mission is (not counted: no layout
-        // change), so the sim refuses no AI gun order (T137).
+        // withdrawn as a dry mortar mission is (fix C-1: counted in
+        // `fm_dry_drops`, and taken back out of `arty_missions`), so the
+        // sim refuses no AI gun order (T137).
         let gun_dry: Vec<SquadId> = self
             .ai
             .iter()
@@ -1256,6 +1257,18 @@ impl MatchState {
                             return true;
                         };
                         if gun_dry.contains(squad) {
+                            // S11a1 fix C-1: a withdrawn gun mission is a
+                            // dry drop, not a mission.
+                            dropped += 1;
+                            let c = &mut ai.counters;
+                            c.arty_missions = c.arty_missions.saturating_sub(1);
+                            if let Some(r) = ai.arty.get_mut(squad) {
+                                if r.prep {
+                                    c.arty_prep_missions = c.arty_prep_missions.saturating_sub(1);
+                                }
+                                r.missions = r.missions.saturating_sub(1);
+                                r.prep = false;
+                            }
                             return false;
                         }
                         let dry = setup.rules.fire_mission.is_some()

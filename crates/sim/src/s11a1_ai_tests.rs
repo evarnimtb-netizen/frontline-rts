@@ -558,3 +558,51 @@ fn ai_breach_prep_wait_is_bounded() {
     assert!(go.is_some(), "the carrier went after the wait");
     assert_eq!(k.breach_prep_timeouts, 1, "bounded: one timeout");
 }
+
+/// Review fix C-1: an AI gun mission withdrawn at its due time (the gun is
+/// no longer ready) counts in `fm_dry_drops` and is taken back out of
+/// `arty_missions`. Control: the gun stays ready: the mission applies and
+/// stays counted.
+#[test]
+fn withdrawn_gun_mission_is_a_dry_drop_not_a_mission() {
+    let run = |limber: bool| {
+        let (mut w, q) = fire_scene(1, false, |_| {});
+        let pending = |w: &World| {
+            ai(w).pending.iter().any(
+                |c| matches!(c.kind, crate::CommandKind::FireMission { squad, .. } if squad == q),
+            )
+        };
+        let end = w.tick() + 30 * 60;
+        while !pending(&w) {
+            assert!(w.tick() < end, "no AI gun mission");
+            w.step(&[]);
+        }
+        let k0 = counters(&w);
+        assert!(k0.arty_missions >= 1);
+        if limber {
+            let gun = members(&w, q)[0];
+            w.state
+                .game
+                .as_mut()
+                .unwrap()
+                .vehicles
+                .get_mut(&gun)
+                .unwrap()
+                .served
+                .as_mut()
+                .unwrap()
+                .state = GunState::Limbered;
+        }
+        while pending(&w) {
+            w.step(&[]);
+        }
+        let k1 = counters(&w);
+        (
+            k0.arty_missions - k1.arty_missions,
+            k1.fm_dry_drops - k0.fm_dry_drops,
+            ai(&w).arty[&q].missions as u32 == k1.arty_missions,
+        )
+    };
+    assert_eq!(run(true), (1, 1, true), "withdrawn: a drop, not a mission");
+    assert_eq!(run(false), (0, 0, true), "control: applied");
+}
