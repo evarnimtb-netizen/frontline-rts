@@ -30,8 +30,8 @@ ablations `targets/S11a1-ablations/`. Branch `claude/project-thread-e7nsak`, bas
 - `neutral.py`: keys `s11a1*` the base lacks are skipped; a list that grew with a zero tail equals the base.
 
 ## Build B (2026-11-17)
-Commits: `6f22f00` content + fix A-1, `c2afd8c` fixes A-2..A-6, `6a8db14` rows / JSON / neutral.py / doc, `2097289` rows on
-threads, `50eedd6` one-off 10-seed test; this log commit. Content as built (`artillery-on-map.md` 2.1 lines 133-136,
+Commits: `6f22f00` content + fix A-1, `c2afd8c` A-2..A-6, `6a8db14` rows / JSON / neutral.py / doc, `2097289` rows
+on threads, `50eedd6` one-off test, `aaae560` roster tests, `a05657a` rows into the fortify JSON, `59d8dc3` mask aim point; logs. Content as built (`artillery-on-map.md` 2.1 lines 133-136,
 2.2 lines 148-151, 4.7 lines 825-840; spec 4 C1-C4): leIG 18 400 kg, crew 5, -10..+73, traverse -5..+6, charges
 92-210, 3,550 m, 8 mrad, 8/min (7.5 s), 12 Igr 18 (6.0 kg), 320 / pop 2 / 90 s / 3:00, max 2; M3 1,130 kg, crew 6,
 -9..+30, +-22, charges 205-311, 7,600 m, 6 mrad, 3/min (20 s), 10 M1 HE (19 kg; blast 175 cm, 160 rays to 17.5 m,
@@ -51,15 +51,18 @@ Other files touched (smallest fix): `damage.rs` test list (two guns), the 17-typ
 `indirect::candidates` pub(crate). Solver test with real defs lives in `s11a1_tests.rs` (the solver is the sim's).
 Gate (`s11a1_rows_one_off`, seeds 1-10, the same code as `fortify-test`): **T128** ratio 600.0 % (observed 8.3 m:
 leIG 9.9, M3 6.8; map 49.8 m; exposure 160 rounds; control radio man dead 100.0 %). **T129** M3 refused masked 100 %
-(control flat 0 %), leIG over the crest 80 % (control flat 80 %: "x > 540" is crossed short by the 50 m map-fire
-error; a report), orders 20. **T130** trench vs open 11.8 % (open 68.0 %, trench 8.0 %; control: dug, squad in front
+(control flat 0 %), leIG burst within 10 m of its aim point 80 % (control flat 100 %; report bound 100: in 2 of 10
+seeds the map-fire aim error puts the aim point in the crest's shadow and the round bursts on the far slope, which
+the mask test cannot see because it skips the last fifth of the flight, A's deviation), orders 20.
+**T130** trench vs open 11.8 % (open 68.0 %, trench 8.0 %; control: dug, squad in front
 76.5 %), trench suppressed 2.2 %. Bench: flat map; gun_fm 600 m, FO 300 m short (radio only); mask crest band 25 m,
-gun 530 m from target; barrage M3 500 m, FO 350 m. Rows wall 22.6 s for 10 seeds (threads, under load).
+gun 530 m from target; barrage M3 500 m, FO 350 m. Rows wall 16.8 s for 10 seeds (threads), the
+added fortify time; whole `fortify-test --seeds 10` 1,676 s (no base timing exists; the S10b-ai rows dominate).
 Neutral: `neutral.py base40 B40` `same 40/40`; `base40 B40off` (a_off) `same 40/40`. Tests: content `s11a1_content`
 4, sim s11a1 25, CLI `fortify_s11a1_rows_run`, `s11a1_json_names_match_the_targets_file`, neutral 13.
 Check: `tools/check.sh quick 730e67f` all ok, 915 tests (release CLI rebuilt; first run failed two roster-order
 tests, fixed in `aaae560`). Full `fortify-test --seeds 10` (`target/s11a1-B40/fortify10.json`, with the 30-min S10b-ai
-rows) and `targets --from-json` were still running at this commit (a container restart lost the first run).
+rows): the first full run (1,676 s) lacked the `s11a1` key (fixed in `a05657a`); the rerun's targets are below.
 
 ## Build A (2026-11-17)
 Commits: `9ed0bf0` layout (SAVE 27, kill class u16, S11 counters, AI records), `84a972a` keys / schema / radio /
