@@ -205,6 +205,29 @@ mode the AI expected, spotters sent, missions through a spotter, spotter
 time-outs and recalls, map fire held (reserve / walking), blind targets
 passed over and waits for the ray budget.
 
+### Own men and counter-fire (`[ai.arty]` `ff_safe`, `counter_fire`; S11a2)
+
+With `[fire_mission] friendly_fire` 1 own mission bursts hurt own men, so
+with `ff_safe` 1 the AI keeps one own-men rule for mortars and guns
+(`crates/sim/src/ai/arty.rs` `own_near`): a target is "near own men" when a
+living own man (not of the firing squad) stands inside `[ai.arty]
+danger_close_m` (50 m) of it, or an own squad on the move has its goal
+inside 50 m and its leader inside `lift_m` (100 m). Such a target is not
+ordered (`ff_holds`); every own mission whose target becomes near own men
+gets one `Stop` before the mortars and guns plan (`ff_lifts`; bombs in the
+air still land). A mortar's spotter stands `danger_close_m + 20` short of
+its target. With `ff_safe` 0 the S11a1 rules hold (35 m mortar filter, the
+gun lift A6, the prep lift P3).
+
+With `[fire_mission] counter_battery` 1 the enemy's infantry-gun rounds
+leave markers; with `counter_fire` 1 a Ready AI gun with no mission answers
+its own sharpest marker (no wider than `cb_max_error_m`, 60 m) with map
+fire of `mission_rounds`, after preparation fire and before observed
+targets, once per new round heard (`cb_shots`), inside the reserve and the
+shell budget, never on own men, and never an order the sim would refuse
+(`cb_masked`: the low-angle M3 behind a crest). Counter-fire bursts are
+counted only while their mission runs (`cb_bursts`, `cb_near_bursts`).
+
 ## Rules without `[fire_mission]`
 
 Older mods fire a mission exactly as the old barrage: no observers, no aim
