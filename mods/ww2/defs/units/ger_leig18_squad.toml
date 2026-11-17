@@ -1,0 +1,13 @@
+# The leIG 18 card (S11a1 C1): the gun and its crew; pushed, no tow
+# (S11a1-4 (A)). Price, pop, cooldown and unlock are on the vehicle def.
+# AI weight 0 in Build B: the AI buys no infantry gun until Build C sets the
+# weight `buy_role_within` needs (it skips cards at weight 0).
+id = "ww2:ger_leig18_squad"
+name = "7.5 cm leIG 18"
+short_name = "leIG 18"
+faction = "ww2:germany"
+tags = ["vehicle"]
+vehicle = "ww2:ger_leig18"
+ai_weight = 0
+# artillery-on-map.md 4.7: at most 2 alive.
+max_alive = 2

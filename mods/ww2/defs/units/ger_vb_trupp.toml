@@ -1,0 +1,35 @@
+# VB-Trupp (S11a1 C3): the German forward observer team (Vorgeschobener
+# Beobachter). The leader observes; the Funker carries the radio that links
+# the team to a gun or mortar (S11a1 G5). artillery-on-map.md 4.1, 4.7;
+# roster-expansion.md (VB-Trupp).
+id = "ww2:ger_vb_trupp"
+name = "VB-Trupp"
+short_name = "VB-Trupp"
+faction = "ww2:germany"
+tags = ["observer"]
+capabilities = ["dig_basic", "recrew"]
+sources = [
+    "artillery-on-map.md 4.1 (observers), 4.7 (VB-Trupp 100 MP, 60 s, max 2, 0:00)",
+    "roster-expansion.md (VB-Trupp, 2 men)",
+]
+# 100 less the S5a-37 German cut (S11a1-5 (A)).
+cost = 80
+max_alive = 2
+cooldown_s = 60
+unlock_s = 0
+# 0: the AI buys no observer until Build C (A3 buys it on its own path).
+ai_weight = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:mp40"
+traits = ["leader", "observer"]
+
+[[members]]
+slot = "funker"
+weapon = "ww2:kar98k"
+traits = ["radio", "observer"]

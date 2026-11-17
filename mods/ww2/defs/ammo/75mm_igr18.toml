@@ -1,0 +1,64 @@
+# 7.5 cm Igr 18: high explosive for the 7.5 cm leIG 18 infantry gun (S11a1 C4;
+# docs/design/roster/artillery-on-map.md 2.1 "Igr 18 HE (6 kg, about 0.7 kg
+# filler)"). The [he] block is copied from 75mm_sprgr34 (the same 0.7 kg filler
+# class, so no new lethality; spec S11a1.md 4 C4).
+id = "ww2:75mm_igr18"
+name = "7.5 cm Igr 18"
+mechanism = "he"
+# S5a: priced refill ([supply] shell_mp_per_t per tonne): 6.0 kg (design 2.1; verify).
+supply = { kind = "shells", g = 6000 }
+caliber_mm = 75
+# The top charge of the leIG 18 (charges 92-210 m/s, spec C1; verify).
+muzzle_velocity_m_s = 210
+drag_coeff = 0
+# Flat: beats no plate of either S3 tank (as the Sprgr 34).
+penetration = [[0, 10]]
+ricochet_angle_deg = 80
+track_damage = 40
+sources = ["artillery-on-map.md 2.1 (public tables, verify)", "75mm_sprgr34 [he] block (same filler class)"]
+
+[he]
+damage = 150
+suppression = 40
+# S3b physical-contact rule (docs/slices/S3b-balance.md "Fragments and
+# blasts"): no radial damage. A 75 mm HE shell (about 0.7 kg filler, a
+# heavier steel body).
+# Overpressure: full `damage` to a man within blast_radius_cm with a clear
+# line from the burst (about the old lethal radius or less), and the
+# vs_vehicle_pct share to track anchors within it (cm).
+blast_radius_cm = 120
+# Fragments: frag_count rays per burst (azimuth stratified, elevation in
+# frag_elev_deg [min, max] above the ground plane, degrees), each stopping
+# at the first man, vehicle, wreck or earth within frag_reach_cm (cm). One
+# fragment deals frag_damage to a man near the burst, falling linearly to
+# frag_far_pct % of it at full reach, and frag_track_damage to a track whose
+# band it strikes. Starting values from the spec, set to keep the old
+# lethality in the open within about 20 % (the Tune stage measures it).
+frag_count = 80
+frag_reach_cm = 1200
+frag_damage = 70
+frag_far_pct = 30
+frag_elev_deg = [2, 45]
+# frag_track_damage: 1, not the spec's starting 5 (2 for grenades): a burst
+# 1 m beside a hull sends about 20 fragments into that side's track band,
+# and 5 each broke the track on top of the overpressure (old behaviour:
+# only the overpressure broke tracks). Track links shrug off fragments.
+frag_track_damage = 1
+suppression_radius_m = 12
+# Smaller than a mortar's, so one hit does not remove 2 m of parapet.
+crater_radius_cm = 60
+crater_depth_cm = 30
+# Same as the flat penetration above.
+pen_mm = 10
+# S8a thin-plate rule (S7-8, owner question S8a-13 (A)): a fragment of the
+# 7.5 cm Sprgr 34 pierces a plate whose effective thickness (thickness x material
+# / cos) is below this many mm at the burst, falling with distance as
+# frag_damage does (verify: starting value).
+frag_pen_mm = 12
+inside_damage = 150
+# S3b: when it beats a plate, inside_rays fragment rays from the contact
+# point into the hull, inside_damage each to the first box within
+# inside_reach_cm (cm), instead of a radius.
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 40

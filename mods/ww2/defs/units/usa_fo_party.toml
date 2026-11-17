@@ -1,0 +1,38 @@
+# Forward Observer Party (S11a1 C3): the US artillery observer team. The
+# officer observes; the radio operator carries the SCR radio that links the
+# party to a gun or mortar (S11a1 G5). artillery-on-map.md 4.1, 4.7;
+# roster-expansion.md (FO party, 3 men).
+id = "ww2:usa_fo_party"
+name = "Forward Observer Party"
+short_name = "FO Party"
+faction = "ww2:usa"
+tags = ["observer"]
+capabilities = ["dig_basic", "recrew"]
+sources = [
+    "artillery-on-map.md 4.1 (observers), 4.7 (FO Party 120 MP, 60 s, max 2, 0:00)",
+    "roster-expansion.md (Forward Observer Party, 3 men, M1 carbines)",
+]
+cost = 120
+max_alive = 2
+cooldown_s = 60
+unlock_s = 0
+# 0: the AI buys no observer until Build C (A3 buys it on its own path).
+ai_weight = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:m1_carbine"
+traits = ["leader", "observer"]
+
+[[members]]
+slot = "radio_operator"
+weapon = "ww2:m1_carbine"
+traits = ["radio", "observer"]
+
+[[members]]
+slot = "assistant"
+weapon = "ww2:m1_carbine"

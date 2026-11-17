@@ -937,3 +937,49 @@ fn infantry_gun_does_not_rearm_in_base_when_switched_off() {
     let (he, _, micro) = run(1);
     assert!(he > 2 && micro > 0, "control: {he} {micro}");
 }
+
+// ------------------------------------------------------------ Build B --
+
+/// C6 (spec 4): the real leIG 18 and 105 mm M3 tables solve 300 m and 900 m
+/// on flat ground, and no M3 solution lays above 30 deg (tan 30 = 0.5774)
+/// while the leIG has a high root above it at 900 m. Lives here, not in the content
+/// crate's tests, because the solver is the sim's (`indirect::solve_gun`).
+/// Control: the M3 at 9,000 m (past its top charge) has no candidate.
+#[test]
+fn real_infantry_guns_solve_300_and_900_m_on_flat_ground() {
+    use crate::fx::FxVec3;
+    use crate::indirect::{candidates, solve_gun};
+    let w = flat_world_with(1, |_| {});
+    let s = w.match_setup().unwrap();
+    let ind = |id: &str| {
+        s.weapons
+            .iter()
+            .find(|w| w.id == id)
+            .and_then(|w| w.indirect.clone())
+            .unwrap_or_else(|| panic!("{id}"))
+    };
+    let (leig, m3) = (ind("ww2:leig18"), ind("ww2:m3_105mm"));
+    let t = crate::terrain::Heightfield::generate(crate::terrain::TerrainKind::Flat, 1024, 0);
+    let from = FxVec3::new(Fx::from_int(100), Fx::from_int(500), Fx::ONE);
+    // tan 30 deg = 0.57735; the table rounds within 0.0005.
+    let tan30 = Fx::from_ratio(5780, 10000);
+    for d in [300, 900] {
+        let to = FxVec3::new(Fx::from_int(100 + d), Fx::from_int(500), Fx::ZERO);
+        let a = solve_gun(&leig, from, to, &t, true, None, Fx::ZERO).expect("leIG solves");
+        let b = solve_gun(&m3, from, to, &t, true, None, Fx::ZERO).expect("M3 solves");
+        assert!(b.tan <= tan30, "M3 at {d} m lays {:?}", b.tan);
+        assert!(a.flight > Fx::ZERO && b.flight > Fx::ZERO);
+        assert!(candidates(&m3, from, to).all(|c| c.tan <= tan30));
+        // At 300 m every high root of the leIG is above its 73 deg band
+        // (charge I: 79.8 deg); at 900 m charge II's is 71 deg.
+        assert!(
+            d == 300 || candidates(&leig, from, to).any(|c| c.tan > tan30),
+            "the leIG has a high root at {d} m"
+        );
+    }
+    let far = FxVec3::new(Fx::from_int(9100), Fx::from_int(500), Fx::ZERO);
+    assert!(
+        candidates(&m3, from, far).next().is_none(),
+        "control: past range"
+    );
+}

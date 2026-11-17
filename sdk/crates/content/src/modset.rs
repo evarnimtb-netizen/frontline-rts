@@ -1168,6 +1168,24 @@ impl ModDefs {
                                 ),
                             ));
                         }
+                        // S11a1: above +60 deg only with a low-angle table.
+                        let low = w.indirect.as_ref().is_some_and(|i| i.low_angle);
+                        let top = crate::vehicle::low_angle_top(low);
+                        if let Some([_, hi]) = m.elevation_deg
+                            && m.mount.is_main()
+                            && hi > top
+                        {
+                            out.push(
+                                Issue::new(
+                                    format!("{p}.elevation_deg"),
+                                    format!(
+                                        "must be at most {top} deg: only a main weapon with a \
+                                         `low_angle` [indirect] table elevates above 60, got {hi}"
+                                    ),
+                                )
+                                .with_hint("add [indirect] low_angle = true to the weapon, or lower the limit"),
+                            );
+                        }
                     }
                 }
                 let mut kinds = [0u8; 2];

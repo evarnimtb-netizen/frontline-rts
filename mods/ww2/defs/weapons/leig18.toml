@@ -1,0 +1,36 @@
+# 7.5 cm leIG 18 (S11a1 C1; docs/design/roster/artillery-on-map.md 2.1, 4.5):
+# the German light infantry gun. Rounds are on the vehicle mount. The direct
+# fire line is the S9 guns' (600 m, 2500 urad); the [indirect] table is the
+# gun's fire-mission solver (S11a1 G2: low and high roots, mask test).
+id = "ww2:leig18"
+name = "7.5 cm leIG 18"
+class = "cannon"
+# Direct engagement range, m (as the S9 guns; Build B contract).
+range_m = 600
+# A direct hit on a man, HP (as the S9 guns).
+damage = 300
+# 8 rounds/min sustained (artillery-on-map.md 2.1 "8 / 12"; verify).
+rounds_per_min = 8
+magazine = 1
+# Reload, ms: 60 s / 8 (verify).
+reload_ms = 7500
+# 2.5 mrad, urad (as the S9 guns; verify).
+spread_urad = 2500
+# Top charge, m/s (the [indirect] charge V; verify).
+muzzle_velocity_m_s = 210
+suppression = 25
+# Muzzle blast and dust: as the S9 guns (verify).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+
+[indirect]
+# Charges I-V, m/s (spec S11a1.md 4 C1; artillery-on-map.md 2.1; verify).
+charges_m_s = [92, 120, 150, 180, 210]
+# Laying band, deg (artillery-on-map.md 2.1 "-10 to +73"; the solver band 0..73).
+elevation_deg = [0, 73]
+# Low and high roots (S11a1 G2).
+low_angle = true
+# Maximum range, m (artillery-on-map.md 2.1 "about 3,550 m").
+range_m = 3550
+# Round scatter, mrad (spec C1; a game value, verify).
+spread_mrad = 8

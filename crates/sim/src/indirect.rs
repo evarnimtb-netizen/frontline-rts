@@ -99,7 +99,11 @@ pub fn solve(ind: &IndirectSetup, from: FxVec3, to: FxVec3) -> Option<Shot> {
 /// Every solution inside the band, in the order the solver tries them:
 /// lowest charge first, the high root before the low root (`low_angle`
 /// tables only; a double root is offered once).
-fn candidates(ind: &IndirectSetup, from: FxVec3, to: FxVec3) -> impl Iterator<Item = Shot> + '_ {
+pub(crate) fn candidates(
+    ind: &IndirectSetup,
+    from: FxVec3,
+    to: FxVec3,
+) -> impl Iterator<Item = Shot> + '_ {
     let d = to.xy() - from.xy();
     let r = d.length().raw() as i128;
     let h = (to.z - from.z).raw() as i128;
