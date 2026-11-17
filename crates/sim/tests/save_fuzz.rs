@@ -310,9 +310,9 @@ fn holds(w: &World) -> Vec<&'static str> {
     put(spots().any(|c| c.marked), "cb_marked");
     put(spots().any(|c| c.mark_at != 0), "cb_pending");
     put(
-        g.squads().values().any(|q| {
-            matches!(&q.order, frontline_sim::game::Order::FireMission { m, .. } if m.cb)
-        }),
+        g.squads()
+            .values()
+            .any(|q| matches!(&q.order, frontline_sim::game::Order::FireMission { m, .. } if m.cb)),
         "cb_mission",
     );
     out
@@ -894,7 +894,12 @@ fn staged_s11a2_gun(w: &mut World, leig: u16) {
     use frontline_sim::game::Order;
     let c = |x: i32, y: i32| FxVec2::from_int(x, y);
     let gun = w
-        .spawn_squad_at(PlayerId(0), leig, c(300, 360), FxVec2::new(Fx::ONE, Fx::ZERO))
+        .spawn_squad_at(
+            PlayerId(0),
+            leig,
+            c(300, 360),
+            FxVec2::new(Fx::ONE, Fx::ZERO),
+        )
         .unwrap();
     for _ in 0..30 {
         w.step(&[]);

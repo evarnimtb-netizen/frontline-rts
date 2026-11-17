@@ -410,7 +410,12 @@ pub(super) fn scene() -> Scene {
 pub(super) const TARGET: (i32, i32) = (650, 500);
 
 /// Orders the mission; the refusal of this tick, if any.
-pub(super) fn order(w: &mut World, sq: SquadId, at: FxVec2, rounds: u16) -> Option<FireMissionRefusal> {
+pub(super) fn order(
+    w: &mut World,
+    sq: SquadId,
+    at: FxVec2,
+    rounds: u16,
+) -> Option<FireMissionRefusal> {
     w.step(&[Command {
         player: PlayerId(0),
         seq: 1,
