@@ -1,0 +1,3 @@
+# S11a2 ablation: no sound evidence (K1 off): no markers, so counter-fire has no target.
+[fire_mission]
+counter_battery = 0

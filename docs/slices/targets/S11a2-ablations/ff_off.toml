@@ -1,0 +1,7 @@
+# S11a2 ablation (the balance reading of friendly fire): own mission bursts do not hurt own
+# men (F1-F4 off) and the AI keeps its S11a1 rules (S1-S3 off): mortars as in S11a1.
+[fire_mission]
+friendly_fire = 0
+
+[ai.arty]
+ff_safe = 0

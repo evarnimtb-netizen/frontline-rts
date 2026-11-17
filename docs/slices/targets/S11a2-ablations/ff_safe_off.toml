@@ -1,0 +1,4 @@
+# S11a2 ablation: friendly fire stays on, the AI's own-men rule is off (S1-S3): the 35 m mortar
+# filter and Build C's A6 only. Shows what the rule buys in own-fire deaths.
+[ai.arty]
+ff_safe = 0

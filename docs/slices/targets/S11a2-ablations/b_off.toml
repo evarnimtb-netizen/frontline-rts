@@ -1,0 +1,10 @@
+# S11a2 control (docs/slices/S11a2.md 2): every S11a2 switch at its off value.
+# The game must then play exactly as on the S11a2 base, the S11a1 result
+# (tools/neutral.py same); with S11a1-ablations/a_off.toml too, as base 730e67f.
+[fire_mission]
+friendly_fire = 0
+counter_battery = 0
+
+[ai.arty]
+ff_safe = 0
+counter_fire = 0

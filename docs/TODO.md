@@ -371,6 +371,38 @@ measured yet. The design's gate "S11a ships only if S5 and S6 met their HE-share
   gun fire-mission tool and no model for them; a presenter pass and the `godot` headless tests come before a merge to
   main is asked. **(A) assumed overnight 2026-11-16, owner asleep.** (B) Add a `hidden` card key and hide them first.
 
+## S11a2 open owner questions (asked 2026-11-17 by the Plan stage; each runs on (A): "assumed overnight 2026-11-17, owner asleep")
+
+Spec `docs/slices/S11a2.md` 11; log `docs/slices/S11a2-log.md`; targets `docs/slices/targets/S11a2.toml`. Nothing is
+built or measured yet; S11a2 starts after S11a1 Build C is committed.
+
+- S11a2-1 Scope of S11a2 (two Build stages tonight). (A) Friendly fire from indirect HE (Q22) and counter-battery by
+  sound with AI counter-fire (the answer to a gun in base); crates, tows, displacement, registration, flash and
+  defensive fire go to S11a3. **(A) assumed overnight 2026-11-17, owner asleep.** (B) Crates and AI crate carrying
+  instead of counter-battery.
+- S11a2-2 Extent of friendly fire. (A) Own men only (blast, suppression, fragments) from fire-mission rounds of
+  mortars and infantry guns; own vehicles, guns, structures, wire and tracks stay immune; a round in flight passes
+  through own men. **(A) assumed overnight 2026-11-17, owner asleep.** (B) Everything own is hit.
+- S11a2-3 Own-fire deaths in the numbers. (A) Not kills (the HE share and the kill tables keep their meaning); a
+  separate count per player; losses and tickets as any death. **(A) assumed overnight 2026-11-17, owner asleep.**
+  (B) Counted as kills of the firing player.
+- S11a2-4 AI safety distances under friendly fire. (A) No mission, and a lift of a running one, with own men inside
+  50 m of the target or walking onto it inside 100 m; the mortar spotter stands 70 m short (was 35).
+  **(A) assumed overnight 2026-11-17, owner asleep.** (B) 100 m for every case.
+- S11a2-5 What the enemy can hear. (A) Fire-mission rounds of infantry guns only (marker after 3 rounds); mortars
+  (5 rounds) and flash ranging later. **(A) assumed overnight 2026-11-17, owner asleep.** (B) Mortars now too.
+- S11a2-6 AI counter-fire. (A) Before its observed targets, one mission of 4 rounds per new evidence, map fire on a
+  marker no wider than 60 m, inside the reserve and the 25 % shell budget (the one case where the AI fires
+  unobserved). **(A) assumed overnight 2026-11-17, owner asleep.** (B) Only when the gun has no observed target.
+- S11a2-7 Target T134 (AI gun rounds observed >= 80 %). (A) Counter-fire rounds count with the observed ones.
+  **(A) assumed overnight 2026-11-17, owner asleep.** (B) Keep the S11a1 metric and accept a miss.
+- S11a2-8 Shells by crate (follow-up of S11a1-2). (A) Infantry guns keep the priced base rearm until guns leave the
+  base (S11a3, with tows and siting): inside the base a crate run is a 20 m walk at the same price, and one 32 kg
+  crate holds a single 19 kg M1 round. **(A) assumed overnight 2026-11-17, owner asleep.** (B) Turn base rearm off
+  now with no AI carrying (an AI gun then fires one load a card).
+- S11a2-9 Target T142 (the AI lifts its fire in time in >= 90 % of 20 staged runs; the design's test 10). (A) Hard.
+  **(A) assumed overnight 2026-11-17, owner asleep.** (B) A report until S11a3.
+
 ## Planned work queue
 
 1. Infra step (done; on main).
@@ -394,6 +426,7 @@ measured yet. The design's gate "S11a ships only if S5 and S6 met their HE-share
 14. Dedicated balance pass, after S10b-ai or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a-d, T55a/b, T95b/d) are settled there. Slice order: S10b, S10b-ai, S11a/b, then this pass, then S12 to S15.
 15. **S10c-ai: done on branch `claude/project-thread-e7nsak` (2026-11-16), not on main.** Verified so far: `check.sh quick 54009f6` ok, 881 tests pass; c_off 40 set = main 40/40; Germany 40.00 % of 480 (sets 40.6 / 37.5 / 41.9); 270 targets pass, 71 miss (41 hard). Full suite, `tools/verify.sh` and CI not run yet. Spec `docs/slices/S10c-ai.md`, log `S10c-ai-log.md`, targets `S10c-ai.toml`. Owner questions S10c-1..6 above. Next: the merge decision after verify, then S11.
 16. **S11a1: planned 2026-11-16 on branch `claude/project-thread-e7nsak` (base `730e67f`), nothing built.** Spec `docs/slices/S11a1.md` (S11a2 outline in its section 12), stages `S11a1-build-A.md`, `-B.md`, `-C.md`, log `S11a1-log.md`, targets `S11a1.toml`. Stages: Build A (SAVE 27 layout, keys, solver and mask, gun fire missions, radio link), Build B (leIG 18, 105 mm M3, VB-Trupp, FO Party, fortify rows, JSON; gate T128-T130), Build C (artillery AI, preparation fire for the breach), measure and ablations, Review, Fix, verify, Docs. Owner questions S11a1-1..9 above, all assumed on (A).
+17. **S11a2: planned 2026-11-17 on branch `claude/project-thread-e7nsak` (base: the S11a1 head when Build A starts), nothing built.** Spec `docs/slices/S11a2.md` (S11a3 outline in its section 12), stages `S11a2-build-A.md`, `-B.md`, log `S11a2-log.md`, targets `S11a2.toml`. Stages: Build A (SAVE 28 layout, friendly fire of fire-mission rounds on own men, sound evidence and markers; every switch 0), Build B (JSON, fortify rows, AI safety rule and counter-fire, switches on, 40 sets), measure and ablations, Review, Fix, verify, Docs. Owner questions S11a2-1..9 above, all assumed on (A). The targets file was not parsed by the CLI at plan time (Build A does it first).
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 
