@@ -433,6 +433,67 @@ fn save_roundtrip_through_a_fort_match() {
     );
 }
 
+/// S11a2 (fix B-7): a played save with the S11a2 switches and the
+/// artillery AI on (as shipped) carries real S11a2 state: the match is
+/// saved and loaded every 600 ticks (hash, cache and bytes as above) until
+/// a save held an enemy marker and the AI had answered one, plus one more
+/// continued run after that load.
+#[test]
+fn save_roundtrip_carries_s11a2_state() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
+    let req = MatchRequest::skirmish(SEED, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let mut s = defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
+    s.players.iter_mut().for_each(|p| p.is_ai = true);
+    let fm = s
+        .rules
+        .fire_mission
+        .as_ref()
+        .expect("ww2 has [fire_mission]");
+    let a = &s.rules.ai.arty;
+    assert_eq!(
+        (
+            fm.friendly_fire,
+            fm.counter_battery,
+            a.ff_safe,
+            a.counter_fire
+        ),
+        (1, 1, 1, 1),
+        "the shipped switches"
+    );
+    let mut w = World::new_match(s, 1).unwrap();
+    let mut held = None;
+    while w.tick() < 81_000 && held.is_none() {
+        run_hashes(&mut w, 600);
+        let tick = w.tick();
+        let g = w.game().unwrap();
+        let marker = g.players().iter().any(|p| p.cb.iter().any(|c| c.marked));
+        let answered = (0..2u8).any(|p| {
+            g.ai(PlayerId(p))
+                .is_some_and(|ai| ai.counters.cb_missions > 0)
+        });
+        let bytes = w.save();
+        let mut b = World::load(&bytes, 1).unwrap_or_else(|e| panic!("load at {tick}: {e}"));
+        assert_eq!(
+            w.state_hash(),
+            b.state_hash(),
+            "hash at the load, tick {tick}"
+        );
+        assert_eq!(b.save(), bytes, "save of the loaded world, tick {tick}");
+        if marker && answered {
+            let mut a = World::load(&bytes, 2).unwrap();
+            assert_eq!(
+                run_hashes(&mut a, 600),
+                run_hashes(&mut b, 600),
+                "after the load at {tick}"
+            );
+            held = Some(tick);
+        }
+    }
+    let tick = held.expect("no save held a marker and an answered one by tick 81000");
+    println!("s11a2 roundtrip: marker and counter-fire held at tick {tick}");
+}
+
 /// One mutation: replace the encoded value of `field` with `new`.
 #[derive(Clone, Debug)]
 struct Mutation {

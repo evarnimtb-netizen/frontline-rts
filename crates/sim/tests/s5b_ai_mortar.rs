@@ -131,7 +131,25 @@ fn mission_mode(w: &World, sq: SquadId) -> Option<(u8, Option<SimId>)> {
 #[test]
 #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
 fn the_ai_sends_a_spotter_and_fires_an_observed_mission_through_him() {
-    let (mut w, mortar, _) = staged(no_edit, 1);
+    spotter_case(no_edit);
+}
+
+/// S11a2 (fix B-7): the same with `[ai.arty] ff_safe` 1, the spotter's
+/// stand-off then `danger_close_m + 20` (70 m) short of the target; the
+/// leader observes to 150 m here so a stand-off exists (70-140 m).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "long; run with --release")]
+fn the_ai_sends_a_spotter_with_ff_safe() {
+    spotter_case(ff_safe_on);
+}
+
+fn ff_safe_on(s: &mut MatchSetup) {
+    s.rules.ai.arty.ff_safe = 1;
+    s.rules.fire_mission.as_mut().unwrap().observe_leader_m = 150;
+}
+
+fn spotter_case(edit: fn(&mut MatchSetup)) {
+    let (mut w, mortar, _) = staged(edit, 1);
     let mut sent = None;
     let mut observed = None;
     for _ in 0..120 * 30 {
