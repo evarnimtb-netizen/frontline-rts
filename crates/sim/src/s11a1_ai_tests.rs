@@ -276,7 +276,12 @@ fn ai_gun_stops_at_its_shell_budget() {
 #[test]
 fn ai_lifts_gun_fire_when_own_men_close() {
     let run = |dx: i32| {
-        let (mut w, q) = fire_scene(1, false, |s| s.rules.ai.arty.mission_rounds = 12);
+        // S11a2 Build B: A6 runs with `ff_safe` 0 (with 1 the S3 lift step
+        // stops the mission instead: s11a2_ai_tests).
+        let (mut w, q) = fire_scene(1, false, |s| {
+            s.rules.ai.arty.mission_rounds = 12;
+            s.rules.ai.arty.ff_safe = 0;
+        });
         let mut on = false;
         for _ in 0..30 * 20 {
             w.step(&[]);

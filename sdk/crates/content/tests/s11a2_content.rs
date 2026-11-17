@@ -30,7 +30,8 @@ fn load_rejects_bad_s11a2_keys() {
     let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
     let s = defs.resolve(&req).unwrap();
     let fm = s.rules.fire_mission.as_ref().unwrap();
-    // Build A: both sim switches 0, the other keys at the spec values.
+    // Build B: friendly fire on (the other switches as Build B turns them
+    // on), the other keys at the spec values.
     assert_eq!(
         (
             fm.friendly_fire,
@@ -39,7 +40,7 @@ fn load_rejects_bad_s11a2_keys() {
             fm.cb_decay_s,
             fm.cb_delay_s
         ),
-        (0, 0, 3, 300, 15)
+        (1, 0, 3, 300, 15)
     );
     assert_eq!(
         (
@@ -54,7 +55,7 @@ fn load_rejects_bad_s11a2_keys() {
     let a = &s.rules.ai.arty;
     assert_eq!(
         (a.ff_safe, a.counter_fire, a.lift_m, a.cb_max_error_m),
-        (0, 0, 100, 60)
+        (1, 0, 100, 60)
     );
     let d = AiArtyTuning::default();
     assert_eq!(

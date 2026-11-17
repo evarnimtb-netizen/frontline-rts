@@ -60,6 +60,9 @@ fn load_rejects_bad_s11a1_keys() {
             buy: 1,
             fo: 1,
             prep: 1,
+            // The S11a2 switches (Build B turns them on): s11a2_content.
+            ff_safe: s.rules.ai.arty.ff_safe,
+            counter_fire: s.rules.ai.arty.counter_fire,
             ..AiArtyTuning::default()
         }
     );
@@ -78,8 +81,16 @@ fn load_rejects_bad_s11a1_keys() {
     let fm = s.rules.fire_mission.as_ref().unwrap();
     assert_eq!((fm.gun_missions, fm.radio_link, fm.mask), (0, 0, 0));
     assert_eq!(s.rules.supply.as_ref().unwrap().arty_base_rearm, 1);
-    // The switches off: every key the default.
-    assert_eq!(s.rules.ai.arty, AiArtyTuning::default());
+    // The switches off: every key the default (the S11a2 switches aside:
+    // `a_off` leaves them, `b_off` turns them off).
+    assert_eq!(
+        s.rules.ai.arty,
+        AiArtyTuning {
+            ff_safe: s.rules.ai.arty.ff_safe,
+            counter_fire: s.rules.ai.arty.counter_fire,
+            ..AiArtyTuning::default()
+        }
+    );
     // An override reaches the setup.
     let on = write("on", "[ai.arty]\nbuy = 1\npost_rays = 48\n");
     defs.apply_override(&on, "ww2:skirmish")
