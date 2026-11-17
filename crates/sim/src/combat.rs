@@ -2274,7 +2274,7 @@ pub(crate) struct Burst<'a> {
     /// Crater depth roll.
     pub key: (SimId, Purpose),
     /// `game::kill_class` of the men it kills (S3 report).
-    pub class: u8,
+    pub class: u16,
     /// S7: a thrown item going off inside an open box (vehicle, box).
     pub inside: Option<(SimId, u8)>,
     /// S10b R20: a demolition charge tamped against this piece.
@@ -2296,7 +2296,7 @@ pub(crate) struct DamageCtx<'a> {
 }
 
 /// A soldier at 0 HP this tick: `(victim, killer's player, kill class)`.
-pub(crate) type Fallen = (SimId, u8, u8);
+pub(crate) type Fallen = (SimId, u8, u16);
 
 /// Takes `dmg` hit points from soldier `id`; one who drops to 0 joins
 /// `dead` with the player who killed him and the `game::kill_class`.
@@ -2306,7 +2306,7 @@ fn hurt(
     dead: &mut Vec<Fallen>,
     id: SimId,
     dmg: u32,
-    by: (u8, u8),
+    by: (u8, u16),
 ) {
     let c = &mut ents.combat[id.index()];
     if c.hp == 0 {
@@ -2990,7 +2990,7 @@ impl MatchState {
         weapon: u16,
         ammo: u16,
         shooter: SimId,
-    ) -> u8 {
+    ) -> u16 {
         let base = self.base_class(ents, weapon, ammo, shooter);
         // S7: a round from a vehicle (alive, wreck or abandoned since)
         // carries its type, for the per-type report.
@@ -3008,7 +3008,7 @@ impl MatchState {
     }
 
     /// [`MatchState::round_class`] without the shooting vehicle's type.
-    fn base_class(&self, ents: &Entities, weapon: u16, ammo: u16, shooter: SimId) -> u8 {
+    fn base_class(&self, ents: &Entities, weapon: u16, ammo: u16, shooter: SimId) -> u16 {
         let class = self.setup.weapons.get(weapon as usize).map(|w| w.class);
         if class == Some(WeaponClass::Launcher) {
             return kill_class::ROCKET;

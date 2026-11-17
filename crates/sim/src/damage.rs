@@ -835,7 +835,7 @@ impl MatchState {
         ctx: &mut DamageCtx,
         id: SimId,
         dealt: &[Dealt],
-        by: (u8, u8),
+        by: (u8, u16),
         rack_key: SimId,
         fires: &mut FireRolls,
         events: &mut Vec<ArmourEv>,
@@ -1065,7 +1065,7 @@ impl MatchState {
         ctx: &mut DamageCtx,
         id: SimId,
         dealt: &[Dealt],
-        by: (u8, u8),
+        by: (u8, u16),
         pos: FxVec3,
         fires: &mut FireRolls,
         events: &mut Vec<ArmourEv>,
@@ -1101,7 +1101,7 @@ impl MatchState {
         pos: FxVec3,
         he: &HeSetup,
         damage: u32,
-        by: (u8, u8),
+        by: (u8, u16),
         inside: Option<(SimId, u8)>,
         fires: &mut FireRolls,
         events: &mut Vec<ArmourEv>,
@@ -1254,7 +1254,7 @@ impl MatchState {
 
     /// Counts `n` crewmen of `owner` lost, killed by `by` with a round of
     /// `game::kill_class` `class`.
-    fn crew_lost(&mut self, owner: PlayerId, by: Option<u8>, class: u8, n: u32) {
+    fn crew_lost(&mut self, owner: PlayerId, by: Option<u8>, class: u16, n: u32) {
         if let Some(p) = self.players.get_mut(owner.0 as usize) {
             p.losses += n;
         }
@@ -1282,7 +1282,7 @@ impl MatchState {
         ctx: &mut DamageCtx,
         id: SimId,
         cause: u8,
-        class: u8,
+        class: u16,
         events: &mut Vec<ArmourEv>,
     ) {
         let mut c = Ctx {
@@ -1301,7 +1301,7 @@ impl MatchState {
         stats: &mut Stats,
         id: SimId,
         cause: u8,
-        class: u8,
+        class: u16,
         events: &mut Vec<ArmourEv>,
     ) {
         let i = id.index();

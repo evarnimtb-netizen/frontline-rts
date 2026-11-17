@@ -422,6 +422,7 @@ fn ai_busy() -> (World, SquadId, SquadId) {
             tries: 2,
             suppress_at: Some(tick),
             smoke_at: None,
+            prep_at: None,
         },
     );
     ai.wire_known = vec![2, 5, 9];

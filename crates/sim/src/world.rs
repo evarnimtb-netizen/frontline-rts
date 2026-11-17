@@ -457,8 +457,14 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// since; fix pass 3 added `FrontLane::at`, a thirteenth `front_why`
 /// entry and the key `mine_assign_reach_m`, also with no bump: no save of
 /// version 26 exists outside the slice branch). One bump for the whole
-/// slice.
-const SAVE_VERSION: u32 = 26;
+/// slice. 27: S11a1 (the kill-class carrier widened to `u16` in
+/// `CookOff::class` and every pass of it; `PlayerState::s11`;
+/// `FireMissionRefusal::{Masked, NotReady}` grow `FmCounters::refused`;
+/// `AiState::{arty, fo, fo_lost_at}`, `AiBreach::prep_at`, fourteen
+/// `AiCounters`; in the setup the S11a1 `[fire_mission]`, `[supply]` and
+/// `[ai.arty]` keys, `IndirectSetup::{low_angle, range_m, spread_mrad}`,
+/// the `radio` trait and the `inf_gun` role). One bump for the whole slice.
+const SAVE_VERSION: u32 = 27;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -2897,6 +2903,9 @@ mod s10c_ai_front_tests;
 #[cfg(test)]
 #[path = "s10c_ai_tests.rs"]
 mod s10c_ai_tests;
+#[cfg(test)]
+#[path = "s11a1_tests.rs"]
+mod s11a1_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;

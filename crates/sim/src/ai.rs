@@ -182,6 +182,7 @@ use frontline_content::ItemKind;
 
 mod ammo;
 mod armour;
+pub(crate) mod arty;
 mod assault;
 mod breach;
 mod demolish;
@@ -211,6 +212,7 @@ pub use fort::{
     AiFortJob, BUNKER_WHY, FRONT_WHY, FortPhase, FrontLane, MAX_FORT_JOBS, MAX_FORT_TRIES,
     MAX_FRONT_LANES, MINE_WANT_WHY,
 };
+pub use arty::{AiArty, AiFo, ArtyPhase, MAX_ARTY, MAX_FO};
 pub use guns::{AiGun, GunPhase, MAX_GUNS, MAX_RECREW_TRIES};
 pub use obstacles::{
     AiDemolish, AiHabit, AiRefusal, AiSweep, DemolishPhase, DriveArgs, HabitEnd, JobKind,
@@ -386,6 +388,13 @@ pub struct AiState {
     /// S10c-ai (spec 3, F2): the saved lanes of the front points, strictly
     /// ascending by point, at most [`MAX_FRONT_LANES`] (Build B fills it).
     pub front_lanes: Vec<FrontLane>,
+    /// S11a1 (`ai::arty`, Build C fills it): infantry-gun jobs, by the
+    /// gun's squad (at most [`MAX_ARTY`]).
+    pub arty: BTreeMap<SquadId, AiArty>,
+    /// S11a1: observer teams, by squad (at most [`MAX_FO`]).
+    pub fo: BTreeMap<SquadId, AiFo>,
+    /// S11a1 A3: tick the last observer team was lost (0: none).
+    pub fo_lost_at: u64,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -695,6 +704,25 @@ pub struct AiCounters {
     pub belt_jobs: u32,
     pub belt_route_rejects: u32,
     pub builder_buys: u32,
+    /// S11a1 (spec 3; Build C counts them): guns and observer teams
+    /// bought, gun missions ordered, preparation missions of guns and
+    /// mortars, lifts (A6), budget and reserve holds (A5), plans with a
+    /// target and no non-map mode, posts found and failed, observer teams
+    /// lost, breach jobs waiting on preparation fire and wait timeouts (P2).
+    pub arty_buys: u32,
+    pub fo_buys: u32,
+    pub arty_missions: u32,
+    pub arty_prep_missions: u32,
+    pub mortar_prep_missions: u32,
+    pub arty_lifts: u32,
+    pub arty_budget_holds: u32,
+    pub arty_reserve_holds: u32,
+    pub arty_no_observer: u32,
+    pub fo_posts: u32,
+    pub fo_post_fails: u32,
+    pub fo_lost: u32,
+    pub breach_prep_waits: u32,
+    pub breach_prep_timeouts: u32,
 }
 
 impl AiState {
@@ -740,6 +768,9 @@ impl AiState {
             suspects_seen: 0,
             blocked_pairs: Vec::new(),
             front_lanes: Vec::new(),
+            arty: BTreeMap::new(),
+            fo: BTreeMap::new(),
+            fo_lost_at: 0,
         }
     }
 
@@ -891,6 +922,8 @@ impl AiState {
             || !self.validate_fort(g, player, tick)
             // S10b-ai.
             || !self.validate_s10b(g, player, tick, ents_len)
+            // S11a1.
+            || !arty::validate_arty(g, player, tick, &self.arty, &self.fo, self.fo_lost_at)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             // Due one reaction delay after its plan at most (the save fuzz).
             || self.pending.last().is_some_and(|c| {
@@ -962,6 +995,7 @@ impl AiState {
                     && b.tries <= MAX_BREACH_TRIES
                     && b.suppress_at.is_none_or(|t| t <= tick)
                     && b.smoke_at.is_none_or(|t| t <= tick)
+                    && b.prep_at.is_none_or(|t| t <= tick)
             })
             && self.wire_known.len() <= MAX_WIRE_KNOWN
             && self.wire_known.windows(2).all(|w| w[0] < w[1])

@@ -154,10 +154,15 @@ pub enum FireMissionRefusal {
     UnknownGround = 5,
     /// A counted squad holding no bombs.
     NoBombs = 6,
+    /// S11a1 G2: every solution's arc meets the ground.
+    Masked = 7,
+    /// S11a1 G1: the gun is not emplaced, or its gunner or loader slot is
+    /// unmanned.
+    NotReady = 8,
 }
 
 impl FireMissionRefusal {
-    pub const COUNT: usize = 7;
+    pub const COUNT: usize = 9;
     pub const NAMES: [&str; Self::COUNT] = [
         "not_mortar",
         "rounds",
@@ -166,6 +171,8 @@ impl FireMissionRefusal {
         "cannot_reach",
         "unknown_ground",
         "no_bombs",
+        "masked",
+        "not_ready",
     ];
 
     /// The HUD's reason line.
@@ -178,6 +185,8 @@ impl FireMissionRefusal {
             Self::CannotReach => "Cannot reach: too close for the highest elevation",
             Self::UnknownGround => "Unknown ground: no observer sees it and nothing was seen there",
             Self::NoBombs => "No bombs",
+            Self::Masked => "Masked: the ground blocks every arc",
+            Self::NotReady => "Not ready: emplace the gun and man it",
         }
     }
 }
@@ -242,6 +251,39 @@ pub struct FmCounters {
     pub downgrades: u32,
     /// Missions that ended for lack of a charge solution.
     pub no_solution: u32,
+}
+
+/// S11a1 per-player counters of infantry-gun fire (saved, hashed; the
+/// `s11a1` JSON block). An `inf_gun`'s missions and rounds count here only,
+/// never in [`FmCounters`] or the S9 gun counters.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct S11Counters {
+    /// Gun missions accepted, by their mode at order time.
+    pub gun_missions: [u32; mode::COUNT],
+    /// Gun mission rounds fired, by mode.
+    pub gun_rounds: [u32; mode::COUNT],
+    /// Sum of the planned miss of those rounds, by mode (mm).
+    pub gun_miss_mm: [u64; mode::COUNT],
+    /// Orders refused `Masked` / `NotReady`.
+    pub masked: u32,
+    pub not_ready: u32,
+    /// Rounds whose observer was linked by radio only.
+    pub radio_rounds: u32,
+    /// Rounds fired on the low / high root.
+    pub low_rounds: u32,
+    pub high_rounds: u32,
+    /// Gun missions ended by a seen enemy within `gun_break_m` (G6).
+    pub gun_breaks: u32,
+    /// Manpower paid for infantry-gun rounds (micro-MP).
+    pub gun_shell_micro: u64,
+    /// Men killed by infantry guns.
+    pub gun_kills: u32,
+    /// Infantry guns that arrived.
+    pub guns_bought: u32,
+    /// Direct (non-mission) rounds of infantry guns.
+    pub gun_direct_rounds: u32,
+    /// Gun mission bursts with an own man within `[ai.arty] danger_close_m`.
+    pub near_own_bursts: u32,
 }
 
 /// One burst of a mission round (Damage stage), for the observation pass.

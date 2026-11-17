@@ -493,7 +493,7 @@ impl MatchState {
         e: &BallisticEvent,
         point: FxVec3,
         attacker: u8,
-        class: u8,
+        class: u16,
     ) {
         let Some(sv) = self.vehicles.get(&id).and_then(|v| v.served.as_ref()) else {
             return;

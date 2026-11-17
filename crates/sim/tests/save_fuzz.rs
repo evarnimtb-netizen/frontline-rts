@@ -311,7 +311,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 26,
+        version: 27,
         state: w.state(),
     });
     assert!(
@@ -1325,6 +1325,44 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
                 since: tick,
                 work: Some(bwk),
                 tries: frontline_sim::fort::WorkStep::Build as u8,
+            },
+        );
+        // S11a1 (spec 3): one infantry-gun record, one observer-team
+        // record and a breach job with `prep_at` (the fuzz mutates them).
+        ai.arty.insert(
+            front_sq,
+            frontline_sim::ai::AiArty {
+                phase: frontline_sim::ai::ArtyPhase::Ready,
+                since: tick,
+                last_order: tick,
+                missions: 2,
+                prep: true,
+            },
+        );
+        ai.fo.insert(
+            belt_sq,
+            frontline_sim::ai::AiFo {
+                point: 1,
+                post: Some(c(600, 600)),
+                cursor: 3,
+                since: tick,
+                arrived: true,
+                retry_at: tick + 30,
+            },
+        );
+        ai.fo_lost_at = tick;
+        ai.breaches.insert(
+            belt_sq,
+            frontline_sim::ai::AiBreach {
+                point: 1,
+                crossing: c(620, 620),
+                section: 1,
+                phase: frontline_sim::ai::BreachPhase::Stage,
+                since: tick,
+                tries: 0,
+                suppress_at: None,
+                smoke_at: None,
+                prep_at: Some(tick),
             },
         );
     }));

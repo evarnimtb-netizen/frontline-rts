@@ -110,6 +110,9 @@ pub struct AiBreach {
     /// When the base of fire was seen firing, and the smoke thrown.
     pub suppress_at: Option<u64>,
     pub smoke_at: Option<u64>,
+    /// S11a1 P2: when the preparation mission near the focus had fired
+    /// `prep_rounds_min` rounds (Build C sets it).
+    pub prep_at: Option<u64>,
 }
 
 /// How a breach job ended (the fortify-test hook reads it).
@@ -412,6 +415,7 @@ impl super::Planner<'_> {
                 tries: 0,
                 suppress_at: None,
                 smoke_at: None,
+                prep_at: None,
             };
             let units: Vec<SimId> = g.squads[&m.id]
                 .members

@@ -1857,7 +1857,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 .map(|q| tally.man_value[q])
                 .max()
                 .unwrap_or(0);
-            let k = |c: u8| pl.kills_by[c as usize];
+            let k = |c: u16| pl.kills_by[c as usize];
             armour.tank_mp_killed +=
                 man * (k(kill_class::TANK_AP) + k(kill_class::TANK_HE) + k(kill_class::VEHICLE_MG));
             armour.at_mp_killed += man * k(kill_class::ROCKET);
@@ -3725,7 +3725,7 @@ pub fn many_text(r: &ManyReport) -> String {
             + q.fired[fired_class::TANK_RARE];
         let mp = |k: usize| q.paid_micro[k] as f64 / 1e6;
         let all_kills: u64 = q.kills_by.iter().sum();
-        let pct = |c: u8| {
+        let pct = |c: u16| {
             if all_kills == 0 {
                 0.0
             } else {

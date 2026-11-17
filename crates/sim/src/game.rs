@@ -446,6 +446,8 @@ pub struct PlayerState {
     pub s8a: S8aCounters,
     /// S9: gun counters (report).
     pub s9: crate::guns::S9Counters,
+    /// S11a1: infantry-gun fire counters (report).
+    pub s11: crate::fire_mission::S11Counters,
 }
 
 /// S8a per-player counters (saved and hashed, read only by reports;
@@ -521,41 +523,42 @@ pub struct CrewCounters {
 
 /// What killed a soldier or crewman (`PlayerState::kills_by`, S3 report).
 pub mod kill_class {
-    pub const RIFLE: u8 = 0;
-    pub const SMG: u8 = 1;
-    pub const MG: u8 = 2;
-    pub const MORTAR: u8 = 3;
+    pub const RIFLE: u16 = 0;
+    pub const SMG: u16 = 1;
+    pub const MG: u16 = 2;
+    pub const MORTAR: u16 = 3;
     /// A main-gun penetrator (AP, APHE).
-    pub const TANK_AP: u8 = 4;
+    pub const TANK_AP: u16 = 4;
     /// A main-gun HE round.
-    pub const TANK_HE: u8 = 5;
+    pub const TANK_HE: u16 = 5;
     /// A coax or hull MG.
-    pub const VEHICLE_MG: u8 = 6;
+    pub const VEHICLE_MG: u16 = 6;
     /// An AT team's rocket.
-    pub const ROCKET: u8 = 7;
-    pub const SATCHEL: u8 = 8;
-    pub const FRAG: u8 = 9;
+    pub const ROCKET: u16 = 7;
+    pub const SATCHEL: u16 = 8;
+    pub const FRAG: u16 = 9;
     /// Crew lost with a vehicle burnt out or knocked out by a setup tool.
-    pub const OTHER: u8 = 10;
+    pub const OTHER: u16 = 10;
     pub const COUNT: usize = 11;
 
-    /// S7: a class value may carry the shooting vehicle's type in its high
-    /// nibble (`class | (type + 1) << 4`) so per-type kills need no new
+    /// S7: a class value may carry the shooting vehicle's type above its
+    /// low nibble (`class | (type + 1) << 4`) so per-type kills need no new
     /// plumbing. The low nibble is the class; [`base`] before indexing.
-    const BASE_MASK: u8 = 0x0F;
+    /// S11a1 (SAVE 27): the carrier is a `u16` (it was a `u8`: 15 types).
+    const BASE_MASK: u16 = 0x000F;
     /// Most vehicle types a class can name (types past it go uncounted per
     /// type; `kills_by` is unaffected).
-    pub const MAX_VEHICLE_TYPES: usize = 15;
+    pub const MAX_VEHICLE_TYPES: usize = 4095;
 
     /// The class proper.
     #[inline]
-    pub const fn base(c: u8) -> u8 {
+    pub const fn base(c: u16) -> u16 {
         c & BASE_MASK
     }
 
     /// The shooting vehicle's type, if `c` carries one.
     #[inline]
-    pub const fn vehicle(c: u8) -> Option<usize> {
+    pub const fn vehicle(c: u16) -> Option<usize> {
         match c >> 4 {
             0 => None,
             t => Some(t as usize - 1),
@@ -564,9 +567,9 @@ pub mod kill_class {
 
     /// `c` carrying vehicle type `t` (unchanged past [`MAX_VEHICLE_TYPES`]).
     #[inline]
-    pub const fn with_vehicle(c: u8, t: u16) -> u8 {
+    pub const fn with_vehicle(c: u16, t: u16) -> u16 {
         if (t as usize) < MAX_VEHICLE_TYPES {
-            base(c) | ((t as u8 + 1) << 4)
+            base(c) | ((t + 1) << 4)
         } else {
             base(c)
         }
@@ -785,6 +788,7 @@ impl MatchState {
                 },
                 s8a: S8aCounters::default(),
                 s9: crate::guns::S9Counters::default(),
+                s11: crate::fire_mission::S11Counters::default(),
             })
             .collect();
         let np = setup.players.len();
@@ -2180,7 +2184,8 @@ impl MatchState {
                 && counters_ok(&pl.fm)
                 && counters_ok(&pl.s7)
                 && counters_ok(&pl.s8a)
-                && counters_ok(&pl.s9))
+                && counters_ok(&pl.s9)
+                && counters_ok(&pl.s11))
             {
                 return Err("a player counter is out of range");
             }
