@@ -1544,6 +1544,11 @@ post_retry_s = 60            # s (A3): a failed search waits this long
 prep_near_m = 40             # m (P2): a mission this close to the breach focus is its preparation ...
 prep_rounds_min = 2          # P2: ... once it has fired this many rounds ...
 prep_wait_s = 60             # s (P2): ... and the breach job waits for it at most this long (D 6.4 prep_fire_s)
+# S11a2 (docs/slices/S11a2.md 2): both switches stay 0 until Build B (ablations ff_safe_off, counter_fire_off).
+ff_safe = 0                  # S1-S3 switch: one own-men predicate for the order filter and the lift of every own mission
+counter_fire = 0             # R1-R3 switch: an AI gun answers an own counter-battery marker with map fire
+lift_m = 100                 # m (S1): an own squad walking to the target counts once its lead is this close (D 6.4)
+cb_max_error_m = 60          # m (R2): no counter-fire on a marker wider than this (D 8 ai.cb_max_error_m)
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired
@@ -1635,6 +1640,18 @@ gun_first_round_error_min_m = 25 # ... at least this (m) (D 4.1 fire modes table
 gun_map_fire_error_pct = 6       # G4: map fire error (% of range) ...
 gun_map_fire_error_min_m = 50    # ... at least this (m) (D 4.1)
 gun_break_m = 150            # m (G6): a seen enemy this close to the gun ends its mission (crew self-defence)
+# --- S11a2: friendly fire and counter-battery by sound (docs/slices/S11a2.md 2; D 4.3, D 6.3) ---
+# Both switches stay 0 until S11a2 Build B (ablations ff_off, cb_off).
+friendly_fire = 0            # F1 switch: mortar and gun mission bursts hurt own men (Q22; D 8 friendly_fire_indirect)
+counter_battery = 0          # K1 switch: infantry-gun mission rounds leave sound evidence with the enemy (D 4.3)
+cb_rounds_to_mark = 3        # K2: rounds heard from one spot before it is marked (D 8, gun)
+cb_decay_s = 300             # s (K3): a spot loses one piece of evidence this often; at none it goes with its marker (D 8)
+cb_delay_s = 15              # s (K2): the marker comes this long after the marking round (D 8)
+cb_error_pct = 15            # % (K2): first marker error, of the listener's distance to the gun ...
+cb_error_step_pct = 80       # % (K3): ... each further round leaves this share of it ...
+cb_error_floor_pct = 5       # % (K3): ... down to this share of the listener's distance (D 8)
+cb_reset_m = 75              # m (K1): a round this close to a spot (or inside its marker's error) counts for it (D 8)
+cb_near_m = 20               # m (K4, report): a counter-fire burst this close to an enemy infantry gun is near (D 4.3)
 
 # S10a: fortifications, wire, materials and breaching
 # (docs/slices/S10a-fortifications.md 3.2; design infantry-structures 7.1-7.7).

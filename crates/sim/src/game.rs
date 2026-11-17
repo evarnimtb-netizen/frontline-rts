@@ -448,6 +448,11 @@ pub struct PlayerState {
     pub s9: crate::guns::S9Counters,
     /// S11a1: infantry-gun fire counters (report).
     pub s11: crate::fire_mission::S11Counters,
+    /// S11a2: friendly-fire and counter-battery counters (report).
+    pub s11a2: crate::fire_mission::S11a2Counters,
+    /// S11a2 K1-K3: the enemy guns this player has heard, in creation
+    /// order (at most [`crate::counter_battery::MAX_CB_SPOTS`]).
+    pub cb: Vec<crate::counter_battery::CbSpot>,
 }
 
 /// S8a per-player counters (saved and hashed, read only by reports;
@@ -789,6 +794,8 @@ impl MatchState {
                 s8a: S8aCounters::default(),
                 s9: crate::guns::S9Counters::default(),
                 s11: crate::fire_mission::S11Counters::default(),
+                s11a2: crate::fire_mission::S11a2Counters::default(),
+                cb: Vec::new(),
             })
             .collect();
         let np = setup.players.len();
@@ -2414,10 +2421,13 @@ impl MatchState {
                 && counters_ok(&pl.s7)
                 && counters_ok(&pl.s8a)
                 && counters_ok(&pl.s9)
-                && counters_ok(&pl.s11))
+                && counters_ok(&pl.s11)
+                && counters_ok(&pl.s11a2))
             {
                 return Err("a player counter is out of range");
             }
+            // S11a2: the counter-battery spots.
+            crate::counter_battery::validate_spots(self, PlayerId(p as u8), &pl.cb, tick)?;
             // S5a: the prepaid credit stays below one point plus a round.
             if pl.ammo.credit as u64 >= crate::supply::MICRO + crate::supply::dearest_round(s)
                 || pl.ammo.paused_at > tick
@@ -2784,6 +2794,7 @@ impl MatchState {
             && m.offset.length() <= crate::fire_mission::max_error(fm, s.map.size_m)
             && m.err0 <= crate::fire_mission::max_error(fm, s.map.size_m)
             && m.observer.is_none_or(|o| o.index() < ents.len())
+            && (!m.cb || gun_wi.is_some())
     }
 
     /// S3b: a saved suppress line lies on the map and is no longer than

@@ -723,6 +723,16 @@ pub struct AiCounters {
     pub fo_lost: u32,
     pub breach_prep_waits: u32,
     pub breach_prep_timeouts: u32,
+    /// S11a2 (spec 3; Build B counts them): own missions lifted for own
+    /// men (S3), targets the own-men filter passed over (S2), counter-fire
+    /// missions ordered (R3), markers held as too wide or with no new
+    /// evidence, and counter-fire the sim would refuse (R2).
+    pub ff_lifts: u32,
+    pub ff_holds: u32,
+    pub cb_missions: u32,
+    pub cb_wide_holds: u32,
+    pub cb_stale_holds: u32,
+    pub cb_masked: u32,
 }
 
 impl AiState {

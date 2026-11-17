@@ -464,7 +464,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `AiCounters`; in the setup the S11a1 `[fire_mission]`, `[supply]` and
 /// `[ai.arty]` keys, `IndirectSetup::{low_angle, range_m, spread_mrad}`,
 /// the `radio` trait and the `inf_gun` role). One bump for the whole slice.
-const SAVE_VERSION: u32 = 27;
+/// 28: S11a2 (`Mission::cb`, `PlayerState::{s11a2, cb}` with `CbSpot`,
+/// `AiArty::{cb, cb_shots}`, six `AiCounters`; in the setup the S11a2
+/// `[fire_mission]` and `[ai.arty]` keys). One bump for the whole slice.
+const SAVE_VERSION: u32 = 28;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -2909,6 +2912,9 @@ mod s11a1_ai_tests;
 #[cfg(test)]
 #[path = "s11a1_tests.rs"]
 mod s11a1_tests;
+#[cfg(test)]
+#[path = "s11a2_tests.rs"]
+mod s11a2_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;
@@ -6547,6 +6553,7 @@ mod tests {
             flight: _,
             observer: _,
             ranged: _,
+            cb: _,
         } = Mission::default();
         let RangingCell {
             target: _,

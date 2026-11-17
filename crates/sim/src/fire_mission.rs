@@ -112,6 +112,10 @@ pub struct Mission {
     pub observer: Option<SimId>,
     /// The mission started from a remembered ranging cell.
     pub ranged: bool,
+    /// S11a2 K4: a gun mission aimed within `intel_snap_m` of one of the
+    /// player's counter-battery markers (set by the sim at order time,
+    /// never by a command; only on a gun squad's mission).
+    pub cb: bool,
 }
 
 /// One remembered target area of a mortar squad (saved, hashed).
@@ -284,6 +288,38 @@ pub struct S11Counters {
     pub gun_direct_rounds: u32,
     /// Gun mission bursts with an own man within `[ai.arty] danger_close_m`.
     pub near_own_bursts: u32,
+}
+
+/// S11a2 per-player counters of friendly fire and counter-battery (saved,
+/// hashed; the `s11a2` JSON block of Build B). Index `[0]` mortar, `[1]`
+/// infantry gun where a pair is kept.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct S11a2Counters {
+    /// Own men killed by an own mortar / gun mission burst (F4).
+    pub ff_kills: [u32; 2],
+    /// Own men hurt and not killed by an own mission burst (per burst).
+    pub ff_wounds: u32,
+    /// Own mission bursts that hurt an own man.
+    pub ff_bursts: u32,
+    /// Mortar mission bursts with an own man within `[ai.arty]
+    /// danger_close_m` (the gun twin is `S11Counters::near_own_bursts`).
+    pub mortar_near_own_bursts: u32,
+    /// Own gun rounds the enemy counted as evidence (K1).
+    pub cb_heard: u32,
+    /// Markers this player made (K2) ...
+    pub cb_marks: u32,
+    /// ... and the sum of their first errors (mm).
+    pub cb_err_first_mm: u64,
+    /// Spots this player forgot: decayed to none or pushed out (K1, K3).
+    pub cb_dropped: u32,
+    /// Gun missions aimed at an own marker (K4) ...
+    pub cb_missions: u32,
+    /// ... their rounds by the round's mode ...
+    pub cb_rounds: [u32; mode::COUNT],
+    /// ... their bursts, and those within `cb_near_m` of a living enemy
+    /// infantry gun.
+    pub cb_bursts: u32,
+    pub cb_near_bursts: u32,
 }
 
 /// One burst of a mission round (Damage stage), for the observation pass.

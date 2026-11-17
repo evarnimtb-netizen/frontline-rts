@@ -36,6 +36,11 @@ pub struct AiArty {
     pub missions: u16,
     /// The running mission is preparation fire (P1).
     pub prep: bool,
+    /// S11a2 R3: the running mission is counter-fire on a marker.
+    pub cb: bool,
+    /// S11a2 R2: the marker's `shots` at the last counter-fire order or
+    /// refusal (one mission per new evidence).
+    pub cb_shots: u32,
 }
 
 /// One AI observer team, keyed by its squad (saved, hashed).

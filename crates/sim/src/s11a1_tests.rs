@@ -29,6 +29,7 @@ fn staged() -> (World, SquadId, SquadId) {
                 last_order: tick,
                 missions: 3,
                 prep: true,
+                ..AiArty::default()
             },
         );
         ai.fo.insert(
@@ -379,13 +380,13 @@ pub(super) fn add_indirect_gun(
 /// facing +x and a Grenadier squad at (330, 500) whose leader observes
 /// (by voice: within `observer_link_m` of the tube). `edit` changes the
 /// setup first.
-struct Scene {
-    w: World,
-    sq: SquadId,
-    gun: SimId,
+pub(super) struct Scene {
+    pub(super) w: World,
+    pub(super) sq: SquadId,
+    pub(super) gun: SimId,
 }
 
-fn scene_with(
+pub(super) fn scene_with(
     threads: usize,
     lo: u32,
     edit: impl FnOnce(&mut frontline_content::MatchSetup),
@@ -402,14 +403,14 @@ fn scene_with(
     Scene { w, sq, gun }
 }
 
-fn scene() -> Scene {
+pub(super) fn scene() -> Scene {
     scene_with(1, 0, |_| {})
 }
 
-const TARGET: (i32, i32) = (650, 500);
+pub(super) const TARGET: (i32, i32) = (650, 500);
 
 /// Orders the mission; the refusal of this tick, if any.
-fn order(w: &mut World, sq: SquadId, at: FxVec2, rounds: u16) -> Option<FireMissionRefusal> {
+pub(super) fn order(w: &mut World, sq: SquadId, at: FxVec2, rounds: u16) -> Option<FireMissionRefusal> {
     w.step(&[Command {
         player: PlayerId(0),
         seq: 1,
@@ -426,7 +427,7 @@ fn order(w: &mut World, sq: SquadId, at: FxVec2, rounds: u16) -> Option<FireMiss
         .map(|e| e.refusal)
 }
 
-fn mission(w: &World, sq: SquadId) -> Option<crate::fire_mission::Mission> {
+pub(super) fn mission(w: &World, sq: SquadId) -> Option<crate::fire_mission::Mission> {
     match &w.game().unwrap().squads[&sq].order {
         Order::FireMission { m, .. } => Some(*m),
         _ => None,
@@ -434,7 +435,7 @@ fn mission(w: &World, sq: SquadId) -> Option<crate::fire_mission::Mission> {
 }
 
 /// The gun's HE rounds, the one in the breech included.
-fn he_rounds(w: &World, gun: SimId) -> u16 {
+pub(super) fn he_rounds(w: &World, gun: SimId) -> u16 {
     let vs = &w.game().unwrap().vehicles[&gun];
     vs.ammo[1] + (vs.loaded == Some(1)) as u16
 }
@@ -444,7 +445,7 @@ fn s11(w: &World) -> crate::fire_mission::S11Counters {
 }
 
 /// Steps until the squad's mission ends (at most `s` seconds).
-fn run_out(w: &mut World, sq: SquadId, s: u64) {
+pub(super) fn run_out(w: &mut World, sq: SquadId, s: u64) {
     let end = w.tick() + s * 30;
     while mission(w, sq).is_some() {
         assert!(w.tick() < end, "the mission did not end within {s} s");
@@ -986,7 +987,7 @@ fn real_infantry_guns_solve_300_and_900_m_on_flat_ground() {
 /// A flat world with a 25 m crest band across x = 500 (the G2 crest of
 /// `indirect.rs`, as a map band), player 0's real gun `card` at (50, 500)
 /// and a Grenadier squad at (600, 500) that sees the target ground.
-fn crest_gun(card: &str, crest: bool) -> (World, SquadId) {
+pub(super) fn crest_gun(card: &str, crest: bool) -> (World, SquadId) {
     use frontline_content::Fixed;
     use frontline_content::setup::{BandSetup, FixedVec2};
     let mut w = flat_world_with(1, |s| {

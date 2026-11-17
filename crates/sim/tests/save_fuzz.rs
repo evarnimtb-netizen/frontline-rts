@@ -305,6 +305,16 @@ fn holds(w: &World) -> Vec<&'static str> {
         "ai_material_run",
     );
     put((0..2).any(|p| !ai(p).tasks.is_empty()), "ai_tasks");
+    // S11a2: a marked and a pending spot, a gun mission flagged `cb`.
+    let spots = || g.players().iter().flat_map(|p| p.cb.iter());
+    put(spots().any(|c| c.marked), "cb_marked");
+    put(spots().any(|c| c.mark_at != 0), "cb_pending");
+    put(
+        g.squads().values().any(|q| {
+            matches!(&q.order, frontline_sim::game::Order::FireMission { m, .. } if m.cb)
+        }),
+        "cb_mission",
+    );
     out
 }
 
@@ -318,7 +328,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 27,
+        version: 28,
         state: w.state(),
     });
     assert!(
@@ -818,7 +828,9 @@ fn staged_s10b() -> World {
         .position(|i| i.kind == ItemKind::Satchel)
         .unwrap() as u16;
     let eng = s.squad_type_index("ww2:ger_engineer_squad").unwrap();
+    let leig = s.squad_type_index("ww2:ger_leig18_squad").unwrap();
     let mut w = World::new_match(s, 1).unwrap();
+    staged_s11a2_gun(&mut w, leig);
     let spawn = |w: &mut World, x: i32| {
         w.spawn_squad_at(PlayerId(0), eng, c(x, 300), FxVec2::new(Fx::ONE, Fx::ZERO))
             .unwrap()
@@ -869,6 +881,72 @@ fn staged_s10b() -> World {
     });
     staged_s10b_ai(&mut w, ap, piece);
     w
+}
+
+/// Fuzz stage S11a2 (spec 3), first, while the match may still step:
+/// player 0's leIG 18 on a map-fire mission flagged `cb`; player 1 holds
+/// one marked and one pending counter-battery spot of player 0; a few
+/// S11a2 counters. (The `AiArty` with `cb` is in `staged_s10b_ai`.)
+fn staged_s11a2_gun(w: &mut World, leig: u16) {
+    use frontline_sim::command::{Command, CommandKind};
+    use frontline_sim::counter_battery::CbSpot;
+    use frontline_sim::fx::{Fx, FxVec2};
+    use frontline_sim::game::Order;
+    let c = |x: i32, y: i32| FxVec2::from_int(x, y);
+    let gun = w
+        .spawn_squad_at(PlayerId(0), leig, c(300, 360), FxVec2::new(Fx::ONE, Fx::ZERO))
+        .unwrap();
+    for _ in 0..30 {
+        w.step(&[]);
+    }
+    let target = c(300, 760);
+    assert!(w.mark_intel(PlayerId(0), target));
+    w.step(&[Command {
+        player: PlayerId(0),
+        seq: 900_001,
+        kind: CommandKind::FireMission {
+            squad: gun,
+            target,
+            rounds: 4,
+        },
+    }]);
+    assert!(w.edit_squad(gun, |q| match &mut q.order {
+        Order::FireMission { m, .. } => m.cb = true,
+        o => panic!("the staged leIG 18 is not on a mission: {o:?}"),
+    }));
+    let tick = w.tick();
+    let sec = tick.div_ceil(30) * 30;
+    assert!(w.edit_player(PlayerId(1), |p| {
+        p.cb = vec![
+            CbSpot {
+                of: 0,
+                pos: c(300, 360),
+                at: c(320, 380),
+                err_mm: 90_000,
+                heard_mm: 600_000,
+                evidence: 4,
+                shots: 5,
+                decay_at: sec + 300 * 30,
+                mark_at: 0,
+                marked: true,
+            },
+            CbSpot {
+                of: 0,
+                pos: c(500, 360),
+                at: c(500, 360),
+                err_mm: 0,
+                heard_mm: 0,
+                evidence: 3,
+                shots: 3,
+                decay_at: sec + 290 * 30,
+                mark_at: sec + 15 * 30,
+                marked: false,
+            },
+        ];
+        p.s11a2.cb_marks = 1;
+        p.s11a2.cb_err_first_mm = 90_000;
+        p.s11a2.ff_kills = [1, 0];
+    }));
 }
 
 /// Fuzz stage `staged_s10b_ai` (S10b-ai Build A): player 0's AI holds one
@@ -1344,8 +1422,12 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
                 last_order: tick,
                 missions: 2,
                 prep: true,
+                // S11a2: a counter-fire record.
+                cb: true,
+                cb_shots: 4,
             },
         );
+        ai.counters.ff_lifts = 1;
         ai.fo.insert(
             belt_sq,
             frontline_sim::ai::AiFo {
@@ -1452,8 +1534,12 @@ fn staged_s10b_save_holds_its_state() {
 /// demolition, a demolition of a wrecked tank, an AtRow2 job, refusals and
 /// blasts at their caps of 32`, S10b-ai review 4. `+ a FrontAp job in
 /// Watch with 5 mines laid`, S10c-ai Build B chunk 2. `+ a Belt job in
-/// Watch with two pieces standing`, S10c-ai Build C chunk 2.
-const STAGED_MUST_HOLD: [&str; 17] = [
+/// Watch with two pieces standing`, S10c-ai Build C chunk 2. `+ a marked and
+/// a pending counter-battery spot and a gun mission flagged cb`, S11a2 Build A.
+const STAGED_MUST_HOLD: [&str; 20] = [
+    "cb_marked",
+    "cb_pending",
+    "cb_mission",
     "blasts",
     "lost_on_known",
     "ai_at_field_watch",

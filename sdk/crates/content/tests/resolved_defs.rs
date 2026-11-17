@@ -176,15 +176,19 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // it; the fix pass 3 values were 0xe3126bd862ff1dca, 0x1aef21fc0c166eb7,
 // 0x22d77a202d9da7d1, 0xe3126bd862ff1dca, 0x6fa9aae9eeab9435,
 // 0x82578541945f24ad.
+// S11a2 Build A (the new `[fire_mission]` friendly-fire and counter-battery
+// keys and the four new `[ai.arty]` keys) changed it; the S11a1 values were
+// 0xf5b40609e6521881, 0xb898a6ecbbe46227, 0x83a1f236e5b268cb,
+// 0xf5b40609e6521881, 0x196c9824ba128d6b, 0xd7d21eb2ceaf5e48.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xf5b40609e6521881),
-    ("skirmish usa-ger seed 7 hard", 0xb898a6ecbbe46227),
-    ("test_unlock ger-usa seed 1 normal", 0x83a1f236e5b268cb),
-    ("example override ger-usa seed 1 normal", 0xf5b40609e6521881),
-    ("human ger vs ai usa seed 3 easy", 0x196c9824ba128d6b),
+    ("skirmish ger-usa seed 1 normal", 0x18b7613e8eea3dff),
+    ("skirmish usa-ger seed 7 hard", 0xc344d589b3b09caa),
+    ("test_unlock ger-usa seed 1 normal", 0x4c0df0133ff2fee8),
+    ("example override ger-usa seed 1 normal", 0x18b7613e8eea3dff),
+    ("human ger vs ai usa seed 3 easy", 0xf13dccae38cc7eb7),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xd7d21eb2ceaf5e48,
+        0xf39a3859d272ee2e,
     ),
 ];
 

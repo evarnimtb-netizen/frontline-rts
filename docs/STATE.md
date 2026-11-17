@@ -43,7 +43,7 @@ SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a
 
 ## Versions
 
-`SAVE_VERSION` **25** and `PROTOCOL_VERSION` **14** on main (`world.rs`, `protocol.rs`); **27** and **14** on the branch `claude/project-thread-e7nsak` (S10c-ai 26: `AiCounters`, `AiState::front_lanes`, `FrontLane::at`; S11a1 27: kill class `u16`, `PlayerState::s11`, `AiState::{arty, fo, fo_lost_at}`, `AiBreach::prep_at`, two refusals, the S11a1 keys; no version-26 or -27 save exists outside the branch). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13; S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14, S11a1 27/14 (branch). A save, hash or command change bumps these
+`SAVE_VERSION` **25** and `PROTOCOL_VERSION` **14** on main (`world.rs`, `protocol.rs`); **28** and **14** on the branch `claude/project-thread-e7nsak` (S10c-ai 26: `AiCounters`, `AiState::front_lanes`, `FrontLane::at`; S11a1 27: kill class `u16`, `PlayerState::s11`, `AiState::{arty, fo, fo_lost_at}`, `AiBreach::prep_at`, two refusals, the S11a1 keys; S11a2 28: `Mission::cb`, `PlayerState::{s11a2, cb}`, `AiArty::{cb, cb_shots}`, six `AiCounters`, the S11a2 keys; no version-26, -27 or -28 save exists outside the branch). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13; S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14, S11a1 27/14, S11a2 28/14 (branch). A save, hash or command change bumps these
 in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the BASELINE in
 `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 

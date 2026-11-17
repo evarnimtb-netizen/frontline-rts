@@ -63,12 +63,12 @@ fn load_rejects_bad_s11a1_keys() {
             ..AiArtyTuning::default()
         }
     );
-    assert_eq!(FireMissionTuning::KEYS.len(), 35);
-    assert_eq!(AiArtyTuning::KEYS.len(), 21);
+    assert_eq!(FireMissionTuning::KEYS.len(), 45); // S11a2: + 10
+    assert_eq!(AiArtyTuning::KEYS.len(), 25); // S11a2: + 4
     assert!(
         frontline_content::tuning::TABLES
             .iter()
-            .any(|(t, k)| *t == "ai.arty" && k.len() == 21)
+            .any(|(t, k)| *t == "ai.arty" && k.len() == 25)
     );
     // The control file applies; the switches go off.
     let a_off = root().join("docs/slices/targets/S11a1-ablations/a_off.toml");

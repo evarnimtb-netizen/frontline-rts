@@ -2374,6 +2374,33 @@ tuning_table! {
         /// S11a1 G6: a seen enemy this close to the gun ends its mission
         /// (crew self-defence) (m).
         gun_break_m: 0..=2000 = "d_fm_gun_break_m",
+        /// S11a2 F1 switch: bursts of mortar and gun fire-mission rounds
+        /// hurt the firing player's own men (blast, suppression, fragments;
+        /// 0: own men are spared, as before S11a2).
+        friendly_fire: 0..=1 = "d_fm_zero",
+        /// S11a2 K1 switch: infantry-gun mission rounds leave sound evidence
+        /// with the enemy, who marks the gun (0: no evidence, no marker).
+        counter_battery: 0..=1 = "d_fm_zero",
+        /// S11a2 K2: rounds heard from one spot before it is marked.
+        cb_rounds_to_mark: 1..=50 = "d_fm_cb_rounds_to_mark",
+        /// S11a2 K3: a spot loses one piece of evidence this often; at none
+        /// it is forgotten with its marker (s).
+        cb_decay_s: 1..=3600 = "d_fm_cb_decay_s",
+        /// S11a2 K2: the marker is made this long after the marking round (s).
+        cb_delay_s: 1..=3600 = "d_fm_cb_delay_s",
+        /// S11a2 K2: the first marker's error radius (% of the listener's
+        /// distance to the gun) ...
+        cb_error_pct: 1..=100 = "d_fm_cb_error_pct",
+        /// ... each further round heard leaves this share of it (%) ...
+        cb_error_step_pct: 1..=100 = "d_fm_cb_error_step_pct",
+        /// ... down to this share of the listener's distance (%).
+        cb_error_floor_pct: 1..=100 = "d_fm_cb_error_floor_pct",
+        /// S11a2 K1: a round fired within this of a spot (or within its
+        /// marker's error, if larger) counts for that spot (m).
+        cb_reset_m: 0..=2000 = "d_fm_cb_reset_m",
+        /// S11a2 K4 (a report): a counter-fire burst this close to an enemy
+        /// infantry gun counts as near (m).
+        cb_near_m: 0..=2000 = "d_fm_cb_near_m",
     }
 }
 
@@ -2398,6 +2425,33 @@ fn d_fm_gun_map_fire_error_min_m() -> u32 {
 fn d_fm_gun_break_m() -> u32 {
     150
 }
+fn d_fm_zero() -> u32 {
+    0
+}
+fn d_fm_cb_rounds_to_mark() -> u32 {
+    3
+}
+fn d_fm_cb_decay_s() -> u32 {
+    300
+}
+fn d_fm_cb_delay_s() -> u32 {
+    15
+}
+fn d_fm_cb_error_pct() -> u32 {
+    15
+}
+fn d_fm_cb_error_step_pct() -> u32 {
+    80
+}
+fn d_fm_cb_error_floor_pct() -> u32 {
+    5
+}
+fn d_fm_cb_reset_m() -> u32 {
+    75
+}
+fn d_fm_cb_near_m() -> u32 {
+    20
+}
 
 impl FireMissionTuning {
     fn check_more(&self, table: &str, out: &mut Vec<Issue>) {
@@ -2415,6 +2469,12 @@ impl FireMissionTuning {
                 self.gun_first_round_error_min_m,
             ),
             ("gun_map_fire_error_min_m", self.gun_map_fire_error_min_m),
+        );
+        check_order(
+            out,
+            table,
+            ("cb_error_floor_pct", self.cb_error_floor_pct),
+            ("cb_error_pct", self.cb_error_pct),
         );
     }
 }
@@ -2744,7 +2804,28 @@ tuning_table! {
         prep_rounds_min: 1..=50,
         /// ... and the breach job waits for it at most this long (s).
         prep_wait_s: 0..=3600,
+        /// S11a2 S1-S3 switch: one own-men predicate for the order filter
+        /// and the lift of every own mission (0: the S11a1 behaviour).
+        ff_safe: 0..=1 = "d_arty_zero",
+        /// S11a2 R1-R3 switch: an AI gun answers an own counter-battery
+        /// marker with map fire.
+        counter_fire: 0..=1 = "d_arty_zero",
+        /// S11a2 S1 (ii): an own squad walking to within `danger_close_m`
+        /// of a target counts once its lead is this close to it (m).
+        lift_m: 0..=2000 = "d_arty_lift_m",
+        /// S11a2 R2: no counter-fire on a marker wider than this (m).
+        cb_max_error_m: 0..=2000 = "d_arty_cb_max_error_m",
     }
+}
+
+fn d_arty_zero() -> u32 {
+    0
+}
+fn d_arty_lift_m() -> u32 {
+    100
+}
+fn d_arty_cb_max_error_m() -> u32 {
+    60
 }
 
 impl AiArtyTuning {
@@ -2777,6 +2858,10 @@ impl Default for AiArtyTuning {
             prep_near_m: 40,
             prep_rounds_min: 2,
             prep_wait_s: 60,
+            ff_safe: 0,
+            counter_fire: 0,
+            lift_m: 100,
+            cb_max_error_m: 60,
         }
     }
 }

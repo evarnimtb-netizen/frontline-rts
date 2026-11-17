@@ -42,6 +42,7 @@ pub mod bail;
 mod bounds;
 pub mod combat;
 pub mod command;
+pub mod counter_battery;
 pub mod damage;
 mod demolish;
 pub mod dig;
