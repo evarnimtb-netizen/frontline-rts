@@ -606,3 +606,95 @@ fn withdrawn_gun_mission_is_a_dry_drop_not_a_mission() {
     assert_eq!(run(true), (1, 1, true), "withdrawn: a drop, not a mission");
     assert_eq!(run(false), (0, 0, true), "control: applied");
 }
+
+/// Review fix C-2 (A3): the observer buy keeps the infantry guns' pot
+/// with the call-ins already pending (this plan's main buy among them):
+/// manpower of pot + observer + a pending card's price less 1 buys no
+/// team. Control: the same manpower without the pending call-in buys
+/// one (and with the fix undone the first case bought too).
+#[test]
+fn arty_pot_is_kept_from_other_buys() {
+    let mut w = ai_world(1, 1, 0, |s| {
+        s.rules.ai.arty.max_guns = 2;
+        s.rules.ai.arty.income_max_pct = 100;
+        for t in s.squad_types.iter_mut() {
+            if t.id == LEIG {
+                t.initial_cooldown_ticks = 30 * 600;
+            }
+        }
+    });
+    steps(&mut w, 2);
+    let q = spawn(&mut w, 0, LEIG, 120, 500);
+    steps(&mut w, 30 * 30);
+    assert_eq!(ai(&w).arty.get(&q).map(|a| a.phase), Some(ArtyPhase::Ready));
+    let s = w.match_setup().unwrap();
+    let cost = |id: &str| s.squad_types.iter().find(|t| t.id == id).unwrap().cost;
+    let (fo, gun) = (cost(VB), cost(LEIG));
+    // Any other card the AI buys (the first infantry card of the roster).
+    let other = s.factions[s.players[0].faction as usize]
+        .roster
+        .iter()
+        .copied()
+        .find(|&t| {
+            let t = &s.squad_types[t as usize];
+            t.ai_weight > 0 && t.vehicle.is_none() && t.id != VB
+        })
+        .unwrap();
+    let price = s.squad_types[other as usize].cost;
+    let mut try_buy = |mp: u32, extra: Option<u16>| {
+        w.state.game.as_mut().unwrap().players[0].manpower = mp;
+        let mut a = ai(&w).clone();
+        // Only `extra` pending (the AI's own buys of the last plan out).
+        a.pending
+            .retain(|c| !matches!(c.kind, CommandKind::CallIn { .. }));
+        let g = w.game().unwrap();
+        g.test_buy_fo(
+            &mut a,
+            PlayerId(0),
+            w.entities(),
+            w.terrain(),
+            w.tick(),
+            extra,
+        )
+    };
+    let (pot, bought) = try_buy(gun + fo + price - 1, Some(other));
+    assert_eq!(pot, gun as i64, "the pot: one gun's price");
+    assert!(!bought, "the pending call-in is paid first");
+    assert_eq!(
+        try_buy(gun + fo + price, Some(other)),
+        (pot, true),
+        "enough for both"
+    );
+    assert_eq!(
+        try_buy(gun + fo, None),
+        (pot, true),
+        "control: nothing pending"
+    );
+}
+
+/// Review fix C-2 (A1): a lost infantry gun is bought again inside the
+/// pot (its share of the income, the first gun's price spent). Control:
+/// the gun not lost: one buy (`max_guns` 1).
+#[test]
+fn ai_rebuys_a_lost_gun_inside_the_pot() {
+    let run = |lose: bool| {
+        let mut w = ai_world(1, 1, 0, |s| s.rules.ai.arty.income_max_pct = 100);
+        // The match's own start (not the 5,000 MP of `ai_world`): the
+        // other buys do not fill the population cap first.
+        w.state.game.as_mut().unwrap().players[0].manpower = 600;
+        let end = w.tick() + 30 * 120;
+        while own_of(&w, LEIG).is_empty() {
+            assert!(w.tick() < end, "no first gun");
+            w.step(&[]);
+        }
+        if lose {
+            let q = own_of(&w, LEIG)[0];
+            let gun = members(&w, q)[0];
+            assert!(w.wreck_vehicle(gun));
+        }
+        steps(&mut w, 30 * 300);
+        (counters(&w).arty_buys, own_of(&w, LEIG).len())
+    };
+    assert_eq!(run(true), (2, 1), "bought again");
+    assert_eq!(run(false), (1, 1), "control: not lost");
+}

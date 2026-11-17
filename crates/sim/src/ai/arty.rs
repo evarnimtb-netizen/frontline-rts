@@ -604,7 +604,20 @@ impl super::Planner<'_> {
         };
         let cost = s.squad_types[card as usize].cost as i64;
         let mp = g.players[self.me.0 as usize].manpower as i64;
-        if mp - self.held_pots() < cost
+        // Fix C-2: call-ins still pending (this plan's buys among them)
+        // are paid when they apply, as `buy` counts them.
+        let pending: i64 = self
+            .ai
+            .pending
+            .iter()
+            .filter_map(|c| match c.kind {
+                CommandKind::CallIn { squad_type } => {
+                    Some(s.squad_types[squad_type as usize].cost as i64)
+                }
+                _ => None,
+            })
+            .sum();
+        if mp - self.held_pots() - pending < cost
             || g.call_in_check(self.ents, self.me, card, self.due).is_err()
         {
             return;
@@ -751,5 +764,47 @@ impl super::Planner<'_> {
             }
         }
         self.ai.fo.insert(id, rec);
+    }
+}
+
+#[cfg(test)]
+impl crate::game::MatchState {
+    /// Test hook (fix C-2): one A3 observer buy for player `me` on `ai`
+    /// at `tick`, with `extra` pushed as a pending call-in first. Returns
+    /// the pots held back and whether the observer card was bought.
+    pub(crate) fn test_buy_fo(
+        &self,
+        ai: &mut super::AiState,
+        me: PlayerId,
+        ents: &crate::ecs::Entities,
+        terrain: &crate::terrain::Heightfield,
+        tick: u64,
+        extra: Option<u16>,
+    ) -> (i64, bool) {
+        let mut p = super::Planner {
+            g: self,
+            ai,
+            me,
+            ents,
+            terrain,
+            due: tick + 1,
+            tick,
+            quality: 100,
+            rng: crate::rng::RngStream::new(
+                1,
+                tick,
+                crate::ecs::SimId(0),
+                crate::rng::Purpose::AI_PLAN,
+            ),
+            mortar_rays: 0,
+            at_sites: Default::default(),
+            own_routes: Default::default(),
+        };
+        if let Some(t) = extra {
+            p.ai.emit(tick + 1, CommandKind::CallIn { squad_type: t });
+        }
+        let n = p.ai.counters.fo_buys;
+        p.buy_fo();
+        (p.held_pots(), p.ai.counters.fo_buys > n)
     }
 }

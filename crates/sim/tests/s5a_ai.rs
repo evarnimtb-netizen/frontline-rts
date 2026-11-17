@@ -228,6 +228,11 @@ fn ai_setup(seed: u64, swapped: bool, edit: impl FnOnce(&mut MatchSetup)) -> Mat
         .unwrap_or_else(|e| panic!("{e}"));
     s.players.iter_mut().for_each(|p| p.is_ai = true);
     // S11a1 Build C: the scenes were found with the artillery AI off.
+    // Review C-2 kept it: with it on, no seed 1-8 has a second with both a
+    // refill trip and an ambush under way (the guns' pot and buys change
+    // the S5a habits the scene needs), so
+    // `refill_trips_and_ambushes_are_deterministic_and_survive_save_load`
+    // finds no scene.
     (
         s.rules.ai.arty.buy,
         s.rules.ai.arty.fo,
