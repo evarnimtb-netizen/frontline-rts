@@ -49,7 +49,7 @@ own test (no cheap scene: a round every 7.5 s hides a 10 s re-lay). Mask note: t
 fifth of a flight; revisit with S11a2 friendly fire.
 Other files touched (smallest fix): `damage.rs` test list (two guns), the 17-type test (now 18 with a clone),
 `indirect::candidates` pub(crate). Solver test with real defs lives in `s11a1_tests.rs` (the solver is the sim's).
-Gate (`s11a1_rows_one_off`, seeds 1-10, the same code as `fortify-test`): **T128** ratio 600.0 % (observed 8.3 m:
+Gate (`fortify-test --seeds 10`, `target/s11a1-B40/fortify10.json`; = `s11a1_rows_one_off`): **T128** ratio 600.0 % (observed 8.3 m:
 leIG 9.9, M3 6.8; map 49.8 m; exposure 160 rounds; control radio man dead 100.0 %). **T129** M3 refused masked 100 %
 (control flat 0 %), leIG burst within 10 m of its aim point 80 % (control flat 100 %; report bound 100: in 2 of 10
 seeds the map-fire aim error puts the aim point in the crest's shadow and the round bursts on the far slope, which
@@ -62,7 +62,9 @@ Neutral: `neutral.py base40 B40` `same 40/40`; `base40 B40off` (a_off) `same 40/
 4, sim s11a1 25, CLI `fortify_s11a1_rows_run`, `s11a1_json_names_match_the_targets_file`, neutral 13.
 Check: `tools/check.sh quick 730e67f` all ok, 915 tests (release CLI rebuilt; first run failed two roster-order
 tests, fixed in `aaae560`). Full `fortify-test --seeds 10` (`target/s11a1-B40/fortify10.json`, with the 30-min S10b-ai
-rows): the first full run (1,676 s) lacked the `s11a1` key (fixed in `a05657a`); the rerun's targets are below.
+rows): the first run (1,676 s) lacked the `s11a1` key (fixed in `a05657a`); the rerun (1,660 s) gives the same
+T128-T130 values; `targets --from-json target/s11a1-B40`: T128a/b, T129a, T130a/b PASS, T129b MISS (report), T131
+SKIP (null), no MISSING-METRIC / CONTROL-MISSING / EXPOSURE-MISSING; T137e/f PASS (0); T132-T138 160 sets not played.
 
 ## Build A (2026-11-17)
 Commits: `9ed0bf0` layout (SAVE 27, kill class u16, S11 counters, AI records), `84a972a` keys / schema / radio /
