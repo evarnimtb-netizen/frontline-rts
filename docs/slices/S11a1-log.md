@@ -5,24 +5,12 @@ ablations `targets/S11a1-ablations/`. Branch `claude/project-thread-e7nsak`, bas
 `git add -A`, never the untracked `.claude/`, `target/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Build C and review fixes C-1..C-7 done 2026-11-17 (B-5 not). Next: orchestrator measure 480 + ablations, verify, Docs.**
-- SAVE 27, PROTOCOL 14 (no layout change in C). `[ai.arty]` `buy`, `fo`, `prep` 1 in `skirmish.toml`; gun cards `ai_weight` 5.
-- Planner `crates/sim/src/ai/arty.rs` (module notes in the "Build C" comment); called in `ai.rs` `plan`: `take_arty` after
-  `take_guns`, `buy_arty` after `buy_gun`, `arty` after `mortars`. `held_pots()` = `gun_pot` + `arty_pot` (ai.rs buy, fort.rs x2).
-  Scorer `mortar.rs` `fire_targets` (generic; guns: no noise, band `range_min+20..range_m-10`, `[ai.arty] danger_close_m`).
-- P1 `breach.rs` `prep_focus` (first job in Stage/Suppress with a focus), `arty.rs` `prep_target`; P2 `breach.rs` `prep_wait`
-  (only gates `covered`; no mission near the focus: no wait); P3 `arty.rs` `lift_mortar_prep`. With `prep` 1
-  `drive_breach` also runs `mortars` and `arty` for the player's other tubes (fortify hook only; no tube: nothing).
-- Orders the AI emits: gun squad `Emplace` (A2, once per `[ai.guns] repath_s`), `FireMission` (A4, only when not on a
-  mission and no command pending), `Stop` (A6 lift, once: the next plan sees Idle); observer squad `Move` to the post (at
-  the search's end; again only when off-track after `repath_s`), `SetStance` crouch (once on arrival); `CallIn` gun / observer
-  (A1 / A3, pending call-ins counted). Mortar squads: `Stop` (P3, pending-checked). Gun missions not ready at due time are
-  withdrawn in `take_ai_commands` (not counted: no layout change).
-- Tests: `crates/sim/src/s11a1_ai_tests.rs` (13). Recipe there: `ai_world`, `fire_scene` (disarmed target squad, VB-Trupp
-  100 m from it, intel marked), `prep_scene` (the S10a-ai breach scene + a US mortar 380 m out).
-- Sets: `target/s11a1-C40/` (default, `skirmish40_a_off.json`), `target/s11a1-C40off/`, `target/s11a1-C40-{arty,prep,fo}_off/`.
-- Open: T131a/b reports until S11a1-10 (the job gives up before smoke in all 20 runs, prep or not); B-5;
-  `ai_gun_orders_nothing_the_sim_refuses` (10 min) not written (the 40 set reads refused 0).
+**State: all builds, review fixes C-1..C-7 and the 480 measure done 2026-11-17 (at `e149258`, see Measure and docs). Next: the owner's merge decision (S11a1-9, S11a1-10); `tools/verify.sh` not yet run.**
+- SAVE 27, PROTOCOL 14. `[ai.arty]` `buy`, `fo`, `prep` 1 in `skirmish.toml`; gun cards `ai_weight` 5.
+- Planner `crates/sim/src/ai/arty.rs` (notes in the "Build C" comment), called from `ai.rs` `plan`; `held_pots()` = `gun_pot` + `arty_pot`.
+- P1 `breach.rs` `prep_focus`, `arty.rs` `prep_target`; P2 `breach.rs` `prep_wait`; P3 `arty.rs` `lift_mortar_prep`.
+- Tests: `crates/sim/src/s11a1_ai_tests.rs` (13). Sets: `target/s11a1-C40/` (default), `target/s11a1-C40off/`, `target/s11a1-C40-{arty,prep,fo}_off/`.
+- Open: T131a/b reports until S11a1-10; B-5 not done; `ai_gun_orders_nothing_the_sim_refuses` not written (the 40 set reads refused 0).
 
 ## Fix (2026-11-17, review C-1..C-7, after S11a2 Build A; each verified in the code first)
 Commits: `8cb2c4d` C-1 (gun_dry drop -> `fm_dry_drops`, not a mission), `7f878b5` C-2 (`buy_fo` minus pending call-ins;
@@ -136,15 +124,16 @@ Check: `tools/check.sh quick 730e67f` all ok, 907 tests passed (release CLI rebu
 Kill class widened (15 types), G2 mask + hull pitch, G3 ttl + load checks, A1 role split, Build C wiring; `arty_off` first.
 
 ## Plan (2026-11-16)
-Scope (spec 1): gun fire missions on the S5b mission code and the S9 gun entity; low- and high-angle solutions
-with a mask test; gun aim-error keys; a radio link; leIG 18, 105 mm M3, VB-Trupp, FO Party at the design's
-figures; fortify rows `gun_fm`, `mask`, `barrage`, `breach_prep`; AI: one gun and one observer team a side, static
-in base, observed missions inside a 25 % shell budget, lifted near own men; preparation fire for the breach job by
-guns and mortars. Cut to S11a2 with reasons: spec 1, outline spec 12.
-Decisions taken for the owner (all (A), `docs/TODO.md` S11a1-1..9): split; priced base rearm for now; friendly
-fire in S11a2; no tows; prices 320 / 380 / 80 / 120; only the breach job waits for preparation fire; T131 hard at
-60 %; HEAT later; cards buyable before the presenter pass.
-The breach gap, honestly: preparation fire is aimed at the staged row (T131: 0 % -> >= 60 %; C-7: reports until S11a1-10). In matches breach jobs
-do not start (T123), so `prep_missions_per_match` is expected near 0 there; that needs S10c-6 (B).
-Stage split: A (SAVE 27 layout, keys, solver, missions, radio, rearm; neutral by content) -> B (content, rows, JSON;
-gate T128-T130) -> C (AI chunk 1 A1-A6, chunk 2 P1-P3 and the breach row).
+Scope and stages: spec 1 and 9; decisions S11a1-1..9 in `docs/TODO.md` (all (A)). Stage split A (layout, keys, solver,
+missions, radio, rearm) -> B (content, rows, JSON; gate T128-T130) -> C (AI, P1-P3, breach row). The breach gap: breach
+jobs do not start in matches (T123), so `prep_missions_per_match` is 0 there; that needs S10c-6 (B).
+
+## Measure and docs (2026-11-17)
+Measure: `target/s11a2-measure/measure.txt` at `e149258` (480 matches, shared with S11a2). Germany pooled 41.67 % (sets
+46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0. S11a1 report rows: near-own bursts 0.019 / 0.069 a match (T137a/b),
+prep missions 0 (T138), breaches started 0 (T123).
+Misses that the artillery may explain (cause not found; S11a2-11, S11a2-12): AT guns in cover 57.8 / 56.4 % (T81a/b, floor
+60; 84-94 % at S10c-ai); Pz IV bought 89.4 % (T54a, floor 90), MP share 9.97 (T54c); M10 bought 32 % (56 %), M3A1 16 % (36 %).
+Breach row T131 stays a report (S11a1-10). Checks: `tools/check.sh quick 730e67f` all ok, 961 tests at the last fix. CI on
+`affb26e` (S11a1 complete plus S11a2 stage A): Linux, release and debug sim tests, simulate, clippy, rustfmt, cargo-deny
+passed; Windows and THIRD_PARTY_NOTICES fail as on main (PR 1). `tools/verify.sh` NOT run.

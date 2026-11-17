@@ -1,8 +1,7 @@
 # Frontline RTS: state (read this first)
 
-Main holds S1 to S10b-ai and balance pass B1 (merged 2026-11-16 with the owner's OK). S10c-ai (defences at the
-front) is done on branch `claude/project-thread-e7nsak`, not on main. B1: **NO default changed** (see B1 below).
-Owner questions are in `docs/TODO.md`.
+Main holds S1 to S10b-ai and B1 (merged 2026-11-16, owner OK; **NO default changed**). On branch `claude/project-thread-e7nsak`,
+not on main: S10c-ai, S11a1, S11a2 (built, reviewed, fixed; the merge waits for the owner). Owner questions: `docs/TODO.md`.
 
 ## What the game is now
 
@@ -27,65 +26,70 @@ skirmish vs AI or 1v1 human vs human online. Rust 1.99.0, workspace in `Cargo.to
 | Bail-out, re-crew, capture | abandoned tanks, crew escape, capture (tanks S3c, guns S9) | `bail.rs` |
 | Ammunition | counted rounds per man/gun/vehicle, priced base refill; guns draw only their faction's rounds (S9) | `supply.rs` |
 | HQ, dumps, crates (S6) | pits, stock, crates, forward bombs, tank rearm, cook-off | `structures.rs`, `ai/supply.rs` |
-| Fire missions | mortars: modes direct/observed/map, observers, ranging, charges | `fire_mission.rs`, `indirect.rs` |
+| Fire missions | mortars: modes direct/observed/map, observers, ranging, charges; guns (S11a1, branch): infantry gun and 105 mm M3 missions, radio observers, artillery AI; friendly fire and counter-battery by sound (S11a2, branch) | `fire_mission.rs`, `indirect.rs`, `counter_battery.rs`, `ai/arty.rs` |
 | Match rules | tickets, manpower, capture, call-in cards with cooldowns | `rules.rs`, `game.rs`, `command.rs` |
 | AI commander | per-player controller: assault, armour, ammo, mortar, supply, transport, recon, truck, gun habits | `ai.rs`, `ai/*.rs` |
 | World, save, hash | tick loop, save/load, state hash, render snapshot | `world.rs`, `hash.rs`, `snapshot.rs` |
 | Content | TOML defs, variants (`extends`, `[[members]]`), tuning tables | `sdk/crates/content/src/` |
 | Mod `ww2` | 2 factions; cards for tank, casemate TD, half-track, recon car, truck, AT gun; 15 vehicles incl. 4 guns and the Sd.Kfz. 11; `defs/supply/` | `mods/ww2/defs/` |
 | Multiplayer | relay-closed lockstep over UDP, desync dump, reconnect, Embark/Disembark, DropCrates, gun commands, ClearMines, Demolish | `crates/net/src/` |
-| Mines, obstacles, bunker (S10b; S10b-ai on main; S10c-ai on branch) | AP and AT minefields, hedgehog and log barriers, bunker pieces, sweep, demolish; the AI lays, builds, sweeps, demolishes (`[ai.obstacles]`, 52 keys on the branch), paths avoid known enemy mines, liveness L1-L5, F8 (`[ai.truck] refusal_memory`). Build E: bunker assign and truck first, a 4 m row opens for a medium tank after two gaps, single-file lanes, AT fields in two rows. S10c-ai: hasty front fields, wire, AT fields and belts at the 2 front points, builder-card floor | `sim/src/sweep.rs`, `demolish.rs`, `fort.rs`; `ai/fort.rs`, `ai/sweep.rs`, `ai/demolish.rs`, `ai/truck.rs`; `ai.rs`; `sdk/crates/cli/src/fortify/s10c_ai.rs` |
+| Mines, obstacles, bunker (S10b; S10b-ai on main; S10c-ai on branch) | AP and AT minefields, hedgehog and log barriers, bunker pieces, sweep, demolish; the AI lays, builds, sweeps, demolishes (`[ai.obstacles]`), paths avoid known enemy mines, liveness L1-L5, F8 (`[ai.truck] refusal_memory`). S10c-ai: hasty front fields, wire, AT fields and belts at the 2 front points, builder-card floor | `sim/src/sweep.rs`, `demolish.rs`, `fort.rs`; `ai/fort.rs`, `ai/sweep.rs`, `ai/demolish.rs`, `ai/truck.rs`; `ai.rs`; `sdk/crates/cli/src/fortify/s10c_ai.rs` |
 | Godot bridge and presenter | GDExtension (match thread, intents, frames); match view, HUD, menus, net lobby, mock, blockouts | `crates/godot-bridge/src/`, `godot/match/`, `godot/ui/`, `godot/net/` |
 | CLI and tools | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff; autotune, check.sh | `sdk/crates/cli/src/`, `tools/` |
 
-Not in the game yet: Jagdpanzer IV, 38(t), M18, on-map artillery, wounds, a third faction, a second map, radio,
-SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a 3-inch M5 in the AI, HE for the 57 mm.
+Not in the game yet: Jagdpanzer IV, 38(t), M18, gun tows, displacement, gun crates, registration, flash, HEAT, wounds, a
+third faction, a second map, SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a 3-inch M5
+in the AI, HE for the 57 mm.
 
 ## Versions
 
-`SAVE_VERSION` **25** and `PROTOCOL_VERSION` **14** on main (`world.rs`, `protocol.rs`); **28** and **14** on the branch `claude/project-thread-e7nsak` (S10c-ai 26: `AiCounters`, `AiState::front_lanes`, `FrontLane::at`; S11a1 27: kill class `u16`, `PlayerState::s11`, `AiState::{arty, fo, fo_lost_at}`, `AiBreach::prep_at`, two refusals, the S11a1 keys; S11a2 28: `Mission::cb`, `PlayerState::{s11a2, cb}`, `AiArty::{cb, cb_shots}`, six `AiCounters`, the S11a2 keys; no version-26, -27 or -28 save exists outside the branch). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13; S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14, S11a1 27/14, S11a2 28/14 (branch). A save, hash or command change bumps these
-in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the BASELINE in
-`sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
+`SAVE_VERSION` **25** and `PROTOCOL_VERSION` **14** on main (`world.rs`, `protocol.rs`); **28** and **14** on the branch
+(S10c-ai 26, S11a1 27, S11a2 28; the layout fields are in each log). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
+S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14 (branch). A save, hash or command change
+bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
+BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 
-## S10a fortifications, mechanics (on main since 2026-11-11; log `S10a-log.md`)
+## S10a to S10b-ai (on main; logs `S10a-log.md`, `S10a-ai-log.md`, `S10b-log.md`, `S10b-ai-log.md`)
 
-Sim `crates/sim/src/fort.rs`; blueprints `mods/ww2/defs/fortifications/`; commands Fortify, LoadMaterials, CutWire,
-PlaceBangalore; capabilities build_structure, build_heavy, place_wire, clear_wire, breach. Cards 264 / 165 / 380 MP
-(`ai_weight` 0). Guide `docs/modding/fortifications.md`.
+Fortifications (`fort.rs`, `mods/ww2/defs/fortifications/`; guide `docs/modding/fortifications.md`), the fortification AI
+(Germany 41.67 % of 480 at its merge), mines, obstacles, bunker, `ClearMines`, `Demolish`, and the AI that lays, sweeps
+and demolishes (S10b-ai: Germany 41.88 %, 965 tests). S10b hard misses then: T8b, T40c, T54e, T88b, T88d, **T106b** (owner
+decision). AI use stays far under target (owner E6).
 
-## S10a-ai fortification AI (on main since 2026-11-11; log `S10a-ai-log.md`)
+## B1 balance pass (on main 2026-11-16; log `docs/slices/B1-log.md`; NO default changed)
 
-Germany pooled **41.67 %** of 480 at merge. USA wire 56-58 % (floor 60 missed). A lone squad cannot breach defended wire
-without covering fire (S11). F8 fixed on `s10b-ai` (L5, `refusal_memory` 1).
+Built: `[ai.obstacles]` `demolish_handover` and `bunker_yields` (both on); `[ai.fort]` `hold_max` 2, `build_after_s` 0,
+`build_min_squads` 0 (old behaviour). Germany 42.29 % of 480 (seeds 1-280); band 45-55 not met; no fort setting
+raises it on both seed groups. Owner 2026-11-16: accept about 42 % for now (B1-1); B1-2..4 open in `docs/TODO.md`.
 
-## S10b mechanics (on main since 2026-11-12; log `S10b-log.md`)
+## S10c-ai (branch; log `S10c-ai-log.md`)
 
-Mines, hedgehog and log barriers, bunker, `ClearMines`, `Demolish` (blueprints `mods/ww2/defs/fortifications/`). 881 tests
-at verify; tick p99 0.487 ms. Hard misses: T8b, T40c, T54e, T88b, T88d, **T106b** (owner decision). Questions S10b-5..9 in `docs/TODO.md`.
+Front fields, wire, AT fields and belts at the 2 front points; `mine_assign`; `builder_cards_min` 2. Germany 40.00 % of
+480; 270 targets pass, 71 miss (41 hard). Owner questions S10c-1..6 in `docs/TODO.md`.
 
-## S10b-ai (merged to main 2026-11-15; log `S10b-ai-log.md`)
+## S11a1 gun fire missions and artillery AI (branch; log `S11a1-log.md`)
 
-Verify: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. All switches off: 40 set = main 40/40.
-AI use far under target (mines, obstacles, bunker, AT fields; owner E6). Open: finding 23 (`piece_near`), finding 12
-(mine-want counter needs a save change), barrier row vs `barrier_job_max_s`, off-lattice crossing (finding 7).
+SAVE 27. Infantry gun leIG 18 and 105 mm M3 take fire missions (`[fire_mission]` `gun_missions`, `mask`); VB-Trupp and
+FO Party link by radio (`radio_link`); guns rearm in base at the shell price (`arty_base_rearm`). AI: one gun and one
+observer team a side (`[ai.arty]` `buy`, `fo`); preparation fire before a breach job (`prep`). Fortify rows T128-T130
+pass (T129b a report). Breach row T131: a report (S11a1-10); no breach job starts in matches (T138).
 
-## B1 balance pass (merged to main 2026-11-16, NO default changed; log `docs/slices/B1-log.md`)
+## S11a2 friendly fire, counter-battery, AI safety and counter-fire (branch; log `S11a2-log.md`)
 
-Built before balancing (owner 2026-11-15): `[ai.obstacles]` `demolish_handover` and `bunker_yields`, both on. New `[ai.fort]`
-keys `hold_max` 2, `build_after_s` 0, `build_min_squads` 0 (old behaviour); CLI `--side-detail` (read-only). Suite 974 green.
-SAVE_VERSION 25, PROTOCOL 14 unchanged. Germany 42.29 % of 480 on seeds 1-280 (43.12 / 42.50 / 41.25); band 45-55 not met.
-No fort setting or gate raises Germany on both seed groups while keeping the floors (works and wire >= 60 % of matches).
-Germany gains only as fortification is removed for both sides (works off +7.3, build_after_s 600 +8.5). Triple (+6.25) and
-builders_max 1 (+3.96) on fresh seeds 1001-1280 failed on 1-280 (-2.5, -1.7). Held-out seeds 301-380 NOT played.
-Rule: about 45 of 160 matches change winner under any change; paired 480 standard error near 2.4 points; accept only z >= 2.5 on both seed groups.
-Owner 2026-11-16: accept Germany at about 42 % for now (B1-1). Open questions B1-2..4 in `docs/TODO.md`.
+SAVE 28, PROTOCOL 14. Mortar and gun mission bursts hurt own men (`friendly_fire`; own-fire deaths are not kills);
+infantry-gun rounds leave sound evidence, a marker after 3 rounds (`counter_battery`); the AI lifts fire with own men near
+(`ff_safe`, `lift_m` 100) and answers a marker no wider than 60 m (`counter_fire`).
 
-## S10c-ai (done on branch `claude/project-thread-e7nsak`, measured 2026-11-16; not on main)
+## Balance and checks at `e149258` (480 matches; `target/s11a2-measure/measure.txt`)
 
-Built (log `S10c-ai-log.md`): hasty AP field, wire and AT field at the 2 front points nearest the enemy base (`[ai.obstacles]` `front`, `front_points`, `front_site_threat_m` 50); `mine_assign` (a free builder within `mine_assign_reach_m` 450); belts (`belt`, `belt_pieces` 5); `jobs_max` 2; `builder_cards_min` 2 (owner S10c-2 open). Checks: `check.sh quick` ok, 881 tests; c_off 40 set = main 40/40.
-480 matches (seeds 1-80, 101-180, 201-280; Germany / USA per set): Germany pooled **40.00 %** (40.6 / 37.5 / 41.9). Front share of mines 46.6 / 45.9, 49.7 / 42.3, 52.7 / 42.3 %; enemy within 30 m of mines 59.0 / 36.6, 58.4 / 32.4, 55.8 / 35.1 %; mines set off 0.73 / 0.42, 0.99 / 0.29, 0.74 / 0.44 a match; own wire seen by enemy AI 55.5 / 40.1, 51.0 / 27.8, 43.0 / 36.2 %; belts 10.0 / 1.9, 8.75 / 1.25, 8.1 / 2.5 %; front builders lost 0.55 / 0.84, 0.61 / 0.76, 0.69 / 0.66 a match; breaches 0; own-side mistakes 3 / 2, 0 / 1, 0 / 0.
-Targets (skirmish sets): 270 pass, 71 miss, 41 hard. Misses: builder share of infantry plans 15.9-17.3 % (cap 12, T97); sweeps wanted in 26-31 % (T111); AT fields 0.21-0.29 a match (T110, bound 0.5); bunker 5.6-6.3 % (T113, bound 10); own-side mistakes (T115); US mines set off 0.294 (T121d) and wire seen 40.1 / 27.8 % (T122b, T122d). The 28 hard rows not on the S10b-ai list are named in the log.
-Open: owner questions S10c-1..6 (`docs/TODO.md`); own_blocked 3 / 2 on seeds 1-80 (R6b, not built); breaches 0 (S10c-6, covering fire is S11); front builders lost over 0.5 on both sides; belts rare, no demolition wanted. Not run yet: full release suite (`check.sh tests`), `tools/verify.sh`, GitHub CI on the branch.
+Germany pooled **41.67 %** (sets 46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0, inside the 35-65 % band. Targets:
+318 pass, 82 miss (44 hard); new hard misses vs S10c-ai: T9b, T54a, T54c, T81a, T81b, T119b; gone: T8a, T115d, T121d.
+Open, not fixed (`docs/TODO.md` S11a2-10..12): AT guns in cover 56-59 % (floor 60, was 84-94 %, cause not found); M10
+bought 32 % of matches (56 %), M3A1 16 % (36 %); US counter-fire 62.8 % of its gun rounds (bound 50, T148d); breach row
+opens no gap (T131); own-side mistakes 1 / 0 / 3 and 3 / 0 / 0 (T115).
+Checks: `tools/check.sh quick 730e67f` all ok, 982 tests. CI on `affb26e`: Linux, release and debug sim tests, simulate,
+clippy, rustfmt, cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on main (PR 1); macOS cancelled. CI on
+`e149258` still running when written. `tools/verify.sh` NOT run for S11a1 or S11a2.
 
 ## Process and owner rules (decided 2026-11-11; also in `docs/TODO.md`)
 
@@ -93,7 +97,6 @@ Open: owner questions S10c-1..6 (`docs/TODO.md`); own_blocked 3 / 2 on seeds 1-8
    must stay in a 35-65 % guard band, else stop and diagnose. Fine balance (45-55 %) and soft per-unit targets wait for a
    dedicated balance pass (after S10b-ai or S11).
 2. Minor scope and price questions are settled on the recommended (A) and only reported. Irreversible choices, how-it-should-play choices and main updates are still asked.
-3. S10a-ai decisions: breaching "fix smoke, lower bar" (T93f/h floor 30, T93g report); AI wire in 60 m lines; cards Germany by weight (Bau 100, Sturm 60, Pioniere 40), USA floor a report; smoke on three men.
 
 ## Owner decisions in force (source: `docs/TODO.md`)
 
@@ -101,17 +104,16 @@ Open: owner questions S10c-1..6 (`docs/TODO.md`); own_blocked 3 / 2 on seeds 1-8
 - Call-in has no queue; no free ammo; HQ and dumps fill only by carried crates; tanks rearm at base, HQ, dump or truck.
   Historical squad sizes, pop 150. German cards keep the 20 % price cut (S5a-37), except gun cards (S9-4).
 - Tank crews bail out. Vehicles before fortifications. Matches 10-40 min, median 15-30.
-- S9 (2026-11-08): vehicle spotting 2x; AT gun optic 250 % inside the arc; T33 counts tanks and TDs only.
-- S9b (2026-11-10): S9b-1 (A) keep `income_max_pct` 30, the US T88 shortfall goes to the S10 AI half; S9b-2, S9b-3 (A).
+- S9 (2026-11-08): vehicle spotting 2x; AT gun optic 250 % inside the arc; T33 counts tanks and TDs only. S9b (2026-11-10): S9b-1 (A) keep `income_max_pct` 30, the US T88 shortfall goes to the S10 AI half; S9b-2, S9b-3 (A).
 
 ## Known gaps
 
-- Balance: S10a-ai Germany 41.67 % (480); S10a 48.75 %; T88 USA open (S9b-1 (A)). T5c, T50e known noise. Not verified: the eliminated-player path; a per-field hash audit beyond the named tests. No radio, registered fire, cross-OS CI.
-- Net loopback refuses `DropCrates` at a non-truck. Structures cannot be selected in the HUD (S6-18). AI rarely throws satchels.
+- Balance: Germany 41.67 % at `e149258` (above); T88 USA open (S9b-1 (A)). T5c, T50e known noise. Not verified: the eliminated-player path; a per-field hash audit beyond the named tests. Windows CI fails (PR 1).
+- Net loopback refuses `DropCrates` at a non-truck. Structures not selectable in the HUD (S6-18). No presenter pass for guns (S11a1-9).
 
 ## Roadmap position
 
-Done on main: S1 to S10b-ai and B1 (B1-1 decided: accept for now; open B1-2..4 in `docs/TODO.md`). Done on the branch, not merged: S10c-ai (verify steps open). Next: owner answers S10c-1..6, the S10c-ai merge decision, then S11.
+Done on main: S1 to S10b-ai and B1. Done on the branch, not merged: S10c-ai, S11a1, S11a2. Next: the owner's merge decisions for S10c-ai, S11a1, S11a2 and PR 1; then the open items above (S11a2-10..12, AT guns in cover, preparation fire in matches); then S11b.
 
 ## How to check work
 
@@ -152,5 +154,7 @@ Done on main: S1 to S10b-ai and B1 (B1-1 decided: accept for now; open B1-2..4 i
 | S10a-ai: AI buys, materials, building, breaching, ablations, T93 | `docs/slices/S10a-ai.md` 3-9; log `S10a-ai-log.md` |
 | S10b: mines, obstacles, bunker, demolition; rules R1-R30; stage files | `docs/slices/S10b-obstacles.md`; `S10b-build-X.md`; log `S10b-log.md` |
 | S10b-ai: AI laying, sweeping, demolition, mine paths, liveness L1-L5, three-part targets | `docs/slices/S10b-ai.md`; `S10b-ai-build-X.md`; log `S10b-ai-log.md` |
+| S10c-ai: front defences, builder floor, belts | `docs/slices/S10c-ai.md`; log `S10c-ai-log.md` |
+| S11a1 gun missions, radio, artillery AI, preparation fire; S11a2 friendly fire, counter-battery, AI counter-fire | `docs/slices/S11a1.md` 2, 4, 11; `S11a2.md` 2, 11; logs `S11a1-log.md`, `S11a2-log.md` |
 | Development speed, audits 2026-11-11 and 2026-11-12 (row honesty, stop points) | `docs/process/dev-speed.md` 7, 8 |
 | Architecture, determinism, modding, repo layout | `SYSTEM_DESIGN.md` 3, 5, 7, 13 |

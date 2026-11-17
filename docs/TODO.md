@@ -336,8 +336,8 @@ Spec `docs/slices/S10c-ai.md` 10 (the first option is (A)); log `docs/slices/S10
 
 ## S11a1 open owner questions (asked 2026-11-16 by the Plan stage; each runs on (A): "assumed overnight 2026-11-16, owner asleep")
 
-Spec `docs/slices/S11a1.md` 11; log `docs/slices/S11a1-log.md`; targets `docs/slices/targets/S11a1.toml`. Nothing is
-measured yet. The design's gate "S11a ships only if S5 and S6 met their HE-share targets" is met (S5b 13.3-13.9 %, S6
+Spec `docs/slices/S11a1.md` 11; log `docs/slices/S11a1-log.md`; targets `docs/slices/targets/S11a1.toml`. Built on the
+branch; measured at `e149258` (item 16 and 17). The design's gate "S11a ships only if S5 and S6 met their HE-share targets" is met (S5b 13.3-13.9 %, S6
 19.4 %, cap 26.3 %; S10c-ai 19.8 %), so it is not a question.
 
 - S11a1-1 Split of S11a. (A) Two slices as the design's critic note proposes: S11a1 (gun fire missions, radio
@@ -376,8 +376,8 @@ measured yet. The design's gate "S11a ships only if S5 and S6 met their HE-share
 
 ## S11a2 open owner questions (asked 2026-11-17 by the Plan stage; each runs on (A): "assumed overnight 2026-11-17, owner asleep")
 
-Spec `docs/slices/S11a2.md` 11; log `docs/slices/S11a2-log.md`; targets `docs/slices/targets/S11a2.toml`. Nothing is
-built or measured yet; S11a2 starts after S11a1 Build C is committed.
+Spec `docs/slices/S11a2.md` 11; log `docs/slices/S11a2-log.md`; targets `docs/slices/targets/S11a2.toml`. Built on the
+branch and measured at `e149258` (item 17).
 
 - S11a2-1 Scope of S11a2 (two Build stages tonight). (A) Friendly fire from indirect HE (Q22) and counter-battery by
   sound with AI counter-fire (the answer to a gun in base); crates, tows, displacement, registration, flash and
@@ -405,6 +405,16 @@ built or measured yet; S11a2 starts after S11a1 Build C is committed.
   now with no AI carrying (an AI gun then fires one load a card).
 - S11a2-9 Target T142 (the AI lifts its fire in time in >= 90 % of 20 staged runs; the design's test 10). (A) Hard.
   **(A) assumed overnight 2026-11-17, owner asleep.** (B) A report until S11a3.
+- S11a2-10 US counter-fire share over 50 %. Measured at `e149258`: US counter-fire is 62.8 % of its gun rounds (T148d,
+  report bound 50). The S11a2 log names the knob outside the spec's keys. (A) recommended: add a per-gun counter-fire
+  round budget in the next pass. (B) Accept the share; T148 stays a report. Not decided: the branch runs as measured.
+- S11a2-11 AT guns in cover fell under the floor. Measured at `e149258`: 57.8 % (Germany, T81a) and 56.4 % (USA, T81b)
+  against a floor of 60; they were 84-94 % at S10c-ai. Cause not found (first suspects: the artillery pot or the
+  new guns changing AT-gun siting; the cover metric counting infantry guns). (A) recommended: diagnose and fix before
+  merging S11a1 and S11a2 to main. (B) Merge, then fix after.
+- S11a2-12 Artillery manpower lowers vehicle buys. M10 bought in 32 % of matches (56 % at S10c-ai), M3A1 16 % (36 %);
+  Pz IV bought in 89.4 % (T54a, floor 90) with MP share 9.97 (T54c, floor 11). (A) recommended: lower the artillery pot
+  in the balance pass. (B) Accept the lower buys and the two misses.
 
 ## Planned work queue
 
@@ -428,8 +438,8 @@ built or measured yet; S11a2 starts after S11a1 Build C is committed.
 13. **S10b-ai: done and merged into main 2026-11-15** (from main `72b2970`). Verified: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. Spec `docs/slices/S10b-ai.md`, log `S10b-ai-log.md`, targets `S10b-ai.toml`. Questions S10b-ai-E1 and E3-E8 are all decided (see above).
 14. Dedicated balance pass, after S10b-ai or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a-d, T55a/b, T95b/d) are settled there. Slice order: S10b, S10b-ai, S11a/b, then this pass, then S12 to S15.
 15. **S10c-ai: done on branch `claude/project-thread-e7nsak` (2026-11-16), not on main.** Verified so far: `check.sh quick 54009f6` ok, 881 tests pass; c_off 40 set = main 40/40; Germany 40.00 % of 480 (sets 40.6 / 37.5 / 41.9); 270 targets pass, 71 miss (41 hard). Full suite, `tools/verify.sh` and CI not run yet. Spec `docs/slices/S10c-ai.md`, log `S10c-ai-log.md`, targets `S10c-ai.toml`. Owner questions S10c-1..6 above. Next: the merge decision after verify, then S11.
-16. **S11a1: planned 2026-11-16 on branch `claude/project-thread-e7nsak` (base `730e67f`), nothing built.** Spec `docs/slices/S11a1.md` (S11a2 outline in its section 12), stages `S11a1-build-A.md`, `-B.md`, `-C.md`, log `S11a1-log.md`, targets `S11a1.toml`. Stages: Build A (SAVE 27 layout, keys, solver and mask, gun fire missions, radio link), Build B (leIG 18, 105 mm M3, VB-Trupp, FO Party, fortify rows, JSON; gate T128-T130), Build C (artillery AI, preparation fire for the breach), measure and ablations, Review, Fix, verify, Docs. Owner questions S11a1-1..9 above, all assumed on (A).
-17. **S11a2: planned 2026-11-17 on branch `claude/project-thread-e7nsak` (base: the S11a1 head when Build A starts), nothing built.** Spec `docs/slices/S11a2.md` (S11a3 outline in its section 12), stages `S11a2-build-A.md`, `-B.md`, log `S11a2-log.md`, targets `S11a2.toml`. Stages: Build A (SAVE 28 layout, friendly fire of fire-mission rounds on own men, sound evidence and markers; every switch 0), Build B (JSON, fortify rows, AI safety rule and counter-fire, switches on, 40 sets), measure and ablations, Review, Fix, verify, Docs. Owner questions S11a2-1..9 above, all assumed on (A). The targets file was not parsed by the CLI at plan time (Build A does it first).
+16. **S11a1: done on branch `claude/project-thread-e7nsak` (2026-11-17), not on main.** Built in Build A, B and C, with review fixes C-1..C-7 (B-5 not done). Check at the last fix: `check.sh quick 730e67f` all ok, 961 tests. Measured with S11a2 at `e149258` (item 17). Spec `docs/slices/S11a1.md`, log `S11a1-log.md`, targets `S11a1.toml`. Owner questions S11a1-1..10 above. Open: T131 stays a report (S11a1-10); preparation fire never runs in matches (T138). Waits for the owner's merge decision.
+17. **S11a2: done on branch `claude/project-thread-e7nsak` (2026-11-17), not on main.** Built in Build A and B, with the Fix of Build B (B-1..B-7). Verified: `check.sh quick 730e67f` all ok, 982 tests at the head `e149258`. GitHub CI on `affb26e` (S11a1 complete plus S11a2 stage A): Linux build, release and debug sim tests, simulate, clippy, rustfmt and cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on main (fixed by PR 1); macOS cancelled; cross-platform hash check skipped. CI on `e149258` was still running when written. Measured 480 at `e149258`: Germany 41.67 % (sets 46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0; 318 targets pass, 82 miss (44 hard). New hard misses: T9b, T54a, T54c, T81a, T81b, T119b; gone: T8a, T115d, T121d. `tools/verify.sh` not run. Spec `docs/slices/S11a2.md`, log `S11a2-log.md`, targets `S11a2.toml`. Owner questions S11a2-1..12 above. Next: the merge decisions for S10c-ai, S11a1, S11a2 and PR 1; then the open items in STATE.md; then S11b.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 

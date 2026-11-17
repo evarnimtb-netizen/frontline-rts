@@ -6,26 +6,12 @@ only your files (`git commit -m ... -- FILES`), never `git add -A`, never the un
 `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Fix of Build B done 2026-11-17 (`11f5bb0`..HEAD, findings B-1..B-7 all done). All four switches 1 in ww2. Balance on the
-40 set now: default Germany 19/40 (47.5 %), `counter_fire_off` 18/40 (45.0 %); Build B's `ff_off` 18/40 (not replayed). The stop
-rule's paired 480 is still the orchestrator's; the slice stays held for the owner until then.**
-- Counter-fire share of gun rounds (default 40 set): Germany 27.7 %, USA 62.3 % (plan bound 50, T148c/d report). The loop is gone
-  (B-1); USA stays over the bound because its M3 has few observed targets (207 observed + 43 plain map rounds in 40 matches)
-  while it hears about 790 German rounds: R2 now answers every `cb_rounds_to_mark` (3) new rounds with up to 4. If the owner wants
-  the bound hard, the next knob is outside the spec's keys (rounds per answer = new shots, or a per-gun counter-fire budget).
-- Near bursts now count (B-2): 42.0 % (Ger) / 33.2 % (USA) of counter-fire bursts within `cb_near_m` of an enemy gun; the `cb`
-  row answer 22.5 %, crew loss still 0 % (the answer row has no metric of crews hit in matches; add one in S11a3 if wanted).
-- SAVE 28, PROTOCOL 14 (no new save field, no new key). Neutral base `target/s11a2-base40-fix`; `b_off` = it 40/40 (Fix).
-- Orchestrator to run: `ff_safe_off`, `cb_off`, `ff_off` on the fixed binary, the 160/480 sets, a fresh fortify10 (T142 rows
-  now measure: seeds 1-10 clean 100 %, lifted 100 %, 20 bombs; control clean 0 %, 240 bombs: T142a-c pass).
-- Weakness: with ff_safe the spotter must stand 70 m to `observe_leader_m - 10` from the target (400 in ww2: fine; a mod with a
-  short observe range gets no spotter). The `ff` row's own_vs_enemy 104.8 % is the blast as built, not tuned.
-- Tick check (A-5): `fire_mission.rs` `observe_bursts` scans every squad and own soldier per mortar burst even with the switch 0
-  (`mortar_near_own_bursts`); measure it in `verify.sh`.
-- Code map: `ai/arty.rs` `own_near` / `own_near_within` (S1; reads the AI's pending Move/AttackMove, B-6), `ff_lift` (S3),
-  `cb_candidate` (R1, R2 first gates: shots >= answered + `cb_rounds_to_mark`, or fewer = another marker), `counter_fire` (own men
-  within `danger_close_m` + aim error, B-4); `counter_battery.rs` `cb_note(.., cb)`, `own_marker_err`; `game.rs`
-  `order_gun_mission` (cb aim, B-2); `fire_mission.rs` `CB_ROUND`, `count_cb_burst`; rows `sdk/crates/cli/src/fortify/s11a2.rs`.
+**State: Fix of Build B done (B-1..B-7); the 480 measure at `e149258` done 2026-11-17 (see Measure and docs). Next: the owner's merge decision (S11a2-10..12); `tools/verify.sh` not yet run.**
+- SAVE 28, PROTOCOL 14. All four switches 1 in ww2. Neutral base `target/s11a2-base40-fix`; `b_off` = it 40/40 (Fix).
+- Counter-fire share: USA 62.8 % of its gun rounds at 480 (T148d, bound 50, report). The next knob outside the spec's keys is a per-gun counter-fire round budget (S11a2-10).
+- Weakness: with `ff_safe` the spotter must stand 70 m to `observe_leader_m - 10` from the target; a mod with a short observe range gets no spotter. The `ff` row's own_vs_enemy 104.8 % is the blast as built, not tuned.
+- Tick check (A-5): `observe_bursts` scans every squad and own soldier per mortar burst even with the switch 0; measure it in `verify.sh`.
+- Code map: `ai/arty.rs` `own_near` / `own_near_within`, `ff_lift`, `cb_candidate`, `counter_fire`; `counter_battery.rs` `cb_note`, `own_marker_err`; `game.rs` `order_gun_mission`; `fire_mission.rs` `CB_ROUND`, `count_cb_burst`; rows `sdk/crates/cli/src/fortify/s11a2.rs`.
 
 ## Fix of Build B (2026-11-17; independent review of Build B: 1 blocker, 2 major, 4 minor; all verified in the code)
 Commits: `11f5bb0` B-1, `792afbb` B-3, `c4938cb` B-2, `4feaa7d` B-4, `60461a0` B-6, `d80e28a` B-1 (2/2), `1a587fd` B-5, `db577e6` B-7.
@@ -136,3 +122,15 @@ same seeds (spec 8).
 Stage split: A (SAVE 28 layout, keys, F1-F4, K1-K4; every switch 0, neutral by default) -> B (chunk 1: JSON, rows
 `ff` and `cb`, S1-S3, friendly fire and markers on; chunk 2: R1-R3, row `ff_lift`, the sets; fallback: stop after
 chunk 1 with `counter_fire` 0).
+
+## Measure and docs (2026-11-17)
+Measure: `target/s11a2-measure/measure.txt` at `e149258` (480 matches: seeds 1-80, 101-180, 201-280; shared with S11a1).
+Germany pooled **41.67 %** (sets 46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0, inside the 35-65 % band; HE share
+21.4 / 19.8 / 20.6 %. Skirmish targets: 318 pass, 82 miss (44 hard), 4 unexposed, 4 control-same, 181 skipped.
+S11a2 row missed: T148d US counter-fire 62.76 % of its gun rounds (report bound 50). New hard misses against S10c-ai:
+T9b, T54a, T54c, T81a, T81b, T119b; gone: T8a, T115d, T121d. The artillery may explain the vehicle and cover misses (S11a2-11,
+S11a2-12; cause not found).
+Checks: `tools/check.sh quick 730e67f` all ok, 982 tests at the head. CI on `affb26e` (S11a1 complete plus S11a2 stage A):
+Linux, release and debug sim tests, simulate, clippy, rustfmt, cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on
+main (PR 1); macOS cancelled; cross-platform hash check skipped. CI on `e149258` still running when written. `tools/verify.sh`
+NOT run (its tick check, item A-5, is open with it). Owner questions: S11a2-1..12 in `docs/TODO.md`.
