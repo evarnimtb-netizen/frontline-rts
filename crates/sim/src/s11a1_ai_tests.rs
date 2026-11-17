@@ -184,7 +184,7 @@ fn ai_observer_post_search_fails_behind_a_ridge_and_is_bounded() {
         k.fo_posts
     );
     // Bounded: 15 candidates at 2 rays a plan take 8 plans for one search.
-    let plans = k.plans as u32;
+    let plans = k.plans;
     assert!(
         k.fo_post_fails <= plans / 7 + 1,
         "fails {} plans {plans}",

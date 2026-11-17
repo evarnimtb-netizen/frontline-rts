@@ -1015,6 +1015,34 @@ impl super::Planner<'_> {
                 first.get_or_insert(at);
             }
         }
+        // S11a1 P1 (fortify row `s11a1.breach_prep`): with `prep` 1 the
+        // player's other mortar squads and infantry guns plan as in a
+        // match (the mortar planner and `ai::arty`), so the preparation
+        // fire of the job is the habits' own. No tube: nothing runs.
+        if g.setup.rules.ai.arty.prep != 0 {
+            let tubes: Vec<Mine> = g
+                .squads
+                .iter()
+                .filter(|(id, q)| {
+                    q.owner == me
+                        && !ids.contains(id)
+                        && !q.members.is_empty()
+                        && g.setup.squad_types[q.type_idx as usize].has(Capability::FireMission)
+                })
+                .map(|(&id, q)| {
+                    let ty = &g.setup.squad_types[q.type_idx as usize];
+                    Mine {
+                        id,
+                        role: super::ai_kind(&g.setup, q.type_idx),
+                        lead: self.ents.transform[q.lead(self.ents).index()].pos.xy(),
+                        strength_pct: q.members.len() as u32 * 100 / ty.men.max(1) as u32,
+                        caps: ty.caps,
+                    }
+                })
+                .collect();
+            self.mortars(&tubes, &[], &known);
+            self.arty(&[], &known);
+        }
         None
     }
 }

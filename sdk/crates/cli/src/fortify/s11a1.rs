@@ -111,12 +111,16 @@ pub struct BarrageRow {
     pub control: BarrageControl,
 }
 
-/// Build C's breach row keys (null until then).
+/// Build C's breach rows (T131): the S10a-ai `breach_ai` run (fortified,
+/// each faction defending in turn) with a preparation tube for the
+/// attacker and `[ai.arty] prep` 1; control: the same force, `prep` 0.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct BreachPrepControl {
     pub gap_opened_pct: Option<f64>,
     pub placed_pct: Option<f64>,
     pub attacker_loss_pct: Option<f64>,
+    pub defender_loss_pct: Option<f64>,
+    pub prep_fired_pct: Option<f64>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -124,8 +128,74 @@ pub struct BreachPrepRow {
     pub gap_opened_pct: Option<f64>,
     pub placed_pct: Option<f64>,
     pub attacker_loss_pct: Option<f64>,
+    pub defender_loss_pct: Option<f64>,
+    /// Runs where a tube mission fired `prep_rounds_min` rounds while the
+    /// job was in Stage or Suppress.
     pub prep_fired_pct: Option<f64>,
+    /// Exposure: runs (value side).
+    pub runs: Option<f64>,
     pub control: BreachPrepControl,
+}
+
+/// One `breach_prep` side: (gap opened, placed, attackers lost, attacker
+/// men, defenders lost, defender men, prep fired) summed over runs.
+fn breach_prep_sum(runs: &[(super::s10a::BreachRun, bool)]) -> (u32, u32, u32, u32, u32, u32, u32) {
+    let mut t = (0, 0, 0, 0, 0, 0, 0);
+    for (r, fired) in runs {
+        t.0 += (r.wire_blown + r.wire_cut > 0) as u32;
+        t.1 += (r.bangalores + r.wire_cut > 0) as u32;
+        t.2 += r.attacker_losses;
+        t.3 += r.attacker_men;
+        t.4 += r.defender_losses;
+        t.5 += r.defender_men;
+        t.6 += *fired as u32;
+    }
+    t
+}
+
+/// The `breach_prep` (mortar) or `breach_prep_gun` row over `seeds`.
+pub fn breach_prep_row(
+    args: &FortifyArgs,
+    seeds: std::ops::Range<u64>,
+    tube: super::s10a::PrepTube,
+) -> Result<BreachPrepRow> {
+    let all = par_seeds(seeds, |seed| {
+        let mut v = Vec::new();
+        for dug in [0u8, 1] {
+            for prep in [1u32, 0] {
+                let r = super::s10a::breach_ai_run_with(args, seed, dug, true, tube, &|s| {
+                    s.rules.ai.arty.prep = prep
+                })?;
+                v.push((prep, r));
+            }
+        }
+        Ok(v)
+    })?;
+    let side = |p: u32| -> Vec<(super::s10a::BreachRun, bool)> {
+        all.iter()
+            .flatten()
+            .filter(|(q, _)| *q == p)
+            .map(|(_, r)| r.clone())
+            .collect()
+    };
+    let (on, off) = (side(1), side(0));
+    let (a, b) = (breach_prep_sum(&on), breach_prep_sum(&off));
+    let (n, m) = (on.len() as u32, off.len() as u32);
+    Ok(BreachPrepRow {
+        gap_opened_pct: pct(a.0, n),
+        placed_pct: pct(a.1, n),
+        attacker_loss_pct: pct(a.2, a.3),
+        defender_loss_pct: pct(a.4, a.5),
+        prep_fired_pct: pct(a.6, n),
+        runs: (n > 0).then_some(n as f64),
+        control: BreachPrepControl {
+            gap_opened_pct: pct(b.0, m),
+            placed_pct: pct(b.1, m),
+            attacker_loss_pct: pct(b.2, b.3),
+            defender_loss_pct: pct(b.4, b.5),
+            prep_fired_pct: pct(b.6, m),
+        },
+    })
 }
 
 /// The S11a1 rows (`fortify10.s11a1`).
@@ -548,14 +618,14 @@ pub fn barrage_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Ba
     })
 }
 
-/// Every S11a1 row (`breach_prep` and `breach_prep_gun`: Build C).
+/// Every S11a1 row.
 pub fn s11a1_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S11a1Report> {
     Ok(S11a1Report {
         gun_fm: gun_fm_row(args, seeds.clone())?,
         mask: mask_row(args, seeds.clone())?,
-        barrage: barrage_row(args, seeds)?,
-        breach_prep: BreachPrepRow::default(),
-        breach_prep_gun: BreachPrepRow::default(),
+        barrage: barrage_row(args, seeds.clone())?,
+        breach_prep: breach_prep_row(args, seeds.clone(), super::s10a::PrepTube::Mortar)?,
+        breach_prep_gun: breach_prep_row(args, seeds, super::s10a::PrepTube::Gun)?,
     })
 }
 
@@ -581,7 +651,9 @@ mod tests {
             b.trench_vs_open_pct, b.control.trench_vs_open_pct,
             "barrage control"
         );
-        assert!(r.breach_prep.gap_opened_pct.is_none());
+        let p = &r.breach_prep;
+        assert_eq!(p.runs, Some(2.0), "two sides");
+        assert!(p.gap_opened_pct.is_some() && p.control.gap_opened_pct.is_some());
     }
 
     /// One-off: the S11a1 rows on seeds 1-10 (as `fortify-test --seeds

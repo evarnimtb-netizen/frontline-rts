@@ -803,7 +803,11 @@ fn breach_run(args: &FortifyArgs, seed: u64, dug: u8, fortified: bool) -> Result
 
 /// A world for the AI breach row: the map's first point on the trench's
 /// middle (the point the AI attacks).
-fn breach_ai_world(args: &FortifyArgs, seed: u64) -> Result<World> {
+fn breach_ai_world(
+    args: &FortifyArgs,
+    seed: u64,
+    edit: &dyn Fn(&mut frontline_content::MatchSetup),
+) -> Result<World> {
     let mut setup = match_setup(&SkirmishArgs {
         seed,
         mods: args.mods.clone(),
@@ -816,12 +820,48 @@ fn breach_ai_world(args: &FortifyArgs, seed: u64) -> Result<World> {
         bail!("the map has no capture point");
     };
     p0.pos = frontline_content::setup::FixedVec2::from_m([TRENCH_X as u32, LINE_Y as u32]);
+    edit(&mut setup);
     Ok(World::new_match(setup, args.threads)?)
 }
 
+/// S11a1 `breach_prep` rows: the preparation tube the attacker gets in a
+/// [`breach_ai_run_with`] run.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum PrepTube {
+    /// None (the S10a-ai row).
+    None,
+    /// The faction's mortar team 250 m behind the stage spot (its own
+    /// leader observes by voice, or its spotter).
+    Mortar,
+    /// The faction's infantry gun in the far east and its observer team
+    /// 120 m behind the stage spot (linked by radio).
+    Gun,
+}
+
+/// S11a1: the stage spot's distance behind the wire (`[ai.fort] stage_m`
+/// 60) plus 250 m: where the row's mortar stands, east of the wire.
+const PREP_MORTAR_M: i32 = 310;
+const PREP_FO_M: i32 = 120;
+const PREP_GUN_X: i32 = 1000;
+
 /// One AI breach (see the module docs): `dug` defends, the other attacks.
 fn breach_ai_run(args: &FortifyArgs, seed: u64, dug: u8, fortified: bool) -> Result<BreachRun> {
-    let mut w = breach_ai_world(args, seed)?;
+    Ok(breach_ai_run_with(args, seed, dug, fortified, PrepTube::None, &|_| {})?.0)
+}
+
+/// [`breach_ai_run`] with an S11a1 preparation tube for the attacker and
+/// a setup edit; also whether a fire mission of the tube fired at least
+/// `[ai.arty] prep_rounds_min` rounds while the job was in Stage or
+/// Suppress (before the carrier left).
+pub(super) fn breach_ai_run_with(
+    args: &FortifyArgs,
+    seed: u64,
+    dug: u8,
+    fortified: bool,
+    tube: PrepTube,
+    edit: &dyn Fn(&mut frontline_content::MatchSetup),
+) -> Result<(BreachRun, bool)> {
+    let mut w = breach_ai_world(args, seed, edit)?;
     let att = 1 - dug;
     let a = squad(&w, dug, "line")?;
     dig(&mut w);
@@ -859,6 +899,9 @@ fn breach_ai_run(args: &FortifyArgs, seed: u64, dug: u8, fortified: bool) -> Res
     w.place_squad(amg, at(start_x, LINE_Y - 20), WEST);
     let rifle = call_in(&mut w, att, "line")?;
     w.place_squad(rifle, at(start_x, LINE_Y + 20), WEST);
+    let tube_sq = prep_tube(&mut w, att, tube, wire_x)?;
+    let prep_min = w.match_setup().unwrap().rules.ai.arty.prep_rounds_min;
+    let mut prep_fired = false;
     let def_men = (members(&w, a).len() + members(&w, mg).len()) as u32;
     let att_men =
         (members(&w, eng).len() + members(&w, amg).len() + members(&w, rifle).len()) as u32;
@@ -871,6 +914,20 @@ fn breach_ai_run(args: &FortifyArgs, seed: u64, dug: u8, fortified: bool) -> Res
     let mut ai = frontline_sim::ai::AiState::new(w.tick());
     let mut job = "running";
     while w.tick() < start + BREACH_S * hz {
+        if let Some(q) = tube_sq
+            && let Some(frontline_sim::Order::FireMission { m, .. }) =
+                w.game().unwrap().squad(q).map(|x| &x.order)
+            && m.fired as u32 >= prep_min
+            && ai.breaches.values().any(|b| {
+                matches!(
+                    b.phase,
+                    frontline_sim::ai::BreachPhase::Stage
+                        | frontline_sim::ai::BreachPhase::Suppress
+                )
+            })
+        {
+            prep_fired = true;
+        }
         if let Some(end) = w.drive_breach(&mut ai, PlayerId(att), eng, &[amg, rifle], 0) {
             job = match end {
                 Some(frontline_sim::ai::BreachEnd::Opened) => "opened",
@@ -939,21 +996,63 @@ fn breach_ai_run(args: &FortifyArgs, seed: u64, dug: u8, fortified: bool) -> Res
         }
     }
     let acc = w.game().unwrap().fort().accounts[p].clone();
-    Ok(BreachRun {
-        seed,
-        entrenched: faction(w.match_setup().unwrap(), dug),
-        fortified,
-        defender_losses: losses(&w, dug) - lost_d,
-        defender_men: def_men,
-        attacker_losses: losses(&w, att) - lost_a,
-        attacker_men: att_men,
-        bangalores: acc.bangalores,
-        wire_blown: acc.wire_blown,
-        frags_thrown: (w.stats().throws - throws) as u32,
-        wire_cut: acc.wire_cut,
-        job,
-        smokes: ai.counters.breach_smokes,
-        suppressions: ai.counters.breach_suppress,
+    Ok((
+        BreachRun {
+            seed,
+            entrenched: faction(w.match_setup().unwrap(), dug),
+            fortified,
+            defender_losses: losses(&w, dug) - lost_d,
+            defender_men: def_men,
+            attacker_losses: losses(&w, att) - lost_a,
+            attacker_men: att_men,
+            bangalores: acc.bangalores,
+            wire_blown: acc.wire_blown,
+            frags_thrown: (w.stats().throws - throws) as u32,
+            wire_cut: acc.wire_cut,
+            job,
+            smokes: ai.counters.breach_smokes,
+            suppressions: ai.counters.breach_suppress,
+        },
+        prep_fired,
+    ))
+}
+
+/// Spawns the attacker's preparation tube (and for a gun its observer
+/// team); the tube's squad.
+fn prep_tube(w: &mut World, att: u8, tube: PrepTube, wire_x: i32) -> Result<Option<SquadId>> {
+    let s = w.match_setup().unwrap();
+    let germany = s.factions[s.players[att as usize].faction as usize].id == "ww2:germany";
+    let card = |w: &World, id: &str| {
+        w.match_setup()
+            .unwrap()
+            .squad_type_index(id)
+            .ok_or_else(|| anyhow::anyhow!("no card {id}"))
+    };
+    let put = |w: &mut World, id: &str, x: i32| -> Result<SquadId> {
+        let t = card(w, id)?;
+        w.spawn_squad_at(PlayerId(att), t, at(x, LINE_Y), WEST)
+            .ok_or_else(|| anyhow::anyhow!("{id} not spawned"))
+    };
+    Ok(match tube {
+        PrepTube::None => None,
+        PrepTube::Mortar => {
+            let id = if germany {
+                "ww2:ger_mortar_team"
+            } else {
+                "ww2:usa_mortar_team"
+            };
+            Some(put(w, id, wire_x + PREP_MORTAR_M)?)
+        }
+        PrepTube::Gun => {
+            let (gun, fo) = if germany {
+                ("ww2:ger_leig18_squad", "ww2:ger_vb_trupp")
+            } else {
+                ("ww2:usa_105mm_m3_squad", "ww2:usa_fo_party")
+            };
+            let q = put(w, gun, PREP_GUN_X)?;
+            put(w, fo, wire_x + PREP_FO_M)?;
+            Some(q)
+        }
     })
 }
 
