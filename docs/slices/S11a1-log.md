@@ -5,26 +5,59 @@ ablations `targets/S11a1-ablations/`. Branch `claude/project-thread-e7nsak`, bas
 `git add -A`, never the untracked `.claude/`, `target/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Build A done 2026-11-17 (all of G1-G7, every switch at its spec default). Next: Build B (`-build-B.md`).**
-- SAVE 27, PROTOCOL 14. Neutral base `target/s11a1-base40/skirmish40.json` (= `target/s10c-F3-40`).
-- Code map: `indirect.rs` `solve_gun` (candidates, mount pitch, `arc_clear`); `game.rs` `gun_mission_refusal`,
-  `order_gun_mission`, `gun_indirect_weapon`, `gun_he_slot`, `gun_mount`; `gunnery.rs` `gun_mission_tick` (called
-  first in `gun_one`, which then picks no main-gun target); `fire_mission.rs` `firing_unit` + `radio_men` (used by
-  `linked`), `tube_pos` (used by `observe_bursts`, `end_mission`), `start_error_for` (G4).
-- `sq.order` arms: none needed a new `FireMission` arm; `fire_mortars`/`fire_mission_tick` return at once for a
-  gun squad (`mortar_gunner` None); `combat.rs` 152, `world.rs` 6485/6572/6636 and `ai/mortar.rs` 216/730 read
-  mortar squads only. Added: the vehicle-squad load check and `mission_ok` accept a gun's mission.
-- A gun test scene: `s11a1_tests.rs` `add_indirect_gun(setup, lo, hi, min_m)` (Pak 38 clone `test:inf_gun`, leIG
-  charges, mount -10..hi, squad weapon = the new weapon), `scene_with(threads, lo, edit)` (gun at (300,500), Grenadiers
-  at (330,500)), `order`, `mission`, `run_out`; `add_fo` gives `test:fo` and radio men to every `*_crew`.
-- `[indirect]` for a gun (weapon class `cannon`, main mount up to 89 deg with `low_angle`): `charges_m_s = [92, 120,
-  150, 180, 210]`, `elevation_deg = [0, 73]`, `low_angle = true`, `range_m = 3550`, `spread_mrad = 8`.
-- **Build B must** print `FmCounters::refused` as a map by name (or let `neutral.py` skip it): it grew 7 -> 9 items
-  (`masked`, `not_ready`), so `neutral.py` says `DIFFERENT, same 40/40` on that one key; every match is equal.
-- Direct mode for a gun is the crew squad's leader by voice (he is an observer at `observe_leader_m`).
-- Gun refusals still add to `fm.refused` (the order event is shared); `masked`/`not_ready` also count in `s11`.
-- AI: `inf_gun` guns are parked in `take_guns` (no list) until Build C; the mix never buys `inf_gun`.
-- Riflemen 200 m off are not seen by a gun crew on flat ground in tests; use a tank for direct-fire scenes.
+**State: Build B done 2026-11-17 (content, A review fixes A-1..A-6, rows, JSON). Next: orchestrator gate T128-T130, then Build C (`-build-C.md`).**
+- SAVE 27, PROTOCOL 14. Neutral base `target/s11a1-base40/skirmish40.json`; Build B sets in `target/s11a1-B40/`.
+- Cards (roster end, `ai_weight` 0): `ww2:ger_leig18_squad` (vehicle `ww2:ger_leig18`, crew `ger_leig18_crew`),
+  `ww2:usa_105mm_m3_squad` (`usa_105mm_m3`, crew `usa_105mm_m3_crew`), `ww2:ger_vb_trupp`, `ww2:usa_fo_party` (tag
+  `observer`). Weapons `ww2:leig18`, `ww2:m3_105mm`; rounds `ww2:75mm_igr18`, `ww2:105mm_m1_he` (the only ammo slot).
+- **`buy_role_within` needs `ai_weight` > 0**: it takes the first roster card with weight > 0 and the role. Build C
+  must set the two gun cards to 5 (as the S9 gun cards) in its own commit; the mix never picks `inf_gun` (`mix_slot`
+  skips the role), so 5 is safe. Observer cards: A3 buys by trait, keep weight 0 or give them their own path.
+- Test recipe: a real gun arrives emplaced and crewed from `spawn_squad_at` / `s6_tests::spawn(w, p, card, x, y)`
+  (facing +x); `s11a1_tests.rs` `crest_gun(card, crest)` (crest band at x 500, gun at (50,500)), `order`, `mission`,
+  `run_out`. Observer team: spawn `ww2:usa_fo_party` / `ger_vb_trupp`; beyond `observer_link_m` 150 it links by radio
+  (crew commander slot has `radio`; `leader` may only be on slot 0, so the crew leader is the gunner slot).
+- Known ground for a mission: a seeing observer, or `World::mark_intel`. Map fire: `observe_*_m` 0.
+- Row code: `sdk/crates/cli/src/fortify/s11a1.rs` (`gun_fm`, `mask`, `barrage`; `breach_prep` and `breach_prep_gun`
+  print null keys: Build C fills `BreachPrepRow`). Rows run per seed on threads (`par_seeds`); left out with
+  `--no-s10b-ai`. One-off: `cargo test --release -p frontline-cli s11a1_rows_one_off -- --ignored --nocapture`.
+- JSON: `factions.<f>.s11a1` (S11Counters by name, arrays by mode, every S11a1 AiCounters name, `refused_masked`,
+  `refused_not_ready`, `kills`, `income_mp`, `matches_with_*`, `gun_kills_in_tank_he` true) and `s11a1_derived` (spec
+  7). `gun_refused_total` = masked + not_ready (other gun refusal kinds are counted nowhere since A-3: if C needs them,
+  an AiCounters field is a layout change). `fo_bought_matches_pct` reads `fo_buys` (AI only).
+- Gun kills still count as `tank_he` in `kills_by` / `tank_mp_killed` (the JSON flag says so); `gun_kills` separate.
+- leIG at 300 m has only low roots (every high root > 73 deg); behind a 25 m crest it needs 450 m (G2 test).
+- `neutral.py`: keys `s11a1*` the base lacks are skipped; a list that grew with a zero tail equals the base.
+
+## Build B (2026-11-17)
+Commits: `6f22f00` content + fix A-1, `c2afd8c` fixes A-2..A-6, `6a8db14` rows / JSON / neutral.py / doc, `2097289` rows on
+threads, `50eedd6` one-off 10-seed test; this log commit. Content as built (`artillery-on-map.md` 2.1 lines 133-136,
+2.2 lines 148-151, 4.7 lines 825-840; spec 4 C1-C4): leIG 18 400 kg, crew 5, -10..+73, traverse -5..+6, charges
+92-210, 3,550 m, 8 mrad, 8/min (7.5 s), 12 Igr 18 (6.0 kg), 320 / pop 2 / 90 s / 3:00, max 2; M3 1,130 kg, crew 6,
+-9..+30, +-22, charges 205-311, 7,600 m, 6 mrad, 3/min (20 s), 10 M1 HE (19 kg; blast 175 cm, 160 rays to 17.5 m,
+supp. 18 m, crater 90 cm, depth 44 cm = 30 x 1.46: the spec names no depth), 380 / 2 / 120 s / 4:00, max 2;
+VB-Trupp 2 men 80 / 60 s / max 2; FO Party 3 men 120 / 60 s / max 2; all `ai_weight` 0. Geometry (pivot, muzzle,
+shield plates) "verify". Changed from spec: the crew commander has `radio` but not `leader` (the def check allows
+`leader` on slot 0 only); the crew leader is the gunner slot (first man).
+Review fixes: A-1 one rule `vehicle::low_angle_top` (def check to 89, cross-check: above 60 only with a low-angle
+table; setup check the same), `radio` moved to TRAITS, the test parses real defs (control: no `low_angle` -> refused);
+A-2 `range_m` -> `CannotReach`; A-3 gun refusals out of `fm.refused` (event and s11 kept), JSON flag
+`gun_kills_in_tank_he`; A-4a mission ends when `sv.crew` names no live squad; A-4b re-lay to the mission bearing
+while holding fire; A-5 `gun_ready()` in `crew_ok`; A-6 tests `real_m3_is_masked_behind_a_crest_through_the_sim`
+(control leIG, flat), `gun_refusals_take_the_first_broken_rule`, `gun_refuses_past_its_table_range`. A-4/A-5 have no
+own test (no cheap scene: a round every 7.5 s hides a 10 s re-lay). Mask note: the test skips the first tenth and last
+fifth of a flight; revisit with S11a2 friendly fire.
+Other files touched (smallest fix): `damage.rs` test list (two guns), the 17-type test (now 18 with a clone),
+`indirect::candidates` pub(crate). Solver test with real defs lives in `s11a1_tests.rs` (the solver is the sim's).
+Gate (`s11a1_rows_one_off`, seeds 1-10, the same code as `fortify-test`): **T128** ratio 600.0 % (observed 8.3 m:
+leIG 9.9, M3 6.8; map 49.8 m; exposure 160 rounds; control radio man dead 100.0 %). **T129** M3 refused masked 100 %
+(control flat 0 %), leIG over the crest 80 % (control flat 80 %: "x > 540" is crossed short by the 50 m map-fire
+error; a report), orders 20. **T130** trench vs open 11.8 % (open 68.0 %, trench 8.0 %; control: dug, squad in front
+76.5 %), trench suppressed 2.2 %. Bench: flat map; gun_fm 600 m, FO 300 m short (radio only); mask crest band 25 m,
+gun 530 m from target; barrage M3 500 m, FO 350 m. Rows wall 22.6 s for 10 seeds (threads, under load).
+Neutral: `neutral.py base40 B40` `same 40/40`; `base40 B40off` (a_off) `same 40/40`. Tests: content `s11a1_content`
+4, sim s11a1 25, CLI `fortify_s11a1_rows_run`, `s11a1_json_names_match_the_targets_file`, neutral 13.
+Check: `check.sh quick 730e67f` and the full `fortify-test --seeds 10` run pending at this commit.
 
 ## Build A (2026-11-17)
 Commits: `9ed0bf0` layout (SAVE 27, kill class u16, S11 counters, AI records), `84a972a` keys / schema / radio /
