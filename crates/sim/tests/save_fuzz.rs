@@ -38,6 +38,13 @@ fn setup(seed: u64) -> MatchSetup {
     // tuned on (states at fixed ticks) with the front rules off; the staged
     // save holds the front state (a saved lane and a FrontAp job in Watch).
     s.rules.ai.obstacles.front = 0;
+    // S11a1 Build C: likewise the artillery AI off (its records are in the
+    // staged save).
+    (
+        s.rules.ai.arty.buy,
+        s.rules.ai.arty.fo,
+        s.rules.ai.arty.prep,
+    ) = (0, 0, 0);
     s
 }
 

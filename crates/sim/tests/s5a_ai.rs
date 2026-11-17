@@ -227,6 +227,12 @@ fn ai_setup(seed: u64, swapped: bool, edit: impl FnOnce(&mut MatchSetup)) -> Mat
         .resolve(&MatchRequest::skirmish(seed, a, b, Difficulty::Normal))
         .unwrap_or_else(|e| panic!("{e}"));
     s.players.iter_mut().for_each(|p| p.is_ai = true);
+    // S11a1 Build C: the scenes were found with the artillery AI off.
+    (
+        s.rules.ai.arty.buy,
+        s.rules.ai.arty.fo,
+        s.rules.ai.arty.prep,
+    ) = (0, 0, 0);
     edit(&mut s);
     s
 }

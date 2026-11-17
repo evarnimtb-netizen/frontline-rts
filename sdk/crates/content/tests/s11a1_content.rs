@@ -247,7 +247,17 @@ fn s11a1_cards_load_at_the_spec_figures() {
                 crew,
                 t.ai_weight
             ),
-            (cost, pop, cd, unlock, alive, men, 0),
+            // Build C: the gun cards weigh 5 (`buy_role_within`), the
+            // observer cards 0 (A3 buys them by trait).
+            (
+                cost,
+                pop,
+                cd,
+                unlock,
+                alive,
+                men,
+                if t.vehicle.is_some() { 5 } else { 0 }
+            ),
             "{id}"
         );
         let f = &s.factions[t.faction as usize];

@@ -172,6 +172,12 @@ fn ai_vs_ai_plays_by_the_rules() {
                         .any(|p| (FxVec2::from(p.pos) - mid).length() < Fx::from_int(30));
                     assert!(near, "trench at {mid:?} is not at a point");
                 }
+                // S11a1: an infantry gun's mission (its band is the sim's
+                // order check; the AI asks it first).
+                Order::FireMission { .. } if ty.vehicle.is_some() => {
+                    let v = &s.vehicles[ty.vehicle.unwrap() as usize];
+                    assert_eq!(v.role, frontline_content::VehicleRole::InfGun);
+                }
                 // Mortars fire at targets inside their range band.
                 Order::FireMission { target, .. } if seen.barrages.insert(id) => {
                     assert!(ty.has(frontline_content::setup::Capability::FireMission));
