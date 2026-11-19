@@ -465,7 +465,8 @@ Revised the same day with the measured diagnosis of S11a2-10..12 and a plan revi
   and its charges; the light mortars' game ranges (S11b-5); the FH Gr 38 complete round at 19 kg (as the M1 HE).
   **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Hold the affected defs back until sourced.
 - S11b-14 (asked by the S11b fix stage) AI light mortars are off by default because with them Germany wins 27.5 % of a
-  40 set (11/40, HE share 23.1 %; 20/40 without them, on the fix stage's head). Germany's own kz. GrW 42 carries the drop:
+  40 set (11/40, HE share 23.1 %; 20/40 without them; both measured before the fix stage's howitzer pot, grenades off;
+  the shipped default with the pot reads 20/40, HE 25.5 %). Germany's own kz. GrW 42 carries the drop:
   light mortars for Germany only 9/40, for the USA only 17/40. A kz. team fires about 10 of its 18 bombs a match, a 60 mm
   team about 34 (30 carried, the rest resupplied); Germany's light buys take heavy-mortar buys (190 -> 132 a 40 set) and its bombs fall
   93 -> 72 a match. The 60 mm burst scaled to the bomb (55 rays, 900 cm) did not help: 13/40. `[ai.arty] light` is

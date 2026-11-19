@@ -525,13 +525,9 @@ fn save_roundtrip_carries_s11b_state() {
         (1, 1, 1, 0, 1),
         "the shipped switches"
     );
-    // S11b fix: the AI's light mortars are off by default (S11b-14) and
-    // the AT and infantry-gun pots starve the howitzer buy since fix C-1
-    // (S11b log): this test of saved S11b state turns the light mortars on
-    // and starts both sides with 20,000 MP, so the manpower above the pots
-    // pays for a howitzer.
+    // S11b fix: the AI's light mortars are off by default (S11b-14); this
+    // test of saved S11b state turns them on.
     s.rules.ai.arty.light = 1;
-    s.rules.start_manpower = 20_000;
     let how = s.tag("field_howitzer");
     let mut w = World::new_match(s, 1).unwrap();
     let has_how = |w: &World| {
