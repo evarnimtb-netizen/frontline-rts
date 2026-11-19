@@ -3,7 +3,7 @@
 #   lint         rustfmt check and `cargo clippy -D warnings`; this is what
 #                enforces crates/sim/clippy.toml (no HashMap/atomics/clock in
 #                the sim) and `#![deny(clippy::float_arithmetic)]` (§5.2).
-#   build-test   build + `cargo test --workspace --release` on Linux and Windows (the
+#   build-test   build + `cargo test --workspace --release` on every OS (the
 #                sim's tests include a committed golden hash, so each OS is
 #                checked against the same constant), the sim's tests again
 #                in a debug build, then a
@@ -16,12 +16,11 @@
 #   notices      regenerates THIRD_PARTY_NOTICES and fails if the committed
 #                file is stale; uploads the generated file as an artifact.
 #
-# Not in CI: macOS ARM, SteamOS native and SteamOS + Proton (§5.11, §15 M0).
-# macOS runners are not started for this repository (the macos-14 job was
-# cancelled before it got a runner on every run), and the SteamOS runs need a
-# Deck. Check those by hand with tools/platform_check.sh, which runs the same
+# Not in CI: SteamOS native and SteamOS + Proton (§5.11, §15 M0) need a Deck.
+# Check those by hand with tools/platform_check.sh, which runs the same
 # build, tests and `simulate` commands and compares the final hashes, with
-# this run's reports too when given `--ci-reports DIR`.
+# this run's reports too when given `--ci-reports DIR`. The same script works
+# on a Mac.
 
 name: CI
 
@@ -69,8 +68,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS is checked by hand (tools/platform_check.sh); see the header.
-        os: [ubuntu-latest, windows-latest]
+        # macos-14 is Apple Silicon (ARM64).
+        os: [ubuntu-latest, windows-latest, macos-14]
     defaults:
       run:
         shell: bash
@@ -136,9 +135,9 @@ jobs:
           path: reports
           merge-multiple: true
 
-      # 2 OS x 4 thread counts = 8 reports; a missing one is a failure too.
+      # 3 OS x 4 thread counts = 12 reports; a missing one is a failure too.
       - name: Compare final hashes
-        run: python3 -I tools/compare_hashes.py reports --expect 8
+        run: python3 -I tools/compare_hashes.py reports --expect 12
 
   licenses:
     name: cargo-deny (${{ matrix.checks }})

@@ -201,19 +201,20 @@ build output, so regenerate it instead of editing it.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on `ubuntu-latest` and `windows-latest`:
+`.github/workflows/ci.yml` runs on `ubuntu-latest`, `windows-latest` and
+`macos-14` (Apple Silicon):
 
 1. build and `cargo test --workspace --release`;
 2. `frontline-cli simulate` on `bench/scenarios/battalion.toml` with seed 7 at
    1, 2, 3 and 8 sim workers, uploading each report JSON;
-3. a final job downloads all 8 reports and runs `tools/compare_hashes.py`,
+3. a final job downloads all 12 reports and runs `tools/compare_hashes.py`,
    which fails if any final hash differs across OS or thread count;
 4. `cargo-deny` via the official action (advisories reported, not blocking),
    and a generated `THIRD_PARTY_NOTICES` artifact.
 
-macOS ARM, SteamOS native and SteamOS + Proton (§5.11, §15 M0) are checked
-**by hand**, not in CI (GitHub does not start macOS runners for this
-repository, and SteamOS needs a Deck). On that machine run:
+SteamOS native and SteamOS + Proton (§5.11, §15 M0) are checked **by hand**,
+not in CI, because they need a Deck. The same script also checks a Mac
+locally. On that machine run:
 
 ```sh
 tools/platform_check.sh            # build, tests, simulate at 1/2/3/8 workers

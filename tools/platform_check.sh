@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Manual platform check: the same steps as CI's `build-test` job, for an OS
-# that CI does not run (macOS; SteamOS native and SteamOS + Proton, §5.11).
+# that CI does not run (SteamOS native and SteamOS + Proton, §5.11), or to
+# check a Mac or PC locally.
 #
 #   tools/platform_check.sh                  # build, test, simulate, compare
 #   tools/platform_check.sh --quick          # skip the slow debug sim tests
@@ -37,7 +38,7 @@ while [ "$#" -gt 0 ]; do
             ci_reports="$2"
             shift
             ;;
-        -h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "error: unknown argument: $1 (see --help)" >&2; exit 2 ;;
     esac
     shift
