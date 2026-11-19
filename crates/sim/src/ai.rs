@@ -1730,6 +1730,11 @@ impl Planner<'_> {
             if ai.fort.cards == 0 && fort::is_s10a_card(&s.squad_types[t as usize]) {
                 continue;
             }
+            // S11b L1: with `[ai.arty] light` 0 the light mortar cards
+            // stay out of the mortar slot.
+            if ai.arty.light == 0 && s.type_has_tag(t, "light_mortar") {
+                continue;
+            }
             if let Some(r) = mix_slot(s, t) {
                 cards[r].push(t);
             }

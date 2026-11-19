@@ -139,6 +139,7 @@ pub(super) fn validate_arty(
 use frontline_content::VehicleRole;
 use frontline_content::setup::member_trait;
 
+use super::truck::RoleBuy;
 use super::{Known, Mine, PointEval, Rel, sq_m};
 use crate::command::CommandKind;
 use crate::ecs::{EntityKind, SimId};
@@ -256,8 +257,33 @@ impl super::Planner<'_> {
         mine.retain(|m| !self.is_fo_type(g.squads[&m.id].type_idx));
     }
 
+    /// S11b H1: whether squad type `t` is a field howitzer card (tag
+    /// `field_howitzer`).
+    fn is_how(&self, t: u16) -> bool {
+        self.g.setup.type_has_tag(t, "field_howitzer")
+    }
+
+    /// S11b H1: manpower less the cost of the call-ins still pending (they
+    /// are paid when they apply, as `buy` counts them).
+    fn mp_less_pending(&self) -> u64 {
+        let s = &self.g.setup;
+        let pending: u64 = self
+            .ai
+            .pending
+            .iter()
+            .filter_map(|c| match c.kind {
+                CommandKind::CallIn { squad_type } => {
+                    Some(s.squad_types[squad_type as usize].cost as u64)
+                }
+                _ => None,
+            })
+            .sum();
+        (self.g.players[self.me.0 as usize].manpower as u64).saturating_sub(pending)
+    }
+
     /// S11a1 A1: the infantry guns' pot (as `gun_pot` with `[ai.arty]`
-    /// keys and role `inf_gun`); 0 with `buy` 0.
+    /// keys and role `inf_gun`); 0 with `buy` 0. S11b H1: field howitzer
+    /// cards stay out of the pick, the spent sum and the gun count.
     pub(super) fn arty_pot(&self) -> i64 {
         let g = self.g;
         let s = &g.setup;
@@ -265,14 +291,15 @@ impl super::Planner<'_> {
         let hz = s.tick_hz.max(1) as u64;
         if a.buy == 0
             || self.tick < a.after_s as u64 * hz
-            || self.of_role(VehicleRole::InfGun) >= a.max_guns as usize
+            || self.of_role_where(VehicleRole::InfGun, |t| !self.is_how(t)) >= a.max_guns as usize
         {
             return 0;
         }
         let is_inf = |t: usize| {
-            s.squad_types[t]
-                .vehicle
-                .is_some_and(|v| s.vehicles[v as usize].role == VehicleRole::InfGun)
+            !self.is_how(t as u16)
+                && s.squad_types[t]
+                    .vehicle
+                    .is_some_and(|v| s.vehicles[v as usize].role == VehicleRole::InfGun)
         };
         let faction = &s.factions[s.players[self.me.0 as usize].faction as usize];
         let Some(card) = faction
@@ -305,21 +332,68 @@ impl super::Planner<'_> {
         self.gun_pot() + self.arty_pot()
     }
 
-    /// S11a1 A1: the infantry-gun buy.
+    /// S11a1 A1: the infantry-gun buy (S11b H1: field howitzer cards
+    /// apart; with `buy_pending` 1 against manpower less the pending
+    /// call-ins), then the S11b howitzer buy.
     pub(super) fn buy_arty(&mut self) {
         let s = &self.g.setup;
         let a = &s.rules.ai.arty;
         let hz = s.tick_hz.max(1) as u64;
-        if a.buy == 0
-            || self.tick < a.after_s as u64 * hz
-            || self.of_role(VehicleRole::InfGun) >= a.max_guns as usize
+        if a.buy != 0
+            && self.tick >= a.after_s as u64 * hz
+            && self.of_role_where(VehicleRole::InfGun, |t| !self.is_how(t)) < a.max_guns as usize
+        {
+            let mp = if a.buy_pending != 0 {
+                self.mp_less_pending()
+            } else {
+                self.g.players[self.me.0 as usize].manpower as u64
+            };
+            let n = self.ai.pending.len();
+            let g = self.g;
+            self.buy_role_where(
+                VehicleRole::InfGun,
+                move |t| !g.setup.type_has_tag(t, "field_howitzer"),
+                a.income_max_pct,
+                a.reserve_mp,
+                mp,
+            );
+            if self.ai.pending.len() > n {
+                self.ai.counters.arty_buys += 1;
+            }
+        }
+        self.buy_how();
+    }
+
+    /// S11b H1: the field howitzer buy (`how` 1, from `how_after_s`, fewer
+    /// than `how_max` own howitzers alive or pending): the first roster
+    /// card with `ai_weight > 0`, role `inf_gun` and the tag, inside its
+    /// own `how_income_pct` share (else `how_pct_holds`), with
+    /// `how_reserve_mp` left of the manpower less pending call-ins (else
+    /// `how_mp_holds`). No pot is held for it.
+    fn buy_how(&mut self) {
+        let s = &self.g.setup;
+        let a = &s.rules.ai.arty;
+        let hz = s.tick_hz.max(1) as u64;
+        if a.how == 0
+            || self.tick < a.how_after_s as u64 * hz
+            || self.of_role_where(VehicleRole::InfGun, |t| self.is_how(t)) >= a.how_max as usize
         {
             return;
         }
-        let n = self.ai.pending.len();
-        self.buy_role_within(VehicleRole::InfGun, a.income_max_pct, a.reserve_mp);
-        if self.ai.pending.len() > n {
-            self.ai.counters.arty_buys += 1;
+        let mp = self.mp_less_pending();
+        let (pct, reserve) = (a.how_income_pct, a.how_reserve_mp);
+        let g = self.g;
+        match self.buy_role_where(
+            VehicleRole::InfGun,
+            move |t| g.setup.type_has_tag(t, "field_howitzer"),
+            pct,
+            reserve,
+            mp,
+        ) {
+            RoleBuy::Bought => self.ai.counters.how_buys += 1,
+            RoleBuy::Share => self.ai.counters.how_pct_holds += 1,
+            RoleBuy::Manpower => self.ai.counters.how_mp_holds += 1,
+            RoleBuy::NoCard | RoleBuy::Refused => {}
         }
     }
 
