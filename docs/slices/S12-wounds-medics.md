@@ -174,8 +174,9 @@ pooled move of 5 points or more stops the slice for the owner.
 3. **Checker after A and after B** (Sonnet, a fresh agent each): diff against this file, named tests, neutral check; lists misses.
 4. **Presenter P** (Sonnet, 1 chunk): section 1 list; headless mock-match smoke test.
 5. **S12b Build C** (Opus, 2 chunks): `ai/medic.rs` A1-A5, liveness, JSON `s12`, `S12.toml`, switches on, 40 sets, ablations.
-6. Orchestrator: `tools/measure.sh` 480 + `ablate.sh`; Review (Opus; gate fires: sim, save, protocol); Fix (Opus); `tools/verify.sh`; GitHub
-   checks on the pushed branch (owner rule for long runs); Docs (Haiku). Fable consulted where a stage stalls.
+6. Orchestrator: `tools/measure.sh` 480 + `ablate.sh`; Review (Opus; gate fires: sim, save, protocol); Fix (Opus); `tools/verify.sh`; long runs
+   (480s, full suites) where the project's current long-run rule says (2026-11-19: cloud in the evening, GitHub Actions blocked by billing);
+   Docs (Haiku). Fable consulted where a stage stalls.
 
 ## 11. Risks
 1. **Head hits in trenches.** Shooters aim 150 mm under the top of a man on a fire step (`head_aim_mm`), inside the 210 mm head band, so nearly
