@@ -149,6 +149,18 @@ class Neutral(unittest.TestCase):
         new["factions"]["germany"]["s5b"]["other"] = [1, 0, 2, 0]
         self.assertFalse(self.run_dirs(base, new)[1])
 
+    def test_kills_by_grows_with_a_zero_tail(self):
+        # S11b Build B: `s5a.kills_by` grew 11 -> 12 (rifle grenades).
+        # Control: a non-zero new class fails.
+        base = copy.deepcopy(BASE)
+        base["factions"]["germany"]["s5a"] = {"kills_by": [3, 0, 1]}
+        new = copy.deepcopy(base)
+        new["factions"]["germany"]["s5a"]["kills_by"] = [3, 0, 1, 0]
+        lines, ok = self.run_dirs(base, new)
+        self.assertTrue(ok, lines)
+        new["factions"]["germany"]["s5a"]["kills_by"] = [3, 0, 1, 2]
+        self.assertFalse(self.run_dirs(base, new)[1])
+
     def test_key_only_in_base_fails(self):
         new = copy.deepcopy(BASE)
         del new["wins"]["usa"]
