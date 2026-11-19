@@ -1,7 +1,7 @@
 # Frontline RTS: state (read this first)
 
 Main holds S1 to S10b-ai and B1 (merged 2026-11-16, owner OK; **NO default changed**). On branch `claude/project-thread-e7nsak`,
-not on main: S10c-ai, S11a1, S11a2 (built, reviewed, fixed; the merge waits for the owner). Owner questions: `docs/TODO.md`.
+on main since 2026-11-19 (owner OK): S10c-ai, S11a1, S11a2 (built, reviewed, fixed). Owner questions: `docs/TODO.md`.
 
 ## What the game is now
 
@@ -113,7 +113,7 @@ clippy, rustfmt, cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on m
 
 ## Roadmap position
 
-Done on main: S1 to S10b-ai and B1. Done on the branch, not merged: S10c-ai, S11a1, S11a2. Next: the owner's merge decisions for S10c-ai, S11a1, S11a2 and PR 1; then the open items above (S11a2-10..12, AT guns in cover, preparation fire in matches); then S11b.
+Done on main: S1 to S11a2 and B1 (S10c-ai, S11a1, S11a2 merged 2026-11-19 with the owner's OK). Next: PR 1 (checks fix); then the open items above (S11a2-10..12, AT guns in cover, preparation fire in matches); then S11b.
 
 ## How to check work
 
