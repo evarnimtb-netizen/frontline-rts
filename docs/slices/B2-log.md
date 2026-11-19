@@ -66,3 +66,8 @@ Lines (own counter a match per side, base -> lever):
   8.5 a match, M3A1 kills 5.74 -> 0.06 (moved). The AI uses the tow CCKWs as supply trucks: US truck drops ordered 1.88 ->
   6.33 a match, flees 67 -> 578, fails 77 -> 367 (of 160), crates dropped 510 -> 1813; CCKW cards bought 0.76 -> 0.20, 57 mm
   cards 1.76 -> 2.08. Verdict: owner class, reported only (H3 holds: the armed tow is worth about 16 points on this block).
+- `diag_ger_start3` (diagnostic, H1): +19.4 (57 / 26, z +3.40), 61.2 %; floors FAIL: HE 27.2. Germany pop at 5 / 10 min 49.9
+  / 64.1 -> 55.8 / 72.1 (USA 43.7 / 66.9 -> 40.0 / 62.5); foot squads 8 / 10 / 9.6 at 1 / 3 / 5 min. H1's prediction (at least
+  +10) is met; but at the base Germany already has more men alive at 5 min than the USA (49.9 against 43.7), so the gap is not
+  that the USA outnumbers Germany early: one more free Gruppe (10 men, about 232 MP) is simply worth about 19 points.
+  Verdict: diagnostic, never a candidate.
