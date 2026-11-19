@@ -352,7 +352,9 @@ pub struct RgState {
     /// shot (`aim` 0, `stow` > 0) ...
     pub man: Option<SimId>,
     /// ... at this enemy man while aiming (the aim breaks when he dies,
-    /// is no longer seen or leaves the band; `None` while stowing) ...
+    /// his entity slot holds no enemy soldier any more, or he or the aim
+    /// point leaves the band; he need not stay seen; `None` while
+    /// stowing) ...
     pub target: Option<SimId>,
     /// ... at this ground point (the target's position when he took aim).
     pub at: FxVec2,

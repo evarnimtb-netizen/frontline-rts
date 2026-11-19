@@ -1415,7 +1415,10 @@ impl MatchState {
                 // need not stay in sight while the launcher is fitted.
                 let ok = able(ents, m)
                     && p.target.is_some_and(|t| {
+                        // Ids are not generational (review A-2): a slot
+                        // reused by an own man is not the target.
                         ents.kind.get(t.index()) == Some(&EntityKind::Soldier)
+                            && ents.owner[t.index()] != owner
                             && band(from, ents.transform[t.index()].pos.xy())
                     })
                     && band(from, p.at);
@@ -3856,6 +3859,13 @@ impl MatchState {
             && p.man == Some(id)
         {
             (p.man, p.target, p.aim) = (None, None, 0);
+        }
+        // S11b (review A-1): the rifle grenadier's aim or stow ends with
+        // him (a save in this tick must load).
+        if let Some(r) = &mut sq.rg
+            && r.man == Some(id)
+        {
+            (r.man, r.target, r.aim, r.stow) = (None, None, 0, 0);
         }
         let ty = &self.setup.squad_types[sq.type_idx as usize];
         if ty.vehicle.is_none() {

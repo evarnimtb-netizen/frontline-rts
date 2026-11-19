@@ -874,3 +874,145 @@ fn rifle_grenades_do_not_refill_in_base() {
     assert_eq!(k[RG], 0, "no rifle grenade from the base");
     assert!(k[frag] >= 1, "control: his hand grenade is back");
 }
+
+// ------------------------------------------- stage A review fixes (B) --
+
+/// Review A-1: the grenadier killed mid-aim takes his aim with him, so a
+/// save in that tick loads. Control: a kill of another man leaves the aim.
+#[test]
+fn killed_grenadier_mid_aim_saves_and_loads() {
+    let run = |own: bool| {
+        let (mut w, q, _) = rg_scene(1, 100, false, |_| {});
+        let t0 = w.tick();
+        while rg(&w, q).aim < 10 {
+            assert!(w.tick() < t0 + 30 * 30, "no aim");
+            w.step(&[]);
+        }
+        let man = rg(&w, q).man.unwrap();
+        let other = *members(&w, q).iter().find(|m| **m != man).unwrap();
+        assert!(w.kill_soldier(if own { man } else { other }));
+        let r = rg(&w, q);
+        let w2 = World::load(&w.save(), 1).expect("the save loads");
+        assert_eq!(w2.full_state_hash(), w.full_state_hash());
+        (r.man, r.target, r.aim, r.stow)
+    };
+    assert_eq!(run(true), (None, None, 0, 0), "cleared with him");
+    let (man, target, aim, _) = run(false);
+    assert!(
+        man.is_some() && target.is_some() && aim > 0,
+        "control: aiming"
+    );
+}
+
+/// Review A-1: a rifleman stowing his launcher boards an abandoned tank
+/// as crew (`bail.rs` boarding): the state ends with him and the save in
+/// that tick loads. Control: the men who stay keep theirs (the record is
+/// only cleared for a man who boards).
+#[test]
+fn boarding_grenadier_saves_and_loads() {
+    const TANK: &str = "ww2:usa_m4a3_75_squad";
+    // The scene: player 1's tank abandoned at (500, 500) by order, its
+    // crew walked off; the rifle squad (grenades issued) boards it.
+    let scene = || {
+        let mut w = flat_world_with(1, |s| arm(s, RIFLES, "rifleman", 3));
+        let tq = spawn(&mut w, 1, TANK, 500, 500);
+        let v = members(&w, tq)[0];
+        super::s6_tests::run(&mut w, 1, 1, CommandKind::Abandon { squad: tq });
+        let t0 = w.tick();
+        while w.entities().kind[v.index()] != EntityKind::Abandoned {
+            assert!(w.tick() < t0 + 30 * 20, "not abandoned");
+            w.step(&[]);
+        }
+        steps(&mut w, 30 * 6);
+        let crew = w.game().unwrap().vehicles[&v].crew_squad;
+        if let Some(c) = crew {
+            super::s6_tests::run(&mut w, 1, 2, CommandKind::Retreat { squad: c });
+        }
+        let q = spawn(&mut w, 1, RIFLES, 500, 520);
+        super::s6_tests::run(
+            &mut w,
+            1,
+            3,
+            CommandKind::Recrew {
+                squad: q,
+                vehicle: v,
+            },
+        );
+        (w, q, v)
+    };
+    // First run: which men board.
+    let (mut w, q, v) = scene();
+    let men0 = members(&w, q);
+    let t0 = w.tick();
+    while w.entities().kind[v.index()] != EntityKind::Vehicle {
+        assert!(w.tick() < t0 + 30 * 40, "not re-crewed");
+        w.step(&[]);
+    }
+    let left = members(&w, q);
+    let boarder = *men0
+        .iter()
+        .find(|m| !left.contains(m))
+        .expect("a man boards");
+    let stayer = left[0];
+    // Second run: hold `who` stowing (no aim to break) until the tick the
+    // men board, then save and load.
+    let run = |who: SimId| {
+        let (mut w, q, v) = scene();
+        loop {
+            let s = w.tick();
+            assert!(s < t0 + 30 * 40, "not re-crewed");
+            assert!(w.edit_squad(q, |sq| {
+                sq.rg = Some(RgState {
+                    man: Some(who),
+                    stow: 60,
+                    ..RgState::default()
+                })
+            }));
+            w.step(&[]);
+            if w.entities().kind[v.index()] == EntityKind::Vehicle {
+                break;
+            }
+        }
+        let r = rg(&w, q);
+        let w2 = World::load(&w.save(), 1).expect("the save loads");
+        assert_eq!(w2.full_state_hash(), w.full_state_hash());
+        r.man
+    };
+    assert_eq!(run(boarder), None, "the boarder's state ends");
+    assert_eq!(run(stayer), Some(stayer), "control: a man who stays");
+}
+
+/// Review A-2: entity ids are not generational. A target whose slot now
+/// holds a man of the firer's own side breaks the aim. Control: the
+/// enemy target keeps it.
+#[test]
+fn grenade_aim_breaks_when_the_target_slot_turns_friendly() {
+    let run = |own: bool| {
+        let (mut w, q, t) = rg_scene(1, 100, true, |_| {});
+        let t0 = w.tick();
+        while rg(&w, q).aim < 10 {
+            assert!(w.tick() < t0 + 30 * 30, "no aim");
+            w.step(&[]);
+        }
+        if own {
+            w.state.entities.owner[t.index()] = PlayerId(1);
+            w.edit_soldier(t, |_, _| {});
+        }
+        steps(&mut w, 2);
+        rg(&w, q).target
+    };
+    assert_eq!(run(true), None, "own man in the slot: aim broken");
+    assert!(run(false).is_some(), "control: still aiming");
+}
+
+/// Review A-3: a fired rifle grenade is not a Panzerfaust (nor a rocket)
+/// in `ammo.fired`; it is counted in `s11b.rg_fired`. Control: the
+/// grenade was fired.
+#[test]
+fn rifle_grenade_is_not_counted_as_a_panzerfaust() {
+    use crate::supply::fired_class as f;
+    let (mut w, _, _) = rg_scene(1, 100, false, |_| {});
+    assert_eq!(shots(&mut w, 1, 30).len(), 1, "control: one fired");
+    let a = &w.game().unwrap().players[1].ammo.fired;
+    assert_eq!((a[f::PANZERFAUST], a[f::ROCKET]), (0, 0));
+}

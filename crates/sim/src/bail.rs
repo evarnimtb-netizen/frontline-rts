@@ -936,6 +936,12 @@ impl MatchState {
             {
                 (p.man, p.target, p.aim) = (None, None, 0);
             }
+            // S11b (review A-1): so does a rifle grenadier's aim or stow.
+            if let Some(r) = &mut sq.rg
+                && r.man == Some(m)
+            {
+                (r.man, r.target, r.aim, r.stow) = (None, None, 0, 0);
+            }
             for queue in &mut self.path_queue.queues {
                 queue.retain(|r| *r != PathReq::Unit(m));
             }
