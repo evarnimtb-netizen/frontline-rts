@@ -487,7 +487,7 @@ crew_pickup_reach_m = 30
 # S11b G1 switch (docs/slices/S11b.md 2): squads are issued their rifle
 # grenades (0: the setup drops the rifle_grenade kind from every squad type;
 # 0..1). Build C turns it on (ablation rg_off).
-rifle_grenades = 0
+rifle_grenades = 1
 # S11b G3: a squad fires at most one rifle grenade this often (s; plan value,
 # S11b-13; 0..600).
 rifle_grenade_gap_s = 15

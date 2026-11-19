@@ -14,13 +14,27 @@
 //!   the squad in the open, then in a dug trench. `<gun>.open_loss_pct`,
 //!   `trench_vs_open_pct`, `rounds_fired`; control: the trench dug but the
 //!   squad 8 m in front of it, in the open (as S11a1's control).
-//! - `rg` (T152; G1-G3) and `light` (M2): Build C chunk 2; null until built.
-use anyhow::Result;
+//! - `rg` (T152; G1-G3): each faction's first line squad halted at
+//!   (400, 500) facing the other's at (500, 500), 100 m, for 60 s; the
+//!   target squad's own rifle grenades taken away (only the firer's count).
+//!   Run 1 the target in the open, run 2 in a dug trench.
+//!   `<f>.fired_per_run` (the firer's `s11b.rg_fired`, open run),
+//!   `grenades_carried` (the firer's at the start), `open_loss_pct`,
+//!   `trench_vs_open_pct` (the target's men lost); control `rifle_grenades`
+//!   0 (the kind stripped from every squad type, as the setup does):
+//!   `fired_per_run` and `open_loss_pct` (the rifles' share of the losses).
+//! - `light` (M2): each faction's light and heavy mortar team fires 8
+//!   bombs on the enemy's first line squad in the open 250 m away (the
+//!   point marked): `<tube>.vs_heavy_pct` (the target's losses under the
+//!   light tube as % of under the heavy one), `rounds_fired` (bursts).
+use anyhow::{Result, anyhow};
+use frontline_content::{ItemKind, MatchSetup};
+use frontline_sim::{FxVec2, PlayerId, SquadId, World};
 use serde::Serialize;
 
-use super::FortifyArgs;
 use super::s10b::{fields, pct};
-use super::s11a1::{barrage_once, mask_once, par_seeds, ratio};
+use super::s11a1::{barrage_once, mask_once, mission, order, par_seeds, ratio, run_out, spawn};
+use super::{EAST, FortifyArgs, WEST, at, members, world_with};
 
 /// The field howitzer cards, by player (Germany, USA).
 pub const HOWS: [&str; 2] = ["ww2:ger_lefh18_squad", "ww2:usa_105mm_m2a1_squad"];
@@ -68,17 +82,60 @@ pub struct HowBarrageRow {
     pub m2a1: HowBarrageGun,
 }
 
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct RgControl {
+    pub fired_per_run: Option<f64>,
+    pub open_loss_pct: Option<f64>,
+}
+
+/// One faction's `rg` numbers.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct RgSide {
+    pub fired_per_run: Option<f64>,
+    pub grenades_carried: Option<f64>,
+    pub open_loss_pct: Option<f64>,
+    pub trench_loss_pct: Option<f64>,
+    pub trench_vs_open_pct: Option<f64>,
+    pub control: RgControl,
+}
+
+/// `fortify10.s11b.rg`.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct RgRow {
+    pub germany: RgSide,
+    pub usa: RgSide,
+}
+
+/// One light tube's `light` numbers.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct LightTube {
+    pub loss_pct: Option<f64>,
+    pub heavy_loss_pct: Option<f64>,
+    pub vs_heavy_pct: Option<f64>,
+    /// Bursts of the light tube's runs.
+    pub rounds_fired: Option<f64>,
+}
+
+/// `fortify10.s11b.light`.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct LightRow {
+    pub kz_grw42: LightTube,
+    pub m2_60mm: LightTube,
+}
+
 /// The S11b rows (`fortify10.s11b`).
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct S11bReport {
     pub how_mask: HowMaskRow,
     pub how_barrage: HowBarrageRow,
+    pub rg: RgRow,
+    pub light: LightRow,
 }
 
 /// Summary lines, one per row.
 pub fn summary_text(r: &S11bReport) -> String {
     let v = serde_json::to_value(r).unwrap_or_default();
-    ["how_mask", "how_barrage"]
+    ["how_mask", "how_barrage", "rg", "light"]
         .iter()
         .map(|k| format!("  S11b {k}: {}\n", fields(&v[*k])))
         .collect()
@@ -159,11 +216,212 @@ pub fn how_barrage_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Resul
     })
 }
 
+/// `rg`: the run length (s) and the squads' distance (m).
+const RG_S: u64 = 60;
+const RG_GAP_M: i32 = 100;
+
+/// The setup's rifle-grenade switch at 0 (G1: the kind dropped from every
+/// squad type, as `content/src/setup.rs` does at resolve).
+fn no_rifle_grenades(s: &mut MatchSetup) {
+    let k = ItemKind::RifleGrenade.index();
+    s.rules.items.rifle_grenades = 0;
+    for t in s.squad_types.iter_mut() {
+        t.items[k] = None;
+        for m in t.members.iter_mut() {
+            m.items[k] = 0;
+        }
+    }
+}
+
+/// Rifle grenades squad `q`'s living men carry.
+fn grenades(w: &World, q: SquadId) -> u32 {
+    let k = ItemKind::RifleGrenade.index();
+    members(w, q)
+        .iter()
+        .map(|m| w.entities().kit()[m.index()].items[k] as u32)
+        .sum()
+}
+
+/// Moves player `p`'s start squads but `keep` to a corner.
+fn park_others(w: &mut World, p: u8, keep: SquadId) {
+    let corner = if p == 0 { at(60, 950) } else { at(964, 950) };
+    for (id, q) in w.game().unwrap().squads().clone() {
+        if id != keep && q.owner == PlayerId(p) {
+            w.place_squad(id, corner, if p == 0 { EAST } else { WEST });
+        }
+    }
+}
+
+/// One `rg` run, player `fp` firing: (grenades fired, carried at the
+/// start, target men lost, target men).
+fn rg_once(args: &FortifyArgs, seed: u64, fp: u8, trench: bool, on: bool) -> Result<[u32; 4]> {
+    let mut w = world_with(args, seed, |s| {
+        super::s11a1::flat(s);
+        if !on {
+            no_rifle_grenades(s);
+        }
+    })?;
+    let tp = 1 - fp;
+    let (fx, tx, y) = (400, 400 + RG_GAP_M, 500);
+    let firer = super::squad(&w, fp, "line")?;
+    let target = super::squad(&w, tp, "line")?;
+    park_others(&mut w, fp, firer);
+    park_others(&mut w, tp, target);
+    if trench {
+        w.dig_trench_now(&[at(tx, y + 16), at(tx, y - 16)], -1);
+    }
+    w.place_squad(firer, at(fx, y), EAST);
+    w.place_squad(target, at(tx, y), WEST);
+    let k = ItemKind::RifleGrenade.index();
+    for m in members(&w, target) {
+        w.edit_soldier(m, |kit, _| kit.items[k] = 0);
+    }
+    let carried = grenades(&w, firer);
+    let men = members(&w, target).len() as u32;
+    let g = w.game().unwrap();
+    let (f0, l0) = (
+        g.players()[fp as usize].s11b.rg_fired,
+        g.players()[tp as usize].losses,
+    );
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    for _ in 0..RG_S * hz {
+        w.step(&[]);
+    }
+    let g = w.game().unwrap();
+    Ok([
+        g.players()[fp as usize].s11b.rg_fired - f0,
+        carried,
+        g.players()[tp as usize].losses - l0,
+        men,
+    ])
+}
+
+/// The `rg` row (module docs).
+pub fn rg_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<RgRow> {
+    // [side][open, trench, control open][fired, carried, lost, men]
+    let mut t = [[[0u32; 4]; 3]; 2];
+    let mut runs = 0u32;
+    let all = par_seeds(seeds, |seed| {
+        let mut v = [[[0u32; 4]; 3]; 2];
+        for fp in 0..2u8 {
+            v[fp as usize][0] = rg_once(args, seed, fp, false, true)?;
+            v[fp as usize][1] = rg_once(args, seed, fp, true, true)?;
+            v[fp as usize][2] = rg_once(args, seed, fp, false, false)?;
+        }
+        Ok(v)
+    })?;
+    for v in all {
+        runs += 1;
+        for (side, kinds) in v.iter().enumerate() {
+            for (kind, r) in kinds.iter().enumerate() {
+                for (x, y) in t[side][kind].iter_mut().zip(r) {
+                    *x += y;
+                }
+            }
+        }
+    }
+    let side = |p: usize| {
+        let per = |v: u32| (runs > 0).then(|| (v as f64 * 10.0 / runs as f64).round() / 10.0);
+        let loss = |k: usize| pct(t[p][k][2], t[p][k][3]);
+        RgSide {
+            fired_per_run: per(t[p][0][0]),
+            grenades_carried: per(t[p][0][1]),
+            open_loss_pct: loss(0),
+            trench_loss_pct: loss(1),
+            trench_vs_open_pct: ratio(loss(1), loss(0)),
+            control: RgControl {
+                fired_per_run: per(t[p][2][0]),
+                open_loss_pct: loss(2),
+            },
+        }
+    };
+    Ok(RgRow {
+        germany: side(0),
+        usa: side(1),
+    })
+}
+
+/// The light and heavy mortar cards, by player (Germany, USA).
+const LIGHT: [&str; 2] = ["ww2:ger_kz_grw42_team", "ww2:usa_60mm_mortar_squad"];
+const HEAVY: [&str; 2] = ["ww2:ger_mortar_team", "ww2:usa_mortar_team"];
+/// `light`: bombs a run and the distance (m).
+const LIGHT_ROUNDS: u16 = 8;
+const LIGHT_RANGE_M: i32 = 250;
+
+/// One `light` run of player `p`'s tube `card`: (target men lost, men,
+/// bursts).
+fn light_once(args: &FortifyArgs, seed: u64, p: u8, card: &str) -> Result<[u32; 3]> {
+    let mut w = world_with(args, seed, super::s11a1::flat)?;
+    let what = format!("s11b.light seed {seed} {card}");
+    let tp = 1 - p;
+    let (mx, tx, y) = (300, 300 + LIGHT_RANGE_M, 500);
+    let target = super::squad(&w, tp, "line")?;
+    park_others(&mut w, tp, target);
+    w.place_squad(target, at(tx, y), WEST);
+    let sq = spawn(&mut w, p, card, at(mx, y), EAST)?;
+    let point: FxVec2 = at(tx, y);
+    if !w.mark_intel(PlayerId(p), point) {
+        anyhow::bail!("{what}: could not mark the target");
+    }
+    for _ in 0..2 * w.match_setup().unwrap().tick_hz {
+        w.step(&[]);
+    }
+    let men = members(&w, target).len() as u32;
+    let l0 = w.game().unwrap().players()[tp as usize].losses;
+    w.enable_burst_log();
+    if let Some(r) = order(&mut w, p, sq, point, LIGHT_ROUNDS) {
+        anyhow::bail!("{what}: refused {r}");
+    }
+    let id = mission(&w, sq)
+        .ok_or_else(|| anyhow!("{what}: no mission"))?
+        .id;
+    let bursts = run_out(&mut w, sq, id, &what)?.len() as u32;
+    let lost = w.game().unwrap().players()[tp as usize].losses - l0;
+    Ok([lost, men, bursts])
+}
+
+/// The `light` row (module docs).
+pub fn light_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<LightRow> {
+    let mut t = [[[0u32; 3]; 2]; 2]; // [side][light, heavy][lost, men, bursts]
+    let all = par_seeds(seeds, |seed| {
+        let mut v = [[[0u32; 3]; 2]; 2];
+        for p in 0..2u8 {
+            v[p as usize][0] = light_once(args, seed, p, LIGHT[p as usize])?;
+            v[p as usize][1] = light_once(args, seed, p, HEAVY[p as usize])?;
+        }
+        Ok(v)
+    })?;
+    for v in all {
+        for (p, tubes) in v.iter().enumerate() {
+            for (k, r) in tubes.iter().enumerate() {
+                for (x, y) in t[p][k].iter_mut().zip(r) {
+                    *x += y;
+                }
+            }
+        }
+    }
+    let tube = |p: usize| {
+        let loss = |k: usize| pct(t[p][k][0], t[p][k][1]);
+        LightTube {
+            loss_pct: loss(0),
+            heavy_loss_pct: loss(1),
+            vs_heavy_pct: ratio(loss(0), loss(1)),
+            rounds_fired: (t[p][0][1] > 0).then_some(t[p][0][2] as f64),
+        }
+    };
+    Ok(LightRow {
+        kz_grw42: tube(0),
+        m2_60mm: tube(1),
+    })
+}
+
 /// Every S11b row.
 pub fn s11b_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S11bReport> {
     Ok(S11bReport {
         how_mask: how_mask_row(args, seeds.clone())?,
-        how_barrage: how_barrage_row(args, seeds)?,
+        how_barrage: how_barrage_row(args, seeds.clone())?,
+        rg: rg_row(args, seeds.clone())?,
+        light: light_row(args, seeds)?,
     })
 }
 
@@ -186,6 +444,14 @@ mod tests {
         for g in [&r.how_barrage.lefh, &r.how_barrage.m2a1] {
             assert!(g.rounds_fired.unwrap() > 0.0);
             assert_ne!(g.trench_vs_open_pct, g.control.trench_vs_open_pct);
+        }
+        for (f, g) in [("germany", &r.rg.germany), ("usa", &r.rg.usa)] {
+            assert!(g.fired_per_run.unwrap() >= 1.0, "{f} fired");
+            assert_eq!(g.control.fired_per_run, Some(0.0), "{f} control");
+        }
+        for t in [&r.light.kz_grw42, &r.light.m2_60mm] {
+            assert!(t.rounds_fired.unwrap() > 0.0);
+            assert!(t.heavy_loss_pct.is_some());
         }
     }
 
