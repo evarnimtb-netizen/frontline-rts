@@ -7,7 +7,7 @@ Branch `claude/project-thread-e7nsak`. Another agent may work in this checkout: 
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
 **State: B2-2 done 2026-11-19. Applied: `[items] rifle_grenade_gap_s` 15 -> 25 (`mods/ww2/defs/rules/skirmish.toml`),
-apply commit: the "B2-2: rifle_grenade_gap_s 15 -> 25" commit (hash in the line after "Chunk 2b, second try" below).**
+apply commit `fc14f52` (the judge reverts exactly this commit if it fails).**
 - Why: the plan's own screen rule and stop rule named NO candidate. `rg_gap25` was applied under the separate rule R1-R4
   that the orchestrator set before the fresh blocks were read (commit `406a5cb`), for the HE cap (T8a, 26.3) only.
   Germany's gain of +2.5 is inside the noise (z +0.75) and is NOT claimed.
@@ -76,7 +76,7 @@ Chunk 2b, second try (orchestrator allowed the two tests): `s11b_tests.rs` lines
 rules (`setup.rules.items.rifle_grenade_gap_ticks`, reject at key + 1, load at key); 692 / 695 left (they set the gap
 themselves). `s11b_content.rs` line 46 pins the shipped `25 * 30`. Key 25 with `# B2:` comment; `B2.toml` regenerated
 (`--applied`, `target/s11b-measure`); canonical snapshot re-blessed (one line); setup-bytes BASELINE and `report.rs` did not
-change (test passed). Check: only `ipv6_loopback_handshake` fails. Proof `target/b2/s2001/applied.json`: `160 160 160`.
+change (test passed). Check: only `ipv6_loopback_handshake` fails. Proof `target/b2/s2001/applied.json`: `160 160 160`. Apply commit `fc14f52`.
 
 ## Plan (2026-11-19)
 Evidence read: `target/s11a2-measure` (three 160 sets and the 40-set controls), `target/s10c-verify`, B1 log history
