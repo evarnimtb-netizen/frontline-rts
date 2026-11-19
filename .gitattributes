@@ -1,0 +1,7 @@
+# Check out every text file with LF line endings on every OS.
+#
+# GitHub's Windows runners (and most Windows Git installs) default to
+# core.autocrlf=true, which turns the shipped mods/ww2 TOML into CRLF on
+# checkout. The content tests edit those files with "\n"-based patterns
+# (e.g. s7_schema_errors_are_reported), so they fail on Windows only.
+* text=auto eol=lf

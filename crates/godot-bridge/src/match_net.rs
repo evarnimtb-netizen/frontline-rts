@@ -730,7 +730,9 @@ mod tests {
             NetState::from_u8(c.net_state.load(Ordering::Relaxed)),
             NetState::Desync
         );
-        let slot = dir.join("desync/7-0000abcd/slot0");
+        // Joined per component: the dump path is compared as a string, and
+        // on Windows a "/" inside one `join` would not match its "\\".
+        let slot = dir.join("desync").join("7-0000abcd").join("slot0");
         assert_eq!(
             c.net.lock().unwrap().desync_dump.as_deref(),
             Some(slot.to_str().unwrap())
