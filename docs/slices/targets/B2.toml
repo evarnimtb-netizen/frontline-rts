@@ -98,14 +98,14 @@ both_bases = true
 minutes = 45
 rules_override = ["docs/slices/targets/S11a1-ablations/a_off.toml", "docs/slices/targets/S11a2-ablations/b_off.toml", "docs/slices/targets/S11b-ablations/s11b_off.toml"]
 
-[runs.skirmish40_b_off]    # control: every S11a2 switch off (must equal the S11a1 result)
+[runs.skirmish40_b_off]    # control: every S11a2 switch off, the S11b switches as shipped (not the S11a1 result since S11b)
 kind = "skirmish"
 seeds = 20
 both_bases = true
 minutes = 45
 rules_override = ["docs/slices/targets/S11a2-ablations/b_off.toml"]
 
-[runs.skirmish40_ff_off]   # control: friendly_fire 0 and ff_safe 0 (mortars as S11a1; counter-battery stays on)
+[runs.skirmish40_ff_off]   # control: friendly_fire 0 and ff_safe 0 (counter-battery and the S11b switches as shipped)
 kind = "skirmish"
 seeds = 20
 both_bases = true

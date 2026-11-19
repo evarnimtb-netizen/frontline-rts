@@ -368,19 +368,27 @@ impl super::Planner<'_> {
     /// than `how_max` own howitzers alive or pending): the first roster
     /// card with `ai_weight > 0`, role `inf_gun` and the tag, inside its
     /// own `how_income_pct` share (else `how_pct_holds`), with
-    /// `how_reserve_mp` left of the manpower less pending call-ins (else
-    /// `how_mp_holds`). No pot is held for it.
+    /// `how_reserve_mp` left of the manpower less pending call-ins and the
+    /// held gun pots (else `how_mp_holds`). No pot is held for it; none
+    /// with `buy` 0.
     fn buy_how(&mut self) {
         let s = &self.g.setup;
         let a = &s.rules.ai.arty;
         let hz = s.tick_hz.max(1) as u64;
+        // S11b fix C-2: with `buy` 0 no gun gets a record (`arty`), so a
+        // bought howitzer would never fire: no howitzer either.
         if a.how == 0
+            || a.buy == 0
             || self.tick < a.how_after_s as u64 * hz
             || self.of_role_where(VehicleRole::InfGun, |t| self.is_how(t)) >= a.how_max as usize
         {
             return;
         }
-        let mp = self.mp_less_pending();
+        // S11b fix C-1: the manpower held for the AT gun and the infantry
+        // gun stays out of reach, as in `buy_fo` and `buy`.
+        let mp = self
+            .mp_less_pending()
+            .saturating_sub(self.held_pots().max(0) as u64);
         let (pct, reserve) = (a.how_income_pct, a.how_reserve_mp);
         let g = self.g;
         match self.buy_role_where(

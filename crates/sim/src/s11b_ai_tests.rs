@@ -56,6 +56,14 @@ fn how_world(
     w
 }
 
+/// `[ai.arty] buy` 1 (a howitzer needs it since fix C-2) with the
+/// infantry gun out of reach (`after_s` 3600, its maximum): no leIG buy
+/// and no pot held for it (the runs last at most 90 s).
+fn no_inf_gun(s: &mut frontline_content::MatchSetup) {
+    s.rules.ai.arty.buy = 1;
+    s.rules.ai.arty.after_s = 3600;
+}
+
 fn counters(w: &World) -> crate::ai::AiCounters {
     w.game().unwrap().ai[0].as_ref().unwrap().counters.clone()
 }
@@ -96,7 +104,10 @@ fn note_call_ins(w: &World, seen: &mut std::collections::BTreeMap<u32, u16>) {
 #[test]
 fn ai_buys_a_howitzer_inside_its_own_share() {
     let run = |how: u32, pct: u32| {
-        let mut w = how_world(1, how, 5000, |s| s.rules.ai.arty.how_income_pct = pct);
+        let mut w = how_world(1, how, 5000, |s| {
+            no_inf_gun(s);
+            s.rules.ai.arty.how_income_pct = pct;
+        });
         steps(&mut w, 30 * 90);
         let k = counters(&w);
         (k.how_buys, own_of(&w, LEFH).len(), k.how_pct_holds > 0)
@@ -111,13 +122,49 @@ fn ai_buys_a_howitzer_inside_its_own_share() {
 #[test]
 fn ai_howitzer_buy_keeps_the_reserve() {
     let run = |mp: u32| {
-        let mut w = how_world(1, 1, mp, |_| {});
+        let mut w = how_world(1, 1, mp, no_inf_gun);
         steps(&mut w, 30 * 5);
         let k = counters(&w);
         (k.how_buys, k.how_mp_holds > 0)
     };
     assert_eq!(run(480 + 299), (0, true), "the reserve says no");
     assert_eq!(run(480 + 300), (1, false), "control: enough");
+}
+
+/// S11b fix C-2: with `[ai.arty] buy` 0 no gun gets an AI record, so the
+/// AI buys no howitzer it could not fire. Control: `buy` 1.
+#[test]
+fn ai_buys_no_howitzer_with_gun_buy_off() {
+    let run = |buy: u32| {
+        let mut w = how_world(1, 1, 5000, |s| {
+            no_inf_gun(s);
+            s.rules.ai.arty.buy = buy;
+        });
+        steps(&mut w, 30 * 90);
+        (counters(&w).how_buys, own_of(&w, LEFH).len())
+    };
+    assert_eq!(run(0), (0, 0), "buy 0: no howitzer");
+    assert_eq!(run(1), (1, 1), "control: buy 1");
+}
+
+/// S11b fix C-1: the howitzer buy leaves the infantry gun's pot alone.
+/// `income_max_pct` 7 of 4,000 MP holds 280 MP for the leIG 18 (320 MP:
+/// the share says no to the leIG itself), so 480 + 300 + 279 MP leaves
+/// 779 for a howitzer needing 780 (`how_mp_holds`). Control:
+/// `income_max_pct` 0 (no pot): the same manpower buys it.
+#[test]
+fn ai_howitzer_buy_leaves_the_gun_pots_alone() {
+    let run = |pct: u32| {
+        let mut w = how_world(1, 1, 480 + 300 + 279, |s| {
+            s.rules.ai.arty.buy = 1;
+            s.rules.ai.arty.income_max_pct = pct;
+        });
+        steps(&mut w, 30 * 5);
+        let k = counters(&w);
+        (k.how_buys, k.arty_buys, k.how_mp_holds > 0)
+    };
+    assert_eq!(run(7), (0, 0, true), "the leIG pot is held");
+    assert_eq!(run(0), (1, 0, false), "control: no pot");
 }
 
 /// H1 (review 3) and spec 5 "the infantry gun and a squad are bought in
