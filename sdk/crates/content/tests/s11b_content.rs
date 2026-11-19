@@ -43,7 +43,7 @@ fn load_rejects_bad_s11b_keys() {
             s.rules.items.rifle_grenades,
             s.rules.items.rifle_grenade_gap_ticks
         ),
-        (1, 15 * 30)
+        (1, 25 * 30)
     );
     // Absent keys read the same values.
     let d = AiArtyTuning::default();

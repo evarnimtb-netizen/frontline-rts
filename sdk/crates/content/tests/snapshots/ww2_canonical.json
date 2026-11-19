@@ -2542,7 +2542,7 @@
       "items": {
         "crew_pickup_reach_m": 30,
         "resupply_s": 20,
-        "rifle_grenade_gap_s": 15,
+        "rifle_grenade_gap_s": 25,
         "rifle_grenades": 1,
         "single_shot_gap_s": 3,
         "throw": {

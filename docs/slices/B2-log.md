@@ -6,20 +6,25 @@ Branch `claude/project-thread-e7nsak`. Another agent may work in this checkout: 
 (`git commit -m ... -- FILES`), never `git add -A`, never `target/`, `.claude/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: B2-2 stopped 2026-11-19 at chunk 2b step 3; NO default changed (edit reverted). `rg_gap25` PASSED the fixed
-rule R1-R4 on the fresh 320 (see "B2-2 confirm"), but `check.sh quick 8d2731b` with the key at 25 failed beyond the expected
-BASELINE: two tests pin the shipped gap at 15 s, outside this stage's files, so by the contract: revert, log, stop.**
-- Fresh line: n=320 base 41.9 % lever 44.4 % diff +2.5 up 61 down 53 z +0.75 blocks +6.9 -1.9 | floors ok; HE 26.66 ->
-  25.69 (2101 26.56 -> 25.77, 2201 26.77 -> 25.62). All line (description): n=480 diff +2.5 z +0.93 blocks +2.5 +6.9 -1.9.
-- Check failures (log `target/b2/check.log`): (a) expected, `resolved_defs` canonical view `rifle_grenade_gap_s 15 -> 25`
-  (BLESS=1); (b) known, `udp ipv6_loopback_handshake` (no IPv6 here); (c) NOT allowed: `crates/sim/src/s11b_tests.rs`
-  `load_rejects_bad_s11b_state` ("gap beyond the gap key: loaded"; lines 224 and 255 use `15 * 30`) and
-  `sdk/crates/content/tests/s11b_content.rs` `load_rejects_bad_s11b_keys` (line 46 asserts `(1, 15 * 30)`, got (1, 750)).
-  Lines 692 / 695 of `s11b_tests.rs` also name `15 * 30` but passed.
-- Next for the orchestrator: decide whether the stage may also change those two test files (15 -> 25 at the lines above).
-  If yes, rerun chunk 2b from step 1 (the rule result stands; no set needs playing again except the 160 proof on block 2001).
-  If no: nothing applied; `measure.sh` and the held-out block are not run.
-- BASE `88117de`, world key `fe6b1dcdb6db8293c09b6077`; BASE 480 measure 44.17 % (45.00 / 43.75 / 43.75). Block S base
+**State: B2-2 done 2026-11-19. Applied: `[items] rifle_grenade_gap_s` 15 -> 25 (`mods/ww2/defs/rules/skirmish.toml`),
+apply commit: the "B2-2: rifle_grenade_gap_s 15 -> 25" commit (hash in the line after "Chunk 2b, second try" below).**
+- Why: the plan's own screen rule and stop rule named NO candidate. `rg_gap25` was applied under the separate rule R1-R4
+  that the orchestrator set before the fresh blocks were read (commit `406a5cb`), for the HE cap (T8a, 26.3) only.
+  Germany's gain of +2.5 is inside the noise (z +0.75) and is NOT claimed.
+- Fresh 320: base 41.9 % lever 44.4 % diff +2.5 up 61 down 53 z +0.75 blocks +6.9 -1.9 | floors ok; HE 26.66 -> 25.69
+  (2101 26.56 -> 25.77, 2201 26.77 -> 25.62). All 480 (description): diff +2.5 z +0.93 blocks +2.5 +6.9 -1.9 | floors ok.
+  R1-R4 all pass; contract rule 1-2 fails (z, block 2201, 44.4 < 45), as expected.
+- `check.sh quick 8d2731b`: 1139 passed, 1 failed = `ipv6_loopback_handshake` (known, no IPv6 here). Proof on block 2001
+  with the new default and no override against the override run: `160 160 160`. New world key `8428a4cf335605e992a35918`.
+- Next, the orchestrator runs verbatim:
+  `BASELINE=target/s11b-measure tools/measure.sh target/b2-measure docs/slices/targets/B2.toml`
+  `tools/batch.sh target/b2-measure/skirmish160_h5001.json -- skirmish --ai-vs-ai --seed 5001 --seeds 80 --both-bases --summary --minutes 45`
+  Judge (`B2-balance.md` 5): Germany pooled 480 in 45-55, each 160 set 40-60, no match without a winner, paired gain against
+  BASE's measure on the same seeds above zero, no hard target that passes in BASE's measure now missing (re-based rows apart);
+  else revert the apply commit. Then held-out 5001-5080 once: 40-60 on the set, 45-55 on the pool of 640; fail: report, no
+  retune. The T5f row still names the old file and reads SKIP: read the held-out share from the JSON.
+- Buys a match before / after (fresh blocks): "B2-2 confirm" below and `B2-results/counters_rg_gap25_fresh.txt`.
+- Run 1 screen (block 2001): BASE `88117de`, world key `fe6b1dcdb6db8293c09b6077`; BASE 480 measure 44.17 % (45.00 / 43.75 / 43.75). Block S base
   41.9 %, no winner 0, HE 26.19, median 18.8 min. Paired SE on 160 about 4.9 points.
 | lever | Ger % | gain | up/down | z | HE | floors | own counter (a match, G / U) | verdict |
 |---|---|---|---|---|---|---|---|---|
@@ -29,14 +34,6 @@ BASELINE: two tests pin the shipped gap at 15 s, outside this stage's files, so 
 | `rg_gap25` | 44.4 | +2.5 | 28/24 | +0.55 | 24.7 | FAIL G mortar 8.0 (bound 8.2), US veh 31.1 (30) | grenades 6.38->5.75 / 7.86->6.81 | separate candidate |
 | `own_57mm_truck_tow` | 58.1 | +16.2 | 39/13 | +3.61 | 29.3 | FAIL HE 29.3 | US veh-MG kills 12.2->8.5, M3A1 5.74->0.06 | owner class |
 | `diag_ger_start3` | 61.2 | +19.4 | 57/26 | +3.40 | 27.2 | FAIL HE 27.2 | pop at 5 min 49.9->55.8 | diagnostic |
-- Run 1 (block 2001): `rg_gap25` HE 26.19 -> 24.71, US grenade kill share 7.38 -> 5.76 (bound 5), G 3.95 -> 3.63; its two
-  block-2001 floor misses (G mortar 0.2 under, US vehicle 1.1 over) do not recur on F1 / F2. H1: Germany has MORE men at 5
-  min (49.9 / 43.7) and foot squads (7 / 9 / 8.5 vs 5 / 7 / 6.9 at 1 / 3 / 5 min); USA leads at 10 min (66.9 / 64.1); a third
-  free Gruppe +19.4. H3: CCKW tow removes M3A1 kills (5.7 a match), +16.2, tow trucks run as supply (drops 1.9 -> 6.3, flees
-  67 -> 578); HE 29.3. Owner class all over 47-53 and the HE cap (T8a binds most levers that help Germany).
-- Not played: `mix_line42`, `ger_line_vg150`, `own_ger_price95`, `mix_mg30`, `own_pop170`, `arty_share30`,
-  `s11b_light_usa_w25_ger_on` (load-checked only); no combination. Files: `B2-results/paired.txt`, `s2*_*.csv`,
-  `counters_*.txt` (`target/b2/counters.py`, not committed), `detail_*.txt`. No script or lever key needed a fix.
 ## B2-2 confirm (2026-11-19; fresh blocks F1 2101-2180, F2 2201-2280; `BATCH_JOBS=4`)
 Chunk 0: head `cb3cb88`, `tools/batch.sh world` = `fe6b1dcdb6db8293c09b6077` (run 1's key): screen valid. C1 `rg_gap25`, no C2.
 **Decision rule for `rg_gap25`, fixed by the orchestrator before any fresh block was read (replaces contract rule 1-2 for
@@ -75,6 +72,11 @@ Chunk 2b: key set to 25 with its `# B2:` comment, `B2.toml` regenerated (`--appl
 15 s (`s11b_tests.rs` `load_rejects_bad_s11b_state`, `s11b_content.rs` `load_rejects_bad_s11b_keys`), outside this stage's
 files. By the contract ("any other failure"): both edits reverted (`git checkout --`), no BASELINE refresh, no proof set,
 no apply commit. Stop.
+Chunk 2b, second try (orchestrator allowed the two tests): `s11b_tests.rs` lines 224 / 255 now read the gap from the loaded
+rules (`setup.rules.items.rifle_grenade_gap_ticks`, reject at key + 1, load at key); 692 / 695 left (they set the gap
+themselves). `s11b_content.rs` line 46 pins the shipped `25 * 30`. Key 25 with `# B2:` comment; `B2.toml` regenerated
+(`--applied`, `target/s11b-measure`); canonical snapshot re-blessed (one line); setup-bytes BASELINE and `report.rs` did not
+change (test passed). Check: only `ipv6_loopback_handshake` fails. Proof `target/b2/s2001/applied.json`: `160 160 160`.
 
 ## Plan (2026-11-19)
 Evidence read: `target/s11a2-measure` (three 160 sets and the 40-set controls), `target/s10c-verify`, B1 log history
@@ -90,6 +92,15 @@ rule dropped; `own_57mm_truck_tow` added (owner class). 2 H1 marked as a selecti
 `paired.py` reads floors on the JSON blocks it has. 9 Run 1 six sets, run 2 at most seven. 10 `ger_line_vg150` is owner class.
 
 ## B2-1 screen (2026-11-19; block S 2001-2080, 160 matches a set, `BATCH_JOBS=4`)
+Summary (moved from the top block by B2-2):
+- Run 1 (block 2001): `rg_gap25` HE 26.19 -> 24.71, US grenade kill share 7.38 -> 5.76 (bound 5), G 3.95 -> 3.63; its two
+  block-2001 floor misses (G mortar 0.2 under, US vehicle 1.1 over) do not recur on F1 / F2. H1: Germany has MORE men at 5
+  min (49.9 / 43.7) and foot squads (7 / 9 / 8.5 vs 5 / 7 / 6.9 at 1 / 3 / 5 min); USA leads at 10 min (66.9 / 64.1); a third
+  free Gruppe +19.4. H3: CCKW tow removes M3A1 kills (5.7 a match), +16.2, tow trucks run as supply (drops 1.9 -> 6.3, flees
+  67 -> 578); HE 29.3. Owner class all over 47-53 and the HE cap (T8a binds most levers that help Germany).
+- Not played: `mix_line42`, `ger_line_vg150`, `own_ger_price95`, `mix_mg30`, `own_pop170`, `arty_share30`,
+  `s11b_light_usa_w25_ger_on` (load-checked only); no combination. Files: `B2-results/paired.txt`, `s2*_*.csv`,
+  `counters_*.txt` (`target/b2/counters.py`, not committed), `detail_*.txt`. No script or lever key needed a fix.
 BASE `88117de` (S11b fix done, its 480 measure `target/s11b-measure`: Germany 44.17 %, sets 45.00 / 43.75 / 43.75, no winner
 0). World key `fe6b1dcdb6db8293c09b6077` (release CLI up to date, no rebuild needed).
 Added levers (after S11b): `rg_gap25` (`[items] rifle_grenade_gap_s` 15 -> 25; aims at T8a HE cap 26.3 and the US grenade kill
