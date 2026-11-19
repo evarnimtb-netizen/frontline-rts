@@ -28,10 +28,11 @@ fn load_rejects_bad_s11b_keys() {
     let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
     let s = defs.resolve(&req).unwrap();
     let a = &s.rules.ai.arty;
-    // Build C: ww2 turns every switch on, the other keys at the spec values.
+    // Build C: ww2 turns every switch on, the other keys at the spec values;
+    // the fix stage turns the AI's light mortars off (S11b-14).
     assert_eq!(
         (a.cb_alternate, a.buy_pending, a.how, a.light),
-        (1, 1, 1, 1)
+        (1, 1, 1, 0)
     );
     assert_eq!(
         (a.how_after_s, a.how_max, a.how_income_pct, a.how_reserve_mp),

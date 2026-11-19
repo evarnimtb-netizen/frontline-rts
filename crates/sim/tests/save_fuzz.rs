@@ -499,7 +499,7 @@ fn save_roundtrip_carries_s11a2_state() {
     println!("s11a2 roundtrip: marker and counter-fire held at tick {tick}");
 }
 
-/// S11b Build C: a played save with the shipped S11b switches (howitzer
+/// S11b Build C: a played save with the S11b switches on (howitzer
 /// buy, light mortars, rifle grenades, counter-fire turns, pending
 /// call-ins) carries real S11b state: the match is saved and loaded every
 /// 600 ticks (hash and bytes as above); once an AI holds a field howitzer
@@ -522,9 +522,16 @@ fn save_roundtrip_carries_s11b_state() {
             a.light,
             s.rules.items.rifle_grenades
         ),
-        (1, 1, 1, 1, 1),
+        (1, 1, 1, 0, 1),
         "the shipped switches"
     );
+    // S11b fix: the AI's light mortars are off by default (S11b-14) and
+    // the AT and infantry-gun pots starve the howitzer buy since fix C-1
+    // (S11b log): this test of saved S11b state turns the light mortars on
+    // and starts both sides with 20,000 MP, so the manpower above the pots
+    // pays for a howitzer.
+    s.rules.ai.arty.light = 1;
+    s.rules.start_manpower = 20_000;
     let how = s.tag("field_howitzer");
     let mut w = World::new_match(s, 1).unwrap();
     let has_how = |w: &World| {
