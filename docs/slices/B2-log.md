@@ -46,6 +46,27 @@ and lever is listed here.
 R4 No match without a winner in any set.
 Any of R1-R4 fails: chunk 2a (no second look, no dose change, no relaxed rule). The contract's rule 1-2 is logged as a
 description only (expected to fail on z).
+Chunk 1 (q3 2101, q4 2201: four sets, each about 7.5 min, exit 0; bases b11f12dc / 8f8c5d0e):
+- `rg_gap25@s2101` n=160 base 44.4 % lever 51.2 % diff +6.9 up 36 down 25 z +1.41 | floors ok
+- `rg_gap25@s2201` n=160 base 39.4 % lever 37.5 % diff -1.9 up 25 down 28 z -0.41 | floors ok
+- **fresh** n=320 base 41.9 % lever 44.4 % diff +2.5 up 61 down 53 z +0.75 blocks +6.9 -1.9 | floors ok
+- all (description) n=480 base 41.9 % lever 44.4 % diff +2.5 up 89 down 77 z +0.93 blocks +2.5 +6.9 -1.9 | floors ok
+Floors, pooled fresh (bound: base / lever; helper `target/b2/floors2.py`, not committed, since `paired.py` prints only
+misses and no per-block HE): no-winner 0: 0 / 0; HE <= 26.3: 26.66 MISS / 25.69; HE >= 20: pass; median 15-30: 19.46 / 19.45;
+base side <= 62: 54.4 / 55.0. Germany: works >= 90: 100 / 100; wire >= 60: 96.3 / 95.3; mines >= 85.3: 95.3 / 95.6; mortar
+<= 15 and >= 7.57: 8.57 / 8.57; vehicle kills <= 37.42: 35.42 / 34.57; gun >= 90: 100 / 100. USA: works 100 / 100; wire 90.9
+/ 89.1; mines >= 81.3: 91.3 / 92.5; mortar <= 15 and >= 5.73: 6.73 / 6.80; vehicle kills <= 30.63: 28.63 / 27.67; gun 100 /
+100. (Run 1's two misses on block 2001, G mortar and US vehicle kills, do not recur on the fresh blocks.)
+- R1 PASS: HE 26.56 -> 25.77 (2101), 26.77 -> 25.62 (2201), pooled 25.69 <= 26.3 (base 26.66 misses the cap).
+- R2 PASS: gain +2.5 >= -2.0; lever 44.4 inside 40.0-55.0.
+- R3 PASS: every floor the base passes, the lever passes; the one base miss (HE cap) the lever improves.
+- R4 PASS: no match without a winner in any of the six sets (2001, 2101, 2201, base and lever).
+Contract rule 1-2 (description only): z +0.75 < 1.64 FAIL, block 2201 -1.9 not > 0 FAIL; lever 44.4 not in 45-55 FAIL;
+floors ok. As expected: the lever does not aim at the win share.
+Buys a match, base -> lever (`B2-results/counters_rg_gap25_fresh.txt`): no buy moved by 0.15 or more except G Baupioniere
+2.38 -> 2.58 (2201) and US bazooka 3.99 -> 3.83 (2201); line cards G 3.65 -> 3.64 / 3.36 -> 3.38, U 1.96 -> 1.83 / 1.71
+-> 1.91; grenades fired G 6.18 -> 5.88 / 5.97 -> 5.38, U 7.92 -> 6.71 / 7.69 -> 7.09; US grenade kill share 6.75 -> 6.09 /
+7.06 -> 6.50. Decision: rule R1-R4 passes: chunk 2b.
 
 ## Plan (2026-11-19)
 Evidence read: `target/s11a2-measure` (three 160 sets and the 40-set controls), `target/s10c-verify`, B1 log history
