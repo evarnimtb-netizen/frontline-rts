@@ -1,0 +1,7 @@
+faction matches n pop5 pop10 squads1 squads3 squads5 kills losses (means; a match shorter than the minute counts 0)
+ww2:germany  all  160  49.9  64.1  7.00  9.00  8.54  64.4  80.4
+ww2:germany  lost  93  48.4  59.2  7.00  9.00  8.37  62.7  79.3
+ww2:germany  won   67  52.0  70.9  7.00  9.00  8.78  66.9  82.1
+ww2:usa      all  160  43.7  66.9  5.00  7.00  6.94  80.4  64.5
+ww2:usa      lost  67  41.4  60.8  5.00  7.00  6.78  82.1  66.9
+ww2:usa      won   93  45.3  71.2  5.00  7.00  7.05  79.2  62.8

@@ -41,3 +41,24 @@ rule dropped; `own_57mm_truck_tow` added (owner class). 2 H1 marked as a selecti
 5 The fresh-block z is the one guard; the 480 line is a description. 6 Held out 5001-5080 (301-380 was played by S6b).
 7 Near misses take 0.95 (T54a 80, T54c 9); T97 not re-based. 8 `mkdir -p target/b2`; `queue.sh` replaces a resumed line;
 `paired.py` reads floors on the JSON blocks it has. 9 Run 1 six sets, run 2 at most seven. 10 `ger_line_vg150` is owner class.
+
+## B2-1 screen (2026-11-19; block S 2001-2080, 160 matches a set, `BATCH_JOBS=4`)
+BASE `88117de` (S11b fix done, its 480 measure `target/s11b-measure`: Germany 44.17 %, sets 45.00 / 43.75 / 43.75, no winner
+0). World key `fe6b1dcdb6db8293c09b6077` (release CLI up to date, no rebuild needed).
+Added levers (after S11b): `rg_gap25` (`[items] rifle_grenade_gap_s` 15 -> 25; aims at T8a HE cap 26.3 and the US grenade kill
+share, report bound 5) and `s11b_light_usa_w25_ger_on` (`light` 1, US 60 mm `ai_weight` 25). Budget seven 160 sets: base and
+`mix_line35`, `own_57mm_truck_tow`, `diag_ger_start3`, `mix_vehicle30`, `ger_line_g7_150`, `rg_gap25`; the light lever was cut
+first (made and load-checked only), and every chunk 3 set is not played.
+`queue.sh check`: all 18 files load and print their change (counts: 1 each; `own_ger_price95` 9; the four `s11b_light_*` with a
+card weight and the 60 mm burst 2); `own_57mm_truck_tow` shows `tow: usa_m3a1_squad -> usa_cckw_squad`; `diag_ger_start3` lists
+four start squads. No key had to be fixed. A 1-minute check cannot move a counter: each own counter is read on the 160 set
+(`target/b2/counters.py`, output `B2-results/counters_*.txt`; card groups: line = rifle / Gruppe cards, MG = sMG-Gruppe / LMG).
+Command: `tools/run.sh target/b2/q1.log docs/slices/targets/B2-levers/queue.sh 2001 mix_line35 own_57mm_truck_tow
+diag_ger_start3 mix_vehicle30 ger_line_g7_150 rg_gap25` (one queue for both chunks).
+Base on block S: Germany 67/160 = 41.9 %, no winner 0, HE 26.19, median 18.8 min, base sides 51.9 / 48.1; grenade kill share
+3.9 / 7.4 %. H1 detail (`B2-results/detail_base_s2001.txt`, all matches): Germany pop 49.9 at 5 min / 64.1 at 10, USA 43.7 /
+66.9; foot squads at 1, 3, 5 min Germany 7.0 / 9.0 / 8.5, USA 5.0 / 7.0 / 6.9; kills 64.4 / 80.4 a match.
+Lines (own counter a match per side, base -> lever):
+- `mix_line35`: +10.0 (24 up / 8 down, z +2.83), 51.9 %; floors FAIL: HE 26.5 (cap 26.3), US vehicle kill share 32.9 (bound
+  max(30, 28.0 + 2)). Line cards 3.54 -> 2.64 G, 1.80 -> 0.79 U (moved). Verdict: fail rule 2 (floors). The dose rule plays
+  `mix_line42` only after a pass above 53 %: not played.

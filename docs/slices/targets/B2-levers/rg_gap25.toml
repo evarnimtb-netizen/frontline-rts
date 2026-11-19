@@ -1,0 +1,7 @@
+# B2 lever (tier 1 range check, added after S11b): [items] rifle_grenade_gap_s
+# 15 -> 25. Why: the S11b 480 measure read the HE share 26.8 / 26.5 / 26.2 %
+# (hard cap 26.3, T8a) and the US rifle-grenade kill share 7.15 % (report
+# bound 5). A squad fires at most one grenade per gap: a longer gap cuts
+# grenades fired. Its own counter: rifle grenades fired a match per side.
+[items]
+rifle_grenade_gap_s = 25
