@@ -65,3 +65,43 @@ Tests changed: `load_rejects_bad_s11b_keys` reads light 0; `save_roundtrip_carri
 tick 29061). Spec H1 (`S11b.md`, 300 lines), `tuning.md`, `fire-missions.md` describe the pot.
 Checks: release CLI rebuilt after the pot; `check.sh quick 8d2731b`: fmt, clippy, neutral.py, every ablate dry run ok;
 tests 1139 passed, 1 failed `ipv6_loopback_handshake` (no IPv6 here).
+
+## Build C (2026-11-19; commits `14be6a3`, `c70e04e`, `714b70e`, `2f5875f`, `9583d3a`, `0bd224a`, `8088935`, docs, log)
+Built: M1 (`s11b`, `s11b_derived`, side detail), HE share + rifle grenade, `neutral.py` skips `s11b` keys BASE lacks; M2
+rows `how_mask`, `how_barrage`, `rg`, `light`; S11a1 `mask_once`/`barrage_once` take card, distance, side; H1, H2 (no
+planner code), H3 (test only), L1; `save_roundtrip_carries_s11b_state`. Light weight 50 (heavy DEFAULT 100).
+Stage B review fixes: B-1 push wording, the AI emits no `PushGun`/`Hitch` for a howitzer; B-2 with grenades 0 setup bytes
+and hashes changed, behaviour not; B-3 an assert removed; B-4 pack howitzer spot size and shield marked verify.
+Tests: `s11b_ai_tests` 10; cli `s11b_json_names_match_the_targets_file`, `fortify_s11b_rows_run`, `s11b_rows_one_off`.
+Set C1-40 (how, buy_pending, cb_alternate): Germany 16/40, HE 23.03; howitzer bought 100 / 92.5 %, first on map 693 /
+760 s. Default C40 (all five on): Germany 11/40, HE 31.06 / 47.8; light bought 100 / 92.5 % of matches; every mortar
+bomb 62.9 / 81.7 a match (not light only, review C-5). rg_off 11/40, HE 26.63; how_share_10 9/40, 29.54.
+Rows (`target/s11b-C40/fortify10.json`, PASS): how_mask 100 / 100 % masked (flat 0 / 0); how_barrage trench vs open 3.4 /
+3.8 %; rg fired 1.0 / 1.4 a run, open loss 25 / 95 %; light kz vs heavy 101.7 %, 60 mm 86.5 %.
+Targets on C40: 108 pass, 19 miss (4 hard: T5a/b, T6a, T8c), T150-T152 PASS; T157a-c reports out of band.
+`MatchSetup::s11b_off` / `rifle_grenades_off` keep older-rule tests on the old behaviour (22 tests broke with the switches on).
+
+## Build B (2026-11-19; commits `d3d3170`, `b81c462`, `e35144d`, `6bb4ea6`, `64ff872`, `cbbd276`, docs, `b645588`, log)
+New defs: ammo `105mm_fhgr38`, `gsprgr30`, `60mm_m49a2`, item `schiessbecher_sprgr`, weapons `lefh18`, `m2a1_105mm`,
+`m1a1_75mm`, `kz_grw42`, `m2_60mm`, `schiessbecher`, vehicles `ger_lefh18`, `usa_105mm_m2a1`, `usa_75mm_m1a1`, units
+`ger_lefh18_{crew,squad}`, `usa_105mm_m2a1_{crew,squad}`, `usa_75mm_m1a1_crew`, `ger_kz_grw42_team`,
+`usa_60mm_mortar_squad`; line squads (C5), the four gun cards' `limit_group` ("ww2:artillery" = 2), rosters appended.
+Figures and their sources: the defs' comments and `docs/modding/fire-missions.md`; unsourced ones are S11b-13 "verify".
+Decisions: "no push" as 1 cm/s with `push_men` = crew + 1; the rifle-grenadier slot is a split. Stage A review fixes A-1..A-3
+(kill and boarding clear `rg`; the aim needs an enemy in the target's slot; rifle grenades leave `ammo.fired`); A-4 open
+(`cb_alt_holds` counts passes); `how_rounds` counted (`6bb4ea6`).
+Tests: `s11b_tests` +7, `s11b_content` +3, `test_neutral.py` +1. Neutral: A0-40 vs B1-40 and B2-40 `same 40/40`.
+
+## Build A (2026-11-19; commits `3edf0cc`, log commit after it)
+REF0 `target/s11b-base40` (base `8d2731b`), Germany 19/40. One code commit: SAVE 29 / PROTOCOL 15 (`ItemKind::RifleGrenade`
+6, `ITEM_KINDS` 7), `Squad::rg` (`RgState` + `target`), `PlayerState::s11b`, `kill_class::RIFLE_GRENADE` 11,
+`AiArty::cb_last`, four `AiCounters`, `ItemSetup::stow_ticks`, `Purpose::RIFLE_GRENADE` 40; spec 2 keys; X1; X3; G1-G4.
+Code map: `combat.rs` `fire_rifle_grenades`; `game.rs` `RgState::for_type`; `indirect::low_root`; issue rule `setup.rs`;
+`cb_last` in `counter_fire` / `arty_fire` / `cb_candidate`; X1 in `guns.rs` `gun_mobility` and `combat.rs` `kill`.
+X1 (REF0 -> REF1): `gun_in_cover_pct` 59.3 -> 86.5 / 57.6 -> 87.2; only the X1 counter keys differ (`neutral.py`).
+Set 3 `target/s11b-A40` (s11b_off): `neutral.py A0-40 A40` "same 40/40". Tests `s11b_tests` 17, `s11b_content` 3.
+
+## Plan and plan revision (2026-11-19; condensed, the spec `S11b.md` holds every rule)
+Scope: X1, X3; field howitzers leFH 18 / M2A1 as `inf_gun` base guns; light mortars; HE rifle grenades (new item kind,
+crate-only); pack howitzer data only; artillery limit group 2. Left out: spec 1. Owner questions S11b-1..14 run on (A)
+("assumed 2026-11-19, owner asked not to be asked", `docs/TODO.md`).
