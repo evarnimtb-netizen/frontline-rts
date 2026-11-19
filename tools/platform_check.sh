@@ -38,7 +38,7 @@ while [ "$#" -gt 0 ]; do
             ci_reports="$2"
             shift
             ;;
-        -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "error: unknown argument: $1 (see --help)" >&2; exit 2 ;;
     esac
     shift
