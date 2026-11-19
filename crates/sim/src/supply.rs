@@ -90,14 +90,25 @@ pub struct AmmoAccount {
     pub refilled: [u32; SUPPLY_KINDS],
 }
 
-/// The report class of one fire request.
+/// The report class of one fire request (`None`: not counted here).
 pub(crate) fn class_of(setup: &MatchSetup, ents: &Entities, r: &FireRequest) -> Option<usize> {
     use fired_class as f;
     let w = setup.weapons.get(r.weapon as usize)?;
     if let Some(a) = setup.ammo.get(r.ammo as usize) {
         if w.class == WeaponClass::Launcher {
-            let item = setup.items.iter().any(|it| it.weapon == Some(r.weapon));
-            return Some(if item { f::PANZERFAUST } else { f::ROCKET });
+            let item = setup.items.iter().find(|it| it.weapon == Some(r.weapon));
+            // S11b (review A-3): a rifle grenade (an item launcher with an
+            // HE round) is no Panzerfaust. It has no class here (a new one
+            // would change the saved `fired` array, SAVE 29 is fixed): it
+            // is counted in `s11b.rg_fired`.
+            if item.is_some_and(|it| it.kind == frontline_content::ItemKind::RifleGrenade) {
+                return None;
+            }
+            return Some(if item.is_some() {
+                f::PANZERFAUST
+            } else {
+                f::ROCKET
+            });
         }
         return Some(if a.rare {
             f::TANK_RARE
