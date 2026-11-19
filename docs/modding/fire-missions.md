@@ -176,7 +176,9 @@ one pushed or hitched.
 buys one field howitzer from `how_after_s` (8:00) inside its own
 `how_income_pct` (15 %) of the income so far, keeping `how_reserve_mp`
 (300) of its manpower less the pending call-ins and the manpower held for
-the AT gun and the infantry gun (none with `buy` 0, which records no gun); the infantry-gun buy and
+the AT gun and the infantry gun (none with `buy` 0, which records no gun).
+From 8:00 that share, up to the card's price, is the howitzer's own pot:
+the other buys leave it alone until the howitzer is bought; the infantry-gun buy and
 its pot skip `field_howitzer` cards (the two spent sums are apart), and with
 `buy_pending` 1 it too counts pending call-ins. A bought howitzer gets the
 infantry gun's record (emplace, observed missions, reserve, budget, lift,
