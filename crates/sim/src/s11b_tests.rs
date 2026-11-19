@@ -221,9 +221,7 @@ fn load_rejects_bad_s11b_state() {
         ),
         (
             "gap beyond the gap key",
-            Box::new(move |s| {
-                rg_mut(s, q).gap = game_mut(s).setup.rules.items.rifle_grenade_gap_ticks as u16 + 1
-            }),
+            Box::new(move |s| rg_mut(s, q).gap = 15 * 30 + 1),
         ),
         (
             "search beyond a second",
@@ -254,11 +252,7 @@ fn load_rejects_bad_s11b_state() {
     // The bounds are inclusive: aim at the wind-up (3 s), the gap at its key.
     let mut x = World::load(&bytes, 1).unwrap();
     rg_mut(&mut x.state, q).aim = 90;
-    rg_mut(&mut x.state, q).gap = game_mut(&mut x.state)
-        .setup
-        .rules
-        .items
-        .rifle_grenade_gap_ticks as u16;
+    rg_mut(&mut x.state, q).gap = 15 * 30;
     World::load(&x.save(), 1).expect("aim and gap at their bounds load");
 }
 

@@ -1,0 +1,16 @@
+B2 judge for rg_gap25 (apply commit fc14f52, measured at 8edbcfb, world 8428a4cf335605e992a35918); BASE = S11b measure at 88117de.
+Rule J1-J4 was written in B2-log.md (commit 21b428f) before any judge set was read.
+set                 BASE Ger %  lever Ger %  BASE HE  lever HE
+1-80                45.00       45.62        26.77    26.06
+101-180 (oos)       43.75       45.62        26.54    25.32
+201-280             43.75       41.25        26.20    25.80
+pool 480            44.17       44.17        26.50    25.73
+paired on the same seeds: up 78, down 78, gain 0.0, z 0.00. No match without a winner in either measure.
+held out 5001-5080 (lever, played once): Germany 45.0 %, no match without a winner.
+targets read with B2.toml: BASE 350 pass, 76 miss (31 hard); lever 352 pass, 74 miss (29 hard).
+status changes BASE -> lever: T8a MISS 26.768 -> PASS 26.062; T8b MISS 26.54 -> PASS 25.324; T115d MISS 3 -> PASS 0;
+  T121b PASS 0.45 -> MISS 0.281 (hard; USA mines set off a match, floor 0.3); T127b PASS 1.6 -> MISS (report) 0.435; T127d MISS (report) 0.268 -> PASS 3.19.
+J1 pass (HE 25.73, under 26.3 and under BASE 26.50). J2 pass (gain 0.0; sets 45.62 / 45.62 / 41.25). J3 pass.
+J4 FAIL: T121b passes in BASE and misses with the lever. The rule is not relaxed after the result: fc14f52 is reverted.
+The plan's own judge line (pool inside 45-55) also fails: 44.17, as BASE.
+US rifle-grenade kill share (T156d, report, bound 5): 7.15 at BASE, 6.02 with the lever.

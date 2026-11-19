@@ -491,8 +491,7 @@ crew_pickup_reach_m = 30
 rifle_grenades = 1
 # S11b G3: a squad fires at most one rifle grenade this often (s; plan value,
 # S11b-13; 0..600).
-# B2: was 15 (fresh 320: +2.5 points, z +0.75; applied for the HE cap: 26.66 -> 25.69).
-rifle_grenade_gap_s = 25
+rifle_grenade_gap_s = 15
 
 # Thrown items. S3b: moved from the sim's Rust constants unchanged (same values);
 # docs/modding/tuning.md lists every table.

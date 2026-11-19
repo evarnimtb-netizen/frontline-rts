@@ -6,23 +6,20 @@ Branch `claude/project-thread-e7nsak`. Another agent may work in this checkout: 
 (`git commit -m ... -- FILES`), never `git add -A`, never `target/`, `.claude/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: B2-2 done 2026-11-19. Applied: `[items] rifle_grenade_gap_s` 15 -> 25 (`mods/ww2/defs/rules/skirmish.toml`),
-apply commit `fc14f52` (the judge reverts exactly this commit if it fails).**
-- Why: the plan's own screen rule and stop rule named NO candidate. `rg_gap25` was applied under the separate rule R1-R4
-  that the orchestrator set before the fresh blocks were read (commit `406a5cb`), for the HE cap (T8a, 26.3) only.
-  Germany's gain of +2.5 is inside the noise (z +0.75) and is NOT claimed.
-- Fresh 320: base 41.9 % lever 44.4 % diff +2.5 up 61 down 53 z +0.75 blocks +6.9 -1.9 | floors ok; HE 26.66 -> 25.69
-  (2101 26.56 -> 25.77, 2201 26.77 -> 25.62). All 480 (description): diff +2.5 z +0.93 blocks +2.5 +6.9 -1.9 | floors ok.
-  R1-R4 all pass; contract rule 1-2 fails (z, block 2201, 44.4 < 45), as expected.
-- `check.sh quick 8d2731b`: 1139 passed, 1 failed = `ipv6_loopback_handshake` (known, no IPv6 here). Proof on block 2001
-  with the new default and no override against the override run: `160 160 160`. New world key `8428a4cf335605e992a35918`.
-- Next, the orchestrator runs verbatim:
-  `BASELINE=target/s11b-measure tools/measure.sh target/b2-measure docs/slices/targets/B2.toml`
-  `tools/batch.sh target/b2-measure/skirmish160_h5001.json -- skirmish --ai-vs-ai --seed 5001 --seeds 80 --both-bases --summary --minutes 45`
-  Judge (`B2-balance.md` 5): Germany pooled 480 in 45-55, each 160 set 40-60, no match without a winner, paired gain against
-  BASE's measure on the same seeds above zero, no hard target that passes in BASE's measure now missing (re-based rows apart);
-  else revert the apply commit. Then held-out 5001-5080 once: 40-60 on the set, 45-55 on the pool of 640; fail: report, no
-  retune. The T5f row still names the old file and reads SKIP: read the held-out share from the JSON.
+**State: B2 judge done 2026-11-19. NO default changed: `rifle_grenade_gap_s` is 15 again. The apply commit `fc14f52`
+(15 -> 25) was reverted because the judge rule J4 failed on one target. B2 ends with the plan's stop rule.**
+- The plan's own screen rule and stop rule named NO candidate. `rg_gap25` was tried under separate rules that the
+  orchestrator set before the data was read: R1-R4 for the fresh blocks (`406a5cb`, all passed) and J1-J4 for the judges
+  (`21b428f`, below). It aimed at the HE cap (T8a, 26.3) only; no gain for Germany is claimed.
+- Fresh 320: base 41.9 % lever 44.4 % diff +2.5 z +0.75 | floors ok; HE 26.66 -> 25.69. Proof set `160 160 160`.
+- Judge 480 (`B2-results/judge.txt`): Germany 44.17 -> 44.17 (sets 45.62 / 45.62 / 41.25), paired up 78 down 78, HE 26.50
+  -> 25.73, no match without a winner; targets with `B2.toml` 350 -> 352 pass, hard misses 31 -> 29 (T8a, T8b, T115d now
+  pass). J1-J3 pass. J4 FAIL: T121b (USA mines set off a match, floor 0.3) 0.45 -> 0.281. Held out 5001-5080: 45.0 %.
+- For the owner: the lever does what it was made for (HE under the cap on 320 fresh and 480 judge matches, US rifle-grenade
+  kill share 7.15 -> 6.02) and the one miss is on a target it cannot touch directly. Re-applying is one commit
+  (`git revert` of the revert). Owner-class findings of run 1 (57 mm truck tow +16.2, third start squad +19.4, HE cap
+  binds most levers that help Germany) are in the B2-1 section and in `docs/TODO.md`.
+- Next: Docs stage. `docs/slices/targets/B2.toml` is the version made before the apply (no `--applied`).
 - Buys a match before / after (fresh blocks): "B2-2 confirm" below and `B2-results/counters_rg_gap25_fresh.txt`.
 - Run 1 screen (block 2001): BASE `88117de`, world key `fe6b1dcdb6db8293c09b6077`; BASE 480 measure 44.17 % (45.00 / 43.75 / 43.75). Block S base
   41.9 %, no winner 0, HE 26.19, median 18.8 min. Paired SE on 160 about 4.9 points.
