@@ -1919,8 +1919,8 @@
         "arty": {
           "after_s": 240,
           "buy": 1,
-          "buy_pending": 0,
-          "cb_alternate": 0,
+          "buy_pending": 1,
+          "cb_alternate": 1,
           "cb_max_error_m": 60,
           "counter_fire": 1,
           "danger_close_m": 50,
@@ -1928,14 +1928,14 @@
           "fo": 1,
           "fo_max": 1,
           "fo_rebuy_s": 180,
-          "how": 0,
+          "how": 1,
           "how_after_s": 480,
           "how_income_pct": 15,
           "how_max": 1,
           "how_reserve_mp": 300,
           "income_max_pct": 15,
           "lift_m": 100,
-          "light": 0,
+          "light": 1,
           "max_guns": 1,
           "mission_rounds": 4,
           "post_clear_m": 150,
@@ -2543,7 +2543,7 @@
         "crew_pickup_reach_m": 30,
         "resupply_s": 20,
         "rifle_grenade_gap_s": 15,
-        "rifle_grenades": 0,
+        "rifle_grenades": 1,
         "single_shot_gap_s": 3,
         "throw": {
           "lob_tan_milli": 1000,
@@ -3137,7 +3137,7 @@
       "weapon": ""
     },
     "ww2:ger_kz_grw42_team": {
-      "ai_weight": 0,
+      "ai_weight": 50,
       "capabilities": [
         "fire_mission",
         "recrew"
@@ -3268,7 +3268,7 @@
       "weapon": ""
     },
     "ww2:ger_lefh18_squad": {
-      "ai_weight": 0,
+      "ai_weight": 5,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:germany",
@@ -4249,7 +4249,7 @@
       "weapon": ""
     },
     "ww2:usa_105mm_m2a1_squad": {
-      "ai_weight": 0,
+      "ai_weight": 5,
       "cost": 0,
       "dig_rate_pct": 0,
       "faction": "ww2:usa",
@@ -4472,7 +4472,7 @@
       "weapon": ""
     },
     "ww2:usa_60mm_mortar_squad": {
-      "ai_weight": 0,
+      "ai_weight": 50,
       "capabilities": [
         "fire_mission",
         "recrew"

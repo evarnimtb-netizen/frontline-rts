@@ -56,7 +56,27 @@ fn setup(seed: u64) -> MatchSetup {
         .as_mut()
         .expect("ww2 has [fire_mission]");
     (fm.friendly_fire, fm.counter_battery) = (0, 0);
+    // S11b Build C: likewise every S11b switch off (shipped on); the
+    // rifle grenades leave the squad types as the setup drops them with
+    // `rifle_grenades` 0 (S11b state is fuzzed in the staged save and
+    // played in `save_roundtrip_carries_s11b_state`).
+    let a = &mut s.rules.ai.arty;
+    (a.cb_alternate, a.buy_pending, a.how, a.light) = (0, 0, 0, 0);
+    no_rifle_grenades(&mut s);
     s
+}
+
+/// S11b G1: the setup with `[items] rifle_grenades` 0 (the kind dropped
+/// from every squad type, as the setup build does).
+fn no_rifle_grenades(s: &mut MatchSetup) {
+    let k = frontline_content::ItemKind::RifleGrenade.index();
+    s.rules.items.rifle_grenades = 0;
+    for t in s.squad_types.iter_mut() {
+        t.items[k] = None;
+        for m in t.members.iter_mut() {
+            m.items[k] = 0;
+        }
+    }
 }
 
 /// What the state holds that the fuzz should reach.
@@ -492,6 +512,93 @@ fn save_roundtrip_carries_s11a2_state() {
     }
     let tick = held.expect("no save held a marker and an answered one by tick 81000");
     println!("s11a2 roundtrip: marker and counter-fire held at tick {tick}");
+}
+
+/// S11b Build C: a played save with the shipped S11b switches (howitzer
+/// buy, light mortars, rifle grenades, counter-fire turns, pending
+/// call-ins) carries real S11b state: the match is saved and loaded every
+/// 600 ticks (hash and bytes as above); once an AI holds a field howitzer
+/// record, it is stepped tick by tick to a moment a squad is mid-aim with
+/// a rifle grenade and saved there: hash, bytes and a continued run on 2
+/// threads equal.
+#[test]
+fn save_roundtrip_carries_s11b_state() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
+    let req = MatchRequest::skirmish(SEED, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let mut s = defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
+    s.players.iter_mut().for_each(|p| p.is_ai = true);
+    let a = &s.rules.ai.arty;
+    assert_eq!(
+        (
+            a.cb_alternate,
+            a.buy_pending,
+            a.how,
+            a.light,
+            s.rules.items.rifle_grenades
+        ),
+        (1, 1, 1, 1, 1),
+        "the shipped switches"
+    );
+    let how = s.tag("field_howitzer");
+    let mut w = World::new_match(s, 1).unwrap();
+    let has_how = |w: &World| {
+        let g = w.game().unwrap();
+        (0..2u8).any(|p| {
+            g.ai(PlayerId(p)).is_some_and(|ai| {
+                ai.arty.keys().any(|id| {
+                    g.squads()
+                        .get(id)
+                        .is_some_and(|q| g.setup().squad_types[q.type_idx as usize].has_tag(how))
+                })
+            })
+        })
+    };
+    let mid_aim = |w: &World| {
+        w.game()
+            .unwrap()
+            .squads()
+            .values()
+            .any(|q| q.rg.is_some_and(|r| r.man.is_some() && r.aim > 0))
+    };
+    let check = |w: &World, what: &str| {
+        let bytes = w.save();
+        let b = World::load(&bytes, 1).unwrap_or_else(|e| panic!("load {what}: {e}"));
+        assert_eq!(w.state_hash(), b.state_hash(), "hash at the load, {what}");
+        assert_eq!(b.save(), bytes, "save of the loaded world, {what}");
+        (bytes, b)
+    };
+    let mut held = None;
+    while w.tick() < 81_000
+        && held.is_none()
+        && w.game().unwrap().outcome() == frontline_sim::Outcome::Running
+    {
+        run_hashes(&mut w, 600);
+        let tick = w.tick();
+        check(&w, &format!("tick {tick}"));
+        if !has_how(&w) {
+            continue;
+        }
+        for _ in 0..600 {
+            if mid_aim(&w) {
+                break;
+            }
+            w.step(&[]);
+        }
+        if mid_aim(&w) && has_how(&w) {
+            let tick = w.tick();
+            let (bytes, mut b) = check(&w, &format!("mid-aim tick {tick}"));
+            let mut a = World::load(&bytes, 2).unwrap();
+            assert_eq!(
+                run_hashes(&mut a, 600),
+                run_hashes(&mut b, 600),
+                "after the load at {tick}"
+            );
+            held = Some(tick);
+        }
+    }
+    let tick = held.expect("no save held a howitzer record and a grenade mid-aim by tick 81000");
+    println!("s11b roundtrip: howitzer record and grenade mid-aim held at tick {tick}");
 }
 
 /// One mutation: replace the encoded value of `field` with `new`.
