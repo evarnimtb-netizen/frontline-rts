@@ -678,6 +678,7 @@ impl MatchState {
                         launcher: None,
                         drops: Vec::new(),
                         pzf: crate::game::SingleShot::for_type(&s.squad_types[crew_type as usize]),
+                        rg: crate::game::RgState::for_type(&s.squad_types[crew_type as usize]),
                     },
                 );
                 q
@@ -988,6 +989,7 @@ impl MatchState {
                 launcher: None,
                 drops: Vec::new(),
                 pzf: None,
+                rg: None,
             },
         );
         let vs = self.vehicles.get_mut(&id).expect("listed");

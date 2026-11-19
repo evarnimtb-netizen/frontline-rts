@@ -115,7 +115,9 @@ In his own base:
   most depleted round first), and alongside them items one per
   `[items] resupply_s` and mortar bombs one per `base_bomb_s`, but no
   bomb until `base_bomb_after_fire_s` after the squad's mortar last fired
-  (the base battery brake; 0: no wait);
+  (the base battery brake; 0: no wait); S11b: never a `rifle_grenade`
+  item (the design's crate-only rule; an item of that kind names an HE
+  launcher round and `supply.kind = "shells"`);
 - an AT team gets a rocket per `[items] resupply_s`;
 - a vehicle gets a standard round per `[vehicles] base_rearm_s` (the entry
   furthest below its load), a rare round per `rare_rearm_base_s` up to its

@@ -63,7 +63,7 @@ fn load_rejects_bad_s11a2_keys() {
         (0, 0, 100, 60)
     );
     assert_eq!(FireMissionTuning::KEYS.len(), 45);
-    assert_eq!(AiArtyTuning::KEYS.len(), 25);
+    assert_eq!(AiArtyTuning::KEYS.len(), 33); // S11b: eight keys more
     // The control file applies (its keys exist and are in range).
     let b_off = root().join("docs/slices/targets/S11a2-ablations/b_off.toml");
     defs.apply_override(&b_off, "ww2:skirmish")

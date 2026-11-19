@@ -110,6 +110,8 @@ impl Purpose {
     /// S11a2 K2: a counter-battery marker's offset (tick, hearer << 8 |
     /// spot index; bearing then length).
     pub const CB_MARK: Purpose = Purpose(39);
+    /// S11b G3: a rifle grenade's spread (tick, firer; two `tri` draws).
+    pub const RIFLE_GRENADE: Purpose = Purpose(40);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

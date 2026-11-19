@@ -759,7 +759,9 @@ impl MatchState {
             let m = SimId(i as u32);
             let full = self.full_kit(ents, m);
             let k = &ents.kit[i];
-            let short = (0..ITEM_KINDS).find(|&j| k.items[j] < full[j]);
+            // S11b G4: never a rifle grenade (crate-only by design).
+            let rg = ItemKind::RifleGrenade.index();
+            let short = (0..ITEM_KINDS).find(|&j| j != rg && k.items[j] < full[j]);
             let base = &setup.map.bases[setup.players[ents.owner[i].0 as usize].base as usize];
             let r: Fx = base.radius.into();
             let in_base = (ents.transform[i].pos.xy() - FxVec2::from(base.center)).length_sq_raw()

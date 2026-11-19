@@ -989,6 +989,34 @@ impl ModDefs {
     /// ammo.
     pub fn cross_check(&self) -> Vec<Issue> {
         let mut out = Vec::new();
+        // S11b G1: a rifle grenade fires as a launcher whose round is HE,
+        // and is refilled as shells.
+        for (id, it) in &self.items {
+            if it.kind != crate::defs::ItemKind::RifleGrenade {
+                continue;
+            }
+            let he_launcher = it.weapon.as_ref().and_then(|w| self.weapons.get(w)).is_some_and(|w| {
+                w.class == WeaponClass::Launcher
+                    && w.ammo.as_ref().and_then(|a| self.ammo.get(a)).is_some_and(|a| {
+                        a.mechanism == AmmoMechanism::He && a.he.is_some()
+                    })
+            });
+            if !he_launcher {
+                out.push(
+                    Issue::new(
+                        format!("items/{}.toml: weapon", id.split_once(':').map_or(&id[..], |x| x.1)),
+                        "a rifle_grenade item fires as a launcher weapon whose ammo is mechanism \"he\" with an [he] table",
+                    )
+                    .with_hint("weapon = \"ww2:m7_launcher\""),
+                );
+            }
+            if it.supply.as_ref().is_some_and(|sp| sp.kind != "shells") {
+                out.push(Issue::new(
+                    format!("items/{}.toml: supply.kind", id.split_once(':').map_or(&id[..], |x| x.1)),
+                    "a rifle_grenade item is refilled as shells",
+                ));
+            }
+        }
         // S10b: a minefield names a `mine` item.
         for (id, f) in &self.forts {
             if let Some(m) = &f.mine_item

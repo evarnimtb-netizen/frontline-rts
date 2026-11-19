@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **14** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **15** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -139,6 +139,10 @@ kind the relay may not send. Clients cannot send relay messages.
   are laid with the existing `Fortify` (minefield blueprints). It also adds
   `ItemKind` 5 `Mine` and the `DigProfile` 8 bunker pit. The save version is
   `-s24`. The one bump for the S10b slice.
+- Version 15 (S11b) adds `ItemKind` 6 `RifleGrenade` (a value `Throw` and
+  `ThrowEach` may carry; the sim refuses a throw of it: the grenade is fired
+  from the rifle, never thrown). No new command. The save version is
+  `-s29`. The one bump for the S11b slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells

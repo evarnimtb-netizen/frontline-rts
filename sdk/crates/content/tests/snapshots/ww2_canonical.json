@@ -893,6 +893,56 @@
       },
       "track_damage": 40
     },
+    "ww2:m17_rifle_grenade": {
+      "caliber_mm": 51,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 200,
+        "crater_depth_cm": 20,
+        "crater_radius_cm": 50,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 96,
+        "frag_damage": 60,
+        "frag_elev_deg": [
+          2,
+          50
+        ],
+        "frag_far_pct": 25,
+        "frag_pen_mm": 3,
+        "frag_reach_cm": 1000,
+        "frag_track_damage": 0,
+        "inside_damage": 100,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 2,
+        "suppression": 50,
+        "suppression_radius_m": 10,
+        "vs_vehicle_pct": 10
+      },
+      "id": "ww2:m17_rifle_grenade",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 50,
+      "name": "M17 rifle grenade",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          2
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "owner to confirm, S11b-7 (Mk 2 body, about 0.68 kg, about 57 g TNT, 180-200 m)",
+        "mk2_grenade.toml [he] block (the same body)"
+      ],
+      "supply": {
+        "g": 680,
+        "kind": "shells"
+      },
+      "track_damage": 0
+    },
     "ww2:m6a3_heat": {
       "caliber_mm": 60,
       "core": {
@@ -1403,6 +1453,25 @@
       },
       "windup_ms": 1000
     },
+    "ww2:m7_rifle_grenade": {
+      "fuse_ms": 0,
+      "id": "ww2:m7_rifle_grenade",
+      "kind": "rifle_grenade",
+      "min_range_m": 30,
+      "name": "M17 rifle grenade",
+      "range_m": 180,
+      "scatter_pct": 0,
+      "sources": [
+        "owner to confirm, S11b-7"
+      ],
+      "stow_ms": 3000,
+      "supply": {
+        "g": 680,
+        "kind": "shells"
+      },
+      "weapon": "ww2:m7_launcher",
+      "windup_ms": 3000
+    },
     "ww2:mk2_grenade": {
       "fuse_ms": 4000,
       "he": {
@@ -1727,6 +1796,8 @@
         "arty": {
           "after_s": 240,
           "buy": 1,
+          "buy_pending": 0,
+          "cb_alternate": 0,
           "cb_max_error_m": 60,
           "counter_fire": 1,
           "danger_close_m": 50,
@@ -1734,8 +1805,14 @@
           "fo": 1,
           "fo_max": 1,
           "fo_rebuy_s": 180,
+          "how": 0,
+          "how_after_s": 480,
+          "how_income_pct": 15,
+          "how_max": 1,
+          "how_reserve_mp": 300,
           "income_max_pct": 15,
           "lift_m": 100,
+          "light": 0,
           "max_guns": 1,
           "mission_rounds": 4,
           "post_clear_m": 150,
@@ -2342,6 +2419,8 @@
       "items": {
         "crew_pickup_reach_m": 30,
         "resupply_s": 20,
+        "rifle_grenade_gap_s": 15,
+        "rifle_grenades": 0,
         "single_shot_gap_s": 3,
         "throw": {
           "lob_tan_milli": 1000,
@@ -13104,6 +13183,33 @@
       "spread_mrad": 0,
       "spread_urad": 2500,
       "suppression": 30
+    },
+    "ww2:m7_launcher": {
+      "ammo": "ww2:m17_rifle_grenade",
+      "class": "launcher",
+      "damage": 150,
+      "engage_moving_m": 180,
+      "engage_still_m": 180,
+      "fire_reveal_ms": 2000,
+      "fire_reveal_pct": 150,
+      "handover_ms": 0,
+      "id": "ww2:m7_launcher",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 50,
+      "name": "M7 grenade launcher",
+      "range_m": 180,
+      "reload_ms": 0,
+      "rounds_carried": 1,
+      "rounds_per_min": 4,
+      "setup_ms": 0,
+      "short_name": "M7",
+      "sources": [
+        "owner to confirm, S11b-7 (M17 rifle grenade: about 180-200 m maximum)"
+      ],
+      "spread_mrad": 15,
+      "spread_urad": 0,
+      "suppression": 20
     },
     "ww2:m9_bazooka": {
       "ammo": "ww2:m6a3_heat",

@@ -733,6 +733,13 @@ pub struct AiCounters {
     pub cb_wide_holds: u32,
     pub cb_stale_holds: u32,
     pub cb_masked: u32,
+    /// S11b X3: counter-fire held because the gun's last ordered mission
+    /// was counter-fire (`cb_alternate`); H1 (Build C): howitzers bought,
+    /// and buys held by the income share and by the manpower reserve.
+    pub cb_alt_holds: u32,
+    pub how_buys: u32,
+    pub how_pct_holds: u32,
+    pub how_mp_holds: u32,
 }
 
 impl AiState {

@@ -169,7 +169,7 @@ fn throw_picks_the_nearest_eligible_man_and_checks_the_rest() {
             .unwrap()
             .items
     };
-    assert_eq!(card(&w), [9, 1, 0, 0, 0, 0]);
+    assert_eq!(card(&w), [9, 1, 0, 0, 0, 0, 0]);
 
     // Nearest to the target, ties by lowest id: recomputed here.
     let target = at(455, 423);
@@ -186,7 +186,7 @@ fn throw_picks_the_nearest_eligible_man_and_checks_the_rest() {
     assert_eq!(items(&w, first, ItemKind::Frag), (first == leader) as u8);
     let u = &w.entities().unit()[first.index()];
     assert!(u.detached && u.order == UnitOrder::Idle && u.nav.phase == NavPhase::Holding);
-    assert_eq!(card(&w), [8, 1, 0, 0, 0, 0]);
+    assert_eq!(card(&w), [8, 1, 0, 0, 0, 0, 0]);
     assert!(w.snapshot().soldier_throwing.iter().filter(|t| **t).count() == 1);
     // He is busy: the next throw goes to the next nearest man.
     let rest: Vec<SimId> = men.iter().copied().filter(|&m| m != first).collect();

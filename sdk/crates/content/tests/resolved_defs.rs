@@ -180,15 +180,20 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // keys and the four new `[ai.arty]` keys) changed it; the S11a1 values were
 // 0xf5b40609e6521881, 0xb898a6ecbbe46227, 0x83a1f236e5b268cb,
 // 0xf5b40609e6521881, 0x196c9824ba128d6b, 0xd7d21eb2ceaf5e48.
+// S11b Build A (`ItemKind::RifleGrenade`, `ItemSetup::stow_ticks`, the
+// three rifle-grenade defs, `[items] rifle_grenades, rifle_grenade_gap_s`
+// and eight `[ai.arty]` keys) changed it; the S11a2 values were
+// 0x18b7613e8eea3dff, 0xc344d589b3b09caa, 0x4c0df0133ff2fee8,
+// 0x18b7613e8eea3dff, 0xf13dccae38cc7eb7, 0xf39a3859d272ee2e.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x18b7613e8eea3dff),
-    ("skirmish usa-ger seed 7 hard", 0xc344d589b3b09caa),
-    ("test_unlock ger-usa seed 1 normal", 0x4c0df0133ff2fee8),
-    ("example override ger-usa seed 1 normal", 0x18b7613e8eea3dff),
-    ("human ger vs ai usa seed 3 easy", 0xf13dccae38cc7eb7),
+    ("skirmish ger-usa seed 1 normal", 0x79ccac510eab09eb),
+    ("skirmish usa-ger seed 7 hard", 0x73d9a8f0c9a270d1),
+    ("test_unlock ger-usa seed 1 normal", 0x3f839d99d254334a),
+    ("example override ger-usa seed 1 normal", 0x79ccac510eab09eb),
+    ("human ger vs ai usa seed 3 easy", 0x03e74cf024db6338),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xf39a3859d272ee2e,
+        0x03f390a41147acdf,
     ),
 ];
 

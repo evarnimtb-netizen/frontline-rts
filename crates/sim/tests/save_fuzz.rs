@@ -339,7 +339,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 28,
+        version: 29,
         state: w.state(),
     });
     assert!(
@@ -611,6 +611,10 @@ fn s10b_path(path: &str) -> bool {
     path.starts_with("state.game.fort")
         || path.starts_with("state.game.setup.forts")
         || (path.starts_with("state.game.setup.items") && path.contains(".mine"))
+        // S11b: the rifle-grenade state and the counter-fire flag.
+        || path.contains(".rg.")
+        || path.ends_with(".rg")
+        || path.ends_with(".cb_last")
         || path.contains("Order.ClearMines")
         || path.contains("Order.Demolish")
         // Fuzz stage `staged_s10b_ai`.
@@ -901,8 +905,11 @@ fn staged_s10b() -> World {
         .unwrap() as u16;
     let eng = s.squad_type_index("ww2:ger_engineer_squad").unwrap();
     let leig = s.squad_type_index("ww2:ger_leig18_squad").unwrap();
+    // S11b: the US rifle squad's riflemen carry three rifle grenades.
+    let rifles = arm_rifle_grenades(&mut s, "ww2:usa_rifle_squad", "rifleman", 3);
     let mut w = World::new_match(s, 1).unwrap();
     staged_s11a2_gun(&mut w, leig);
+    staged_s11b(&mut w, rifles);
     let spawn = |w: &mut World, x: i32| {
         w.spawn_squad_at(PlayerId(0), eng, c(x, 300), FxVec2::new(Fx::ONE, Fx::ZERO))
             .unwrap()
@@ -953,6 +960,56 @@ fn staged_s10b() -> World {
     });
     staged_s10b_ai(&mut w, ap, piece);
     w
+}
+
+/// S11b: issues rifle grenades (`[items] rifle_grenades` 1) and gives the
+/// men of `slot` of card `squad` `n` of them (no card carries them before
+/// Build B). Returns the card's index.
+fn arm_rifle_grenades(s: &mut MatchSetup, squad: &str, slot: &str, n: u8) -> u16 {
+    use frontline_content::ItemKind;
+    s.rules.items.rifle_grenades = 1;
+    let it = s
+        .items
+        .iter()
+        .position(|i| i.kind == ItemKind::RifleGrenade)
+        .unwrap() as u16;
+    let t = s.squad_type_index(squad).unwrap();
+    let ty = &mut s.squad_types[t as usize];
+    ty.items[ItemKind::RifleGrenade.index()] = Some(it);
+    for m in ty.members.iter_mut().filter(|m| m.slot == slot) {
+        m.items[ItemKind::RifleGrenade.index()] = n;
+    }
+    t
+}
+
+/// Fuzz stage S11b (spec 3): player 1's rifle squad with a rifleman
+/// mid-aim (`rg`) and a gap running; a few S11b counters. (The `AiArty`
+/// with `cb_last` is in `staged_s10b_ai`.)
+fn staged_s11b(w: &mut World, rifles: u16) {
+    use frontline_sim::fx::{Fx, FxVec2};
+    use frontline_sim::game::RgState;
+    let c = |x: i32, y: i32| FxVec2::from_int(x, y);
+    let sq = w
+        .spawn_squad_at(PlayerId(1), rifles, c(520, 700), FxVec2::new(Fx::ONE, Fx::ZERO))
+        .unwrap();
+    let man = *w.game().unwrap().squads()[&sq].members.last().unwrap();
+    assert!(w.edit_squad(sq, |q| {
+        assert!(q.rg.is_some(), "the staged rifle squad has no rifle-grenade state");
+        q.rg = Some(RgState {
+            man: Some(man),
+            target: Some(man),
+            at: c(520, 820),
+            aim: 40,
+            stow: 0,
+            gap: 100,
+            search: 3,
+        });
+    }));
+    assert!(w.edit_player(PlayerId(1), |p| {
+        p.s11b.rg_fired = 2;
+        p.s11b.arty_emplaced = 1;
+        p.s11b.how_rounds = [1, 2, 3];
+    }));
 }
 
 /// Fuzz stage S11a2 (spec 3), first, while the match may still step:
@@ -1502,6 +1559,8 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
                 // S11a2: a counter-fire record.
                 cb: true,
                 cb_shots: 4,
+                // S11b X3: the last ordered mission was counter-fire.
+                cb_last: true,
             },
         );
         ai.counters.ff_lifts = 1;

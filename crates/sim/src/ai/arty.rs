@@ -43,6 +43,9 @@ pub struct AiArty {
     /// S11a2 R2: the marker's `shots` at the last counter-fire order or
     /// refusal (one mission per new evidence).
     pub cb_shots: u32,
+    /// S11b X3: the gun's last ordered mission was counter-fire (set by
+    /// `counter_fire`, cleared by `arty_fire`; read with `cb_alternate`).
+    pub cb_last: bool,
 }
 
 /// One AI observer team, keyed by its squad (saved, hashed).
@@ -617,6 +620,8 @@ impl super::Planner<'_> {
             rec.missions = rec.missions.saturating_add(1);
             rec.last_order = tick;
             rec.prep = t.prep;
+            // S11b X3: an ordinary mission ends the counter-fire turn.
+            rec.cb_last = false;
             return true;
         }
         false
@@ -628,7 +633,8 @@ impl super::Planner<'_> {
     /// is no wider than `cb_max_error_m` (else `cb_wide_holds`) and it has
     /// new evidence since the gun's last counter-fire order or refusal
     /// (else `cb_stale_holds`): its `shots` differ from the ones last
-    /// answered and are not 0.
+    /// answered and are not 0. S11b X3: with `cb_alternate` 1, not while
+    /// the gun's last ordered mission was counter-fire (`cb_alt_holds`).
     fn cb_candidate(&mut self, rec: &AiArty) -> Option<(FxVec2, u32, u32)> {
         let g = self.g;
         let a = &g.setup.rules.ai.arty;
@@ -662,6 +668,12 @@ impl super::Planner<'_> {
             best.shots < rec.cb_shots || best.shots as u64 >= rec.cb_shots as u64 + to_mark as u64;
         if best.shots == 0 || !fresh {
             self.ai.counters.cb_stale_holds += 1;
+            return None;
+        }
+        // S11b X3: no counter-fire twice in a row; the evidence waits for
+        // the turn after an ordinary mission.
+        if a.cb_alternate == 1 && rec.cb_last {
+            self.ai.counters.cb_alt_holds += 1;
             return None;
         }
         Some((best.at, best.shots, best.err_mm))
@@ -729,6 +741,8 @@ impl super::Planner<'_> {
         rec.prep = false;
         rec.cb = true;
         rec.cb_shots = shots;
+        // S11b X3: read by `cb_candidate` with `cb_alternate` 1.
+        rec.cb_last = true;
         true
     }
 

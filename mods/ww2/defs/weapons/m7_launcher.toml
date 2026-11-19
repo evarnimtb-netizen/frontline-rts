@@ -1,0 +1,35 @@
+# M7 grenade launcher as fired (S11b G1, docs/slices/S11b.md 4): the weapon
+# the rifle grenade `ww2:m7_rifle_grenade` fires as. Not carried as a member
+# weapon: it fits on the man's M1 rifle. The grenade flies the low arc of a
+# drag-free round at muzzle_velocity_m_s, aimed at a ground point (the sim
+# solves the arc; no hit chance, no damage table).
+# Sources: none in the design (S11b-7); the figures below are marked.
+id = "ww2:m7_launcher"
+name = "M7 grenade launcher"
+short_name = "M7"
+class = "launcher"
+sources = ["owner to confirm, S11b-7 (M17 rifle grenade: about 180-200 m maximum)"]
+# Farthest shot (m): owner to confirm, S11b-7.
+range_m = 180
+damage = 150
+rounds_per_min = 4
+magazine = 1
+# One grenade per item; the squad's gap paces them ([items] rifle_grenade_gap_s).
+reload_ms = 0
+# Dispersion half-angle (mrad). verify: plan value, S11b-13 (the pzf60 value).
+spread_mrad = 15
+# Must match the round's speed (m/s). verify: plan value, S11b-13 (reaches
+# 255 m drag-free at 45 degrees).
+muzzle_velocity_m_s = 50
+suppression = 20
+# Unused by the rifle-grenade rule (it aims at men, not vehicles); the
+# launcher schema requires them.
+engage_still_m = 180
+engage_moving_m = 180
+# The shot gives the firer away like a rifle shot (% sight range, ms).
+fire_reveal_pct = 150
+fire_reveal_ms = 2000
+ammo = "ww2:m17_rifle_grenade"
+# The item counts the grenades; this is the launcher rule's minimum.
+rounds_carried = 1
+handover_ms = 0

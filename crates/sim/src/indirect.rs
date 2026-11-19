@@ -85,6 +85,29 @@ fn solve_root(
     Some((u, vx, t))
 }
 
+/// S11b G3: the low (flat) root of the drag-free arc from muzzle `from` to
+/// point `to` at speed `speed` (m/s), with no laying limits: the launch
+/// velocity (the half-substep gravity term added, as [`candidates`]) and
+/// the time of flight (s). `None`: out of reach (no root) or no distance.
+/// Rifle grenades aim with it, not with `gunnery::solution` (a flat aim
+/// with the drop added, which falls short at a slow round's range).
+pub(crate) fn low_root(from: FxVec3, to: FxVec3, speed: Fx) -> Option<(FxVec3, Fx)> {
+    let d = to.xy() - from.xy();
+    let r = d.length().raw() as i128;
+    let h = (to.z - from.z).raw() as i128;
+    // tan of ±89 degrees: no limit inside the band a launcher reaches.
+    let lim = 57 * ONE;
+    let (u, vx, t) = solve_root(r, h, speed.raw() as i128, -lim, lim, true)?;
+    let sat = |x: i128| x.clamp(i32::MIN as i128, i32::MAX as i128) as i32;
+    let vxx = sat(vx * d.x.raw() as i128 / r);
+    let vxy = sat(vx * d.y.raw() as i128 / r);
+    let vz = sat(u * vx / ONE) + G.raw() / (2 * SUBSTEP_HZ);
+    Some((
+        FxVec3::new(Fx::from_raw(vxx), Fx::from_raw(vxy), Fx::from_raw(vz)),
+        Fx::from_raw(sat(t)),
+    ))
+}
+
 /// Solves a bomb from muzzle `from` to ground point `to`: the lowest charge
 /// with a high-angle solution inside the laying limits. `None`: no charge
 /// can (too close for the top elevation, or beyond the highest charge).

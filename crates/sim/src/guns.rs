@@ -1207,6 +1207,7 @@ impl MatchState {
         let sv = vs.served.as_ref().expect("listed");
         let men = men_at(sv);
         let owner = ctx.ents.owner[i];
+        let inf_gun = v.role == frontline_content::VehicleRole::InfGun;
         let _ = hz;
         match sv.state {
             GunState::Emplacing if men >= min_men => {
@@ -1219,7 +1220,15 @@ impl MatchState {
                     if let Some(y) = sv.relay_to.take() {
                         ctx.ents.transform[i].yaw = y;
                     }
-                    self.players[owner.0 as usize].s9.guns_emplaced += 1;
+                    // S11b X1: an infantry gun counts in `s11b`, not
+                    // with the AT guns (the cover ratio's numerator
+                    // counts AT-gun jobs only).
+                    let pl = &mut self.players[owner.0 as usize];
+                    if inf_gun {
+                        pl.s11b.arty_emplaced += 1;
+                    } else {
+                        pl.s9.guns_emplaced += 1;
+                    }
                 }
                 ctx.hash.mark_entity_chunk(id.chunk());
             }
@@ -1573,6 +1582,7 @@ impl MatchState {
                     launcher: None,
                     drops: Vec::new(),
                     pzf: None,
+                    rg: None,
                 },
             );
             let vs = self.vehicles.get_mut(&id).expect("listed");

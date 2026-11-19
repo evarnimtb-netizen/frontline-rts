@@ -484,6 +484,13 @@ single_shot_gap_s = 3
 # detached assistant across the map) do not get it instantly. 30 m is a
 # squad's spread in open order (about 10 men at 3 m).
 crew_pickup_reach_m = 30
+# S11b G1 switch (docs/slices/S11b.md 2): squads are issued their rifle
+# grenades (0: the setup drops the rifle_grenade kind from every squad type;
+# 0..1). Build C turns it on (ablation rg_off).
+rifle_grenades = 0
+# S11b G3: a squad fires at most one rifle grenade this often (s; plan value,
+# S11b-13; 0..600).
+rifle_grenade_gap_s = 15
 
 # Thrown items. S3b: moved from the sim's Rust constants unchanged (same values);
 # docs/modding/tuning.md lists every table.
@@ -1549,6 +1556,15 @@ ff_safe = 1                  # S1-S3 switch: one own-men predicate for the order
 counter_fire = 1             # R1-R3 switch: an AI gun answers an own counter-battery marker with map fire
 lift_m = 100                 # m (S1): an own squad walking to the target counts once its lead is this close (D 6.4)
 cb_max_error_m = 60          # m (R2): no counter-fire on a marker wider than this (D 8 ai.cb_max_error_m)
+# S11b (docs/slices/S11b.md 2): every switch 0 until Build C (ablations a0_off, how_off, light_off, s11b_off).
+cb_alternate = 0             # X3 switch: an AI gun does not order counter-fire twice in a row (0..1)
+buy_pending = 0              # H1 switch: gun buys count the manpower of call-ins still pending (0..1)
+how = 0                      # H1 switch: the AI buys a field howitzer (0..1)
+how_after_s = 480            # s (H1): no howitzer before this match time (D 837-838: unlock 8:00; 0..3600)
+how_max = 1                  # H1: howitzers alive or called in at once (D 789, D 837-838; 0..8)
+how_income_pct = 15          # % (H1): howitzer cards cost at most this share of the income so far, apart from income_max_pct (S11b-3; 0..100)
+how_reserve_mp = 300         # H1: manpower that stays after the howitzer buy (plan value, S11b-13; 0..100000)
+light = 0                    # L1 switch: cards tagged light_mortar join the mortar slot of the buy mix (0..1)
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired

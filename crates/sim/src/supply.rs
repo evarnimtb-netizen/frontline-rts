@@ -708,7 +708,10 @@ impl MatchState {
             // Items, then bombs (and other non-small-arms feeds).
             let ty = &self.setup.squad_types[ty_idx];
             let full = ty.full_kit(ents.kit[i].slot);
-            let item = (0..ITEM_KINDS).find(|&j| ents.kit[i].items[j] < full[j]);
+            // S11b G4: never a rifle grenade (crate-only by design, D 954,
+            // D 1161-1163).
+            let rg = frontline_content::ItemKind::RifleGrenade.index();
+            let item = (0..ITEM_KINDS).find(|&j| j != rg && ents.kit[i].items[j] < full[j]);
             // S6 (owner Q4): with `base_bomb_s = 0` the base refills no
             // shells feed (mortar bombs): they come only in crates.
             let no_bombs = sp.base_bomb_s == 0;

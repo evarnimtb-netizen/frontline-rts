@@ -56,6 +56,14 @@
 # [ai.arty] ff_safe, counter_fire. b_off is the neutrality control there
 # (NEUTRAL_BASE default target/s11a2-base40, the 40 set of base b74ed58).
 #
+# S11b (docs/slices/S11b.md 2): with ABLATIONS=docs/slices/targets/
+# S11b-ablations every *.toml there is an override (s11b_off, a0_off,
+# how_off, light_off, rg_off, how_share_10), and a file may hold only the
+# S11b switches at 0 ([ai.arty] cb_alternate, buy_pending, how, light;
+# [items] rifle_grenades) and [ai.arty] how_income_pct 10. s11b_off is the
+# neutrality control there (NEUTRAL_BASE default target/s11b-A0-40, the
+# 40 set after the X1 counter fix with every switch 0).
+#
 # Env: ABLATIONS=DIR (default docs/slices/targets/S10b-ai-ablations; the
 # S10a set is docs/slices/targets/S10a-ai-ablations), TARGETS (default the
 # slice file beside DIR: S10b-ai.toml / S10a-ai.toml), NEUTRAL_BASE (default
@@ -88,6 +96,13 @@ if [ "$(basename "$DIR")" = S11a2-ablations ]; then
     MODE=s11a2
     NEUTRAL_NAME=b_off
     NEUTRAL_BASE=${NEUTRAL_BASE:-target/s11a2-base40}
+fi
+if [ "$(basename "$DIR")" = S11b-ablations ]; then
+    # The S10c rules for listing and applying, the S11b key list.
+    S10C=1
+    MODE=s11b
+    NEUTRAL_NAME=s11b_off
+    NEUTRAL_BASE=${NEUTRAL_BASE:-target/s11b-A0-40}
 fi
 NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10b-verify}
 DRY=0
@@ -160,6 +175,13 @@ if mode == "s10c":
     switches = allowed
 elif mode == "s11a1":
     switches = allowed_s11a1
+elif mode == "s11b":
+    # S11b: its five switches at 0, and the howitzer share at 10.
+    switches = {
+        "ai.arty": {"cb_alternate": {0}, "buy_pending": {0}, "how": {0},
+                    "light": {0}, "how_income_pct": {10}},
+        "items": {"rifle_grenades": {0}},
+    }
 elif mode == "s11a2":
     # S11a2: its four switches, at 0 only.
     switches = {
@@ -246,7 +268,7 @@ if [ $DRY -eq 1 ]; then
             out=$("$CLI" skirmish --ai-vs-ai --seed 1 --seeds 1 --minutes 1 --rules-override "$f" --summary 2>&1)
             st=$?
             applied=$(printf '%s\n' "$out" |
-                grep -cE "^override $f: .*: (ai\.fort|ai\.obstacles|fortify|ai\.truck|ai\.arty|fire_mission|supply)\.[a-z_]*: [0-9]+ -> [0-9]+$")
+                grep -cE "^override $f: .*: (ai\.fort|ai\.obstacles|fortify|ai\.truck|ai\.arty|fire_mission|supply|items)\.[a-z_]*: [0-9]+ -> [0-9]+$")
             # S10c-ai: a key may already hold its listed value (c_off sets
             # `front_slots` 1, the default). Fix pass 1 (finding A-3):
             # each key of the file counts once, when the CLI echoed its
