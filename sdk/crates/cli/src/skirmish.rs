@@ -979,6 +979,9 @@ pub struct S11bPlayer {
     pub rg_kills: u32,
     /// Match second a howitzer squad of the player was first on the map.
     pub how_first_s: Option<u32>,
+    /// Bombs the player's light mortar weapons fired (fix C-5; CLI
+    /// observer, not saved).
+    pub light_bombs: u32,
 }
 
 impl S11bPlayer {
@@ -1003,6 +1006,8 @@ pub struct S11bFaction {
     pub how_bought: u64,
     pub light_bought: u64,
     pub mortar_bought: u64,
+    /// [`S11bPlayer::light_bombs`] summed.
+    pub light_bombs: u64,
     pub how_kills: u64,
     pub rg_kills: u64,
     /// The faction's kills (denominator).
@@ -1046,6 +1051,7 @@ impl S11bFaction {
         self.how_bought += c.how_bought as u64;
         self.light_bought += c.light_bought as u64;
         self.mortar_bought += c.mortar_bought as u64;
+        self.light_bombs += c.light_bombs as u64;
         self.how_kills += c.how_kills as u64;
         self.rg_kills += c.rg_kills as u64;
         self.kills += kills as u64;
@@ -2058,6 +2064,16 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     let how_tag = world.match_setup().and_then(|m| m.tag("field_howitzer"));
     let mut how_first: Vec<Option<u32>> =
         vec![None; world.match_setup().map_or(0, |s| s.players.len())];
+    // S11b fix C-5: bombs fired by light mortar weapons (the main weapon of
+    // a card tagged `light_mortar`), by player (read-only: this tick's
+    // shots, the shooter's owner from the snapshot).
+    let light_weapons: BTreeSet<u16> = world.match_setup().map_or_else(BTreeSet::new, |m| {
+        (0..m.squad_types.len())
+            .filter(|&t| m.type_has_tag(t as u16, "light_mortar"))
+            .map(|t| m.squad_types[t].weapon)
+            .collect()
+    });
+    let mut light_bombs: Vec<u32> = vec![0; how_first.len()];
     let note_squads = |w: &World,
                        fielded: &mut BTreeMap<SquadId, (PlayerId, u16)>,
                        how_first: &mut Vec<Option<u32>>| {
@@ -2135,6 +2151,22 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
             smoke_seen = smoke_seen.max(c.id as u64 + 1);
         }
         note_squads(&world, &mut fielded, &mut how_first);
+        if !light_weapons.is_empty() {
+            let snap = world.snapshot();
+            for shot in &snap.shots {
+                if !light_weapons.contains(&shot.weapon) {
+                    continue;
+                }
+                let owner = snap
+                    .soldier_ids
+                    .iter()
+                    .position(|id| *id == shot.shooter)
+                    .map(|i| snap.soldier_owner[i] as usize);
+                if let Some(n) = owner.and_then(|p| light_bombs.get_mut(p)) {
+                    *n += 1;
+                }
+            }
+        }
         if let (Some(g), Some(ms)) = (world.game(), world.match_setup()) {
             for e in &world.snapshot().fire_mission_refusals {
                 let gun = g.squads().get(&e.squad).is_some_and(|q| {
@@ -2418,6 +2450,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                             .copied()
                             .unwrap_or(0),
                         how_first_s: how_first.get(p).copied().flatten(),
+                        light_bombs: light_bombs.get(p).copied().unwrap_or(0),
                     }
                 },
                 s5b_ai: ai.map_or_else(S5bAi::default, |a| S5bAi::of(&a.counters)),
