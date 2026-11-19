@@ -1816,9 +1816,11 @@ mod tests {
                 "ww2:ger_opel_blitz" | "ww2:usa_cckw" => (2, 0, 3),
                 // S9 served guns: no seat boxes (the crew are soldiers),
                 // one rack box; gun and recoil.
-                // S11a1: the two infantry guns are built the same way.
+                // S11a1: the two infantry guns are built the same way;
+                // S11b: the two field howitzers and the pack howitzer too.
                 "ww2:ger_pak40" | "ww2:usa_57mm_m1" | "ww2:ger_pak38" | "ww2:usa_3in_m5"
-                | "ww2:ger_leig18" | "ww2:usa_105mm_m3" => (0, 1, 2),
+                | "ww2:ger_leig18" | "ww2:usa_105mm_m3" | "ww2:ger_lefh18"
+                | "ww2:usa_105mm_m2a1" | "ww2:usa_75mm_m1a1" => (0, 1, 2),
                 // S9 tractor: two crew, no rack; engine and transmission.
                 "ww2:ger_sdkfz11" => (2, 0, 2),
                 _ => (5, 3, 4),

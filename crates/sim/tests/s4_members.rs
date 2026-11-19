@@ -345,10 +345,12 @@ fn a_limit_group_counts_every_card_in_it() {
             id: "ww2:line".into(),
             limit: 3,
         });
+    // S11b: ww2 has its own group (`ww2:artillery`): this one is last.
+    let g = (s.rules.limit_groups.len() - 1) as u16;
     let full = s.squad_type_index("ww2:ger_grenadiergruppe").unwrap();
     let field = s.squad_type_index("ww2:ger_grenadiergruppe_7").unwrap();
     for t in [full, field] {
-        s.squad_types[t as usize].limit_group = Some(0);
+        s.squad_types[t as usize].limit_group = Some(g);
         s.squad_types[t as usize].recall_cooldown_ticks = 0;
     }
     let mut w = World::new_match(s, 1).unwrap();
@@ -356,11 +358,11 @@ fn a_limit_group_counts_every_card_in_it() {
     assert!(call(&mut w, 0, 0, field).is_ok());
     assert_eq!(
         call(&mut w, 0, 1, full),
-        Err(CallInRefusal::GroupLimit { group: 0 })
+        Err(CallInRefusal::GroupLimit { group: g })
     );
     assert_eq!(
         call(&mut w, 0, 2, field),
-        Err(CallInRefusal::GroupLimit { group: 0 })
+        Err(CallInRefusal::GroupLimit { group: g })
     );
 }
 

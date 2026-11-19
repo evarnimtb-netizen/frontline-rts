@@ -291,10 +291,11 @@ fn s11a1_cards_load_at_the_spec_figures() {
             1
         );
     }
-    // The four cards come last in each roster (after every older card).
+    // The four cards come last in each roster (after every older card;
+    // S11b appends two cards a side after them).
     for f in &s.factions {
-        let n = f.roster.len();
-        let last: Vec<&str> = f.roster[n - 2..]
+        let n = f.roster.len() - 2;
+        let last: Vec<&str> = f.roster[n - 2..n]
             .iter()
             .map(|&r| s.squad_types[r as usize].id.as_str())
             .collect();

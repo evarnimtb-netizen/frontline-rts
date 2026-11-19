@@ -216,6 +216,8 @@ fn the_first_vehicle_of_each_role_is_found() {
             VehicleRole::AtGun,
             VehicleRole::Tractor,
             // S11a1: the infantry gun, appended.
+            VehicleRole::InfGun,
+            // S11b: the field howitzer (an `inf_gun` card), appended.
             VehicleRole::InfGun
         ]
     );
@@ -228,6 +230,8 @@ fn the_first_vehicle_of_each_role_is_found() {
             VehicleRole::Recon,
             VehicleRole::Truck,
             VehicleRole::AtGun,
+            VehicleRole::InfGun,
+            // S11b: the field howitzer, appended.
             VehicleRole::InfGun
         ]
     );
