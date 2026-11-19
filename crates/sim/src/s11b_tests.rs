@@ -1069,7 +1069,8 @@ fn a_howitzer_card_takes_a_fire_mission() {
 
 /// C4: each light mortar's table reaches its game range (275 m kz. GrW 42,
 /// 370 m 60 mm; the weapon's `range_m`, which bounds the AI's band and the
-/// table range, and 20 m more is past it) and its minimum (60 m, 90 m),
+/// table range; the solver itself reaches about 1,124 m / 1,800 m: the
+/// band is the AI's, not a refusal) and its minimum (60 m, 90 m),
 /// and the solver refuses 10 m inside the minimum (no charge rises
 /// steeply enough). Control: the heavy tubes' game range is 600 m.
 #[test]
@@ -1096,7 +1097,6 @@ fn light_mortars_reach_their_game_range_and_minimum() {
             "{id}"
         );
         assert!(solve(ind, from, at(max)).is_some(), "{id} reaches {max} m");
-        assert!(Fx::from_int(max + 20) > table, "{id}: 20 m more is past it");
         assert!(solve(ind, from, at(min)).is_some(), "{id} reaches {min} m");
         assert!(
             solve(ind, from, at(min - 10)).is_none(),

@@ -2,8 +2,9 @@
 # 4.6, 4.7): the German field howitzer as a base gun, a served gun
 # (`crew_model = "served"`, `role = "inf_gun"`: every S11a1 fire-mission rule
 # keys on the role) on the leIG 18 layout (S11a1) with the shield kept (D
-# 809). No tow in S11b (S11b-2 (A)): it emplaces where it arrives and cannot
-# be pushed (D 721: re-lay only; 1 cm/s, `push_men` above the crew). Figures
+# 809). No tow in S11b (S11b-2 (A)): it emplaces where it arrives and is not
+# meant to be pushed (D 721: re-lay only); the def check's floor of 1 cm/s with
+# `push_men` above the crew leaves a crawl of about 0.5 m a minute (review B-1). Figures
 # with no source in the design documents are marked "verify".
 id = "ww2:ger_lefh18"
 name = "10.5 cm leFH 18"
@@ -52,8 +53,10 @@ bog_pct = 0
 unbog_s = [0, 0]
 # Fired only from emplaced, so no moving spread.
 moving_spread_pct = 100
-# Men for full push speed (push_men): one above the crew of 6, so the crew
-# never reach even the 1 cm/s.
+# Men for full push speed (push_men): one above the crew of 6. A full crew
+# still pushes it at speed x men / push_men (6/7 of 1 cm/s, about 0.5 m a
+# minute; S11b review B-1): practically immovable, not impossible. The AI never
+# orders a field howitzer pushed or hitched (it has no tow job for one).
 push_men = 7
 # Seconds to emplace (limbered -> firing), pack, hitch or unhitch (D 721).
 emplace_s = 90

@@ -1,8 +1,9 @@
 # 105 mm Howitzer M2A1 (S11b C2; docs/design/roster/artillery-on-map.md 2.2,
 # 4.4, 4.6, 4.7): the US field howitzer as a base gun, a served gun
 # (`role = "inf_gun"`) on the 105 mm M3 layout (S11a1) with its shield (D
-# 809). No tow in S11b (S11b-2 (A)): it emplaces where it arrives and cannot
-# be pushed (D 722; 1 cm/s, `push_men` above the crew). High angle only beyond
+# 809). No tow in S11b (S11b-2 (A)): it emplaces where it arrives and is not
+# meant to be pushed (D 722; the 1 cm/s floor with `push_men` above the crew leaves a
+# crawl of about 0.5 m a minute, review B-1). High angle only beyond
 # about 3.3 km (D 750). Figures with no source in the design documents are
 # marked "verify".
 id = "ww2:usa_105mm_m2a1"
@@ -45,8 +46,10 @@ ditch_block_dm = 6
 bog_pct = 0
 unbog_s = [0, 0]
 moving_spread_pct = 100
-# Men for full push speed (push_men): one above the crew of 8, so the crew
-# never reach even the 1 cm/s.
+# Men for full push speed (push_men): one above the crew of 8. A full crew
+# still pushes it at speed x men / push_men (8/9 of 1 cm/s, about 0.5 m a
+# minute; S11b review B-1): practically immovable, not impossible. The AI never
+# orders a field howitzer pushed or hitched (it has no tow job for one).
 push_men = 9
 # Seconds to emplace, pack, hitch (D 722).
 emplace_s = 90

@@ -21,6 +21,7 @@ pop = 2
 recall_cooldown_s = 120
 initial_cooldown_s = 240
 sight_m = 175
+# Spot size, %: no source (verify, owner to confirm; stage B review B-4).
 spot_size_pct = 85
 eye_height_cm = 110
 crew_squad = "ww2:usa_75mm_m1a1_crew"
@@ -58,6 +59,8 @@ track_band_pct = 0
 track_mm = 0
 
 # Boxes as on the Pak 40: axle, shield (single 6.4 mm plate, verify), trail.
+# The design (artillery-on-map.md about line 809) gives the pack howitzer
+# little or no shield: the shield box is verify, owner to confirm (review B-4).
 [[boxes]]
 id = "axle"
 frame = "hull"
