@@ -61,7 +61,7 @@ needed.
 | S4 pop cap 150 (historical squad sizes, owner Q6 (A)) | `defs/rules/skirmish.toml` | top level `pop_cap` |
 | S4 Panzerfaust gap: one single-shot AT item per squad this often (`single_shot_gap_s`) | same | `[items]` |
 | S4 crew-weapon pickup reach: only a man this close (m) takes a fallen gunner's MG or launcher (`crew_pickup_reach_m`) | same | `[items]` (absent in older rules: 30) |
-| S11b rifle grenades (`docs/slices/S11b.md` 2, G1, G3): switch `rifle_grenades` (0..=1, 0 in ww2: on in S11b Build C, off again since the S11b fix stage, owner question S11b-15; 0 drops the `rifle_grenade` kind from every squad type, for every player) and `rifle_grenade_gap_s` (0..=600, 15: one rifle grenade a squad this often) | same | `[items]` (absent keys: these values) |
+| S11b rifle grenades (`docs/slices/S11b.md` 2, G1, G3): switch `rifle_grenades` (0..=1, 1 in ww2 since S11b Build C: 0 drops the `rifle_grenade` kind from every squad type, for every player) and `rifle_grenade_gap_s` (0..=600, 15: one rifle grenade a squad this often) | same | `[items]` (absent keys: these values) |
 | S4 AI Panzerfaust hunts (`pzf_hunt_m`, 0 = off; `pzf_clear_m`) | same | `[ai.assault]` (absent in older rules: 100 / 40) |
 | S4 AI capture of enemy abandoned tanks by its crews (`capture_m`, 0 = off; needs `[vehicles.recrew] capture`) | same | `[ai.armour]` (absent in older rules: 150) |
 | S4 weapons: crew weapon flag (`crew_weapon`, default by class), hand-over time of every crew weapon (`handover_ms`), squad-card name (`short_name`), `sources` | `defs/weapons/*.toml` | top-level keys |

@@ -1,7 +1,8 @@
 # B2 lever (S11b-14 option (C), owner class: a content figure): the 60 mm
 # M2's burst scaled to the bomb weight (1.33 / 3.5 kg of the 81 mm's):
 # 90 -> 55 rays, reach 1,130 -> 900 cm. Use with s11b_light_on.toml (the
-# burst alone changes nothing while the AI buys no light mortar).
+# burst alone changes nothing while the AI buys no light mortar). S11b fix
+# 40 set with both, grenades off: Germany 13/40, HE 23.6 % (light alone 11/40).
 [defs.weapons."ww2:m2_60mm".he]
 frag_count = 55
 frag_reach_cm = 900

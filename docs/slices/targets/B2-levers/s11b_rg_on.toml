@@ -1,5 +1,0 @@
-# B2 lever (from the S11b fix stage, owner question S11b-15): HE rifle grenades
-# issued again (content switch: every player). S11b fix 40 set (howitzer on,
-# light mortars off): Germany 16/40, HE 26.9 % (cap 26.3; shipped 23.0 %).
-[items]
-rifle_grenades = 1

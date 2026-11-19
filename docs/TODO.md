@@ -465,16 +465,13 @@ Revised the same day with the measured diagnosis of S11a2-10..12 and a plan revi
   and its charges; the light mortars' game ranges (S11b-5); the FH Gr 38 complete round at 19 kg (as the M1 HE).
   **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Hold the affected defs back until sourced.
 - S11b-14 (asked by the S11b fix stage) AI light mortars are off by default because with them Germany wins 27.5 % of a
-  40 set (11/40; 16/40 without them). Germany's own kz. GrW 42 carries the drop: light mortars for Germany only 10/40,
-  for the USA only 20/40 (HE share 27.6 / 28.2 %, both above the 26.3 cap with grenades on). `[ai.arty] light` is
+  40 set (11/40, HE share 23.1 %; 20/40 without them, on the fix stage's head). Germany's own kz. GrW 42 carries the drop:
+  light mortars for Germany only 9/40, for the USA only 17/40. A kz. team fires about 10 of its 18 bombs a match, a 60 mm
+  team about 34 (30 carried, the rest resupplied); Germany's light buys take heavy-mortar buys (190 -> 132 a 40 set) and its bombs fall
+  93 -> 72 a match. The 60 mm burst scaled to the bomb (55 rays, 900 cm) did not help: 13/40. `[ai.arty] light` is
   AI-only: the cards stay buyable by a human player. (A) Leave off until the balance pass B2 tunes the two cards
   (levers `docs/slices/targets/B2-levers/s11b_light_*.toml`). **(A) assumed 2026-11-19, owner asked not to be asked.**
   (B) On now.
-- S11b-15 (asked by the S11b fix stage) HE rifle grenades are off by default because with them (howitzer on, light
-  mortars off) the 40 set's HE share mean is 26.9 %, above the hard cap 26.3 (23.0 without them; Germany 16/40 either
-  way). `[items] rifle_grenades` is content, not AI: 0 issues them to no player. (A) Leave off until the balance pass B2
-  tunes them (lever `docs/slices/targets/B2-levers/s11b_rg_on.toml`). **(A) assumed 2026-11-19, owner asked not to be
-  asked.** (B) On now and the cap raised.
 
 ## B2 balance pass open owner questions (asked 2026-11-19 by the Plan stage; each runs on (A): "assumed 2026-11-19, owner asked not to be asked")
 

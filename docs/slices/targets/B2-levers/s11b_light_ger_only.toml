@@ -1,7 +1,6 @@
 # B2 lever (S11b-14): light mortars for Germany's AI only (the US 60 mm card
-# at ai_weight 0). S11b fix 40 set with grenades on: Germany 10/40, HE 27.6 %;
-# German bombs fell 70.8 -> 51.0 a match, the kz. GrW 42 taking heavy mortar
-# and line-squad buys.
+# at ai_weight 0). S11b fix 40 set (grenades off): Germany 9/40, HE 20.9 %;
+# the kz. GrW 42 fires about 10 bombs a team and takes heavy-mortar buys.
 [ai.arty]
 light = 1
 

@@ -24,9 +24,10 @@ Branch `claude/project-thread-e7nsak`. Another agent may work in this checkout: 
 - Not checked by a CLI run: every lever file (parsed as TOML only), `queue.sh check`, `paired.py --detail`. `paired.py`'s
   pairing, floors and CSV output were run on `target/s11a2-measure/skirmish40*.json`.
 - `B2.toml` was generated from `target/s11a2-measure` (16 floors re-based, T31 notes); run 2 makes it again from BASE's measure.
-- S11b fix: `B2-levers/s11b_light_on`, `s11b_light_ger_only`, `s11b_light_usa_only`, `s11b_rg_on` (S11b-14/15). 40 sets on
-  S11b's head: shipped (light, grenades off) Germany 16/40, HE 23.0; light both 11/40 (HE 26.6), Germany-only 10/40, USA-only
-  20/40 (both with grenades, HE 27.6 / 28.2); grenades 16/40, HE 26.9 (cap 26.3). The kz. GrW 42 hurts Germany: tune it.
+- S11b fix: `B2-levers/s11b_light_on`, `s11b_light_ger_only`, `s11b_light_usa_only`, `s11b_light_on_60mm_burst` (S11b-14).
+  40 sets on the fix head, grenades off (shipped with grenades: 19/40): light off 20/40, both 11/40, Germany-only 9/40,
+  USA-only 17/40, with the smaller 60 mm burst 13/40. The kz. GrW 42 (about 10 bombs a team; it takes heavy-mortar buys)
+  hurts Germany: tune it. Apply them with `[items] rifle_grenades = 0` to compare with these numbers.
 
 ## Plan (2026-11-19)
 Evidence read: `target/s11a2-measure` (three 160 sets and the 40-set controls), `target/s10c-verify`, B1 log history
