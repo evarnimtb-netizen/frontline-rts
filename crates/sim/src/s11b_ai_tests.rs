@@ -399,3 +399,89 @@ fn ai_s11b_deterministic_threads_and_save_load() {
     let (h0, _, _, _) = go(1, 0);
     assert_ne!(h0, h1, "control: how 0");
 }
+
+const KZ: &str = "ww2:ger_kz_grw42_team";
+const HEAVY: &str = "ww2:ger_mortar_team";
+
+/// L1: with `light` 1 and the shipped weights (light 50, the heavy card's
+/// default 100) the mix buys the kz. GrW 42 among its mortar buys (every
+/// other card weight 0, the cards off cooldown), and an own light team
+/// fires on an enemy squad its leader sees 200 m away. Control `light` 0:
+/// no light card is bought.
+#[test]
+fn ai_buys_a_light_mortar_and_fires_it() {
+    let buys = |light: u32| {
+        let mut w = how_world(1, 0, 5000, |s| {
+            s.rules.ai.arty.light = light;
+            for t in s.squad_types.iter_mut() {
+                if t.id == KZ || t.id == HEAVY {
+                    t.ai_weight = if t.id == KZ { 50 } else { 100 };
+                    t.initial_cooldown_ticks = 0;
+                    t.recall_cooldown_ticks = 0;
+                }
+            }
+        });
+        steps(&mut w, 30 * 120);
+        let s = w.match_setup().unwrap();
+        let k = counters(&w);
+        let n = |id: &str| {
+            k.bought
+                .get(s.squad_type_index(id).unwrap() as usize)
+                .copied()
+        };
+        (n(KZ).unwrap_or(0), n(HEAVY).unwrap_or(0))
+    };
+    let (light, heavy) = buys(1);
+    assert!(light >= 1 && heavy >= light, "light {light}, heavy {heavy}");
+    assert_eq!(buys(0).0, 0, "control: light 0");
+    // Fires: the mortar habit drives the light team like a heavy one.
+    let mut w = how_world(1, 0, 0, |s| s.rules.ai.arty.light = 1);
+    steps(&mut w, 2);
+    let q = spawn(&mut w, 0, KZ, 300, 500);
+    let e = spawn(&mut w, 1, "ww2:usa_rifle_squad", 500, 500);
+    for m in members(&w, e) {
+        w.edit_soldier(m, |k, c| {
+            k.rounds = [0; frontline_content::setup::MAX_FEEDS];
+            c.mag = 0;
+        });
+    }
+    steps(&mut w, 30 * 60);
+    let fired = w.game().unwrap().players[0].ammo.fired[crate::supply::fired_class::MORTAR];
+    assert!(fired > 0, "the light team fired ({q:?})");
+}
+
+/// H3 (G4: the base does not refill rifle grenades): a rifle squad whose
+/// grenadier has spent his rifle grenades, with full rounds, makes no
+/// refill trip (the AI's ammunition share reads rounds, not items: no code
+/// was needed). Control: the same squad with its rounds spent goes.
+#[test]
+fn ai_does_not_send_a_squad_to_refill_rifle_grenades() {
+    let run = |spend_rounds: bool| {
+        let mut w = how_world(1, 0, 5000, |s| {
+            super::s11b_tests::arm(s, RIFLES, "rifleman", 3)
+        });
+        steps(&mut w, 2);
+        let q = spawn(&mut w, 0, RIFLES, 500, 500);
+        let k = frontline_content::ItemKind::RifleGrenade.index();
+        let mut had = 0u32;
+        for m in members(&w, q) {
+            w.edit_soldier(m, |kit, c| {
+                had += kit.items[k] as u32;
+                kit.items[k] = 0;
+                if spend_rounds {
+                    kit.rounds = [0; frontline_content::setup::MAX_FEEDS];
+                    c.mag = 0;
+                }
+            });
+        }
+        assert!(had > 0, "the grenadier carried rifle grenades");
+        steps(&mut w, 30 * 30);
+        let refill = ai(&w)
+            .tasks
+            .get(&q)
+            .is_some_and(|t| t.kind == crate::ai::TaskKind::Refill);
+        (refill, counters(&w).refill_trips)
+    };
+    assert_eq!(run(false), (false, 0), "no trip for rifle grenades");
+    assert!(run(true).1 > 0, "control: rounds spent: a trip");
+}

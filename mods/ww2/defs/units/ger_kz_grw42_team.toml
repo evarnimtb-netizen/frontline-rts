@@ -23,7 +23,7 @@ speed_cm_s = 240
 sight_m = 150
 spacing_dm = 25
 dig_rate_pct = 0
-ai_weight = 0
+ai_weight = 50   # S11b L1 (Build C): half the heavy card's effective weight (DEFAULT_AI_WEIGHT 100): about one light team in three mortar buys; bought only with `[ai.arty] light` 1
 
 # Gruppenführer: observes fire missions (every squad leader does).
 [[members]]

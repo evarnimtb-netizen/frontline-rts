@@ -1569,7 +1569,7 @@ how_after_s = 480            # s (H1): no howitzer before this match time (D 837
 how_max = 1                  # H1: howitzers alive or called in at once (D 789, D 837-838; 0..8)
 how_income_pct = 15          # % (H1): howitzer cards cost at most this share of the income so far, apart from income_max_pct (S11b-3; 0..100)
 how_reserve_mp = 300         # H1: manpower that stays after the howitzer buy (plan value, S11b-13; 0..100000)
-light = 0                    # L1 switch: cards tagged light_mortar join the mortar slot of the buy mix (0..1)
+light = 1                    # L1 switch: cards tagged light_mortar join the mortar slot of the buy mix (0..1)
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired
