@@ -1,4 +1,5 @@
-# S11b fix set (c): every S11b switch on, but Germany's AI buys no kz. GrW 42
+# S11b fix set (c): the shipped switches (rifle grenades off) with AI light
+# mortars on, but Germany's AI buys no kz. GrW 42
 # team (card ai_weight 0; a human player can still buy it).
 [ai.arty]
 light = 1

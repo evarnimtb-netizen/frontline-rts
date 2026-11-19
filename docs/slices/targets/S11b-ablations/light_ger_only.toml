@@ -1,4 +1,5 @@
-# S11b fix set (b): every S11b switch on, but the USA's AI buys no 60 mm
+# S11b fix set (b): the shipped switches (rifle grenades off) with AI light
+# mortars on, but the USA's AI buys no 60 mm
 # mortar team (card ai_weight 0; a human player can still buy it).
 [ai.arty]
 light = 1
