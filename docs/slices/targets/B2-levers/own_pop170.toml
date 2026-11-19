@@ -1,0 +1,4 @@
+# B2 lever P1, OWNER CLASS (pop 150 is an owner decision, S4 Q6): screened
+# and reported only, never applied by the pass. pop_cap 150 -> 170.
+# Why: Germany is held by the cap 11.7 plans a match, the USA never (H5).
+pop_cap = 170

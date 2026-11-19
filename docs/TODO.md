@@ -465,6 +465,40 @@ Revised the same day with the measured diagnosis of S11a2-10..12 and a plan revi
   and its charges; the light mortars' game ranges (S11b-5); the FH Gr 38 complete round at 19 kg (as the M1 HE).
   **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Hold the affected defs back until sourced.
 
+## B2 balance pass open owner questions (asked 2026-11-19 by the Plan stage; each runs on (A): "assumed 2026-11-19, owner asked not to be asked")
+
+Plan `docs/slices/B2-balance.md` 9; stage contracts `B2-run-1.md`, `B2-run-2.md`; log `docs/slices/B2-log.md`; targets
+`docs/slices/targets/B2.toml`. Planned, not run (it runs on the S11b head). Found without playing a match, from the 480 at
+`e149258`: Germany wins 24.6 % of the 114 matches that end at 14-17 minutes and 47.0 % of the other 366; its manpower
+exchange is not worse than the USA's; US rifles kill 48.3 men a match against 28.9.
+
+- B2-1 What the pass may change alone. (A) Only AI rule keys and card `ai_weight`s inside the plan's ranges (`[ai.mix]`
+  line, vehicle, mg; `[ai.arty] income_max_pct`; the weights of the two German line variants). Prices, the pop cap, start
+  squads, squad make-up and weapons are screened as override files and reported with numbers, not applied. **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) Also apply one owner-class lever if it passes the same rule.
+- B2-2 If no AI setting passes (the evidence points at the free start squads and the line squads, which the pass may not
+  change). (A) Change nothing, as B1; the owner picks from the measured list: a third or cheaper German start squad, the
+  German price cut, the pop cap, an AI opening-buy rule (code), or accept about 42 %. **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) The pass applies the best owner-class lever itself.
+- B2-3 Re-based vehicle floors (S11b-10 (A) asked for them): T30, T40, T54, T72 at 0.85 x the lowest measured set (Pz IV
+  bought 90 to 70 % of matches, M4 90 to 60, StuG 60 / 80 to 40, M10 60 / 75 to 25, Sd.Kfz. 251/1 60 to 25, M3A1 60 to 10;
+  manpower shares 11 to 8 and 10 to 5.5; made again from the S11b measure). (A) As in `B2.toml`. **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) Keep the design floors as visible hard misses.
+- B2-4 T97, builders' share of the infantry plans: cap 12 to 21 (measured 16.5-18.2 since S10c-ai's builder floor and front
+  jobs). (A) Re-base. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Keep 12 and lower `builder_cards_min`.
+- B2-5 T31 (all vehicles' share of kills; Germany 32.0-33.5 %, cap 30) and T55 (Sd.Kfz. 234/1 at 14.7-15.3 % of Germany's
+  kills, cap 10). (A) Both stay reports: AT and infantry guns are counted inside T31 (a vehicles-only share is a later CLI
+  change), and the armoured car is not touched while Germany is under 45 %. **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) Lower `[ai.recon] income_max_pct` now.
+- B2-6 The aim. (A) 47-53 %: 480 paired matches can prove a gain of 7 points at z 2.5, not the 3.3 points to the band's
+  edge; a lever worth +3 is reported, not applied. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Apply any gain that reaches 45 %.
+- B2-7 Seeds. (A) Screen 2001-2080, confirm 2101-2280, judges 1-280 (the measure only), held out 301-380 once.
+  **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Reuse B1's blocks 1001-1280.
+- B2-8 The M3A1's kill count: 7.0 % of US kills with the card bought in 13.75 % of matches (about 36 kills a half-track
+  bought; 0.4 for the Sd.Kfz. 251/1), and the share did not fall when the buys halved. (A) One 40-set diagnostic in run 1;
+  if it is a counting fault, fix the CLI count in a later change and treat the vehicle kill rows (T33, T55) as suspect
+  until then. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Fix it inside B2 (CLI code, with a review).
+
 ## Planned work queue
 
 1. Infra step (done; on main).
@@ -490,6 +524,7 @@ Revised the same day with the measured diagnosis of S11a2-10..12 and a plan revi
 16. **S11a1: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A, B and C, with review fixes C-1..C-7 (B-5 not done). Check at the last fix: `check.sh quick 730e67f` all ok, 961 tests. Measured with S11a2 at `e149258` (item 17). Spec `docs/slices/S11a1.md`, log `S11a1-log.md`, targets `S11a1.toml`. Owner questions S11a1-1..10 above. Open: T131 stays a report (S11a1-10); preparation fire never runs in matches (T138). Waits for the owner's merge decision.
 17. **S11a2: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A and B, with the Fix of Build B (B-1..B-7). Verified: `check.sh quick 730e67f` all ok, 982 tests at the head `e149258`. GitHub CI on `affb26e` (S11a1 complete plus S11a2 stage A): Linux build, release and debug sim tests, simulate, clippy, rustfmt and cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on main (fixed by PR 1); macOS cancelled; cross-platform hash check skipped. CI on `e149258` was still running when written. Measured 480 at `e149258`: Germany 41.67 % (sets 46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0; 318 targets pass, 82 miss (44 hard). New hard misses: T9b, T54a, T54c, T81a, T81b, T119b; gone: T8a, T115d, T121d. `tools/verify.sh` not run. Spec `docs/slices/S11a2.md`, log `S11a2-log.md`, targets `S11a2.toml`. Owner questions S11a2-1..12 above. Next: the merge decisions for S10c-ai, S11a1, S11a2 and PR 1; then the open items in STATE.md; then S11b.
 18. **S11b: planned 2026-11-19** (spec `docs/slices/S11b.md`, stages `S11b-build-A.md`, `-B.md`, `-C.md`, targets `S11b.toml`, log `S11b-log.md`). Three Build stages: A (fixes for S11a2-10 and -11, SAVE 29 and PROTOCOL 15, rifle-grenade mode), B (content), C (AI use, measures). Not built. Owner questions S11b-1..13 above.
+19. **B2 balance pass: planned 2026-11-19** (item 14; plan `docs/slices/B2-balance.md`, stages `B2-run-1.md` screen and `B2-run-2.md` confirm and apply, targets `B2.toml`, levers `targets/B2-levers/`, log `B2-log.md`). Runs on the S11b head after its measure: two agent sessions, then the orchestrator's 480 measure and the held-out set. TOML only; if nothing passes the fixed rule, nothing changes. Owner questions B2-1..8 above.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 

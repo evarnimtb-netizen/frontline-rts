@@ -1,0 +1,5 @@
+# B2 lever A1 (tier 1, symmetric). [ai.mix] line 50 -> 35 (range 35-50).
+# Why: B1 L5 measured the other direction on 160 fresh matches: line 60 -3.1,
+# line 70 -13.1 points for Germany (flips 19 / 40). Tests hypothesis H2.
+[ai.mix]
+line = 35

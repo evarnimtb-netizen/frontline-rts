@@ -1,0 +1,6 @@
+# B2 DIAGNOSTIC for H3, a 40 set (seeds 2001-2020). The AI never buys the
+# M3A1. If s7_derived.kills_by_vehicle_pct.usa_m3a1 stays near 7 %, the kills
+# are booked to the wrong vehicle (a CLI counting fault, B2-8); if it reads 0,
+# the M3A1 is the strongest card a manpower point buys.
+[defs.units."ww2:usa_m3a1_squad"]
+ai_weight = 0

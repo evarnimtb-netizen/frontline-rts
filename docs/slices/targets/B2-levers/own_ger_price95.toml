@@ -1,0 +1,22 @@
+# B2 lever P2, OWNER CLASS (card prices; German cut S5a-37): screened and
+# reported only, never applied by the pass. The nine German infantry cards of
+# tools/autotune/specs/s6_tune.toml at x0.95 (the knob S5a, S5b and S6 tuned).
+# H1 predicts little effect: the opening is fought by the free start squads.
+[defs.units."ww2:ger_grenadiergruppe"]
+cost = 220
+[defs.units."ww2:ger_grenadiergruppe_7"]
+cost = 157
+[defs.units."ww2:ger_smg_gruppe"]
+cost = 152
+[defs.units."ww2:ger_vg_sturmgruppe"]
+cost = 294
+[defs.units."ww2:ger_engineer_squad"]
+cost = 196
+[defs.units."ww2:ger_panzerschreck_team"]
+cost = 142
+[defs.units."ww2:ger_mortar_team"]
+cost = 235
+[defs.units."ww2:ger_zugtrupp"]
+cost = 157
+[defs.units."ww2:ger_munitionstraeger"]
+cost = 78

@@ -1,0 +1,5 @@
+# B2 lever A4 (tier 1, symmetric). [ai.arty] income_max_pct 15 -> 30
+# (range 15-30). Why: the S11b diagnosis read Germany 57.5 % on ONE 40 set
+# with it (noise of a 40 set: +-15 points); S11b-10 (B). Tests hypothesis H4.
+[ai.arty]
+income_max_pct = 30
