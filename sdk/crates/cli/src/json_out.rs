@@ -934,6 +934,8 @@ pub fn fortify(r: &FortifyReport) -> Value {
         "s11a1": serde_json::to_value(&r.s11a1).unwrap_or_default(),
         // S11a2 Build B (M2, M3): `fortify10.s11a2.{ff,cb,ff_lift}.*`.
         "s11a2": serde_json::to_value(&r.s11a2).unwrap_or_default(),
+        // S11b Build C (M2): `fortify10.s11b.{how_mask,how_barrage}.*`.
+        "s11b": serde_json::to_value(&r.s11b).unwrap_or_default(),
         "hard_failed": checks.iter().filter(|c| c["pass"] == json!(false)).count(),
         "checks": checks,
         "rows": rows,

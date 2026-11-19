@@ -75,6 +75,7 @@ pub mod s10b_ai;
 pub mod s10c_ai;
 pub mod s11a1;
 pub mod s11a2;
+pub mod s11b;
 
 /// Longest rifle fight, in game seconds.
 pub const RIFLE_FIGHT_S: u64 = 180;
@@ -216,6 +217,10 @@ pub struct FortifyReport {
     /// the answer, the AI lift (rows with exposure and control; left out
     /// with `--no-s10b-ai`, as the S10b-ai rows).
     pub s11a2: s11a2::S11a2Report,
+    /// S11b: the howitzer mask and barrage, rifle grenades, light mortars
+    /// (rows with exposure and control; left out with `--no-s10b-ai`, as
+    /// the S10b-ai rows).
+    pub s11b: s11b::S11bReport,
     /// Rifles, mortar and smoke pass (the grenade assault has no threshold
     /// yet).
     pub pass: bool,
@@ -1072,6 +1077,11 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     } else {
         s11a2::s11a2_rows(args, seeds.clone())?
     };
+    let s11b = if args.no_s10b_ai {
+        s11b::S11bReport::default()
+    } else {
+        s11b::s11b_rows(args, seeds.clone())?
+    };
     let mut rifles = Vec::new();
     let mut mortar = Vec::new();
     let mut mortar_ranged = Vec::new();
@@ -1243,6 +1253,7 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         s10c,
         s11a1,
         s11a2,
+        s11b,
     })
 }
 
@@ -1448,6 +1459,7 @@ pub fn summary_text(r: &FortifyReport) -> String {
     out += &s10c_ai::summary_text(&r.s10c);
     out += &s11a1::summary_text(&r.s11a1);
     out += &s11a2::summary_text(&r.s11a2);
+    out += &s11b::summary_text(&r.s11b);
     out += &format!("fortify-test: {}", if r.pass { "PASS" } else { "FAIL" });
     out
 }
