@@ -2,8 +2,10 @@
 # GA 591, 730): one 60 mm M2 served by five men: the squad leader observes and
 # adjusts, the gunner lays and fires, the assistant gunner and two
 # ammunition bearers carry the bombs. Member slots and traits as
-# usa_mortar_team.toml. 30 bombs, 6 a man (GA 591). AI weight 0 (S11b Build
-# B; `[ai.arty] light` is Build C's).
+# usa_mortar_team.toml. 30 bombs (GA 591) on the crew as 6 + 8 + 8 + 8 (S11b
+# fix C-6: Build B gave the leader, the AI's spotter, 6 of them, out of the
+# crew's 5 m feed reach). AI weight 0 (S11b Build B; `[ai.arty] light` is
+# Build C's).
 id = "ww2:usa_60mm_mortar_squad"
 name = "60mm Mortar Squad"
 short_name = "60mm Mortar"
@@ -25,7 +27,6 @@ ai_weight = 50   # S11b L1 (Build C): half the heavy card's effective weight (DE
 [[members]]
 slot = "leader"
 weapon = "ww2:m1_carbine"
-rounds = { "ww2:60mm_m49a2" = 6 }
 traits = ["leader"]
 
 [[members]]
@@ -38,12 +39,12 @@ traits = ["crew_gunner"]
 [[members]]
 slot = "mortar_assistant"
 weapon = "ww2:m1_carbine"
-rounds = { "ww2:60mm_m49a2" = 6 }
+rounds = { "ww2:60mm_m49a2" = 8 }
 traits = ["crew_assistant"]
 
 [[members]]
 slot = "ammo_bearer"
 count = 2
 weapon = "ww2:m1_carbine"
-rounds = { "ww2:60mm_m49a2" = 6 }
+rounds = { "ww2:60mm_m49a2" = 8 }
 traits = ["ammo_bearer"]
