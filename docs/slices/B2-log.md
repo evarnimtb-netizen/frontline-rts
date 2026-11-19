@@ -71,3 +71,6 @@ Lines (own counter a match per side, base -> lever):
   +10) is met; but at the base Germany already has more men alive at 5 min than the USA (49.9 against 43.7), so the gap is not
   that the USA outnumbers Germany early: one more free Gruppe (10 men, about 232 MP) is simply worth about 19 points.
   Verdict: diagnostic, never a candidate.
+- `mix_vehicle30`: +8.8 (42 / 28, z +1.67), 50.6 %; HE 25.7 (under the cap); floors FAIL: mortar share G 7.3 (base 9.2), U 5.1
+  (base 6.5), vehicle kill share G 38.2 (base 34.1), U 35.0 (base 28.0). Vehicle cards 3.09 -> 4.28 G, 2.36 -> 3.59 U (moved);
+  StuG bought in 35.0 -> 63.1 % of matches. Verdict: fail rule 2 (floors T9, T31).
