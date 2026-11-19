@@ -6,28 +6,33 @@ Branch `claude/project-thread-e7nsak`. Another agent may work in this checkout: 
 (`git commit -m ... -- FILES`), never `git add -A`, never `target/`, `.claude/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: planned 2026-11-19; nothing played. Next: B2-1 screen (`B2-run-1.md`), once S11b's stage C and its 480 measure are done.**
-- BASE is the S11b head at that time (not known when this was written). Run 1 chunk 0 records the commit, the batch world
-  key and BASE's pooled share.
-- Hypotheses, in order (plan 2): H1 the USA wins the first clash with the free start squads and the forts keep the lead
-  (weak: the 14-17 minute bin was picked after looking; tested by `diag_ger_start3`); H2 a Rifle Squad beats a
-  Grenadiergruppe slot for slot (B1: `line` 70 cost Germany 13 points); H3 the 57 mm's armed M3A1 tow makes 5.7 of the USA's
-  12.8 vehicle-MG kills a match (tested by `own_57mm_truck_tow`, owner class); H4 artillery is not the cause; H5 pop cap;
-  H6 builder cards.
-- Run 1, six 160 sets on block 2001-2080: base (`--side-detail`), `mix_line35`, `own_57mm_truck_tow`, `diag_ger_start3`,
-  `mix_vehicle30`, `ger_line_g7_150`. Optional after them: `mix_line42` (dose rule), `ger_line_vg150`, `own_ger_price95`,
-  `mix_mg30`, `own_pop170`, `arty_share30`.
-- Pass mark of the screen: paired gain at least +5 points in the predicted direction, `floors ok`, own counter moved. At
-  most two tier 1 candidates go to run 2. Owner-class files and diagnostics are logged only, never applied.
-- Confirmation (run 2, at most seven sets): on the fresh 320 alone z at least 1.64 and positive in both blocks, level 45-55,
-  floors. Then the orchestrator's judge on seeds 1-280 and the held-out set 5001-5080.
-- Not checked by a CLI run: every lever file (parsed as TOML only), `queue.sh check`, `paired.py --detail`. `paired.py`'s
-  pairing, floors and CSV output were run on `target/s11a2-measure/skirmish40*.json`.
-- `B2.toml` was generated from `target/s11a2-measure` (16 floors re-based, T31 notes); run 2 makes it again from BASE's measure.
-- S11b fix: `B2-levers/s11b_light_on`, `s11b_light_ger_only`, `s11b_light_usa_only`, `s11b_light_on_60mm_burst` (S11b-14).
-  40 sets on the fix head, grenades off (shipped with grenades: 19/40): light off 20/40, both 11/40, Germany-only 9/40,
-  USA-only 17/40, with the smaller 60 mm burst 13/40. The kz. GrW 42 (about 10 bombs a team; it takes heavy-mortar buys)
-  hurts Germany: tune it. Apply them with `[items] rifle_grenades = 0` to compare with these numbers.
+**State: B2-1 screen done 2026-11-19 (seven 160 sets on block 2001-2080). Tier 1 candidates by the screen rule: none.
+Separate candidate (orchestrator's added rule: HE goal met, Germany not down more than 2): `rg_gap25`. Next: B2-2 for
+`rg_gap25` only, with its floor misses below in view; no default changed.**
+- BASE `88117de`, world key `fe6b1dcdb6db8293c09b6077`; BASE 480 measure 44.17 % (45.00 / 43.75 / 43.75). Block S base
+  41.9 %, no winner 0, HE 26.19, median 18.8 min. Paired SE on 160 about 4.9 points.
+| lever | Ger % | gain | up/down | z | HE | floors | own counter (a match, G / U) | verdict |
+|---|---|---|---|---|---|---|---|---|
+| `mix_line35` | 51.9 | +10.0 | 24/8 | +2.83 | 26.5 | FAIL HE 26.5, US veh 32.9 | line 3.54->2.64 / 1.80->0.79 | fail (floors) |
+| `mix_vehicle30` | 50.6 | +8.8 | 42/28 | +1.67 | 25.7 | FAIL mortar G 7.3 U 5.1, veh G 38.2 U 35.0 | vehicles 3.09->4.28 / 2.36->3.59 | fail (floors) |
+| `ger_line_g7_150` | 38.8 | -3.1 | 37/42 | -0.56 | 26.2 | FAIL G veh 36.3 | 7-man Gruppe 0.83->2.16 | fail (sign, floors) |
+| `rg_gap25` | 44.4 | +2.5 | 28/24 | +0.55 | 24.7 | FAIL G mortar 8.0 (bound 8.2), US veh 31.1 (30) | grenades 6.38->5.75 / 7.86->6.81 | separate candidate |
+| `own_57mm_truck_tow` | 58.1 | +16.2 | 39/13 | +3.61 | 29.3 | FAIL HE 29.3 | US veh-MG kills 12.2->8.5, M3A1 5.74->0.06 | owner class |
+| `diag_ger_start3` | 61.2 | +19.4 | 57/26 | +3.40 | 27.2 | FAIL HE 27.2 | pop at 5 min 49.9->55.8 | diagnostic |
+- `rg_gap25`: HE 26.19 -> 24.71, US grenade kill share 7.38 -> 5.76 % (bound 5 still missed), German 3.95 -> 3.63. Its two
+  plan-floor misses are small (mortar share 0.2 under, US vehicle share 1.1 over) and run 2 must read them on F1 / F2.
+- H1: at the base Germany has MORE men alive at 5 min (49.9 against 43.7) and more foot squads (7 / 9 / 8.5 against 5 / 7 /
+  6.9 at 1 / 3 / 5 min); USA leads at 10 min (66.9 / 64.1). A third free Gruppe gives +19.4 (H1's +10 met): start content is
+  a large lever, but the USA does not outnumber Germany early.
+- H3: the CCKW tow removes the M3A1's kills (5.7 a match) and gives +16.2; the AI then runs the tow trucks as supply trucks
+  (drops 1.9 -> 6.3 a match, flees 67 -> 578 a set). HE share rises to 29.3 (cap 26.3).
+- Owner class, all far above the 47-53 aim alone and all over the HE cap: truck tow +16.2, start3 +19.4. The HE cap (T8a)
+  is the floor that binds most levers that help Germany; `rg_gap25` is the one lever that frees room under it.
+- Not played (budget seven sets): `mix_line42` (dose rule: line35 did not pass), `ger_line_vg150`, `own_ger_price95`,
+  `mix_mg30`, `own_pop170`, `arty_share30`, `s11b_light_usa_w25_ger_on` (made and load-checked, cut first). No combination
+  (a combination needs both parts passed alone).
+- Files: lines `targets/B2-results/paired.txt`, per-match CSVs `s2001_*.csv`, counters `counters_*.txt` (from
+  `target/b2/counters.py`, not committed), H1 tables `detail_*.txt`. No script or lever key needed a fix.
 
 ## Plan (2026-11-19)
 Evidence read: `target/s11a2-measure` (three 160 sets and the 40-set controls), `target/s10c-verify`, B1 log history
@@ -76,3 +81,10 @@ Lines (own counter a match per side, base -> lever):
   StuG bought in 35.0 -> 63.1 % of matches. Verdict: fail rule 2 (floors T9, T31).
 - `ger_line_g7_150`: -3.1 (37 / 42, z -0.56), 38.8 %; floors FAIL: German vehicle kill share 36.3 (base 34.1). 7-man Gruppe
   0.83 -> 2.16 a match (moved; full Gruppe 2.28 -> 1.39, VG 0.42 -> 0.14). Verdict: fail rule 1 (sign and gain) and rule 2.
+- `rg_gap25`: +2.5 (28 / 24, z +0.55), 44.4 %; HE 24.7 (base 26.2: the HE goal met); floors FAIL: German mortar share 8.0
+  (bound min(10, 9.2 - 1) = 8.2), US vehicle kill share 31.1 (bound max(30, 28.0 + 2) = 30.0). Grenades fired 6.38 -> 5.75 G,
+  7.86 -> 6.81 U a match (moved); grenade kill share 3.95 -> 3.63 G, 7.38 -> 5.76 U (US report bound 5 still missed).
+Decision (rule of `B2-balance.md` 5, no rule relaxed): no tier 1 lever passes (all fail floors; `ger_line_g7_150` also the
+sign), so no tier 1 candidate and no dose set. By the orchestrator's added rule (HE at or under 26.3 and Germany not down more
+than 2 points) `rg_gap25` is named as the separate candidate for run 2; its plan-floor misses are logged as misses, and run 2
+must hold every floor on F1 / F2 for it. Queue ended exit 0, seven sets, about 75 minutes; nothing went wrong.

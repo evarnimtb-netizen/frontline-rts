@@ -3,3 +3,4 @@ own_57mm_truck_tow@s2001 n=160 base 41.9 % lever 58.1 % diff +16.2 up 39 down 13
 diag_ger_start3@s2001 n=160 base 41.9 % lever 61.2 % diff +19.4 up 57 down 26 z +3.40 blocks +19.4 | floors FAIL: HE share 27.2 (base 26.2)
 mix_vehicle30@s2001 n=160 base 41.9 % lever 50.6 % diff +8.8 up 42 down 28 z +1.67 blocks +8.8 | floors FAIL: germany mortar 7.3 (base 9.2); germany vehicle kills 38.2 (base 34.1); usa mortar 5.1 (base 6.5); usa vehicle kills 35.0 (base 28.0)
 ger_line_g7_150@s2001 n=160 base 41.9 % lever 38.8 % diff -3.1 up 37 down 42 z -0.56 blocks -3.1 | floors FAIL: germany vehicle kills 36.3 (base 34.1)
+rg_gap25@s2001 n=160 base 41.9 % lever 44.4 % diff +2.5 up 28 down 24 z +0.55 blocks +2.5 | floors FAIL: germany mortar 8.0 (base 9.2); usa vehicle kills 31.1 (base 28.0)
