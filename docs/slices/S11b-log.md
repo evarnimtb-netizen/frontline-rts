@@ -5,30 +5,71 @@ work in this checkout: commit only your files (`git commit -m ... -- FILES`), ne
 `.claude/`, `target/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Build A done (both chunks; commits `3edf0cc` code, then the log). Next: Build B (`S11b-build-B.md`).**
-- SAVE 29, PROTOCOL 15 are in; B and C change no layout. Every S11b switch is 0 in `skirmish.toml`.
-- **REF1 = `target/s11b-A0-40`** (the whole of stage A, every switch 0; Germany 19/40). Prove B against it with
-  `python3 -I tools/neutral.py target/s11b-A0-40 <B40>`: it must say `same 40/40` with nothing after it.
-- Rifle-grenade ids: item `ww2:m7_rifle_grenade` (kind `rifle_grenade`), weapon `ww2:m7_launcher` (class
-  launcher, 50 m/s, 15 mrad, range 180), ammo `ww2:m17_rifle_grenade` (mechanism `he`, Mk 2 `[he]`, shells
-  680 g). A member slot carries them as any item: `[[members]] ... items = { "ww2:m7_rifle_grenade" = 3 }`
-  (with `rifle_grenades` 0 the setup drops the kind: no item index, counts 0, no `rg` state).
-- Item def limits (rifle_grenade only): `weapon` required (a launcher whose ammo is `he` with `[he]`),
-  `supply.kind = "shells"`, `range_m` 1..=300 (other kinds 1..=100), `stow_ms` 0..=60000 (others 0),
-  `min_range_m` < `range_m`, `windup_ms` <= 10000. German def C5: copy the three US files' shape.
-- Gun def limits (vehicle.rs `validate_s9`): `push_men` 1..=16, `emplace_s`, `pack_s`, `hitch_s`,
-  `relay_trail_s` 1..=600, `tow_bar_cm` 50..=1200; a towed gun may have `speed_cm_s` 0 and `reverse_cm_s`
-  0 (too heavy to push: the 3-inch M5 pattern, use it for C1/C2 "no push"). Mortar `[indirect]`: the
-  lowest charge's shortest high-angle range must be <= 1.1 x `min_range_m` (defs.rs, the hint prints it).
-- Adding defs shifts sorted indices (items, weapons, ammo, tags): stage A added three defs and REF1 played
-  identically, so index shifts alone did not move a match; B's neutral run is still the proof.
-- Not done in A (by rule id): none of G1-G4, X1, X3. `skirmish.rs` HE share untouched (Build C M1).
-  `ai/ammo.rs` (H3) untouched. HQ, dump and crate service (`structures.rs`) still refill rifle grenades
-  (crates are their designed source); only the base (`refill_men`, the legacy free refill) leaves them out.
-- `tools/neutral.py` does not yet skip `s11b` keys (Build C M1) nor allow `s5a.kills_by` to grow: REF0
-  vs REF1 shows `kills_by: 11 items -> 12` (the new class, a 0 tail). Compare later sets to REF1, not REF0.
-- Test helpers B/C may reuse: `s11b_tests::arm(setup, card, slot, n)` (gives a slot grenades and sets the
-  switch), `rg_scene`; `s11a2_ai_tests` `cf_scene`, `plans`, `Sent`, `add_shot` are now `pub(super)`.
+**State: Build B done (both chunks, C1-C7 all built). Next: Build C (`S11b-build-C.md`).**
+- SAVE 29, PROTOCOL 15 unchanged. Every S11b switch is still 0. REF1 = `target/s11b-A0-40`; B1 and B2 equal it 40/40.
+  `neutral.py` now lets `s5a.kills_by` grow with a zero tail (REF0 vs REF1 then shows only the X1 keys).
+- Cards (all `ai_weight` 0, appended to the rosters in this order): `ww2:ger_lefh18_squad`, `ww2:ger_kz_grw42_team`;
+  `ww2:usa_105mm_m2a1_squad`, `ww2:usa_60mm_mortar_squad`. Tags `["vehicle", "field_howitzer"]` / `["mortar",
+  "light_mortar"]`. Howitzer vehicle ids (for `s7.kills_by_vehicle`): `ww2:ger_lefh18`, `ww2:usa_105mm_m2a1`; weapons
+  `ww2:lefh18`, `ww2:m2a1_105mm`. The heavy mortar cards set no `ai_weight`: the loader gives them `DEFAULT_AI_WEIGHT`
+  100, so L1's "half the heavy card's effective weight" is 50 unless the mix scales it (read `ai.rs` 2034-2054).
+- `s11b.how_rounds` is now counted (Build A had the field but no count; `gunnery.rs`, by the card's `field_howitzer`
+  tag, beside `s11.gun_rounds`). `s11b.arty_emplaced` / `arty_crew_lost` have no JSON output yet (review A-5: M1).
+- A fortify row gets a howitzer mission accepted as `a_howitzer_card_takes_a_fire_mission` does: S11a1's
+  `crest_gun(card, crest)` (flat world, the card at (50, 500), a Grenadiergruppe at (600, 500) that sees the target,
+  every gun spawned emplaced and manned), `order(w, sq, (650, 500), n)`: accepted, first round within 180 s (both
+  howitzers; the leIG 18 too, with `how_rounds` 0). Control `gun_missions` 0: `NotMortar`.
+- Rifle grenades: US `rifle_grenadier` x2 (first two of the five riflemen) with `ww2:m7_rifle_grenade` = 3; German
+  `rifle_grenadier` x1 (first of the four) with `ww2:schiessbecher_sprgr` = 3 (weapon `ww2:schiessbecher`, ammo
+  `ww2:gsprgr30`). With `rifle_grenades` 0 they are riflemen (B2 = REF1). Variants have their own member lists: none.
+  `s11b_tests::arm(setup, RIFLES, "rifleman", n)` still arms only the `rifleman` slot (now 3 men).
+- Fired rifle grenades are not in `ammo.fired` (review A-3: no class there, the saved array is fixed): read
+  `s11b.rg_fired`. Kills: `kill_class::RIFLE_GRENADE`.
+- Review A-4 NOT fixed: `cb_alt_holds` still counts every planner pass that holds; counting once per evidence change
+  needs a saved field (SAVE 29 is fixed), so it is left for the coordinator. Read it as "plan passes held". Note: with
+  `cb_alternate` 1 a gun that never gets an ordinary target never counter-fires again (as the spec intends): read
+  `cb_alt_holds` and the share of matches in which each side still counter-fires.
+- The light mortars' game range is the weapon's `range_m` (275 / 370 m): the AI's band and the table range. The sim
+  does not refuse a mortar order beyond it (as for the heavy tubes); the solver itself reaches 1,124 / 1,800 m.
+- `ipv6_loopback_handshake` fails in this container (no IPv6): not S11b code; not skipped.
+
+## Build B (2026-11-19; commits `d3d3170`, `b81c462`, `e35144d`, `6bb4ea6`, `64ff872`, `cbbd276`, docs, `b645588`, log)
+New defs: `ammo/105mm_fhgr38`, `ammo/gsprgr30`, `cartridges/60mm_m49a2`, `items/schiessbecher_sprgr`, weapons
+`lefh18`, `m2a1_105mm`, `m1a1_75mm`, `kz_grw42`, `m2_60mm`, `schiessbecher`, vehicles `ger_lefh18`, `usa_105mm_m2a1`,
+`usa_75mm_m1a1`, units `ger_lefh18_{crew,squad}`, `usa_105mm_m2a1_{crew,squad}`, `usa_75mm_m1a1_crew`,
+`ger_kz_grw42_team`, `usa_60mm_mortar_squad`. Changed: the two line squads (C5), the four gun cards (`limit_group`),
+`skirmish.toml` `[limit_groups] "ww2:artillery" = 2`, the rosters (appended).
+Figures (design line; "verify" = S11b-13 plan value and its source): leFH 18 1,985 kg, crew 6, -5..+42, 10,700 m,
+4/min, charge 1 200 (D 143, 757), 12 FH Gr 38 (D 395), 90/54/25 s (D 721), re-lay 25 (D 726-727), shield (D 809),
+130 % (D 812), 480 / pop 2 / 180 s / 8:00 / max 1 (D 837, 842); top charge 325 verify (10,700 m at 42 deg drag-free);
+traverse +-22, 9 and 6 deg/s verify (M3 def); spread 6 mrad verify (M3). M2A1 2,260 kg, crew 8, -5..+65, 11,300 m,
+3/min (D 156), charges M3's + 333 verify (D 750 charge 1), 12 M1 HE (D 396), 90/54/25/25 (D 722), 500 / 2 / 180 s /
+8:00 / 1 (D 838). FH Gr 38 19,000 g verify (as M1 HE; D 509), Sprgr 34 x 1.42: 170 / 160 rays / 1,700 / 17 m /
+85 / 43 (D 143, 1051). kz. GrW 42: 15/min, 60-275 m (GA 726, game range verify), charges 75, 105 and band 45-87
+(grw34), grw34 `[he]`, 18 bombs (GA 592), 181 MP, 45 s (RE 135). 60 mm M2: 18/min, 90-370 m (GA 730), charges
+70/95/117/133 verify, band 45-85 (m1_mortar), 1,330 g (GA 730), `[he]` m1_mortar x 0.75 verify, 30 bombs (GA 591),
+240, 45 s (RE 179). Pack howitzer (no card): 653 kg, crew 5, -5..+45, 8,800 m, 3/min (D 157), 30/18/15, push 90 cm/s
+(D 720); existing `ww2:75mm_m48` (its `[he]` is the Sprgr 34's); one charge 294 verify (8,800 m at 45 deg, as the
+howitzer tops); re-lay 10, cost/cooldowns, 10 rounds, traverse verify (leIG / M3). Gewehr-Sprenggranate 250 g, 250 m,
+60 m/s, Mk 2 block with 48 rays, blast 160, reach 800 (S11b-7, owner to confirm); 30 m / 3 s / 3 s / 15 mrad as the M7.
+Decisions: "no push": the def check allows `speed_cm_s` 0 for a towed gun but the setup check refuses a card speed of
+0, so 1 cm/s with `push_men` = crew + 1 (7, 9). kz. GrW 42: 4 men with "2 + 4 + 6 + 6": the leader carries the fourth
+6 (one bearer fewer than the heavy team). The rifle-grenadier slot is a split (no fallback needed: B2 = REF1).
+Review fixes (coordinator, stage A review): A-1 `kill` and boarding clear `rg` (man, target, aim, stow); A-2 the aim
+needs an enemy in the target's slot (ids are not generational), `RgState::target` doc; A-3 `class_of`: rifle
+grenades leave `ammo.fired` (no Panzerfaust count); A-4 not fixed (above); A-5 for C. Also a Build A miss:
+`how_rounds` was never counted (fixed, `6bb4ea6`).
+Tests: sim `s11b_tests` +7 (`killed_grenadier_mid_aim_saves_and_loads`, `boarding_grenadier_saves_and_loads`,
+`grenade_aim_breaks_when_the_target_slot_turns_friendly`, `rifle_grenade_is_not_counted_as_a_panzerfaust`,
+`a_howitzer_card_takes_a_fire_mission`, `light_mortars_reach_their_game_range_and_minimum`, `artillery_group_caps_two`);
+content `s11b_content` +3 (`s11b_defs_load_with_the_cited_figures`, `howitzers_are_inf_guns_with_a_low_angle_table`,
+`rifle_grenadiers_carry_three`); `test_neutral.py` +1. Changed: `rifle_grenadier_fires_at_seen_infantry` counts 9.
+Neutral: `neutral.py target/s11b-A0-40 target/s11b-B1-40`: `skirmish40.json: same 40/40`; `... target/s11b-B2-40`:
+`skirmish40.json: same 40/40` (Germany 19/40 as REF1). BASELINE untouched (it resolves the frozen S3c fixture).
+Checks: release CLI rebuilt; `tools/check.sh quick 8d2731b`: fmt, clippy, neutral.py, the five ablate dry runs ok;
+tests 1122 passed, 1 failed: `udp` `ipv6_loopback_handshake` (no IPv6 in this container; not skipped). The new cards
+broke 6 roster/type-count tests (fixed in `b645588`: 20 vehicle defs, the artillery group is index 0, two appended
+cards a side) and the canonical snapshot (re-blessed; only the new defs, rosters, squads and limit group differ).
 
 ## Build A (2026-11-19; commits `3edf0cc`, log commit after it)
 Chunk 0: release CLI current; REF0 `target/s11b-base40` from the batch cache (base `8d2731b`), Germany 19/40.
