@@ -21,7 +21,8 @@ match 53 -> 82) and the Germany drop; grenades add about 4.4 HE points. The orch
   `save_fuzz` `setup()` now forces every S11b switch 0 for the played saves.
 - `cb_alt_holds` counts planner passes that held (A-4, no saved field): JSON also writes it as
   `cb_alt_hold_passes_per_match` and `cb_fired_matches_any_pct` (matches where the AI still counter-fired).
-- `ipv6_loopback_handshake` fails in this container (no IPv6): not S11b code; not skipped.
+- Checks: release CLI rebuilt; `check.sh quick 8d2731b`: fmt, clippy, neutral.py, ablate dry runs ok; tests 1135
+  passed, 1 failed `ipv6_loopback_handshake` (no IPv6 in this container; not S11b code; not skipped).
 
 ## Build C (2026-11-19; commits `14be6a3`, `c70e04e`, `714b70e`, `2f5875f`, `9583d3a`, `0bd224a`, `8088935`, docs, log)
 Built: M1 (`s11b`, `s11b_derived` with spec 7 names plus `how_first_on_map_s_mean/min`, `light/how/rg` sums, side
@@ -31,8 +32,7 @@ gun player 1); H1, H2 (no planner code), H3 (test only: the AI's ammo share read
 control is "rounds spent: a trip", not "no hand grenades", which never trigger a trip either), L1;
 `save_roundtrip_carries_s11b_state` (howitzer record and a grenade mid-aim at tick 23441). Snapshot re-blessed (the five
 switches, four weights). BASELINE untouched (frozen fixture; `setup_bytes_baseline` green).
-Decisions: light weight 50 (L1: heavy has no `ai_weight`, DEFAULT 100; pick "fewest buys per weight": heavy, heavy,
-light). `how_mask` keeps S11a1's scene: gun at (50, 500), point 600 m east, crest middle 80 m before it (no trench dug:
+Decisions: light weight 50 (heavy DEFAULT 100; "fewest buys per weight": heavy, heavy, light). `how_mask` keeps S11a1's scene: gun at (50, 500), point 600 m east, crest middle 80 m before it (no trench dug:
 the mask does not depend on it). `how_barrage` = S11a1 barrage at 500 m with 8 rounds; the German gun fires the
 mirror image from the west. `rg`: the target squad's own grenades taken away (only the firer's count).
 `how_first_on_map_s` is the first second a howitzer squad is on the map (the arrival, not the order).
@@ -43,13 +43,8 @@ infantry guns out of every list); B-2 with `rifle_grenades` 0 the rifle squads' 
 assert removed (`range_m` is the AI's band; the solver reaches about 1,124 / 1,800 m); B-4 pack howitzer
 `spot_size_pct` and shield box marked verify (owner to confirm); the leFH 18 muzzle `[90, 0, 5]` stays the leIG's,
 verify: no barrel length in the spec or design.
-Tests: `s11b_ai_tests` 10 (`ai_buys_a_howitzer_inside_its_own_share`, `ai_howitzer_buy_keeps_the_reserve`,
-`ai_gun_buy_counts_pending_call_ins`, `ai_infantry_gun_buy_ignores_howitzer_cards`,
-`ai_howitzer_emplaces_and_takes_an_observed_mission`, `ai_does_not_order_a_masked_howitzer_mission`,
-`ai_all_s11b_switches_off_emit_nothing_new`, `ai_s11b_deterministic_threads_and_save_load`,
-`ai_buys_a_light_mortar_and_fires_it`, `ai_does_not_send_a_squad_to_refill_rifle_grenades`); cli
-`s11b_json_names_match_the_targets_file`, `fortify_s11b_rows_run`, `s11b_rows_one_off` (ignored); save_fuzz +1;
-`test_neutral.py` +1.
+Tests: `s11b_ai_tests` 10 (spec 4 H1 x4, H2 x2, L1, H3, all-off, determinism; names as the spec); cli
+`s11b_json_names_match_the_targets_file`, `fortify_s11b_rows_run`, `s11b_rows_one_off`; save_fuzz +1; neutral +1.
 Neutral: `neutral.py A0-40 C1off40`: `same 40/40`; `neutral.py A0-40 Coff40` (`-o s11b_off`): `same 40/40 (note:
 overrides 0 -> 5 items)`.
 Set C1-40 (how, buy_pending, cb_alternate): Germany 16/40, no winner 0, HE 23.03 / 39.6; G / U: window 95 / 95 %,
@@ -62,13 +57,19 @@ first on map 698 / 759 s (min 662 / 723), fired 89.7 / 84.2 %, missions' rounds 
 fired 5.15 / 7.33 a match, kill share 3.4 / 6.6 %; cb share 27.7 / 55.7 % (s11b_off 27.7 / 62.3), answered 63.2 /
 92.3 %, still counter-fires in 60 / 90 % of matches, cb_alt passes 46.3 / 112.8 a match; T81 85.7 / 88.9 %;
 M10 22.5 %, M3A1 10 %, Pz IV 67.5 %, StuG 32.5 %; refusals 0 / 0, gun refused 0 / 0, own-fire deaths 0.1 / 0.025 a match.
-Rows (one-off, seed 1): how_mask leFH / M2A1 masked 100 / 100 % (flat 0 / 0), 2 orders; how_barrage trench vs open
-leFH 0 % (open loss 50 %, control 50), M2A1 0 % (60 %, control 100), 24 bursts each; rg G / U fired 1 / 2 of 3 / 6,
-open loss 25 / 90 %, trench 0 / 0 %, control fired 0 / 0, open loss 33.3 / 100 %; light kz vs heavy 100 %, 60 mm
-null (both 0 losses), 8 bombs each. Full `fortify-test --seeds 10`: `target/s11b-C40/fortify10.json` (log beside it).
-Targets on `target/s11b-C40` (s11b_off and rg_off copied in as controls): 19 pass, 8 miss (4 hard: T5a/b, T6a, T8c),
-597 skipped (160 sets, fortify). Not PASS among T149-T158: T149d 55.7 (report, bound 50), T157a 31.06, T157b 27.5,
-T157c 27.5 (reports). No MISSING-METRIC, CONTROL-MISSING or EXPOSURE-MISSING.
+Rows (full `fortify-test --seeds 10`, `target/s11b-C40/fortify10.json`, PASS): how_mask leFH / M2A1 masked 100 / 100 %
+of 20 orders (flat 0 / 0); how_barrage trench vs open leFH 3.4 % (open loss 50 %, control 63.4), M2A1 3.8 % (53 %,
+control 75.5), 240 bursts each; rg G / U fired 1.0 / 1.4 a run of 3 / 6, open loss 25 / 95 %, trench vs open 0 / 3.2 %,
+control fired 0 / 0, open loss 19.2 / 99 %; light kz vs heavy 101.7 %, 60 mm 86.5 %, 80 bombs each. S11a1 mask, gun_fm,
+barrage rows unchanged; breach_prep moved (grenades on in its scene).
+Targets on `target/s11b-C40` (fortify10, s11b_off and rg_off copied in as controls): 108 pass, 19 miss (4 hard: T5a/b,
+T6a, T8c; the rest reports already missing before), 497 skipped (160 sets, other controls). T150-T152 all PASS. Not PASS
+among T149-T158: T149d 55.7 (report, bound 50), T157a 31.06, T157b 27.5, T157c 27.5 (reports). No MISSING-METRIC,
+CONTROL-MISSING or EXPOSURE-MISSING.
+Shipped switches on broke 22 older tests (scenes with grenadiers, S11a2 counter-fire twice, content defaults): new
+`MatchSetup::s11b_off` / `rifle_grenades_off` (content `setup.rs`); `s6_tests::flat_world_with`, the S5a, S5b, S6b, AI,
+variants setups, the S10c front world and the played fuzz saves call it (they test older rules); content tests read
+the shipped switches and weights. Files outside the contract's list, needed to keep the tree green.
 
 ## Build B (2026-11-19; commits `d3d3170`, `b81c462`, `e35144d`, `6bb4ea6`, `64ff872`, `cbbd276`, docs, `b645588`, log)
 New defs: `ammo/105mm_fhgr38`, `ammo/gsprgr30`, `cartridges/60mm_m49a2`, `items/schiessbecher_sprgr`, weapons
