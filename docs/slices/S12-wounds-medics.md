@@ -1,6 +1,6 @@
 # S12: wounds and medics (plan)
 
-Status: **plan for owner review**, written 2026-11-19 from `main` at `8d2731b` (S10c-ai, S11a1, S11a2 merged); revised the same day after an
+Status: **plan, questions decided (A) by owner delegation 2026-11-19**, written 2026-11-19 from `main` at `8d2731b` (S10c-ai, S11a1, S11a2 merged); revised the same day after an
 independent review (18 findings, all folded in; section 13). Nothing here is built. S11b (howitzers, light mortars, rifle grenades) and the
 balance pass B2 run first on `claude/project-thread-e7nsak`; `<BASE>` is the last commit of B2 when S12a Build A starts. Design sources:
 `docs/design/roster/infantry-structures.md` 5 and 7.3-7.4 (cited "IS 5.2"), `roster-expansion.md` S12 and questions 10, 14 (cited "RE").
@@ -192,7 +192,9 @@ pooled move of 5 points or more stops the slice for the owner.
 6. **Every way to 0 HP** (`hurt`/`hurt_by`, rider core hits, gun crews, mines, own fire) must carry zone and blast into W3: one test per source.
 7. **T8 moves by accounting alone**: blast still kills outright, bullets now down; hence S12-15.
 
-## 12. Open design questions (recommended answer first; how-it-plays ones go to the owner)
+## 12. Design questions: decided (A) on all
+Owner 2026-11-19, 14:55 Paris: "Figure the questions out, please". Every question below is settled on its (A); the build follows it.
+The levers in section 11 stay available if a row or the gate fails.
 S12-1 **Down state** (RE Q10). (A) Fit, wounded, down, dead, bleed-out, medics, staffed post, refund; no healing over time. (B) Wounded only.
 S12-2 **Red cross** (RE Q14). (A) White armband and stretcher, no emblem unless a legal check clears it. (B) The emblem.
 S12-3 **Head hits.** (A) Head 100 % to start, R7 hard, the 300 % as a report. (B) IS 5.3's 300 % and `head_kill_dmg` 100 (trenches get
@@ -210,7 +212,7 @@ S12-12 **Reinforce cooldown.** (A) Starts the card's cooldown (keeps Q21's per-c
 S12-13 **Refund for free men.** (A) None for start squads and crew cards. (B) All men refund.
 S12-14 **Wounds for players after S12a.** (A) Off until S12b merges (one change at a time; S12a ships dark). (B) On after S12a.
 S12-15 **T8 (HE share, hard 26.3 %).** (A) Measured over kills plus downs from S12b on. (B) Kills only, accept the shift.
-Recommendation on all: (A).
+Decided: (A) on all (S12-1..15).
 
 ## 13. Review record
 Independent review (Fable, 2026-11-19, read-only) confirmed the code facts (kind 6 free, `Combat` has no wound field, one `kill` path, trait bit
