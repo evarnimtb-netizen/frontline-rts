@@ -1,0 +1,7 @@
+# S11b fix set (c): every S11b switch on, but Germany's AI buys no kz. GrW 42
+# team (card ai_weight 0; a human player can still buy it).
+[ai.arty]
+light = 1
+
+[defs.units."ww2:ger_kz_grw42_team"]
+ai_weight = 0

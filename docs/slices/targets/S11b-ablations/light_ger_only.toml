@@ -1,0 +1,7 @@
+# S11b fix set (b): every S11b switch on, but the USA's AI buys no 60 mm
+# mortar team (card ai_weight 0; a human player can still buy it).
+[ai.arty]
+light = 1
+
+[defs.units."ww2:usa_60mm_mortar_squad"]
+ai_weight = 0

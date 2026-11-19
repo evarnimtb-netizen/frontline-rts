@@ -1,0 +1,7 @@
+# S11b fix set (a): the howitzer, buy_pending, cb_alternate and rifle grenades
+# on; the AI buys no light mortar (light 0; the cards stay buyable).
+[ai.arty]
+light = 0
+
+[items]
+rifle_grenades = 1
