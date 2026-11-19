@@ -1,0 +1,162 @@
+# 75 mm Pack Howitzer M1A1 on the M8 carriage (S11b C6; docs/design/roster/
+# artillery-on-map.md 2.2, 4.4, 4.5): DATA ONLY, in no roster and with no card
+# (D 157: an airborne sub-roster or missions; S11b spec 1). A served gun
+# (`role = "inf_gun"`) on the 105 mm M3 layout (S11a1), pushed (D 720). No
+# high angle (D 753: +45 is the limit). Figures with no source in the design
+# documents are marked "verify".
+id = "ww2:usa_75mm_m1a1"
+name = "75 mm Pack Howitzer M1A1"
+short_name = "75 mm Pack How."
+faction = "ww2:usa"
+role = "inf_gun"
+crew_model = "served"
+# Mass in firing position, kg (D 157 "about 653 kg").
+mass_kg = 653
+# Price, MP: no card and no design figure (D 4.7 lists none); the M3's
+# (verify: plan value, S11b-13; unused in no roster).
+cost = 380
+# The gun's pop is 2 (D 842 "the crew plus 2 for the gun").
+pop = 2
+# Cooldown and unlock: the M3's (verify: plan value, S11b-13; unused).
+recall_cooldown_s = 120
+initial_cooldown_s = 240
+sight_m = 175
+spot_size_pct = 85
+eye_height_cm = 110
+crew_squad = "ww2:usa_75mm_m1a1_crew"
+rare_cap = 0
+sources = ["artillery-on-map.md 2.2, 4.4, 4.5 (public tables, verify)", "105 mm M3 layout (S11a1)"]
+
+[mobility]
+type = "towed"
+# Full-crew push speed, cm/s (D 720 "yes, about 0.9 m/s").
+speed_cm_s = 90
+reverse_cm_s = 90
+turn_deg_s = 22
+accel_cm_s2 = 50
+brake_cm_s2 = 200
+max_slope_pct = 15
+ditch_block_dm = 6
+bog_pct = 0
+unbog_s = [0, 0]
+moving_spread_pct = 100
+# Men for full push speed: the crew of 5 (D 157).
+push_men = 5
+# Seconds to emplace, pack, hitch (D 720).
+emplace_s = 30
+pack_s = 18
+hitch_s = 15
+# Seconds to re-lay the trail: not in the design (D 726-727 gives the leIG
+# 18 and the 105 mm); the leIG 18's 10 s, the other light pushed gun
+# (verify: plan value, S11b-13).
+relay_trail_s = 10
+# Gun origin to the trail tip that goes on the hitch, cm (the rigid bar; matches the trail box).
+tow_bar_cm = 290
+
+[hull]
+track_band_pct = 0
+track_mm = 0
+
+# Boxes as on the Pak 40: axle, shield (single 6.4 mm plate, verify), trail.
+[[boxes]]
+id = "axle"
+frame = "hull"
+box = { center = [0, 0, 45], half = [15, 90, 20] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+[[boxes]]
+id = "shield"
+frame = "hull"
+box = { center = [40, 0, 80], half = [3, 80, 50] }
+[boxes.armor]
+front = { thickness_mm = 6.4, slope_deg = 15 }
+side = { thickness_mm = 3 }
+rear = { thickness_mm = 3 }
+top = { thickness_mm = 3 }
+
+[[boxes]]
+id = "trail"
+frame = "hull"
+box = { center = [-160, 0, 25], half = [130, 20, 25] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+# The crew of 5 (D 157): gunner, loader, chief, two ammo men.
+[[service]]
+role = "gunner"
+at = [-60, 50, 0]
+pose = "kneel"
+[[service]]
+role = "loader"
+at = [-60, -50, 0]
+pose = "kneel"
+[[service]]
+role = "commander"
+at = [-290, 70, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, 85, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, -85, 0]
+pose = "kneel"
+
+# M18 telescope (S9-1 (A): 437 m inside the arc).
+[optic]
+sight_pct = 250
+
+[[weapons]]
+def = "ww2:m1a1_75mm"
+mount = "casemate"
+# Gun pivot and muzzle in the gun frame, cm (the M3's; verify).
+pivot = [0, 0, 80]
+muzzle = [190, 0, 10]
+# Traverse arc and rates: as the 105 mm M3 def (not in the design; verify:
+# plan value, S11b-13).
+traverse_deg = [-22, 22]
+traverse_deg_s = 9
+elevate_deg_s = 6
+# Elevation, deg (D 157 "-5 to +45").
+elevation_deg = [-5, 45]
+# M48 HE (D 157: 6.2 kg, about 0.7 kg TNT, the Sprgr 34's filler): the
+# existing ww2:75mm_m48 def, whose [he] block is the Sprgr 34's. The ready
+# count is not in the design for this gun (the M3's 10; verify).
+ammo = [{ id = "ww2:75mm_m48", count = 10 }]
+barrel = { length_cm = 190, radius_cm = 5 }
+
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "hull", center = [-30, 0, 80], half = [28, 12, 12] }
+
+[[components]]
+type = "ammo_rack"
+hp = 40
+box = { frame = "hull", center = [-120, -55, 20], half = [25, 25, 15] }
+
+[[components]]
+type = "wheels_front"
+hp = 60
+anchors = [{ pos = [0, 80, 40] }, { pos = [0, -80, 40] }]
+repair = { to_hp = 60, time_s = 30 }
+
+[[components]]
+type = "sight"
+hp = 30
+anchors = [{ pos = [-15, 28, 105] }]
+repair = { to_hp = 30, time_s = 30 }
+
+[[components]]
+type = "recoil"
+hp = 50
+box = { frame = "hull", center = [10, 0, 70], half = [22, 8, 8] }
+repair = { to_hp = 50, time_s = 40 }

@@ -88,8 +88,19 @@ count = 2
 weapon = "ww2:kar98k"
 items = { "ww2:stielhandgranate" = 1, "ww2:panzerfaust60" = 1 }
 
+# S11b C5: one of the four Schützen is a rifle grenadier: the same gear
+# plus three Gewehr-Sprenggranaten on the Schiessbecher (owner to confirm,
+# S11b-7; S11b-6 (A)). Placed first of the four: the men's order is
+# unchanged. Issued only with [items] rifle_grenades = 1; with 0 the setup
+# drops the grenades and he is a rifleman. The Feldstärke variant lists its
+# own members and has none.
+[[members]]
+slot = "rifle_grenadier"
+weapon = "ww2:kar98k"
+items = { "ww2:stielhandgranate" = 1, "ww2:schiessbecher_sprgr" = 3 }
+
 [[members]]
 slot = "rifleman"
-count = 4
+count = 3
 weapon = "ww2:kar98k"
 items = { "ww2:stielhandgranate" = 1 }

@@ -1238,8 +1238,13 @@ default = "ww2:training_regular"
 
 # S4: named limits on alive units per player, "<group id>" = most alive; a
 # unit card joins one with limit_group (all its cards' alive units count).
-# None in ww2 yet: vehicles keep the [vehicles] limit.
+# Vehicles keep the [vehicles] limit.
 [limit_groups]
+# S11b C7 (artillery-on-map.md 4.7, D 848; S11b-12 (A)): at most 2 gun cards
+# alive a player: the leIG 18, 105 mm M3, leFH 18 and 105 mm M2A1 cards
+# (mortars have their own caps). The AI holds at most [ai.arty] max_guns 1
+# + how_max 1, so no AI buy changes.
+"ww2:artillery" = 2
 
 [supply]
 # S5a (owner decision D1, 2026-11-01): no free ammunition anywhere, the base

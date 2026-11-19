@@ -525,8 +525,10 @@ fn rifle_grenadier_fires_at_seen_infantry() {
             .sum();
         (n, left)
     };
-    assert_eq!(run(true), (1, 14), "one grenade fired");
-    assert_eq!(run(false), (0, 15), "control: unseen, none");
+    // Build B (C5): three riflemen (two of the five are now the
+    // `rifle_grenadier` slot, which `arm` leaves empty): 9 grenades.
+    assert_eq!(run(true), (1, 8), "one grenade fired");
+    assert_eq!(run(false), (0, 9), "control: unseen, none");
 }
 
 /// Integrates a drag-free round from `from` with `vel` (the sim's
@@ -1106,4 +1108,38 @@ fn light_mortars_reach_their_game_range_and_minimum() {
         let hi: Fx = wp(id).range_max.into();
         assert_eq!(hi, Fx::from_int(600), "control: {id}");
     }
+}
+
+/// C7 (D 848): the artillery group holds at most 2 gun cards alive a
+/// player: with the leIG 18 and the leFH 18 alive a third gun card (a
+/// second leIG 18, under its own `max_alive` 2) is refused `GroupLimit`.
+/// Control: the group entry removed (no card in a group): it is allowed.
+#[test]
+fn artillery_group_caps_two() {
+    let run = |group: bool| {
+        let mut w = flat_world_with(1, |s| {
+            s.rules.start_manpower = 100_000;
+            if !group {
+                s.rules.limit_groups.clear();
+                for t in s.squad_types.iter_mut() {
+                    t.limit_group = None;
+                }
+            }
+        });
+        spawn(&mut w, 0, LEIG, 300, 300);
+        spawn(&mut w, 0, "ww2:ger_lefh18_squad", 300, 400);
+        steps(&mut w, 2);
+        let g = w.game().unwrap();
+        let t = g.setup.squad_type_index(LEIG).unwrap();
+        g.call_in_check(w.entities(), PlayerId(0), t, 30 * 3600)
+    };
+    assert!(
+        matches!(
+            run(true),
+            Err(crate::game::CallInRefusal::GroupLimit { .. })
+        ),
+        "{:?}",
+        run(true)
+    );
+    assert_eq!(run(false), Ok(()), "control: no group");
 }

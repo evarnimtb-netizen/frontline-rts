@@ -1,0 +1,34 @@
+# Schiessbecher (Gewehrgranatgerät) as fired (S11b C5, docs/slices/S11b.md
+# 4): the cup launcher on the man's Kar98k that fires the item
+# `ww2:schiessbecher_sprgr`. Not carried as a member weapon. The grenade
+# flies the low arc of a drag-free round at muzzle_velocity_m_s, aimed at a
+# ground point (the sim solves the arc; no hit chance, no damage table).
+# Sources: none in the design (S11b-7); the figures below are marked.
+id = "ww2:schiessbecher"
+name = "Schiessbecher"
+short_name = "Schiessbecher"
+class = "launcher"
+sources = ["owner to confirm, S11b-7 (Gewehr-Sprenggranate: about 250 m maximum at about 60 m/s)"]
+# Farthest shot (m): owner to confirm, S11b-7.
+range_m = 250
+damage = 150
+rounds_per_min = 4
+magazine = 1
+# One grenade per item; the squad's gap paces them ([items] rifle_grenade_gap_s).
+reload_ms = 0
+# Dispersion half-angle (mrad). verify: plan value, S11b-13 (as m7_launcher.toml).
+spread_mrad = 15
+# Must match the round's speed (m/s): about 60 m/s, owner to confirm, S11b-7.
+muzzle_velocity_m_s = 60
+suppression = 20
+# Unused by the rifle-grenade rule (it aims at men, not vehicles); the
+# launcher schema requires them.
+engage_still_m = 250
+engage_moving_m = 250
+# The shot gives the firer away like a rifle shot (% sight range, ms; as the M7).
+fire_reveal_pct = 150
+fire_reveal_ms = 2000
+ammo = "ww2:gsprgr30"
+# The item counts the grenades; this is the launcher rule's minimum.
+rounds_carried = 1
+handover_ms = 0

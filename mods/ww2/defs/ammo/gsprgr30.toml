@@ -1,0 +1,43 @@
+# Gewehr-Sprenggranate (S11b C5, docs/slices/S11b.md 4): fired by
+# `ww2:schiessbecher` (the item `ww2:schiessbecher_sprgr`). About 250 g with
+# about 30 g of filler, about 250 m at about 60 m/s (owner to confirm,
+# S11b-7). The [he] block is the Mk 2 block (mk2_grenade.toml) at about half
+# (spec C5): frag_count 48, blast and fragment reach x 0.8 (the cube root of
+# 30 / 57); NOT the stick grenade's block. The rest as the Mk 2.
+id = "ww2:gsprgr30"
+name = "Gewehr-Sprenggranate"
+mechanism = "he"
+# Refilled as shells (crate-only by design: the base does not refill it,
+# D 954, D 1161-1163). 250 g: owner to confirm, S11b-7.
+supply = { kind = "shells", g = 250 }
+caliber_mm = 30
+# About 60 m/s: owner to confirm, S11b-7.
+muzzle_velocity_m_s = 60
+drag_coeff = 0
+# A thin grenade body: beats no plate.
+penetration = [[0, 2]]
+ricochet_angle_deg = 80
+track_damage = 0
+sources = ["owner to confirm, S11b-7 (about 250 g, about 30 g filler, about 250 m, about 60 m/s)", "mk2_grenade.toml [he] block at about half (spec S11b.md 4 C5)"]
+
+[he]
+damage = 150
+suppression = 50
+# The Mk 2's 200 cm x 0.8.
+blast_radius_cm = 160
+# The Mk 2's 96 rays halved; reach 1000 cm x 0.8.
+frag_count = 48
+frag_reach_cm = 800
+frag_damage = 60
+frag_far_pct = 25
+frag_elev_deg = [2, 50]
+frag_track_damage = 0
+suppression_radius_m = 10
+crater_radius_cm = 50
+crater_depth_cm = 20
+pen_mm = 2
+frag_pen_mm = 3
+inside_damage = 100
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 10

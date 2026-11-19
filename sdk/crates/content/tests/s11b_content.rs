@@ -382,6 +382,45 @@ fn s11b_defs_load_with_the_cited_figures() {
     );
     let us = &d.squads["ww2:usa_60mm_mortar_squad"];
     assert_eq!((us.cost, us.cooldown_s), (240, Some(45)), "RE 179");
+    // C6 75 mm pack howitzer, data only (D 157, D 720): in no roster.
+    let v = &d.vehicles["ww2:usa_75mm_m1a1"];
+    assert!(v.validate().is_empty(), "{:?}", v.validate());
+    assert_eq!(
+        (v.mass_kg, v.weapons[0].elevation_deg, v.mobility.speed_cm_s),
+        (Some(653), Some([-5, 45]), 90),
+        "D 157, D 720"
+    );
+    let w = &d.weapons["ww2:m1a1_75mm"];
+    assert_eq!(
+        (w.rounds_per_min, w.indirect.as_ref().unwrap().range_m),
+        (3, Some(8800)),
+        "D 157"
+    );
+    assert!(
+        !d.squads
+            .values()
+            .any(|s| s.vehicle.as_deref() == Some("ww2:usa_75mm_m1a1")),
+        "no card"
+    );
+    // C7 (D 848): the artillery group of 2 holds the four gun cards.
+    let r = &d.rules["ww2:skirmish"];
+    assert_eq!(
+        r.limit_groups.get("ww2:artillery").copied(),
+        Some(2),
+        "D 848"
+    );
+    for card in [
+        "ww2:ger_leig18_squad",
+        "ww2:usa_105mm_m3_squad",
+        "ww2:ger_lefh18_squad",
+        "ww2:usa_105mm_m2a1_squad",
+    ] {
+        assert_eq!(
+            d.squads[card].limit_group.as_deref(),
+            Some("ww2:artillery"),
+            "{card}"
+        );
+    }
 }
 
 /// C1-C2: both howitzers are `inf_gun` cards with a low-angle `[indirect]`
@@ -431,4 +470,72 @@ fn howitzers_are_inf_guns_with_a_low_angle_table() {
     };
     assert_eq!(off("ww2:lefh18"), 0, "+42 needs no low-angle table");
     assert_eq!(off("ww2:m2a1_105mm"), 1, "+65 does");
+}
+
+/// C5: with `[items] rifle_grenades` 1 the US Rifle Squad's two rifle
+/// grenadiers and the Grenadiergruppe's one carry three each (M17 on the
+/// M7, Gewehr-Sprenggranate on the Schiessbecher); the men, their order,
+/// price and pop are unchanged. The variants list their own members and
+/// inherit no grenadier. Control: with 0 no squad carries one.
+#[test]
+fn rifle_grenadiers_carry_three() {
+    let d = ww2();
+    let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let kit = |rg: u32, card: &str| {
+        let mut d = d.clone();
+        d.rules
+            .get_mut("ww2:skirmish")
+            .unwrap()
+            .items
+            .rifle_grenades = rg;
+        let s = d.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
+        let t = &s.squad_types[s.squad_type_index(card).unwrap() as usize];
+        let item = t.items[ItemKind::RifleGrenade.index()].map(|i| s.items[i as usize].id.clone());
+        let per: Vec<(String, u8, u8)> = t
+            .members
+            .iter()
+            .map(|m| {
+                (
+                    m.slot.clone(),
+                    m.count,
+                    m.items[ItemKind::RifleGrenade.index()],
+                )
+            })
+            .filter(|(_, _, n)| *n > 0)
+            .collect();
+        (item, per, t.men, t.cost)
+    };
+    let (item, per, men, cost) = kit(1, "ww2:usa_rifle_squad");
+    assert_eq!(item.as_deref(), Some("ww2:m7_rifle_grenade"));
+    assert_eq!(per, [("rifle_grenadier".to_string(), 2, 3)]);
+    assert_eq!((men, cost), (12, 360), "men and price unchanged");
+    let (item, per, men, cost) = kit(1, "ww2:ger_grenadiergruppe");
+    assert_eq!(item.as_deref(), Some("ww2:schiessbecher_sprgr"));
+    assert_eq!(per, [("rifle_grenadier".to_string(), 1, 3)]);
+    assert_eq!((men, cost), (10, 232), "men and price unchanged");
+    for v in [
+        "ww2:usa_rifle_squad_9",
+        "ww2:usa_rifle_squad_2bar",
+        "ww2:ger_grenadiergruppe_7",
+    ] {
+        assert_eq!(kit(1, v).1, [], "{v} inherits no grenadier");
+    }
+    for card in ["ww2:usa_rifle_squad", "ww2:ger_grenadiergruppe"] {
+        let (item, per, _, _) = kit(0, card);
+        assert_eq!((item, per), (None, vec![]), "control: switch 0, {card}");
+    }
+    // The German round (spec C5): 250 g, 250 m, 60 m/s, the Mk 2 block at
+    // about half.
+    let it = &d.items["ww2:schiessbecher_sprgr"];
+    assert_eq!((it.range_m, it.min_range_m), (250, 30), "S11b-7");
+    assert_eq!(
+        d.weapons["ww2:schiessbecher"].muzzle_velocity_m_s, 60,
+        "S11b-7"
+    );
+    let he = d.ammo["ww2:gsprgr30"].he.as_ref().unwrap();
+    assert_eq!(
+        (he.frag_count, he.blast_radius_cm, he.frag_reach_cm),
+        (48, 160, 800),
+        "Mk 2 x 0.5 rays, x 0.8 reach"
+    );
 }

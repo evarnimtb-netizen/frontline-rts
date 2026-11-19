@@ -1,0 +1,25 @@
+# Gewehr-Sprenggranate on the Schiessbecher cup launcher (S11b C5,
+# docs/slices/S11b.md 4): the German HE rifle grenade, not thrown. The man
+# fits the cup and aims (`windup_ms`), fires it as `ww2:schiessbecher` on
+# the low arc at a seen enemy man between min_range_m and range_m, then
+# takes the cup off (`stow_ms`; his rifle is silent meanwhile). One a squad
+# per [items] rifle_grenade_gap_s. Issued only with [items] rifle_grenades
+# = 1; the base does not refill it (crate-only by design, D 954,
+# D 1161-1163). The figures are none of the design's (S11b-7).
+id = "ww2:schiessbecher_sprgr"
+name = "Gewehr-Sprenggranate"
+kind = "rifle_grenade"
+# About 250 g: owner to confirm, S11b-7.
+supply = { kind = "shells", g = 250 }
+sources = ["owner to confirm, S11b-7"]
+weapon = "ww2:schiessbecher"
+# Farthest shot (m): about 250 m, owner to confirm, S11b-7.
+range_m = 250
+# Closest shot (m). verify: plan value, S11b-13 (as m7_rifle_grenade.toml).
+min_range_m = 30
+# Fit the cup and aim (ms). verify: plan value, S11b-13 (as the M7).
+windup_ms = 3000
+# Take it off again (ms). verify: plan value, S11b-13 (as the M7).
+stow_ms = 3000
+fuse_ms = 0
+scatter_pct = 0

@@ -1,0 +1,38 @@
+# 75 mm Pack Howitzer M1A1 (S11b C6, data only; docs/design/roster/
+# artillery-on-map.md 2.2, 4.5): rounds are on the vehicle mount. The direct
+# fire line is the S9 guns' (600 m, 2500 urad); the [indirect] table is the
+# fire-mission solver (S11a1 G2). No high angle (D 753).
+id = "ww2:m1a1_75mm"
+name = "75 mm Pack Howitzer M1A1"
+class = "cannon"
+# Direct engagement range, m (as the S9 guns and the M3).
+range_m = 600
+# A direct hit on a man, HP (as the S9 guns).
+damage = 300
+# 3 rounds/min sustained (D 157 "3 / 6").
+rounds_per_min = 3
+magazine = 1
+# Reload, ms: 60 s / 3 (D 157).
+reload_ms = 20000
+# 2.5 mrad, urad (as the S9 guns; verify).
+spread_urad = 2500
+# Top charge, m/s (the [indirect] charge; verify: plan value, S11b-13).
+muzzle_velocity_m_s = 294
+suppression = 25
+# Muzzle blast and dust: as the S9 guns (verify).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+
+[indirect]
+# One charge: the drag-free speed for 8,800 m at 45 deg, derived as the
+# howitzers' top charges (no charge table in the design; verify: plan
+# value, S11b-13).
+charges_m_s = [294]
+# Laying band, deg (D 157 "-5 to +45"; the solver band 0..45).
+elevation_deg = [0, 45]
+# Low and high roots (S11a1 G2); the band keeps it low-angle only.
+low_angle = true
+# Maximum range, m (D 157 "about 8,800 m").
+range_m = 8800
+# Round scatter, mrad (as the 105 mm M3, m3_105mm.toml; verify: plan value, S11b-13).
+spread_mrad = 6
