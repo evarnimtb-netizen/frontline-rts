@@ -154,8 +154,9 @@ The ww2 guns and observers (S11a1; `artillery-on-map.md` 2.1, 2.2, 4.7):
 | `ger_vb_trupp` | observer (leader; Funker `radio`) | 2 | | | | | | 80 / 2 / 60 s / 0:00 |
 | `usa_fo_party` | observer (officer; radio operator `radio`) | 3 | | | | | | 120 / 3 / 60 s / 0:00 |
 
-S11b adds (`ai_weight` 0 until the S11b AI stage; card tags `["vehicle",
-"field_howitzer"]` and `["mortar", "light_mortar"]`):
+S11b adds (card tags `["vehicle", "field_howitzer"]` and `["mortar",
+"light_mortar"]`; `ai_weight` 5 on the howitzers, the S11a1 gun cards'
+value, and 50 on the light mortars, half the heavy card's default 100):
 
 | Card | Gun | Crew | Elevation | Charges (m/s) | Range | Rate | Rounds | Cost / pop / cooldown / unlock |
 |---|---|---|---|---|---|---|---|---|
@@ -167,7 +168,21 @@ S11b adds (`ai_weight` 0 until the S11b AI stage; card tags `["vehicle",
 
 The two howitzers are base guns (no tow): 90 s to emplace, re-lay 25 s,
 `max_alive` 1, and "no push" as 1 cm/s with `push_men` above the crew (the
-setup check refuses a card whose speed is 0). The light mortars' game
+setup check refuses a card whose speed is 0); a full crew still crawls at
+crew / `push_men` of 1 cm/s (about 0.5 m a minute), and the AI never orders
+one pushed or hitched.
+
+**S11b AI** (`[ai.arty]`, `docs/modding/tuning.md`): with `how` 1 the AI
+buys one field howitzer from `how_after_s` (8:00) inside its own
+`how_income_pct` (15 %) of the income so far, keeping `how_reserve_mp`
+(300) of its manpower less the pending call-ins; the infantry-gun buy and
+its pot skip `field_howitzer` cards (the two spent sums are apart), and with
+`buy_pending` 1 it too counts pending call-ins. A bought howitzer gets the
+infantry gun's record (emplace, observed missions, reserve, budget, lift,
+counter-fire). With `light` 1 the light mortar cards join the mortar slot
+of the buy mix (about one light team in three mortar buys at weight 50
+against 100); the mortar habit drives them like the heavy tubes, their
+`range_m` (275 / 370 m) being the AI's band, not a refusal. The light mortars' game
 ranges scale the heavy tubes' 600 m by their real ranges (1,100 / 2,400 and
 1,800 / 2,900). The four gun cards (leIG 18, M3, leFH 18, M2A1) share
 `limit_group = "ww2:artillery"`, 2 alive a player (`[limit_groups]`).
