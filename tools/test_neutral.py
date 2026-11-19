@@ -130,6 +130,21 @@ class Neutral(unittest.TestCase):
         other["factions"]["germany"]["x11a2"] = {"ff_lifts": 1}
         self.assertFalse(self.run_dirs(BASE, other)[1])
 
+    def test_neutral_skips_s11b_keys_the_base_lacks(self):
+        # S11b Build C (M1): an `s11b` block BASE lacks is skipped (the X1
+        # counters are not zero with the switches off). Controls: present
+        # in both and different fails; another name fails.
+        new = copy.deepcopy(BASE)
+        new["factions"]["germany"]["s11b"] = {"arty_emplaced": 12}
+        lines, ok = self.run_dirs(BASE, new)
+        self.assertTrue(ok, lines)
+        changed = copy.deepcopy(new)
+        changed["factions"]["germany"]["s11b"]["arty_emplaced"] = 13
+        self.assertFalse(self.run_dirs(new, changed)[1])
+        other = copy.deepcopy(BASE)
+        other["factions"]["germany"]["x11b"] = {"arty_emplaced": 1}
+        self.assertFalse(self.run_dirs(BASE, other)[1])
+
     def test_grown_list_with_zero_tail_is_equal(self):
         # S11a1 Build B: `s5b.refused` grew 7 -> 9. Control: a non-zero
         # tail, or a shorter list, still fails.
