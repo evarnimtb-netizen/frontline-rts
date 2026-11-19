@@ -37,6 +37,10 @@ roster = [
     # until the S11a1 AI stage).
     "ww2:ger_leig18_squad",
     "ww2:ger_vb_trupp",
+    # S11b: the field howitzer (appended; ai_weight 0 until the S11b AI stage).
+    "ww2:ger_lefh18_squad",
+    # S11b: the light mortar (appended; ai_weight 0 until the S11b AI stage).
+    "ww2:ger_kz_grw42_team",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

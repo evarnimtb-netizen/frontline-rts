@@ -1,0 +1,12 @@
+# The 105 mm M2A1 card (S11b C2): the field howitzer and its crew; no tow in
+# S11b (S11b-2 (A)): a base gun. Price, pop, cooldown and unlock are on the
+# vehicle def. AI weight 0 (S11b Build B), as the leFH 18 card.
+id = "ww2:usa_105mm_m2a1_squad"
+name = "105 mm Howitzer M2A1"
+short_name = "105 mm M2A1"
+faction = "ww2:usa"
+tags = ["vehicle", "field_howitzer"]
+vehicle = "ww2:usa_105mm_m2a1"
+ai_weight = 0
+# artillery-on-map.md 4.7 (D 838): at most 1 alive.
+max_alive = 1

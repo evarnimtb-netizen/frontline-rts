@@ -1,0 +1,13 @@
+# The leFH 18 card (S11b C1): the field howitzer and its crew; no tow in
+# S11b (S11b-2 (A)): a base gun. Price, pop, cooldown and unlock are on the
+# vehicle def. AI weight 0 (S11b Build B): the howitzer buy (`[ai.arty] how`)
+# is Build C's. The tag `field_howitzer` sets it apart from the infantry gun.
+id = "ww2:ger_lefh18_squad"
+name = "10.5 cm leFH 18"
+short_name = "leFH 18"
+faction = "ww2:germany"
+tags = ["vehicle", "field_howitzer"]
+vehicle = "ww2:ger_lefh18"
+ai_weight = 0
+# artillery-on-map.md 4.7 (D 837): at most 1 alive.
+max_alive = 1

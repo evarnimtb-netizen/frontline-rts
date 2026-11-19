@@ -196,3 +196,239 @@ fn switch_off_issues_no_rifle_grenades() {
     assert_eq!(kit(0), (false, 0, 0), "switch 0: no grenade issued");
     assert_eq!(kit(1), (true, 3, 15), "control: five riflemen, three each");
 }
+
+// ------------------------------------------------------ Build B content --
+
+fn ww2() -> ModDefs {
+    ModDefs::load(&root().join("mods/ww2")).unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// C1-C4 (and C6, C7 when built): every new def loads at the figure spec 4
+/// cites; one assert per cited design line (D = artillery-on-map.md, GA =
+/// guns-artillery.md, RE = roster-expansion.md). Control: any def off its
+/// cited figure fails the matching line.
+#[test]
+fn s11b_defs_load_with_the_cited_figures() {
+    use frontline_content::VehicleRole;
+    let d = ww2();
+    assert!(d.cross_check().is_empty(), "{:?}", d.cross_check());
+    // C1 leFH 18 (D 143, 395, 721, 726-727, 809, 812, 837, 842).
+    let v = &d.vehicles["ww2:ger_lefh18"];
+    assert!(v.validate().is_empty(), "{:?}", v.validate());
+    assert_eq!(
+        (v.role, v.mass_kg),
+        (VehicleRole::InfGun, Some(1985)),
+        "D 143"
+    );
+    assert_eq!(v.weapons[0].elevation_deg, Some([-5, 42]), "D 143");
+    assert_eq!(
+        (v.weapons[0].ammo[0].id.as_str(), v.weapons[0].ammo[0].count),
+        ("ww2:105mm_fhgr38", 12),
+        "D 395"
+    );
+    let m = &v.mobility;
+    assert_eq!(
+        (m.emplace_s, m.pack_s, m.hitch_s),
+        (Some(90), Some(54), Some(25)),
+        "D 721"
+    );
+    assert_eq!(m.relay_trail_s, Some(25), "D 726-727");
+    assert!(v.boxes.iter().any(|b| b.id == "shield"), "D 809");
+    assert_eq!(v.spot_size_pct, 130, "D 812");
+    assert_eq!(
+        (v.cost, v.recall_cooldown_s, v.initial_cooldown_s),
+        (480, 180, 480),
+        "D 837"
+    );
+    assert_eq!(v.pop, 2, "D 842");
+    let w = &d.weapons["ww2:lefh18"];
+    assert_eq!((w.rounds_per_min, w.reload_ms), (4, 15000), "D 143");
+    let ind = w.indirect.as_ref().unwrap();
+    assert_eq!(
+        (ind.range_m, ind.elevation_deg),
+        (Some(10700), [0, 42]),
+        "D 143"
+    );
+    assert_eq!(ind.charges_m_s[0], 200, "D 757");
+    let crew = &d.squads["ww2:ger_lefh18_crew"];
+    assert_eq!(
+        crew.members.iter().map(|m| m.count as u32).sum::<u32>(),
+        6,
+        "D 143"
+    );
+    assert_eq!(d.squads["ww2:ger_lefh18_squad"].max_alive, 1, "D 837");
+    // C2 105 mm M2A1 (D 156, 396, 722, 750, 809, 812, 838, 842).
+    let v = &d.vehicles["ww2:usa_105mm_m2a1"];
+    assert!(v.validate().is_empty(), "{:?}", v.validate());
+    assert_eq!(
+        (v.role, v.mass_kg),
+        (VehicleRole::InfGun, Some(2260)),
+        "D 156"
+    );
+    assert_eq!(v.weapons[0].elevation_deg, Some([-5, 65]), "D 156");
+    assert_eq!(
+        (v.weapons[0].ammo[0].id.as_str(), v.weapons[0].ammo[0].count),
+        ("ww2:105mm_m1_he", 12),
+        "D 396"
+    );
+    let m = &v.mobility;
+    assert_eq!(
+        (m.emplace_s, m.pack_s, m.hitch_s, m.relay_trail_s),
+        (Some(90), Some(54), Some(25), Some(25)),
+        "D 722"
+    );
+    assert!(v.boxes.iter().any(|b| b.id == "shield"), "D 809");
+    assert_eq!(v.spot_size_pct, 130, "D 812");
+    assert_eq!(
+        (v.cost, v.recall_cooldown_s, v.initial_cooldown_s),
+        (500, 180, 480),
+        "D 838"
+    );
+    assert_eq!(v.pop, 2, "D 842");
+    let w = &d.weapons["ww2:m2a1_105mm"];
+    assert_eq!((w.rounds_per_min, w.reload_ms), (3, 20000), "D 156");
+    let ind = w.indirect.as_ref().unwrap();
+    assert_eq!(
+        (ind.range_m, ind.elevation_deg),
+        (Some(11300), [0, 65]),
+        "D 156"
+    );
+    assert_eq!(
+        ind.charges_m_s,
+        [205, 220, 240, 270, 311, 333],
+        "D 750 (charge 1); the M3 table plus 333"
+    );
+    let crew = &d.squads["ww2:usa_105mm_m2a1_crew"];
+    assert_eq!(
+        crew.members.iter().map(|m| m.count as u32).sum::<u32>(),
+        8,
+        "D 156"
+    );
+    assert_eq!(d.squads["ww2:usa_105mm_m2a1_squad"].max_alive, 1, "D 838");
+    // No push (D 721-722): the smallest speed the setup check allows, and
+    // more men needed than the crew has.
+    for (id, crew) in [("ww2:ger_lefh18", 6), ("ww2:usa_105mm_m2a1", 8)] {
+        let m = &d.vehicles[id].mobility;
+        assert_eq!((m.speed_cm_s, m.reverse_cm_s), (1, 1), "{id}");
+        assert!(m.push_men.unwrap() > crew, "{id}");
+    }
+    // C3 FH Gr 38 (D 143 filler, D 509 complete round, D 1051 rays).
+    let a = &d.ammo["ww2:105mm_fhgr38"];
+    let he = a.he.as_ref().unwrap();
+    assert_eq!(a.supply.as_ref().map(|s| s.g), Some(19000), "D 509");
+    assert_eq!(he.frag_count, 160, "D 1051");
+    assert_eq!(
+        (
+            he.blast_radius_cm,
+            he.frag_reach_cm,
+            he.suppression_radius_m,
+            he.crater_radius_cm,
+            he.crater_depth_cm
+        ),
+        (170, 1700, 17, 85, 43),
+        "D 143: Sprgr 34 x 1.42"
+    );
+    // C4 light mortars (GA 591-592, 726, 730-731; RE 135, 179).
+    let kz = &d.weapons["ww2:kz_grw42"];
+    assert_eq!(
+        (kz.rounds_per_min, kz.min_range_m, kz.range_m),
+        (15, 60, 275),
+        "GA 726"
+    );
+    assert_eq!(kz.feed.as_deref(), Some("ww2:8cm_wgr34"), "GA 726");
+    let m2 = &d.weapons["ww2:m2_60mm"];
+    assert_eq!(
+        (m2.rounds_per_min, m2.min_range_m, m2.range_m),
+        (18, 90, 370),
+        "GA 730"
+    );
+    assert_eq!(d.cartridges["ww2:60mm_m49a2"].supply.g, 1330, "GA 730");
+    let he = m2.he.as_ref().unwrap();
+    assert_eq!(
+        (
+            he.blast_radius_cm,
+            he.frag_count,
+            he.frag_reach_cm,
+            he.suppression_radius_m
+        ),
+        (113, 90, 1130, 11),
+        "GA 730-731: the 81 mm block x 0.75"
+    );
+    let bombs = |id: &str, feed: &str| -> (u32, u32) {
+        let s = &d.squads[id];
+        (
+            s.members.iter().map(|m| m.count as u32).sum(),
+            s.members
+                .iter()
+                .map(|m| m.count as u32 * m.rounds.get(feed).copied().unwrap_or(0))
+                .sum(),
+        )
+    };
+    assert_eq!(
+        bombs("ww2:ger_kz_grw42_team", "ww2:8cm_wgr34"),
+        (4, 18),
+        "GA 592"
+    );
+    assert_eq!(
+        bombs("ww2:usa_60mm_mortar_squad", "ww2:60mm_m49a2"),
+        (5, 30),
+        "GA 591"
+    );
+    let kz = &d.squads["ww2:ger_kz_grw42_team"];
+    assert_eq!(
+        (kz.cost, kz.cooldown_s),
+        (181, Some(45)),
+        "RE 135 (x 0.8 x 1.03)"
+    );
+    let us = &d.squads["ww2:usa_60mm_mortar_squad"];
+    assert_eq!((us.cost, us.cooldown_s), (240, Some(45)), "RE 179");
+}
+
+/// C1-C2: both howitzers are `inf_gun` cards with a low-angle `[indirect]`
+/// table, tagged `field_howitzer`, at weight 0, last but one in each roster
+/// before the light mortar. Control: without `low_angle` the leFH 18
+/// (+42) still loads and the M2A1 (+65) is refused (S11a1 review A-1).
+#[test]
+fn howitzers_are_inf_guns_with_a_low_angle_table() {
+    let d = ww2();
+    let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let s = d.resolve(&req).unwrap();
+    assert!(s.validate().is_empty(), "{:?}", s.validate());
+    let tag = s.tags.iter().position(|t| t == "field_howitzer").unwrap() as u16;
+    for (card, w) in [
+        ("ww2:ger_lefh18_squad", "ww2:lefh18"),
+        ("ww2:usa_105mm_m2a1_squad", "ww2:m2a1_105mm"),
+    ] {
+        let t = &s.squad_types[s.squad_type_index(card).unwrap() as usize];
+        let v = &s.vehicles[t.vehicle.unwrap() as usize];
+        assert_eq!(v.role, frontline_content::VehicleRole::InfGun, "{card}");
+        assert!(t.tags.contains(&tag), "{card}");
+        assert_eq!((t.ai_weight, t.max_alive), (0, 1), "{card}");
+        let wi = &s.weapons[v.mounts[0].weapon as usize];
+        assert_eq!(wi.id, w);
+        assert!(wi.indirect.as_ref().unwrap().low_angle, "{card}");
+        let f = &s.factions[t.faction as usize];
+        let n = f.roster.len();
+        assert_eq!(
+            s.squad_types[f.roster[n - 2] as usize].id,
+            card,
+            "appended before the light mortar"
+        );
+    }
+    let off = |w: &str| {
+        let mut d = ww2();
+        d.weapons
+            .get_mut(w)
+            .unwrap()
+            .indirect
+            .as_mut()
+            .unwrap()
+            .low_angle = false;
+        d.cross_check()
+            .into_iter()
+            .filter(|i| i.path.contains("elevation_deg"))
+            .count()
+    };
+    assert_eq!(off("ww2:lefh18"), 0, "+42 needs no low-angle table");
+    assert_eq!(off("ww2:m2a1_105mm"), 1, "+65 does");
+}

@@ -1,0 +1,49 @@
+# 60mm Mortar Squad (S11b C4; roster-expansion.md RE 179, guns-artillery.md
+# GA 591, 730): one 60 mm M2 served by five men: the squad leader observes and
+# adjusts, the gunner lays and fires, the assistant gunner and two
+# ammunition bearers carry the bombs. Member slots and traits as
+# usa_mortar_team.toml. 30 bombs, 6 a man (GA 591). AI weight 0 (S11b Build
+# B; `[ai.arty] light` is Build C's).
+id = "ww2:usa_60mm_mortar_squad"
+name = "60mm Mortar Squad"
+short_name = "60mm Mortar"
+faction = "ww2:usa"
+tags = ["mortar", "light_mortar"]
+capabilities = ["recrew"]
+sources = ["roster-expansion.md RE 179 (5 men, 240 MP, 45 s)", "guns-artillery.md GA 591 (30 bombs, 6 a man), GA 730"]
+# RE 179: 240 (S11b-4 (A)).
+cost = 240
+# RE 179: 45 s.
+cooldown_s = 45
+unlock_s = 0
+speed_cm_s = 240
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+ai_weight = 0
+
+[[members]]
+slot = "leader"
+weapon = "ww2:m1_carbine"
+rounds = { "ww2:60mm_m49a2" = 6 }
+traits = ["leader"]
+
+[[members]]
+slot = "mortar_gunner"
+weapon = "ww2:m2_60mm"
+sidearm = "ww2:m1911a1"
+rounds = { "ww2:60mm_m49a2" = 6 }
+traits = ["crew_gunner"]
+
+[[members]]
+slot = "mortar_assistant"
+weapon = "ww2:m1_carbine"
+rounds = { "ww2:60mm_m49a2" = 6 }
+traits = ["crew_assistant"]
+
+[[members]]
+slot = "ammo_bearer"
+count = 2
+weapon = "ww2:m1_carbine"
+rounds = { "ww2:60mm_m49a2" = 6 }
+traits = ["ammo_bearer"]

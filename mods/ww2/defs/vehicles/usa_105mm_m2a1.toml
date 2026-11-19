@@ -1,0 +1,177 @@
+# 105 mm Howitzer M2A1 (S11b C2; docs/design/roster/artillery-on-map.md 2.2,
+# 4.4, 4.6, 4.7): the US field howitzer as a base gun, a served gun
+# (`role = "inf_gun"`) on the 105 mm M3 layout (S11a1) with its shield (D
+# 809). No tow in S11b (S11b-2 (A)): it emplaces where it arrives and cannot
+# be pushed (D 722; 1 cm/s, `push_men` above the crew). High angle only beyond
+# about 3.3 km (D 750). Figures with no source in the design documents are
+# marked "verify".
+id = "ww2:usa_105mm_m2a1"
+name = "105 mm Howitzer M2A1"
+short_name = "105 mm M2A1"
+faction = "ww2:usa"
+role = "inf_gun"
+crew_model = "served"
+# Mass in firing position, kg (D 156 "about 2,260 kg").
+mass_kg = 2260
+# Card price, MP (D 838: 500 + tow, no tow in S11b).
+cost = 500
+# The gun's pop is 2 (D 842 "the crew plus 2 for the gun"; the eight crew
+# count as soldiers).
+pop = 2
+# Card cooldown 180 s, unlock 8:00 (D 838).
+recall_cooldown_s = 180
+initial_cooldown_s = 480
+sight_m = 175
+# Silhouette: 105 mm howitzers are big (D 812: 130 %).
+spot_size_pct = 130
+eye_height_cm = 110
+crew_squad = "ww2:usa_105mm_m2a1_crew"
+rare_cap = 0
+sources = ["artillery-on-map.md 2.2, 4.4, 4.6, 4.7 (public tables, verify)", "105 mm M3 layout (S11a1)"]
+
+[mobility]
+type = "towed"
+# No push (D 722): the def check allows speed 0 for a towed gun, but
+# the setup check refuses a card whose speed is 0, so the smallest speed it
+# allows, 1 cm/s, with push_men above the crew (spec C1: "or what the check
+# allows"; S11b log).
+speed_cm_s = 1
+reverse_cm_s = 1
+turn_deg_s = 22
+accel_cm_s2 = 50
+brake_cm_s2 = 200
+max_slope_pct = 15
+ditch_block_dm = 6
+bog_pct = 0
+unbog_s = [0, 0]
+moving_spread_pct = 100
+# Men for full push speed (push_men): one above the crew of 8, so the crew
+# never reach even the 1 cm/s.
+push_men = 9
+# Seconds to emplace, pack, hitch (D 722).
+emplace_s = 90
+pack_s = 54
+hitch_s = 25
+# Seconds to re-lay the trail (D 726-727: 105 mm 20-30 s; 25 taken, spec C2).
+relay_trail_s = 25
+# Gun origin to the trail tip that goes on the hitch, cm (the rigid bar; matches the trail box).
+tow_bar_cm = 290
+
+[hull]
+track_band_pct = 0
+track_mm = 0
+
+# Boxes as the 105 mm M3 (S11a1): axle, shield (D 809; single 6.4 mm plate,
+# verify), trail.
+[[boxes]]
+id = "axle"
+frame = "hull"
+box = { center = [0, 0, 45], half = [15, 90, 20] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+[[boxes]]
+id = "shield"
+frame = "hull"
+box = { center = [40, 0, 80], half = [3, 80, 50] }
+[boxes.armor]
+front = { thickness_mm = 6.4, slope_deg = 15 }
+side = { thickness_mm = 3 }
+rear = { thickness_mm = 3 }
+top = { thickness_mm = 3 }
+
+[[boxes]]
+id = "trail"
+frame = "hull"
+box = { center = [-160, 0, 25], half = [130, 20, 25] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+[[service]]
+role = "gunner"
+at = [-60, 50, 0]
+pose = "kneel"
+[[service]]
+role = "loader"
+at = [-60, -50, 0]
+pose = "kneel"
+[[service]]
+role = "commander"
+at = [-290, 70, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, 85, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, 0, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, -85, 0]
+pose = "kneel"
+# The crew of 8 (D 156): two more ammo slots behind the trail (verify).
+[[service]]
+role = "ammo"
+at = [-520, 60, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-520, -60, 0]
+pose = "kneel"
+
+# M18 telescope (S9-1 (A): 437 m inside the arc).
+[optic]
+sight_pct = 250
+
+[[weapons]]
+def = "ww2:m2a1_105mm"
+mount = "casemate"
+# Gun pivot and muzzle in the gun frame, cm (the M3's; verify).
+pivot = [0, 0, 80]
+muzzle = [190, 0, 10]
+# Traverse arc and rates, deg and deg/s: as the 105 mm M3 def (not in the
+# design; verify: plan value, S11b-13).
+traverse_deg = [-22, 22]
+traverse_deg_s = 9
+elevate_deg_s = 6
+# Elevation, deg (D 156 "-5 to +65"; above +60 needs the low-angle table).
+elevation_deg = [-5, 65]
+# 12 M1 HE (D 396).
+ammo = [{ id = "ww2:105mm_m1_he", count = 12 }]
+barrel = { length_cm = 190, radius_cm = 6 }
+
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "hull", center = [-30, 0, 80], half = [28, 12, 12] }
+
+[[components]]
+type = "ammo_rack"
+hp = 40
+box = { frame = "hull", center = [-120, -55, 20], half = [25, 25, 15] }
+
+[[components]]
+type = "wheels_front"
+hp = 60
+anchors = [{ pos = [0, 80, 40] }, { pos = [0, -80, 40] }]
+repair = { to_hp = 60, time_s = 30 }
+
+[[components]]
+type = "sight"
+hp = 30
+anchors = [{ pos = [-15, 28, 105] }]
+repair = { to_hp = 30, time_s = 30 }
+
+[[components]]
+type = "recoil"
+hp = 50
+box = { frame = "hull", center = [10, 0, 70], half = [22, 8, 8] }
+repair = { to_hp = 50, time_s = 40 }

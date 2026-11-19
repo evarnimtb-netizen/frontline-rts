@@ -1016,3 +1016,94 @@ fn rifle_grenade_is_not_counted_as_a_panzerfaust() {
     let a = &w.game().unwrap().players[1].ammo.fired;
     assert_eq!((a[f::PANZERFAUST], a[f::ROCKET]), (0, 0));
 }
+
+// ------------------------------------------------- Build B content --
+
+/// Build B step 2 (spec 4 C1-C2): the real howitzer cards need no sim
+/// code: spawned in the crest scene of S11a1 on flat ground (gun at
+/// (50, 500), a Grenadier squad seeing (650, 500)), a mission 600 m off
+/// is accepted and a round is fired, counted in `s11.gun_rounds` and in
+/// `s11b.how_rounds` (the card's `field_howitzer` tag; control: the
+/// leIG 18's round is not). Control: `gun_missions` 0 refuses it
+/// `NotMortar`.
+#[test]
+fn a_howitzer_card_takes_a_fire_mission() {
+    use super::s11a1_tests::{crest_gun, mission, order};
+    use crate::fire_mission::FireMissionRefusal;
+    let t = c(650, 500);
+    for (card, how) in [
+        ("ww2:ger_lefh18_squad", 1),
+        ("ww2:usa_105mm_m2a1_squad", 1),
+        ("ww2:ger_leig18_squad", 0),
+    ] {
+        let (mut w, sq) = crest_gun(card, false);
+        assert_eq!(order(&mut w, sq, t, 2), None, "{card} accepts");
+        assert!(mission(&w, sq).is_some(), "{card} on the mission");
+        let t0 = w.tick();
+        let p = |w: &World| {
+            let p = &w.game().unwrap().players[0];
+            (
+                p.s11.gun_rounds.iter().sum::<u32>(),
+                p.s11b.how_rounds.iter().sum::<u32>(),
+            )
+        };
+        while p(&w).0 == 0 {
+            assert!(w.tick() < t0 + 30 * 180, "{card}: no round in 180 s");
+            w.step(&[]);
+        }
+        // Control: the leIG 18 (no `field_howitzer` tag) is no howitzer.
+        assert_eq!(p(&w), (1, how), "{card}: howitzer rounds");
+    }
+    // Control: gun missions off.
+    let mut w = flat_world_with(1, |s| {
+        s.rules.fire_mission.as_mut().unwrap().gun_missions = 0
+    });
+    steps(&mut w, 2);
+    let sq = spawn(&mut w, 0, "ww2:ger_lefh18_squad", 50, 500);
+    spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 600, 500);
+    steps(&mut w, 30);
+    assert_eq!(order(&mut w, sq, t, 2), Some(FireMissionRefusal::NotMortar));
+}
+
+/// C4: each light mortar's table reaches its game range (275 m kz. GrW 42,
+/// 370 m 60 mm; the weapon's `range_m`, which bounds the AI's band and the
+/// table range, and 20 m more is past it) and its minimum (60 m, 90 m),
+/// and the solver refuses 10 m inside the minimum (no charge rises
+/// steeply enough). Control: the heavy tubes' game range is 600 m.
+#[test]
+fn light_mortars_reach_their_game_range_and_minimum() {
+    use crate::indirect::solve;
+    let w = flat_world_with(1, |_| {});
+    let s = w.match_setup().unwrap();
+    let wp = |id: &str| {
+        s.weapons
+            .iter()
+            .find(|w| w.id == id)
+            .unwrap_or_else(|| panic!("{id}"))
+    };
+    let from = FxVec3::new(Fx::from_int(100), Fx::from_int(500), Fx::ZERO);
+    let at = |d: i32| FxVec3::new(Fx::from_int(100 + d), Fx::from_int(500), Fx::ZERO);
+    for (id, min, max) in [("ww2:kz_grw42", 60, 275), ("ww2:m2_60mm", 90, 370)] {
+        let w = wp(id);
+        let ind = w.indirect.as_ref().unwrap();
+        let (lo, hi): (Fx, Fx) = (w.range_min.into(), w.range_max.into());
+        let table: Fx = ind.range.into();
+        assert_eq!(
+            (lo, hi, table),
+            (Fx::from_int(min), Fx::from_int(max), hi),
+            "{id}"
+        );
+        assert!(solve(ind, from, at(max)).is_some(), "{id} reaches {max} m");
+        assert!(Fx::from_int(max + 20) > table, "{id}: 20 m more is past it");
+        assert!(solve(ind, from, at(min)).is_some(), "{id} reaches {min} m");
+        assert!(
+            solve(ind, from, at(min - 10)).is_none(),
+            "{id} refuses {} m",
+            min - 10
+        );
+    }
+    for id in ["ww2:grw34", "ww2:m1_mortar"] {
+        let hi: Fx = wp(id).range_max.into();
+        assert_eq!(hi, Fx::from_int(600), "control: {id}");
+    }
+}

@@ -1,0 +1,33 @@
+# The 105 mm M2A1's crew (S11b C2): eight soldiers in the gun's service slots
+# (tag `gun_crew`, never bought). Order: gunner, loader, section chief (the
+# radio man of the S11a1 G5 link), five ammo men. artillery-on-map.md 2.2
+# (D 156): crew 8. Weapons as the 105 mm M3 crew (usa_105mm_m3_crew.toml).
+id = "ww2:usa_105mm_m2a1_crew"
+name = "Field Artillery Section (105 mm)"
+faction = "ww2:usa"
+tags = ["gun_crew"]
+capabilities = ["gun_crew", "recrew"]
+cost = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+
+[[members]]
+slot = "gunner"
+weapon = "ww2:m1911a1"
+
+[[members]]
+slot = "loader"
+weapon = "ww2:m1_garand"
+
+# The section chief carries the radio (S11a1 G5); `leader` is first-slot only.
+[[members]]
+slot = "commander"
+weapon = "ww2:m1_carbine"
+traits = ["radio"]
+
+[[members]]
+slot = "ammo"
+count = 5
+weapon = "ww2:m1_garand"
