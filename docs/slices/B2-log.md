@@ -34,6 +34,19 @@ Separate candidate (orchestrator's added rule: HE goal met, Germany not down mor
 - Files: lines `targets/B2-results/paired.txt`, per-match CSVs `s2001_*.csv`, counters `counters_*.txt` (from
   `target/b2/counters.py`, not committed), H1 tables `detail_*.txt`. No script or lever key needed a fix.
 
+## B2-2 confirm (2026-11-19; fresh blocks F1 2101-2180, F2 2201-2280; `BATCH_JOBS=4`)
+Chunk 0: head `cb3cb88`, `tools/batch.sh world` = `fe6b1dcdb6db8293c09b6077` (run 1's key): screen valid. C1 `rg_gap25`, no C2.
+**Decision rule for `rg_gap25`, fixed by the orchestrator before any fresh block was read (replaces contract rule 1-2 for
+this candidate only).** Apply iff ALL hold on the FRESH line (2101 + 2201, 320 pairs):
+R1 HE share with the lever at or under 26.3 pooled, and lower than base in each block.
+R2 Germany's pooled gain not below -2.0 points, and the lever's pooled Germany share inside 40.0-55.0.
+R3 No plan floor that the base passes on the fresh blocks is missed by the lever by more than 5 % of its bound (relative); a
+floor the base itself misses counts only if the lever makes it worse by more than 5 % of the bound. Every floor line of base
+and lever is listed here.
+R4 No match without a winner in any set.
+Any of R1-R4 fails: chunk 2a (no second look, no dose change, no relaxed rule). The contract's rule 1-2 is logged as a
+description only (expected to fail on z).
+
 ## Plan (2026-11-19)
 Evidence read: `target/s11a2-measure` (three 160 sets and the 40-set controls), `target/s10c-verify`, B1 log history
 (`git log --follow docs/slices/B1-log.md`), S11a1, S11a2, S11b logs, `crates/sim/src/ai.rs` `buy` and `builder_floor_card`.
