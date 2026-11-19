@@ -2418,8 +2418,20 @@ impl ItemDef {
         check_name(&mut out, "name", &self.name);
         // S11b G1: a rifle grenade reaches farther than a hand throw.
         let rg = self.kind == ItemKind::RifleGrenade;
-        range(&mut out, "range_m", self.range_m, 1, if rg { 300 } else { 100 });
-        range(&mut out, "stow_ms", self.stow_ms, 0, if rg { 60_000 } else { 0 });
+        range(
+            &mut out,
+            "range_m",
+            self.range_m,
+            1,
+            if rg { 300 } else { 100 },
+        );
+        range(
+            &mut out,
+            "stow_ms",
+            self.stow_ms,
+            0,
+            if rg { 60_000 } else { 0 },
+        );
         if self.min_range_m >= self.range_m {
             out.push(Issue::new(
                 "min_range_m",
@@ -3126,7 +3138,13 @@ impl RulesDef {
             1_000,
         );
         // S11b G1, G3.
-        range(&mut out, "items.rifle_grenades", self.items.rifle_grenades, 0, 1);
+        range(
+            &mut out,
+            "items.rifle_grenades",
+            self.items.rifle_grenades,
+            0,
+            1,
+        );
         range(
             &mut out,
             "items.rifle_grenade_gap_s",

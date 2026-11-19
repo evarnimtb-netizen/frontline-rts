@@ -1433,13 +1433,13 @@ impl MatchState {
                         let to = FxVec3::new(p.at.x, p.at.y, terrain.height_at(p.at));
                         p.target = None;
                         p.man = None;
-                        if let Some((vel, flight)) = crate::indirect::low_root(muzzle, to, speed)
-                        {
+                        if let Some((vel, flight)) = crate::indirect::low_root(muzzle, to, speed) {
                             let spread = Fx::from_raw(
                                 (Fx::from(w.spread).raw() as i64
                                     * training_of(setup, sq).spread_pct as i64
                                     / 100)
-                                    .clamp(0, i32::MAX as i64) as i32,
+                                    .clamp(0, i32::MAX as i64)
+                                    as i32,
                             );
                             let dir = vel.normalize_or_zero();
                             let right = FxVec3::new(-dir.y, dir.x, Fx::ZERO).normalize_or_zero();
@@ -1467,8 +1467,11 @@ impl MatchState {
                             if let Some(pl) = self.players.get_mut(owner.0 as usize) {
                                 pl.s11b.rg_fired += 1;
                             }
-                            p.gap = setup.rules.items.rifle_grenade_gap_ticks.min(u16::MAX as u32)
-                                as u16;
+                            p.gap = setup
+                                .rules
+                                .items
+                                .rifle_grenade_gap_ticks
+                                .min(u16::MAX as u32) as u16;
                             p.stow = it.stow_ticks.min(u16::MAX as u32) as u16;
                             if p.stow > 0 {
                                 p.man = Some(m);
@@ -3792,7 +3795,8 @@ impl MatchState {
             sl.man = None;
             // S11b X1: an infantry gun's crew counts in `s11b`.
             let inf_gun = self.vehicles.get(&s.gun).is_some_and(|v| {
-                self.setup.vehicles[v.type_idx as usize].role == frontline_content::VehicleRole::InfGun
+                self.setup.vehicles[v.type_idx as usize].role
+                    == frontline_content::VehicleRole::InfGun
             });
             if let Some(p) = self.players.get_mut(owner) {
                 if inf_gun {

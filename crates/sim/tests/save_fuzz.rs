@@ -990,11 +990,19 @@ fn staged_s11b(w: &mut World, rifles: u16) {
     use frontline_sim::game::RgState;
     let c = |x: i32, y: i32| FxVec2::from_int(x, y);
     let sq = w
-        .spawn_squad_at(PlayerId(1), rifles, c(520, 700), FxVec2::new(Fx::ONE, Fx::ZERO))
+        .spawn_squad_at(
+            PlayerId(1),
+            rifles,
+            c(520, 700),
+            FxVec2::new(Fx::ONE, Fx::ZERO),
+        )
         .unwrap();
     let man = *w.game().unwrap().squads()[&sq].members.last().unwrap();
     assert!(w.edit_squad(sq, |q| {
-        assert!(q.rg.is_some(), "the staged rifle squad has no rifle-grenade state");
+        assert!(
+            q.rg.is_some(),
+            "the staged rifle squad has no rifle-grenade state"
+        );
         q.rg = Some(RgState {
             man: Some(man),
             target: Some(man),

@@ -1755,7 +1755,8 @@ impl ModDefs {
                             {
                                 // S11b G1: with `[items] rifle_grenades` 0
                                 // no squad type carries the kind.
-                                if d.kind == ItemKind::RifleGrenade && rules.items.rifle_grenades == 0
+                                if d.kind == ItemKind::RifleGrenade
+                                    && rules.items.rifle_grenades == 0
                                 {
                                     continue;
                                 }

@@ -14,10 +14,7 @@ fn root() -> PathBuf {
 }
 
 fn write(name: &str, text: &str) -> PathBuf {
-    let p = std::env::temp_dir().join(format!(
-        "frontline-s11b-{name}-{}.toml",
-        std::process::id()
-    ));
+    let p = std::env::temp_dir().join(format!("frontline-s11b-{name}-{}.toml", std::process::id()));
     std::fs::write(&p, text).unwrap();
     p
 }
@@ -41,7 +38,10 @@ fn load_rejects_bad_s11b_keys() {
         (480, 1, 15, 300)
     );
     assert_eq!(
-        (s.rules.items.rifle_grenades, s.rules.items.rifle_grenade_gap_ticks),
+        (
+            s.rules.items.rifle_grenades,
+            s.rules.items.rifle_grenade_gap_ticks
+        ),
         (0, 15 * 30)
     );
     // Absent keys read the same values.
@@ -71,7 +71,10 @@ fn load_rejects_bad_s11b_keys() {
         (1, 100_000)
     );
     assert_eq!(
-        (s.rules.items.rifle_grenades, s.rules.items.rifle_grenade_gap_ticks),
+        (
+            s.rules.items.rifle_grenades,
+            s.rules.items.rifle_grenade_gap_ticks
+        ),
         (1, 600 * 30)
     );
     // Out of range: one case per key; the issue names the key.
@@ -137,7 +140,13 @@ fn rifle_grenade_item_needs_an_he_launcher() {
     assert_eq!(mine(&heat), 1, "a HEAT launcher");
     // A round refilled as anything but shells is refused.
     let mut kind = defs.clone();
-    kind.items.get_mut(IT).unwrap().supply.as_mut().unwrap().kind = "explosives".into();
+    kind.items
+        .get_mut(IT)
+        .unwrap()
+        .supply
+        .as_mut()
+        .unwrap()
+        .kind = "explosives".into();
     assert_eq!(mine(&kind), 1, "explosives");
     // No weapon at all: the def check refuses it.
     let mut none = defs.items[IT].clone();
@@ -170,7 +179,11 @@ fn switch_off_issues_no_rifle_grenades() {
     let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
     let kit = |rg: u32| {
         let mut d = defs.clone();
-        d.rules.get_mut("ww2:skirmish").unwrap().items.rifle_grenades = rg;
+        d.rules
+            .get_mut("ww2:skirmish")
+            .unwrap()
+            .items
+            .rifle_grenades = rg;
         let s = d.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
         let t = &s.squad_types[s.squad_type_index("ww2:usa_rifle_squad").unwrap() as usize];
         let k = t.members.iter().position(|m| m.slot == "rifleman").unwrap() as u8;

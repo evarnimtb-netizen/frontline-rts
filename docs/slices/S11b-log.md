@@ -5,31 +5,65 @@ work in this checkout: commit only your files (`git commit -m ... -- FILES`), ne
 `.claude/`, `target/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Plan done and revised 2026-11-19 (diagnosis and plan review folded in). Next: Build A (`S11b-build-A.md`), chunk 0 first.**
-- SAVE 28, PROTOCOL 14 at the base. Build A makes SAVE 29 AND PROTOCOL 15 in ONE layout commit (the new `ItemKind` is on the
-  wire in `Throw` / `ThrowEach`); B and C change no layout.
-- **A0 diagnosis (measured by another session; it overrides the first plan's code reading):**
-  X1 T81 is a counting error: `guns.rs` 1222 adds every emplaced served gun to `s9.guns_emplaced`, the numerator
-  (`ai/guns.rs` 690 / 705) counts AT-gun jobs only; `s9.gun_crew_lost` (`combat.rs` 3570) has the same fault. A patched 40
-  set played identically and read cover 86.5 / 87.2 %. Fix: skip `InfGun` in both (they count in `s11b`).
-  X2 vehicle buys fall because the gun and observer cards take the manpower (USA about 500 MP a match), not through the pot
-  or shells; `income_max_pct` 30 helped buys but read Germany 57.5 % on one 40 set. **No fix, no key** (S11b-10 (A)); T30,
-  T40, T54 unchanged in `S11b.toml`.
-  X3 counter-fire is tried first and a marker is fresh every 3 heard rounds, and the US observer rarely finds a post. Tested
-  fix: saved flag `AiArty::cb_last` (set in `counter_fire`, cleared in `arty_fire`, `cb_candidate` holds while set): USA
-  62.3 -> 47.3 %, counter-fire still in 97 % of matches. Built behind `cb_alternate` (0 until Build C).
-- NOT checked by the Plan stage (no cargo, no CLI run): the targets file was parsed as TOML only (624 targets, 35 new, 21
-  runs; every new row names a run that exists). **Build A chunk 0 runs `frontline-cli targets` on it and
-  `tools/ablate.sh --dry-run` on the ablation folder, and fixes what they refuse.**
-- Reference sets: REF0 `target/s11b-base40` (base), REF1 `target/s11b-A0-40` (after X1, every switch 0: equal to REF0 but
-  for the X1 counter keys). Every later proof is against REF1. Set budget: A three, B one a chunk, C three.
-- Traps the review found (all in the spec and contracts): `thrown()` must be false for the new kind; the bridge's
-  `item_name` must know it or the workspace does not build; `gunnery::solution` is not a low-arc aim (use `indirect.rs`
-  `solve_root`); `refill_men` would refill grenades in the base for about 0.7 MP (the kind is left out); `buy_role_within`
-  ignores pending call-ins (`buy_pending`); the howitzer needs its own income share to appear before minute 19.
-- Figures with no design source: rifle grenades (S11b-7, "owner to confirm"), the rest listed in S11b-13.
-- Code map for Build A: `combat.rs` `fire_single_shot` (the pattern for G2-G3) and `base_class`; `game.rs` `SingleShot`,
-  `kill_class`; `content/src/defs.rs` `ItemKind`; `ai/arty.rs` `run_arty`, `cb_candidate`, `counter_fire`, `arty_fire`.
+**State: Build A done (both chunks; commits `3edf0cc` code, then the log). Next: Build B (`S11b-build-B.md`).**
+- SAVE 29, PROTOCOL 15 are in; B and C change no layout. Every S11b switch is 0 in `skirmish.toml`.
+- **REF1 = `target/s11b-A0-40`** (the whole of stage A, every switch 0; Germany 19/40). Prove B against it with
+  `python3 -I tools/neutral.py target/s11b-A0-40 <B40>`: it must say `same 40/40` with nothing after it.
+- Rifle-grenade ids: item `ww2:m7_rifle_grenade` (kind `rifle_grenade`), weapon `ww2:m7_launcher` (class
+  launcher, 50 m/s, 15 mrad, range 180), ammo `ww2:m17_rifle_grenade` (mechanism `he`, Mk 2 `[he]`, shells
+  680 g). A member slot carries them as any item: `[[members]] ... items = { "ww2:m7_rifle_grenade" = 3 }`
+  (with `rifle_grenades` 0 the setup drops the kind: no item index, counts 0, no `rg` state).
+- Item def limits (rifle_grenade only): `weapon` required (a launcher whose ammo is `he` with `[he]`),
+  `supply.kind = "shells"`, `range_m` 1..=300 (other kinds 1..=100), `stow_ms` 0..=60000 (others 0),
+  `min_range_m` < `range_m`, `windup_ms` <= 10000. German def C5: copy the three US files' shape.
+- Gun def limits (vehicle.rs `validate_s9`): `push_men` 1..=16, `emplace_s`, `pack_s`, `hitch_s`,
+  `relay_trail_s` 1..=600, `tow_bar_cm` 50..=1200; a towed gun may have `speed_cm_s` 0 and `reverse_cm_s`
+  0 (too heavy to push: the 3-inch M5 pattern, use it for C1/C2 "no push"). Mortar `[indirect]`: the
+  lowest charge's shortest high-angle range must be <= 1.1 x `min_range_m` (defs.rs, the hint prints it).
+- Adding defs shifts sorted indices (items, weapons, ammo, tags): stage A added three defs and REF1 played
+  identically, so index shifts alone did not move a match; B's neutral run is still the proof.
+- Not done in A (by rule id): none of G1-G4, X1, X3. `skirmish.rs` HE share untouched (Build C M1).
+  `ai/ammo.rs` (H3) untouched. HQ, dump and crate service (`structures.rs`) still refill rifle grenades
+  (crates are their designed source); only the base (`refill_men`, the legacy free refill) leaves them out.
+- `tools/neutral.py` does not yet skip `s11b` keys (Build C M1) nor allow `s5a.kills_by` to grow: REF0
+  vs REF1 shows `kills_by: 11 items -> 12` (the new class, a 0 tail). Compare later sets to REF1, not REF0.
+- Test helpers B/C may reuse: `s11b_tests::arm(setup, card, slot, n)` (gives a slot grenades and sets the
+  switch), `rg_scene`; `s11a2_ai_tests` `cf_scene`, `plans`, `Sent`, `add_shot` are now `pub(super)`.
+
+## Build A (2026-11-19; commits `3edf0cc`, log commit after it)
+Chunk 0: release CLI current; REF0 `target/s11b-base40` from the batch cache (base `8d2731b`), Germany 19/40.
+Parse check: `frontline-cli targets docs/slices/targets/S11b.toml --from-json target/s11b-base40` loads
+(21 pass, 1 miss T149d report, 4 key-missing, 598 skipped): no parse error, the file is unchanged.
+Built (one code commit; the steps were written together, so layout, keys, X1, X3 and G share it: deviation
+from "each its own commit"): SAVE 29 / PROTOCOL 15 (`ItemKind::RifleGrenade` 6, `ITEM_KINDS` 7), `Squad::rg`
+(`RgState` with one field more than spec 3: `target`, the man aimed at, so the aim breaks when he dies or
+leaves the band, spec 5), `PlayerState::s11b`, `kill_class::RIFLE_GRENADE` 11 (`COUNT` 12), `AiArty::cb_last`,
+four `AiCounters`, `ItemSetup::stow_ticks`, `Purpose::RIFLE_GRENADE` 40; keys of spec 2 (`[items]` keys live
+in `ItemRulesDef`, not `tuning.rs`: the `[items]` table is not a tuning table); X1; X3; G1-G4; three US defs.
+Code map: `combat.rs` `fire_rifle_grenades` (called after the Panzerfaust loop in `fire_launchers`);
+`game.rs` `RgState::for_type` (call-in and `bail.rs` crew, as `pzf`); low root `indirect::low_root`; issue
+rule `setup.rs` (member item lowering, `rules.items.rifle_grenades == 0` skips the kind); `cb_last` set in
+`counter_fire`, cleared in `arty_fire`, read in `cb_candidate` after the stale gate (`cb_alt_holds`); X1 in
+`guns.rs` `gun_mobility` (Emplacing ends) and `combat.rs` `kill` (slot man lost); refill exclusion in
+`supply.rs` `refill_men` and `items.rs` (legacy free refill); `base_class`: launcher + HE ammo = rifle grenade.
+Rule choices: the aim breaks on the man's single-shot rule, the target dead or out of the band (not on
+sight lost: a lone man is seen about 13 % of ticks at 100 m and would never be hit); spread = the weapon's
+`spread_mrad` x training `spread_pct` (no movement or range factor); ttl from the solved flight x 1.25.
+Aim error, spread 0 (unit integration of the sim's substeps): 60 m 2 mm (5 m up 10 mm), 120 m 2 mm (5 mm),
+180 m 3 mm (1 mm); in the match a burst lands within 3 m of the aim point. Control: the flat
+`gunnery::solution` aim misses by over 8 m at 150 m.
+X1 (REF0 -> REF1): `s9_derived.gun_in_cover_pct` Germany 59.286 -> 86.458, USA 57.627 -> 87.179;
+`s9.guns_emplaced` 140 -> 96 / 118 -> 78; `s9.gun_crew_lost` 92 -> 52 / 79 -> 67 (per match 2.3 -> 1.3,
+1.975 -> 1.675). `neutral.py base40 A0-40`: "same 40/40" per match; the aggregate keys that differ are exactly
+`s9.{guns_emplaced,gun_crew_lost}`, their `s8a.s9` copies, `s9_derived.{guns_emplaced_per_match,
+gun_crew_lost_per_match,gun_in_cover_pct}` and `s5a.kills_by` 11 -> 12 items (tail 0, the new class).
+REF1 holds all of stage A (not X1 alone): the stronger proof, and the base B and C need. Set 3
+`target/s11b-A40` = default with `-o S11b-ablations/s11b_off.toml`: `neutral.py A0-40 A40` "same 40/40
+(note: overrides 0 -> 1 items)". `cb_alternate` is not measured here (diagnosis 62.3 -> 47.3 %).
+Tests: `s11b_tests` 17 (layout, load rejects 17 cases, X1, X3 x3, G x10), `s11b_content` 3.
+Checks: `cargo build --release --workspace` ok (bridge included). `tools/check.sh quick 8d2731b`: fmt, clippy,
+neutral.py, the five ablate dry runs (S11b's new) ok; tests 1112 passed, 1 failed: `udp`
+`ipv6_loopback_handshake` ("Address family not supported": this container has no IPv6; not S11b code).
 
 ## Plan revision (2026-11-19, after the measured diagnosis and an independent review: no blocker, 6 major, 7 minor; all verified)
 Diagnosis: X1 also splits `gun_crew_lost`; X2 dropped (`pot_hold` gone; owner question S11b-10 rewritten); X3 is the

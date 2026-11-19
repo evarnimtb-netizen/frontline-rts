@@ -995,12 +995,17 @@ impl ModDefs {
             if it.kind != crate::defs::ItemKind::RifleGrenade {
                 continue;
             }
-            let he_launcher = it.weapon.as_ref().and_then(|w| self.weapons.get(w)).is_some_and(|w| {
-                w.class == WeaponClass::Launcher
-                    && w.ammo.as_ref().and_then(|a| self.ammo.get(a)).is_some_and(|a| {
-                        a.mechanism == AmmoMechanism::He && a.he.is_some()
-                    })
-            });
+            let he_launcher = it
+                .weapon
+                .as_ref()
+                .and_then(|w| self.weapons.get(w))
+                .is_some_and(|w| {
+                    w.class == WeaponClass::Launcher
+                        && w.ammo
+                            .as_ref()
+                            .and_then(|a| self.ammo.get(a))
+                            .is_some_and(|a| a.mechanism == AmmoMechanism::He && a.he.is_some())
+                });
             if !he_launcher {
                 out.push(
                     Issue::new(
@@ -1012,7 +1017,10 @@ impl ModDefs {
             }
             if it.supply.as_ref().is_some_and(|sp| sp.kind != "shells") {
                 out.push(Issue::new(
-                    format!("items/{}.toml: supply.kind", id.split_once(':').map_or(&id[..], |x| x.1)),
+                    format!(
+                        "items/{}.toml: supply.kind",
+                        id.split_once(':').map_or(&id[..], |x| x.1)
+                    ),
                     "a rifle_grenade item is refilled as shells",
                 ));
             }

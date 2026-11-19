@@ -6,8 +6,8 @@
 use super::s6_tests::{flat_world_with, members, spawn, steps};
 use super::s11a2_ai_tests::{LEIG, MARK, Sent, add_shot, cf_scene, counters, plans};
 use super::*;
-use crate::ai::AiArty;
 use crate::FxVec3;
+use crate::ai::AiArty;
 use crate::game::{RgState, kill_class};
 use crate::vehicle::GunState;
 use frontline_content::ItemKind;
@@ -49,13 +49,7 @@ fn ai0(s: &mut SimState) -> &mut crate::ai::AiState {
 }
 
 fn rg_mut(s: &mut SimState, q: SquadId) -> &mut RgState {
-    game_mut(s)
-        .squads
-        .get_mut(&q)
-        .unwrap()
-        .rg
-        .as_mut()
-        .unwrap()
+    game_mut(s).squads.get_mut(&q).unwrap().rg.as_mut().unwrap()
 }
 
 // ------------------------------------------------------------ layout --
@@ -115,7 +109,10 @@ fn s11b_layout_roundtrips_and_hashes() {
     let back = World::load(&bytes, 1).expect("the S11b state loads");
     assert_eq!(back.game().unwrap().players(), w.game().unwrap().players());
     assert_eq!(back.game().unwrap().ai[0], w.game().unwrap().ai[0]);
-    assert_eq!(back.game().unwrap().squads[&q], w.game().unwrap().squads[&q]);
+    assert_eq!(
+        back.game().unwrap().squads[&q],
+        w.game().unwrap().squads[&q]
+    );
     assert_eq!(back.full_state_hash(), w.full_state_hash());
     assert_eq!(back.save(), bytes);
     let h = back.full_state_hash();
@@ -230,7 +227,10 @@ fn load_rejects_bad_s11b_state() {
             "search beyond a second",
             Box::new(move |s| rg_mut(s, q).search = 31),
         ),
-        ("at off the map", Box::new(move |s| rg_mut(s, q).at = c(-1, 10))),
+        (
+            "at off the map",
+            Box::new(move |s| rg_mut(s, q).at = c(-1, 10)),
+        ),
         (
             "kit count above the slot's full kit",
             Box::new(move |s| s.entities.kit[man.index()].items[RG] = 4),
@@ -273,7 +273,13 @@ fn emplace(w: &mut World, p: u8, g: SimId) {
         },
     }]);
     let t0 = w.tick();
-    while w.game().unwrap().vehicles[&g].served.as_ref().unwrap().state != GunState::Emplaced {
+    while w.game().unwrap().vehicles[&g]
+        .served
+        .as_ref()
+        .unwrap()
+        .state
+        != GunState::Emplaced
+    {
         assert!(w.tick() < t0 + 30 * 300, "not emplaced in 5 minutes");
         w.step(&[]);
     }
@@ -378,7 +384,11 @@ fn ai_counter_fire_resumes_after_an_observed_mission() {
         )
     };
     let (cf, a4, held) = run(true);
-    assert_eq!((cf, a4), (2, true), "counter-fire, the A4 target, counter-fire");
+    assert_eq!(
+        (cf, a4),
+        (2, true),
+        "counter-fire, the A4 target, counter-fire"
+    );
     assert!(held, "held once before the A4 mission");
     assert_eq!(
         run(false),
@@ -413,7 +423,10 @@ fn ai_counter_fire_alternate_deterministic_threads_and_save_load() {
         (w.full_state_hash(), k.cb_missions, k.cb_alt_holds)
     };
     let (h1, cb, held) = go(1, None);
-    assert!(cb >= 1 && held > 0, "control: counter-fire and a hold ({cb}, {held})");
+    assert!(
+        cb >= 1 && held > 0,
+        "control: counter-fire and a hold ({cb}, {held})"
+    );
     assert_eq!(go(4, None).0, h1, "4 threads");
     assert_eq!(go(1, Some(30 * 60)).0, h1, "save and load at 60 s");
 }
@@ -423,7 +436,11 @@ fn ai_counter_fire_alternate_deterministic_threads_and_save_load() {
 /// The M7 launcher and its round (spec G1 def files).
 fn launcher(w: &World) -> (u16, u16) {
     let s = w.match_setup().unwrap();
-    let wi = s.weapons.iter().position(|x| x.id == "ww2:m7_launcher").unwrap() as u16;
+    let wi = s
+        .weapons
+        .iter()
+        .position(|x| x.id == "ww2:m7_launcher")
+        .unwrap() as u16;
     (wi, s.weapons[wi as usize].ammo.unwrap())
 }
 
@@ -555,7 +572,10 @@ fn rifle_grenade_lands_on_its_aim_point() {
             let (vel, flight) = crate::indirect::low_root(from, to, speed).expect("a root");
             assert!(flight > Fx::ZERO);
             let m = miss(from, vel, to);
-            eprintln!("rifle grenade aim: {d} m, {up} m up: miss {} mm", m.mul_int(1000).floor_int());
+            eprintln!(
+                "rifle grenade aim: {d} m, {up} m up: miss {} mm",
+                m.mul_int(1000).floor_int()
+            );
             assert!(m <= Fx::from_int(3), "{d} m, {up} m up: missed by {m:?}");
         }
     }
@@ -577,7 +597,11 @@ fn rifle_grenade_lands_on_its_aim_point() {
 #[test]
 fn rifle_grenade_bursts_at_the_target_in_the_match() {
     let (mut w, q, _) = rg_scene(1, 100, false, |s| {
-        let wi = s.weapons.iter().position(|x| x.id == "ww2:m7_launcher").unwrap();
+        let wi = s
+            .weapons
+            .iter()
+            .position(|x| x.id == "ww2:m7_launcher")
+            .unwrap();
         s.weapons[wi].spread = frontline_content::Fixed::ZERO;
     });
     let mut aim = None;
@@ -611,8 +635,13 @@ fn rifle_grenade_respects_its_range_band() {
     use frontline_content::Fixed;
     let n = |lo: i32, hi: i32| {
         let (mut w, _, t) = rg_scene(1, 100, true, |s| {
-            let i = s.items.iter().position(|i| i.kind == ItemKind::RifleGrenade).unwrap();
-            (s.items[i].range_min, s.items[i].range_max) = (Fixed::from_int(lo), Fixed::from_int(hi));
+            let i = s
+                .items
+                .iter()
+                .position(|i| i.kind == ItemKind::RifleGrenade)
+                .unwrap();
+            (s.items[i].range_min, s.items[i].range_max) =
+                (Fixed::from_int(lo), Fixed::from_int(hi));
         });
         let mut seen = 0;
         for _ in 0..30 * 30 {
@@ -633,8 +662,9 @@ fn rifle_grenade_respects_its_range_band() {
 #[test]
 fn rifle_grenade_gap_and_stow() {
     let run = |gap: u32| {
-        let (mut w, q, _) =
-            rg_scene(1, 100, false, |s| s.rules.items.rifle_grenade_gap_ticks = gap * 30);
+        let (mut w, q, _) = rg_scene(1, 100, false, |s| {
+            s.rules.items.rifle_grenade_gap_ticks = gap * 30
+        });
         let first = shots(&mut w, 1, 30);
         assert_eq!(first.len(), 1);
         let r = rg(&w, q);
@@ -643,7 +673,10 @@ fn rifle_grenade_gap_and_stow() {
         // Silent while stowing.
         for _ in 0..89 {
             w.step(&[]);
-            assert!(w.entities().weapon()[man.index()].cooldown > 0, "his rifle waits");
+            assert!(
+                w.entities().weapon()[man.index()].cooldown > 0,
+                "his rifle waits"
+            );
         }
         w.step(&[]);
         let r = rg(&w, q);
@@ -656,7 +689,10 @@ fn rifle_grenade_gap_and_stow() {
     let gap = run(15);
     assert!(gap >= 15 * 30, "not before the gap: {gap} ticks");
     let free = run(0);
-    assert!(free < 15 * 30 && free >= 6 * 30, "control: stow and wind-up only: {free}");
+    assert!(
+        (6 * 30..15 * 30).contains(&free),
+        "control: stow and wind-up only: {free}"
+    );
 }
 
 /// Spec 5 "Grenade aim": two grenadiers in one squad aim one at a time
@@ -667,14 +703,22 @@ fn rifle_grenade_gap_and_stow() {
 fn two_grenadiers_aim_one_at_a_time() {
     let (mut w, q, _) = rg_scene(1, 100, false, |s| {
         s.rules.items.rifle_grenade_gap_ticks = 0;
-        let i = s.items.iter().position(|i| i.kind == ItemKind::RifleGrenade).unwrap();
+        let i = s
+            .items
+            .iter()
+            .position(|i| i.kind == ItemKind::RifleGrenade)
+            .unwrap();
         s.items[i].stow_ticks = 0;
         // Two riflemen with one grenade each, the rest none.
         let t = s.squad_type_index(RIFLES).unwrap() as usize;
         for m in s.squad_types[t].members.iter_mut() {
             m.items[RG] = 0;
         }
-        let k = s.squad_types[t].members.iter().position(|m| m.slot == "scout").unwrap();
+        let k = s.squad_types[t]
+            .members
+            .iter()
+            .position(|m| m.slot == "scout")
+            .unwrap();
         s.squad_types[t].members[k].items[RG] = 1;
     });
     let at = shots(&mut w, 2, 40);
@@ -708,7 +752,11 @@ fn grenade_aim_clears_when_the_target_leaves_the_band() {
         (broken, fired(&w))
     };
     let ((man, target, gap), n) = run(true);
-    assert_eq!((man, target, gap, n), (None, None, 0, 0), "cleared, no gap, no shot");
+    assert_eq!(
+        (man, target, gap, n),
+        (None, None, 0, 0),
+        "cleared, no gap, no shot"
+    );
     let ((man, _, _), n) = run(false);
     assert!(man.is_some() && n == 1, "control: aiming, then the shot");
 }
@@ -782,7 +830,10 @@ fn rifle_grenade_kill_is_its_own_class() {
         g.round_class(&w.state.entities, wi, ammo, man),
         kill_class::RIFLE_GRENADE
     );
-    assert_eq!(kill_class::NAMES[kill_class::RIFLE_GRENADE as usize], "rifle_grenade");
+    assert_eq!(
+        kill_class::NAMES[kill_class::RIFLE_GRENADE as usize],
+        "rifle_grenade"
+    );
     let s = w.match_setup().unwrap();
     let pzf = s.weapons.iter().position(|x| x.id == "ww2:pzf60").unwrap();
     let pammo = s.weapons[pzf].ammo.unwrap();
@@ -803,7 +854,12 @@ fn rifle_grenades_do_not_refill_in_base() {
     let base = &s.map.bases[s.players[1].base as usize];
     let at = FxVec2::from(base.center);
     let q = w
-        .spawn_squad_at(PlayerId(1), s.squad_type_index(RIFLES).unwrap(), at, FxVec2::new(Fx::ONE, Fx::ZERO))
+        .spawn_squad_at(
+            PlayerId(1),
+            s.squad_type_index(RIFLES).unwrap(),
+            at,
+            FxVec2::new(Fx::ONE, Fx::ZERO),
+        )
         .unwrap();
     let man = *members(&w, q).last().unwrap();
     let frag = ItemKind::Frag.index();
