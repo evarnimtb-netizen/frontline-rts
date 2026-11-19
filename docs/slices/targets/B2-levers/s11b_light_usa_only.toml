@@ -1,0 +1,8 @@
+# B2 lever (S11b-14): light mortars for the USA's AI only (the kz. GrW 42 card
+# at ai_weight 0). S11b fix 40 set with grenades on: Germany 20/40, HE 28.2 %
+# (US bombs 54.5 -> 83.7 a match).
+[ai.arty]
+light = 1
+
+[defs.units."ww2:ger_kz_grw42_team"]
+ai_weight = 0

@@ -464,6 +464,17 @@ Revised the same day with the measured diagnosis of S11a2-10..12 and a plan revi
   howitzer top charges 325 / 333 m/s and their traverse (the M3's); the 60 mm bomb's burst (the 81 mm block x 0.75)
   and its charges; the light mortars' game ranges (S11b-5); the FH Gr 38 complete round at 19 kg (as the M1 HE).
   **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Hold the affected defs back until sourced.
+- S11b-14 (asked by the S11b fix stage) AI light mortars are off by default because with them Germany wins 27.5 % of a
+  40 set (11/40; 16/40 without them). Germany's own kz. GrW 42 carries the drop: light mortars for Germany only 10/40,
+  for the USA only 20/40 (HE share 27.6 / 28.2 %, both above the 26.3 cap with grenades on). `[ai.arty] light` is
+  AI-only: the cards stay buyable by a human player. (A) Leave off until the balance pass B2 tunes the two cards
+  (levers `docs/slices/targets/B2-levers/s11b_light_*.toml`). **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) On now.
+- S11b-15 (asked by the S11b fix stage) HE rifle grenades are off by default because with them (howitzer on, light
+  mortars off) the 40 set's HE share mean is 26.9 %, above the hard cap 26.3 (23.0 without them; Germany 16/40 either
+  way). `[items] rifle_grenades` is content, not AI: 0 issues them to no player. (A) Leave off until the balance pass B2
+  tunes them (lever `docs/slices/targets/B2-levers/s11b_rg_on.toml`). **(A) assumed 2026-11-19, owner asked not to be
+  asked.** (B) On now and the cap raised.
 
 ## B2 balance pass open owner questions (asked 2026-11-19 by the Plan stage; each runs on (A): "assumed 2026-11-19, owner asked not to be asked")
 

@@ -1,0 +1,6 @@
+# B2 lever (from the S11b fix stage, owner question S11b-14): the AI buys light
+# mortars again, both sides (kz. GrW 42, 60 mm M2; ai_weight 50 each).
+# S11b fix 40 set (seed 1, 20 x both bases, grenades on): Germany 11/40, HE
+# 31.1 %; grenades off: Germany 11/40, HE 26.6 % (shipped: 16/40, 23.0 %).
+[ai.arty]
+light = 1
