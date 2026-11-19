@@ -34,6 +34,13 @@ apply commit `fc14f52` (the judge reverts exactly this commit if it fails).**
 | `rg_gap25` | 44.4 | +2.5 | 28/24 | +0.55 | 24.7 | FAIL G mortar 8.0 (bound 8.2), US veh 31.1 (30) | grenades 6.38->5.75 / 7.86->6.81 | separate candidate |
 | `own_57mm_truck_tow` | 58.1 | +16.2 | 39/13 | +3.61 | 29.3 | FAIL HE 29.3 | US veh-MG kills 12.2->8.5, M3A1 5.74->0.06 | owner class |
 | `diag_ger_start3` | 61.2 | +19.4 | 57/26 | +3.40 | 27.2 | FAIL HE 27.2 | pop at 5 min 49.9->55.8 | diagnostic |
+## B2 judge rule for `rg_gap25` (set 2026-11-19 by the orchestrator before any judge set was read)
+The lever aims at the HE cap, not the win share, so the plan's judge line "pooled 480 inside 45-55" (BASE is 44.17) is
+replaced for it. `fc14f52` stays only if, on the 480 judges: J1 HE share at or under 26.3 in the pool and under BASE's;
+J2 Germany's paired gain against BASE's measure not below -2.0 and each 160 set inside 40-60; J3 no match without a
+winner; J4 no hard target that passes in BASE's measure (read with `B2.toml`) now misses. Otherwise `git revert fc14f52`.
+Held out 5001-5080 once: 40-60 on the set; a failure is reported, no retune. The plan's own line is logged as a description.
+
 ## B2-2 confirm (2026-11-19; fresh blocks F1 2101-2180, F2 2201-2280; `BATCH_JOBS=4`)
 Chunk 0: head `cb3cb88`, `tools/batch.sh world` = `fe6b1dcdb6db8293c09b6077` (run 1's key): screen valid. C1 `rg_gap25`, no C2.
 **Decision rule for `rg_gap25`, fixed by the orchestrator before any fresh block was read (replaces contract rule 1-2 for
