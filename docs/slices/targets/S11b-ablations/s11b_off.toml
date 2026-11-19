@@ -1,0 +1,10 @@
+# S11b control (docs/slices/S11b.md 2): every S11b switch at its off value.
+# The game must then play exactly as the A0 reference set (target/s11b-A0-40,
+# tools/neutral.py same); with a0_off.toml too, as base 8d2731b but for the
+# X1 counter keys (s9.guns_emplaced, s9_derived.gun_in_cover_pct).
+[ai.arty]
+how = 0
+light = 0
+
+[items]
+rifle_grenades = 0
