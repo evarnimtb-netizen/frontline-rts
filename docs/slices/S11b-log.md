@@ -148,4 +148,3 @@ grenade aim; minimum ranges 60 / 90 m; complete-round FH Gr 38; the two spent su
 Left out (spec 1): tows, siting, displacement, crates (S11a3), HEAT, Pzgr rot, the map flag, neutral guns in the cap,
 `howitzer_pit`, the AT rifle grenade, authentic mortar ranges, sIG 33, Nebelwerfer, models and HUD.
 Owner questions S11b-1..13 run on (A) ("assumed 2026-11-19, owner asked not to be asked", `docs/TODO.md`).
-Honest expectation then: howitzers fire little from the base (T154); grenades favour the USA (two launchers to one).
