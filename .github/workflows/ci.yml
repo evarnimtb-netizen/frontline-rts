@@ -68,8 +68,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-14 is Apple Silicon (ARM64).
-        os: [ubuntu-latest, windows-latest, macos-14]
+        # macos-latest is Apple Silicon (ARM64). The macos-14 image was retired:
+        # its jobs were cancelled with "configuration not supported".
+        os: [ubuntu-latest, windows-latest, macos-latest]
     defaults:
       run:
         shell: bash

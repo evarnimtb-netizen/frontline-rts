@@ -202,7 +202,7 @@ build output, so regenerate it instead of editing it.
 ## CI
 
 `.github/workflows/ci.yml` runs on `ubuntu-latest`, `windows-latest` and
-`macos-14` (Apple Silicon):
+`macos-latest` (Apple Silicon):
 
 1. build and `cargo test --workspace --release`;
 2. `frontline-cli simulate` on `bench/scenarios/battalion.toml` with seed 7 at
