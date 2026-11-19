@@ -190,7 +190,7 @@ fn ai_keeps_the_howitzer_pot_from_other_buys() {
         steps(&mut w, 30 * 60);
         let k = counters(&w);
         let mp = w.game().unwrap().players[0].manpower;
-        (k.how_buys, own_of(&w, RIFLES).len() > 0, mp)
+        (k.how_buys, !own_of(&w, RIFLES).is_empty(), mp)
     };
     let (buys, rifles, mp) = run(1, 0);
     assert_eq!((buys, rifles), (0, true));
