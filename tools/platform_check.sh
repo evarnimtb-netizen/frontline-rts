@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Manual platform check: the same steps as CI's `build-test` job, for an OS
-# that CI does not run (macOS; SteamOS native and SteamOS + Proton, §5.11).
+# that CI does not run (SteamOS native and SteamOS + Proton, §5.11), or to
+# check a Mac or PC locally.
 #
 #   tools/platform_check.sh                  # build, test, simulate, compare
 #   tools/platform_check.sh --quick          # skip the slow debug sim tests
