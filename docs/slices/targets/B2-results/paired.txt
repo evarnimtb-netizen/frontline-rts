@@ -1,1 +1,2 @@
 mix_line35@s2001 n=160 base 41.9 % lever 51.9 % diff +10.0 up 24 down 8 z +2.83 blocks +10.0 | floors FAIL: HE share 26.5 (base 26.2); usa vehicle kills 32.9 (base 28.0)
+own_57mm_truck_tow@s2001 n=160 base 41.9 % lever 58.1 % diff +16.2 up 39 down 13 z +3.61 blocks +16.2 | floors FAIL: HE share 29.3 (base 26.2)

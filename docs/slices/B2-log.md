@@ -62,3 +62,7 @@ Lines (own counter a match per side, base -> lever):
 - `mix_line35`: +10.0 (24 up / 8 down, z +2.83), 51.9 %; floors FAIL: HE 26.5 (cap 26.3), US vehicle kill share 32.9 (bound
   max(30, 28.0 + 2)). Line cards 3.54 -> 2.64 G, 1.80 -> 0.79 U (moved). Verdict: fail rule 2 (floors). The dose rule plays
   `mix_line42` only after a pass above 53 %: not played.
+- `own_57mm_truck_tow` (owner class, H3): +16.2 (39 / 13, z +3.61), 58.1 %; floors FAIL: HE 29.3. US vehicle-MG kills 12.2 ->
+  8.5 a match, M3A1 kills 5.74 -> 0.06 (moved). The AI uses the tow CCKWs as supply trucks: US truck drops ordered 1.88 ->
+  6.33 a match, flees 67 -> 578, fails 77 -> 367 (of 160), crates dropped 510 -> 1813; CCKW cards bought 0.76 -> 0.20, 57 mm
+  cards 1.76 -> 2.08. Verdict: owner class, reported only (H3 holds: the armed tow is worth about 16 points on this block).
