@@ -325,11 +325,58 @@ impl super::Planner<'_> {
         (income * a.income_max_pct as i64 / 100 - spent).clamp(0, cost)
     }
 
-    /// Manpower the other buys leave alone: the AT guns' pot and the
-    /// infantry guns' pot (one helper for every place that held
-    /// `gun_pot`).
+    /// S11b fix: the field howitzer's pot (as `arty_pot`, from its own
+    /// keys): 0 with `how` or `buy` 0, before `how_after_s`, or while
+    /// `how_max` howitzers are alive or pending; else `how_income_pct` of
+    /// the income so far less what howitzer cards cost, clamped to 0 and
+    /// the card's price. Derived each plan, nothing saved.
+    pub(super) fn how_pot(&self) -> i64 {
+        let g = self.g;
+        let s = &g.setup;
+        let a = &s.rules.ai.arty;
+        let hz = s.tick_hz.max(1) as u64;
+        if a.how == 0
+            || a.buy == 0
+            || self.tick < a.how_after_s as u64 * hz
+            || self.of_role_where(VehicleRole::InfGun, |t| self.is_how(t)) >= a.how_max as usize
+        {
+            return 0;
+        }
+        let is_how = |t: usize| {
+            self.is_how(t as u16)
+                && s.squad_types[t]
+                    .vehicle
+                    .is_some_and(|v| s.vehicles[v as usize].role == VehicleRole::InfGun)
+        };
+        let faction = &s.factions[s.players[self.me.0 as usize].faction as usize];
+        let Some(card) = faction
+            .roster
+            .iter()
+            .copied()
+            .find(|&t| s.squad_types[t as usize].ai_weight > 0 && is_how(t as usize))
+        else {
+            return 0;
+        };
+        let cost = s.squad_types[card as usize].cost as i64;
+        let spent: i64 = self
+            .ai
+            .counters
+            .bought
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| is_how(*k))
+            .map(|(k, &n)| n as i64 * s.squad_types[k].cost as i64)
+            .sum();
+        let minutes = (self.tick / (60 * hz)) as i64;
+        let income = s.rules.start_manpower as i64 + s.rules.income_per_min as i64 * minutes;
+        (income * a.how_income_pct as i64 / 100 - spent).clamp(0, cost)
+    }
+
+    /// Manpower the other buys leave alone: the AT guns' pot, the
+    /// infantry guns' pot and (S11b fix) the howitzer's pot (one helper
+    /// for every place that held `gun_pot`).
     pub(super) fn held_pots(&self) -> i64 {
-        self.gun_pot() + self.arty_pot()
+        self.gun_pot() + self.arty_pot() + self.how_pot()
     }
 
     /// S11a1 A1: the infantry-gun buy (S11b H1: field howitzer cards
@@ -369,8 +416,8 @@ impl super::Planner<'_> {
     /// card with `ai_weight > 0`, role `inf_gun` and the tag, inside its
     /// own `how_income_pct` share (else `how_pct_holds`), with
     /// `how_reserve_mp` left of the manpower less pending call-ins and the
-    /// held gun pots (else `how_mp_holds`). No pot is held for it; none
-    /// with `buy` 0.
+    /// AT and infantry-gun pots (else `how_mp_holds`); its own pot
+    /// (`how_pot`) is what the other buys leave it. None with `buy` 0.
     fn buy_how(&mut self) {
         let s = &self.g.setup;
         let a = &s.rules.ai.arty;
@@ -385,10 +432,10 @@ impl super::Planner<'_> {
             return;
         }
         // S11b fix C-1: the manpower held for the AT gun and the infantry
-        // gun stays out of reach, as in `buy_fo` and `buy`.
-        let mp = self
-            .mp_less_pending()
-            .saturating_sub(self.held_pots().max(0) as u64);
+        // gun stays out of reach, as in `buy_fo` and `buy` (not its own
+        // pot, `how_pot`: that is what it spends).
+        let others = (self.gun_pot() + self.arty_pot()).max(0) as u64;
+        let mp = self.mp_less_pending().saturating_sub(others);
         let (pct, reserve) = (a.how_income_pct, a.how_reserve_mp);
         let g = self.g;
         match self.buy_role_where(

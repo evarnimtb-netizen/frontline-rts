@@ -167,6 +167,62 @@ fn ai_howitzer_buy_leaves_the_gun_pots_alone() {
     assert_eq!(run(0), (1, 0, false), "control: no pot");
 }
 
+/// S11b fix: the howitzer's pot (`how_pot`, in `held_pots`) is kept from
+/// the other buys: the Grenadiergruppe card is buyable (weight 50), the
+/// howitzer buy holds on its reserve (`how_reserve_mp` 100,000), and of
+/// its 750 MP the AI spends on rifles (232 MP) only what lies above the
+/// pot, 480 MP (15 % of 4,000 capped at the card's price): one squad. Controls: `how` 0 (no pot: spent below
+/// 480), and `how_after_s` past the run (no pot yet).
+#[test]
+fn ai_keeps_the_howitzer_pot_from_other_buys() {
+    let run = |how: u32, after: u32| {
+        let mut w = how_world(1, how, 750, |s| {
+            no_inf_gun(s);
+            s.rules.ai.arty.how_reserve_mp = 100_000;
+            s.rules.ai.arty.how_after_s = after;
+            for t in s.squad_types.iter_mut() {
+                if t.id == RIFLES {
+                    t.ai_weight = 50;
+                    t.initial_cooldown_ticks = 0;
+                }
+            }
+        });
+        steps(&mut w, 30 * 60);
+        let k = counters(&w);
+        let mp = w.game().unwrap().players[0].manpower;
+        (k.how_buys, own_of(&w, RIFLES).len() > 0, mp)
+    };
+    let (buys, rifles, mp) = run(1, 0);
+    assert_eq!((buys, rifles), (0, true));
+    assert!(mp >= 480, "the pot stays: {mp} MP");
+    let (_, rifles, mp) = run(0, 0);
+    assert!(rifles && mp < 480, "control how 0: spent to {mp} MP");
+    let (_, rifles, mp) = run(1, 3600);
+    assert!(
+        rifles && mp < 480,
+        "control before how_after_s: spent to {mp} MP"
+    );
+}
+
+/// S11b fix: the howitzer is bought once its pot covers it. 4,000 MP of
+/// income at `how_income_pct` 10 makes a 400 MP pot, short of the 480 MP
+/// card (`how_pct_holds`, nothing bought); at 15 the pot is 480 and the
+/// card is bought from it with the reserve on top. Control: the 10 % run.
+#[test]
+fn ai_buys_the_howitzer_once_its_pot_covers_it() {
+    let run = |pct: u32| {
+        let mut w = how_world(1, 1, 480 + 300, |s| {
+            no_inf_gun(s);
+            s.rules.ai.arty.how_income_pct = pct;
+        });
+        steps(&mut w, 30 * 90);
+        let k = counters(&w);
+        (k.how_buys, own_of(&w, LEFH).len(), k.how_pct_holds > 0)
+    };
+    assert_eq!(run(15), (1, 1, false), "pot full: bought");
+    assert_eq!(run(10), (0, 0, true), "control: pot short of the card");
+}
+
 /// H1 (review 3) and spec 5 "the infantry gun and a squad are bought in
 /// the same plan": a rifle squad's call-in is pending (232 MP) and the
 /// player holds 436 MP: with `buy_pending` 1 the infantry-gun buy (320
