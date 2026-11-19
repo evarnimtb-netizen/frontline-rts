@@ -5,33 +5,70 @@ work in this checkout: commit only your files (`git commit -m ... -- FILES`), ne
 `.claude/`, `target/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: Build B done (both chunks, C1-C7 all built). Next: Build C (`S11b-build-C.md`).**
-- SAVE 29, PROTOCOL 15 unchanged. Every S11b switch is still 0. REF1 = `target/s11b-A0-40`; B1 and B2 equal it 40/40.
-  `neutral.py` now lets `s5a.kills_by` grow with a zero tail (REF0 vs REF1 then shows only the X1 keys).
-- Cards (all `ai_weight` 0, appended to the rosters in this order): `ww2:ger_lefh18_squad`, `ww2:ger_kz_grw42_team`;
-  `ww2:usa_105mm_m2a1_squad`, `ww2:usa_60mm_mortar_squad`. Tags `["vehicle", "field_howitzer"]` / `["mortar",
-  "light_mortar"]`. Howitzer vehicle ids (for `s7.kills_by_vehicle`): `ww2:ger_lefh18`, `ww2:usa_105mm_m2a1`; weapons
-  `ww2:lefh18`, `ww2:m2a1_105mm`. The heavy mortar cards set no `ai_weight`: the loader gives them `DEFAULT_AI_WEIGHT`
-  100, so L1's "half the heavy card's effective weight" is 50 unless the mix scales it (read `ai.rs` 2034-2054).
-- `s11b.how_rounds` is now counted (Build A had the field but no count; `gunnery.rs`, by the card's `field_howitzer`
-  tag, beside `s11.gun_rounds`). `s11b.arty_emplaced` / `arty_crew_lost` have no JSON output yet (review A-5: M1).
-- A fortify row gets a howitzer mission accepted as `a_howitzer_card_takes_a_fire_mission` does: S11a1's
-  `crest_gun(card, crest)` (flat world, the card at (50, 500), a Grenadiergruppe at (600, 500) that sees the target,
-  every gun spawned emplaced and manned), `order(w, sq, (650, 500), n)`: accepted, first round within 180 s (both
-  howitzers; the leIG 18 too, with `how_rounds` 0). Control `gun_missions` 0: `NotMortar`.
-- Rifle grenades: US `rifle_grenadier` x2 (first two of the five riflemen) with `ww2:m7_rifle_grenade` = 3; German
-  `rifle_grenadier` x1 (first of the four) with `ww2:schiessbecher_sprgr` = 3 (weapon `ww2:schiessbecher`, ammo
-  `ww2:gsprgr30`). With `rifle_grenades` 0 they are riflemen (B2 = REF1). Variants have their own member lists: none.
-  `s11b_tests::arm(setup, RIFLES, "rifleman", n)` still arms only the `rifleman` slot (now 3 men).
-- Fired rifle grenades are not in `ammo.fired` (review A-3: no class there, the saved array is fixed): read
-  `s11b.rg_fired`. Kills: `kill_class::RIFLE_GRENADE`.
-- Review A-4 NOT fixed: `cb_alt_holds` still counts every planner pass that holds; counting once per evidence change
-  needs a saved field (SAVE 29 is fixed), so it is left for the coordinator. Read it as "plan passes held". Note: with
-  `cb_alternate` 1 a gun that never gets an ordinary target never counter-fires again (as the spec intends): read
-  `cb_alt_holds` and the share of matches in which each side still counter-fires.
-- The light mortars' game range is the weapon's `range_m` (275 / 370 m): the AI's band and the table range. The sim
-  does not refuse a mortar order beyond it (as for the heavy tubes); the solver itself reaches 1,124 / 1,800 m.
+**GUARD RAILS TRIPPED on the default 40 set (report, not fixed; spec 8 stop rule is the 480's):** Germany 11/40
+(27.5 %; s11b_off 19/40, guard 12-28 wins); HE share mean 31.06 % (max 47.8; s11b_off 23.00): above the T8 hard 26.3.
+Ablations on the same seeds: rg_off Germany 11/40, HE 26.63; how_share_10 9/40, HE 29.54; C1-40 (how, buy_pending,
+cb_alternate on; light and grenades off) 16/40, HE 23.03. So the light mortars carry most of the HE jump (US bombs a
+match 53 -> 82) and the Germany drop; grenades add about 4.4 HE points. The orchestrator's 480 + `light_off` decide.
+**State: Build C done (both chunks).** SAVE 29, PROTOCOL 15. All five switches on (`how`, `buy_pending`, `cb_alternate`,
+`light`, `rifle_grenades`); howitzer cards `ai_weight` 5, light mortars 50 (half the heavy card's DEFAULT 100).
+- Code map: `ai/arty.rs` `buy_arty` (infantry gun apart from `field_howitzer` cards; `buy_pending`) then `buy_how`;
+  `is_how`, `mp_less_pending`; `ai/truck.rs` `of_role_where`, `buy_role_where` -> `RoleBuy` (the old callers pass
+  "every card, raw manpower"); `ai.rs` `buy` L1 filter. Tests `crates/sim/src/s11b_ai_tests.rs` (registered in
+  `world.rs`). JSON `json_out::s11b_blocks`, `skirmish::S11bPlayer/S11bFaction`; rows `cli/src/fortify/s11b.rs`.
+- Review first: the infantry-gun buy path (filter, spent sum, gun count; `buy_pending`); the HE share's new term
+  (`skirmish.rs`: mortar + tank HE + rifle grenade); rows `rg` (strips the kind in the setup for the control),
+  `save_fuzz` `setup()` now forces every S11b switch 0 for the played saves.
+- `cb_alt_holds` counts planner passes that held (A-4, no saved field): JSON also writes it as
+  `cb_alt_hold_passes_per_match` and `cb_fired_matches_any_pct` (matches where the AI still counter-fired).
 - `ipv6_loopback_handshake` fails in this container (no IPv6): not S11b code; not skipped.
+
+## Build C (2026-11-19; commits `14be6a3`, `c70e04e`, `714b70e`, `2f5875f`, `9583d3a`, `0bd224a`, `8088935`, docs, log)
+Built: M1 (`s11b`, `s11b_derived` with spec 7 names plus `how_first_on_map_s_mean/min`, `light/how/rg` sums, side
+detail), HE share + rifle grenade, `neutral.py` skips `s11b` keys BASE lacks (+ test); M2 rows `how_mask`, `how_barrage`,
+`rg`, `light`; S11a1 `mask_once`/`barrage_once` take card, distance, side (S11a1 values unchanged: same scene at 530 m,
+gun player 1); H1, H2 (no planner code), H3 (test only: the AI's ammo share reads rounds, not items, so no code; its
+control is "rounds spent: a trip", not "no hand grenades", which never trigger a trip either), L1;
+`save_roundtrip_carries_s11b_state` (howitzer record and a grenade mid-aim at tick 23441). Snapshot re-blessed (the five
+switches, four weights). BASELINE untouched (frozen fixture; `setup_bytes_baseline` green).
+Decisions: light weight 50 (L1: heavy has no `ai_weight`, DEFAULT 100; pick "fewest buys per weight": heavy, heavy,
+light). `how_mask` keeps S11a1's scene: gun at (50, 500), point 600 m east, crest middle 80 m before it (no trench dug:
+the mask does not depend on it). `how_barrage` = S11a1 barrage at 500 m with 8 rounds; the German gun fires the
+mirror image from the west. `rg`: the target squad's own grenades taken away (only the firer's count).
+`how_first_on_map_s` is the first second a howitzer squad is on the map (the arrival, not the order).
+Fixes from the stage B review: B-1 push wording in both howitzer defs (crawl about 0.5 m a minute) and the H2 test
+asserts no `PushGun`/`Hitch` names the howitzer (the arty AI emits only Emplace, FireMission, Stop; `take_guns` parks
+infantry guns out of every list); B-2 with `rifle_grenades` 0 the rifle squads' setup bytes and match hashes changed
+(a member slot and an item index shifted) while behaviour did not (neutral.py ignores `hash`); B-3 the numbers-only
+assert removed (`range_m` is the AI's band; the solver reaches about 1,124 / 1,800 m); B-4 pack howitzer
+`spot_size_pct` and shield box marked verify (owner to confirm); the leFH 18 muzzle `[90, 0, 5]` stays the leIG's,
+verify: no barrel length in the spec or design.
+Tests: `s11b_ai_tests` 10 (`ai_buys_a_howitzer_inside_its_own_share`, `ai_howitzer_buy_keeps_the_reserve`,
+`ai_gun_buy_counts_pending_call_ins`, `ai_infantry_gun_buy_ignores_howitzer_cards`,
+`ai_howitzer_emplaces_and_takes_an_observed_mission`, `ai_does_not_order_a_masked_howitzer_mission`,
+`ai_all_s11b_switches_off_emit_nothing_new`, `ai_s11b_deterministic_threads_and_save_load`,
+`ai_buys_a_light_mortar_and_fires_it`, `ai_does_not_send_a_squad_to_refill_rifle_grenades`); cli
+`s11b_json_names_match_the_targets_file`, `fortify_s11b_rows_run`, `s11b_rows_one_off` (ignored); save_fuzz +1;
+`test_neutral.py` +1.
+Neutral: `neutral.py A0-40 C1off40`: `same 40/40`; `neutral.py A0-40 Coff40` (`-o s11b_off`): `same 40/40 (note:
+overrides 0 -> 5 items)`.
+Set C1-40 (how, buy_pending, cb_alternate): Germany 16/40, no winner 0, HE 23.03 / 39.6; G / U: window 95 / 95 %,
+howitzer bought 100 / 92.5 % (window 100 / 97.4), first on map 693 / 760 s, fired 90 / 91.9 %, rounds 7.55 / 6.75 a
+match, pct holds 90 / 126, mp holds 15.3 / 21 a match; cb share 31.2 / 51.1 %, cb answered 71.1 / 92.3 %, cb_alt
+passes 67.8 / 95.2; M10 25 %, M3A1 7.5 %, StuG 35 %; gun refused 0.
+Default C40: Germany 11/40, no winner 0, HE 31.06 / 47.8 (s11b_off 23.00 / 35.6). G / U: howitzer bought 97.5 / 95 %,
+first on map 698 / 759 s (min 662 / 723), fired 89.7 / 84.2 %, missions' rounds 9.6 / 6.25 a match, kill share 5.4 /
+1.9 %; light mortar bought 100 / 92.5 % of matches, buy share 33.5 / 40.4 %, bombs 62.9 / 81.7 a match; grenades
+fired 5.15 / 7.33 a match, kill share 3.4 / 6.6 %; cb share 27.7 / 55.7 % (s11b_off 27.7 / 62.3), answered 63.2 /
+92.3 %, still counter-fires in 60 / 90 % of matches, cb_alt passes 46.3 / 112.8 a match; T81 85.7 / 88.9 %;
+M10 22.5 %, M3A1 10 %, Pz IV 67.5 %, StuG 32.5 %; refusals 0 / 0, gun refused 0 / 0, own-fire deaths 0.1 / 0.025 a match.
+Rows (one-off, seed 1): how_mask leFH / M2A1 masked 100 / 100 % (flat 0 / 0), 2 orders; how_barrage trench vs open
+leFH 0 % (open loss 50 %, control 50), M2A1 0 % (60 %, control 100), 24 bursts each; rg G / U fired 1 / 2 of 3 / 6,
+open loss 25 / 90 %, trench 0 / 0 %, control fired 0 / 0, open loss 33.3 / 100 %; light kz vs heavy 100 %, 60 mm
+null (both 0 losses), 8 bombs each. Full `fortify-test --seeds 10`: `target/s11b-C40/fortify10.json` (log beside it).
+Targets on `target/s11b-C40` (s11b_off and rg_off copied in as controls): 19 pass, 8 miss (4 hard: T5a/b, T6a, T8c),
+597 skipped (160 sets, fortify). Not PASS among T149-T158: T149d 55.7 (report, bound 50), T157a 31.06, T157b 27.5,
+T157c 27.5 (reports). No MISSING-METRIC, CONTROL-MISSING or EXPOSURE-MISSING.
 
 ## Build B (2026-11-19; commits `d3d3170`, `b81c462`, `e35144d`, `6bb4ea6`, `64ff872`, `cbbd276`, docs, `b645588`, log)
 New defs: `ammo/105mm_fhgr38`, `ammo/gsprgr30`, `cartridges/60mm_m49a2`, `items/schiessbecher_sprgr`, weapons
@@ -72,9 +109,7 @@ broke 6 roster/type-count tests (fixed in `b645588`: 20 vehicle defs, the artill
 cards a side) and the canonical snapshot (re-blessed; only the new defs, rosters, squads and limit group differ).
 
 ## Build A (2026-11-19; commits `3edf0cc`, log commit after it)
-Chunk 0: release CLI current; REF0 `target/s11b-base40` from the batch cache (base `8d2731b`), Germany 19/40.
-Parse check: `frontline-cli targets docs/slices/targets/S11b.toml --from-json target/s11b-base40` loads
-(21 pass, 1 miss T149d report, 4 key-missing, 598 skipped): no parse error, the file is unchanged.
+REF0 `target/s11b-base40` (base `8d2731b`), Germany 19/40; the targets file parses unchanged.
 Built (one code commit; the steps were written together, so layout, keys, X1, X3 and G share it: deviation
 from "each its own commit"): SAVE 29 / PROTOCOL 15 (`ItemKind::RifleGrenade` 6, `ITEM_KINDS` 7), `Squad::rg`
 (`RgState` with one field more than spec 3: `target`, the man aimed at, so the aim breaks when he dies or
@@ -90,9 +125,7 @@ rule `setup.rs` (member item lowering, `rules.items.rifle_grenades == 0` skips t
 Rule choices: the aim breaks on the man's single-shot rule, the target dead or out of the band (not on
 sight lost: a lone man is seen about 13 % of ticks at 100 m and would never be hit); spread = the weapon's
 `spread_mrad` x training `spread_pct` (no movement or range factor); ttl from the solved flight x 1.25.
-Aim error, spread 0 (unit integration of the sim's substeps): 60 m 2 mm (5 m up 10 mm), 120 m 2 mm (5 mm),
-180 m 3 mm (1 mm); in the match a burst lands within 3 m of the aim point. Control: the flat
-`gunnery::solution` aim misses by over 8 m at 150 m.
+Aim error, spread 0: at most 10 mm at 60-180 m (level and 5 m up); control flat aim: over 8 m at 150 m.
 X1 (REF0 -> REF1): `s9_derived.gun_in_cover_pct` Germany 59.286 -> 86.458, USA 57.627 -> 87.179;
 `s9.guns_emplaced` 140 -> 96 / 118 -> 78; `s9.gun_crew_lost` 92 -> 52 / 79 -> 67 (per match 2.3 -> 1.3,
 1.975 -> 1.675). `neutral.py base40 A0-40`: "same 40/40" per match; the aggregate keys that differ are exactly
@@ -102,48 +135,16 @@ REF1 holds all of stage A (not X1 alone): the stronger proof, and the base B and
 `target/s11b-A40` = default with `-o S11b-ablations/s11b_off.toml`: `neutral.py A0-40 A40` "same 40/40
 (note: overrides 0 -> 1 items)". `cb_alternate` is not measured here (diagnosis 62.3 -> 47.3 %).
 Tests: `s11b_tests` 17 (layout, load rejects 17 cases, X1, X3 x3, G x10), `s11b_content` 3.
-Checks: `cargo build --release --workspace` ok (bridge included). `tools/check.sh quick 8d2731b`: fmt, clippy,
-neutral.py, the five ablate dry runs (S11b's new) ok; tests 1112 passed, 1 failed: `udp`
-`ipv6_loopback_handshake` ("Address family not supported": this container has no IPv6; not S11b code).
+Checks: workspace build ok (bridge); `check.sh quick 8d2731b` ok but `ipv6_loopback_handshake` (1112 passed).
 
-## Plan revision (2026-11-19, after the measured diagnosis and an independent review: no blocker, 6 major, 7 minor; all verified)
-Diagnosis: X1 also splits `gun_crew_lost`; X2 dropped (`pot_hold` gone; owner question S11b-10 rewritten); X3 is the
-`cb_last` flag behind `cb_alternate`, the round budget dropped (a budget on rounds ordered does not bound the fired share).
-Review: 1 PROTOCOL 15 in the layout commit. 2 Build A owns the bridge's `intents.rs` and `thrown()`. 3 `buy_pending`:
-gun buys subtract pending call-ins. 4 The howitzer has its own share `how_income_pct` 15 (minute 11 / 12 against 19.7 / 22
-inside the gun's share; median match 18-19.4 min); T153's exposure is the share of matches of 14 minutes or more. 5 No
-base refill for rifle grenades (crate-only by design); the AI refill rule became "no trip for grenades". 6 Set budgets
-(A 3, B 2, C 3); A keeps every switch 0, so one set proves default and `s11b_off`. 7 The grenade aims with the low root;
-test `rifle_grenade_lands_on_its_aim_point`. 8 kz. GrW 42 minimum 60 m, 60 mm 90 m. 9 FH Gr 38 priced as the complete
-round, 19 kg, like the M1. 10 Grenade burst 96 / 48 rays; T150 at 600 m; `scatter_pct` in the item def. 11 The howitzer's
-and the infantry gun's `spent` sums are apart. 12 Rifle-grenade figures as given (M17: Mk 2 body, 0.68 kg, 180 m;
-Gewehr-Sprenggranate: 250 g, 250 m, 60 m/s, about half the burst), "owner to confirm"; every other unsourced figure in
-S11b-13. Ablations: `cb_budget_33` removed, `how_share_10` added; `s11b_off` holds all five switches.
-
-## Plan (2026-11-19)
-Scope (spec 0, 1), sized for three Build stages. (1) A0: three fixes from the S11a2 measure, each behind a key or proven
-neutral: infantry-gun emplacements leave the AT-gun cover ratio (X1), [first plan: a pot-hold key and a round budget; see
-the revision above: X2 has no fix, X3 is the alternate rule]. (2) Field howitzers leFH 18 and 105 mm M2A1 as
-`inf_gun` cards with no tow: base guns that emplace where they arrive and fire flat; the AI buys one as a second gun from
-8:00 [revised: with its own 15 % income share] (`how`). (3) Light mortars kz. GrW 42 and 60 mm M2 in the AI's mortar slot (`light`).
-(4) HE rifle grenades: a new item kind and a launcher mode on the rifleman, two US and one German grenadier a full squad,
-three grenades each, their kills a new class inside the HE share (`rifle_grenades`). (5) The 75 mm pack howitzer as data in
-no roster; the artillery limit group of 2.
-Left out, with the reason (spec 1): tows, siting, displacement and crates (S11a3: tow AI and crate AI are a session each,
-and a human-only tow card has no use before a presenter pass); HEAT and Pzgr rot; crate-only grenades and shells; the map
-flag; neutral guns in the cap; `howitzer_pit`; the AT rifle grenade; authentic mortar ranges; sIG 33 and Nebelwerfer;
-models and HUD (presenter pass).
-What the howitzers do without tows: arrive limbered in the base, emplace in 90 s, cannot be pushed, re-lay in 25 s, take
-observed missions through the observer team's radio, are heard and counter-fired like the infantry guns, and are refused
-"masked" wherever the flat arc from the base does not clear the ridge (the design's own verdict for a 1 km map).
-Decisions taken for the owner (all (A), `docs/TODO.md` S11b-1..13 as revised, "assumed 2026-11-19, owner asked not to be asked"): this
-scope; no tow cards; the howitzer as a second AI gun inside one share; kz. GrW 42 at 181 MP; light mortar ranges 275 m and
-370 m; grenadiers 2 and 1; plan values for the grenade; grenade kills inside the HE share; [revised: no counter-fire twice in a row; vehicle
-displacement accepted]; T81 without infantry guns; the artillery group of 2.
-Honest expectation: the howitzers will fire little from the base (T154 reports it); rifle grenades favour the USA (two
-launchers against one) with Germany at 41.67 %, so `rg_off` is the first ablation to read; the A0 causes are read from the
-code, and the diagnosis may replace them.
-Stage split: A (chunk 1: A0 fixes, SAVE 29 layout, keys; chunk 2: the rifle-grenade mode; every S11b switch 0) -> B (chunk
-1: howitzers, their shell, light mortars; chunk 2: grenadiers, the group, pack howitzer data; all cards weight 0, default =
-REF1) -> C (chunk 1: JSON, howitzer rows, the howitzer buy, `how` on; chunk 2: light mortars, grenades on, rows `rg` and
-`light`, three 40 sets). Fallbacks in spec 8.
+## Plan and plan revision (2026-11-19; condensed by Build C, the spec `S11b.md` holds every rule)
+Scope: A0 fixes X1 (infantry guns leave the AT-gun cover and crew-loss counts) and X3 (`cb_alternate`); X2 (vehicle
+buys) is a finding, no key (S11b-10). Field howitzers leFH 18 and M2A1 as `inf_gun` base guns (no tow); the AI's second
+gun inside its own 15 % share (`how`, review 4). Light mortars in the mortar slot (`light`). HE rifle grenades (new item
+kind, launcher mode, own kill class inside the HE share, crate-only: no base refill). Pack howitzer data only; the
+artillery limit group of 2. Review fixes folded into the spec: PROTOCOL 15 in the layout commit; `buy_pending`; low-root
+grenade aim; minimum ranges 60 / 90 m; complete-round FH Gr 38; the two spent sums apart; unsourced figures in S11b-13.
+Left out (spec 1): tows, siting, displacement, crates (S11a3), HEAT, Pzgr rot, the map flag, neutral guns in the cap,
+`howitzer_pit`, the AT rifle grenade, authentic mortar ranges, sIG 33, Nebelwerfer, models and HUD.
+Owner questions S11b-1..13 run on (A) ("assumed 2026-11-19, owner asked not to be asked", `docs/TODO.md`).
+Honest expectation then: howitzers fire little from the base (T154); grenades favour the USA (two launchers to one).
