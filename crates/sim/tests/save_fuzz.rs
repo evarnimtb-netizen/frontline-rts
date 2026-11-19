@@ -34,6 +34,28 @@ fn setup(seed: u64) -> MatchSetup {
     let req = MatchRequest::skirmish(seed, "ww2:germany", "ww2:usa", Difficulty::Normal);
     let mut s = defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
     s.players.iter_mut().for_each(|p| p.is_ai = true);
+    // S10c-ai Build B chunk 2: the played saves keep the match they were
+    // tuned on (states at fixed ticks) with the front rules off; the staged
+    // save holds the front state (a saved lane and a FrontAp job in Watch).
+    s.rules.ai.obstacles.front = 0;
+    // S11a1 Build C: likewise the artillery AI off (its records are in the
+    // staged save).
+    (
+        s.rules.ai.arty.buy,
+        s.rules.ai.arty.fo,
+        s.rules.ai.arty.prep,
+    ) = (0, 0, 0);
+    // S11a2 Build B: likewise friendly fire, markers, the own-men rule and
+    // counter-fire off (the states at fixed ticks; S11a2 state is fuzzed in
+    // the staged save).
+    s.rules.ai.arty.ff_safe = 0;
+    s.rules.ai.arty.counter_fire = 0;
+    let fm = s
+        .rules
+        .fire_mission
+        .as_mut()
+        .expect("ww2 has [fire_mission]");
+    (fm.friendly_fire, fm.counter_battery) = (0, 0);
     s
 }
 
@@ -221,6 +243,62 @@ fn holds(w: &World) -> Vec<&'static str> {
         ai_any(&|ai| ai.refused.len() == frontline_sim::ai::MAX_REFUSED),
         "ai_refused_full",
     );
+    // S10c-ai Build B chunk 2: a FrontAp job (its line ending at its saved
+    // lane's AP line end) watching its work, 5 mines of the line laid.
+    put(
+        (0..2u8).any(|p| {
+            g.ai(PlayerId(p)).is_some_and(|ai| {
+                ai.front_lanes.iter().any(|l| {
+                    ai.forts.iter().any(|(sq, j)| {
+                        j.point == l.point
+                            && j.line.last() == Some(&l.ap[1])
+                            && j.phase == frontline_sim::ai::FortPhase::Watch
+                            && j.work.is_some_and(|wid| {
+                                f.works.get(&wid).is_some_and(|k| k.builder == *sq)
+                            })
+                            && f.mines
+                                .values()
+                                .filter(|m| {
+                                    m.owner == PlayerId(p)
+                                        && m.fort == j.fort
+                                        && m.pos.y == l.ap[0].y
+                                })
+                                .count()
+                                >= 5
+                    })
+                })
+            })
+        }),
+        "ai_front_ap_watch",
+    );
+    // S10c-ai Build C chunk 2: a belt's hedgehog job (a point blocking
+    // piece) watching its work, two hedgehogs of its row standing within
+    // 10 m of its site.
+    put(
+        (0..2u8).any(|p| {
+            g.ai(PlayerId(p)).is_some_and(|ai| {
+                ai.forts.iter().any(|(sq, j)| {
+                    let d = &g.setup().forts[j.fort as usize];
+                    d.blocks_vehicles
+                        && d.shape == FortShape::Point
+                        && j.phase == frontline_sim::ai::FortPhase::Watch
+                        && j.work
+                            .is_some_and(|wid| f.works.get(&wid).is_some_and(|k| k.builder == *sq))
+                        && f.pieces
+                            .values()
+                            .filter(|q| {
+                                q.owner == PlayerId(p)
+                                    && q.fort == j.fort
+                                    && (q.pos - j.line[0]).length()
+                                        <= frontline_sim::fx::Fx::from_int(10)
+                            })
+                            .count()
+                            >= 2
+                })
+            })
+        }),
+        "ai_belt_watch",
+    );
     put(
         f.blasts.len() == frontline_sim::fort::MAX_BLASTS,
         "blasts_full",
@@ -238,6 +316,16 @@ fn holds(w: &World) -> Vec<&'static str> {
         "ai_material_run",
     );
     put((0..2).any(|p| !ai(p).tasks.is_empty()), "ai_tasks");
+    // S11a2: a marked and a pending spot, a gun mission flagged `cb`.
+    let spots = || g.players().iter().flat_map(|p| p.cb.iter());
+    put(spots().any(|c| c.marked), "cb_marked");
+    put(spots().any(|c| c.mark_at != 0), "cb_pending");
+    put(
+        g.squads()
+            .values()
+            .any(|q| matches!(&q.order, frontline_sim::game::Order::FireMission { m, .. } if m.cb)),
+        "cb_mission",
+    );
     out
 }
 
@@ -251,7 +339,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 25,
+        version: 28,
         state: w.state(),
     });
     assert!(
@@ -343,6 +431,67 @@ fn save_roundtrip_through_a_fort_match() {
         "roundtrip: {loads} loads, {runs} continued runs, held {seen:?}, {:?}",
         t.elapsed()
     );
+}
+
+/// S11a2 (fix B-7): a played save with the S11a2 switches and the
+/// artillery AI on (as shipped) carries real S11a2 state: the match is
+/// saved and loaded every 600 ticks (hash, cache and bytes as above) until
+/// a save held an enemy marker and the AI had answered one, plus one more
+/// continued run after that load.
+#[test]
+fn save_roundtrip_carries_s11a2_state() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
+    let req = MatchRequest::skirmish(SEED, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let mut s = defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
+    s.players.iter_mut().for_each(|p| p.is_ai = true);
+    let fm = s
+        .rules
+        .fire_mission
+        .as_ref()
+        .expect("ww2 has [fire_mission]");
+    let a = &s.rules.ai.arty;
+    assert_eq!(
+        (
+            fm.friendly_fire,
+            fm.counter_battery,
+            a.ff_safe,
+            a.counter_fire
+        ),
+        (1, 1, 1, 1),
+        "the shipped switches"
+    );
+    let mut w = World::new_match(s, 1).unwrap();
+    let mut held = None;
+    while w.tick() < 81_000 && held.is_none() {
+        run_hashes(&mut w, 600);
+        let tick = w.tick();
+        let g = w.game().unwrap();
+        let marker = g.players().iter().any(|p| p.cb.iter().any(|c| c.marked));
+        let answered = (0..2u8).any(|p| {
+            g.ai(PlayerId(p))
+                .is_some_and(|ai| ai.counters.cb_missions > 0)
+        });
+        let bytes = w.save();
+        let mut b = World::load(&bytes, 1).unwrap_or_else(|e| panic!("load at {tick}: {e}"));
+        assert_eq!(
+            w.state_hash(),
+            b.state_hash(),
+            "hash at the load, tick {tick}"
+        );
+        assert_eq!(b.save(), bytes, "save of the loaded world, tick {tick}");
+        if marker && answered {
+            let mut a = World::load(&bytes, 2).unwrap();
+            assert_eq!(
+                run_hashes(&mut a, 600),
+                run_hashes(&mut b, 600),
+                "after the load at {tick}"
+            );
+            held = Some(tick);
+        }
+    }
+    let tick = held.expect("no save held a marker and an answered one by tick 81000");
+    println!("s11a2 roundtrip: marker and counter-fire held at tick {tick}");
 }
 
 /// One mutation: replace the encoded value of `field` with `new`.
@@ -728,6 +877,9 @@ fn staged_s10b() -> World {
     use frontline_sim::game::Order;
 
     let mut s = setup(SEED);
+    // S10c-ai fix pass 1 (finding B-5): saved front lanes load only with
+    // the front rules on, so the staged save (it holds a lane) takes them.
+    s.rules.ai.obstacles.front = 1;
     for t in s.squad_types.iter_mut() {
         if t.id.contains("engineer") {
             t.caps |= Capability::PlaceMines.bit()
@@ -748,7 +900,9 @@ fn staged_s10b() -> World {
         .position(|i| i.kind == ItemKind::Satchel)
         .unwrap() as u16;
     let eng = s.squad_type_index("ww2:ger_engineer_squad").unwrap();
+    let leig = s.squad_type_index("ww2:ger_leig18_squad").unwrap();
     let mut w = World::new_match(s, 1).unwrap();
+    staged_s11a2_gun(&mut w, leig);
     let spawn = |w: &mut World, x: i32| {
         w.spawn_squad_at(PlayerId(0), eng, c(x, 300), FxVec2::new(Fx::ONE, Fx::ZERO))
             .unwrap()
@@ -799,6 +953,77 @@ fn staged_s10b() -> World {
     });
     staged_s10b_ai(&mut w, ap, piece);
     w
+}
+
+/// Fuzz stage S11a2 (spec 3), first, while the match may still step:
+/// player 0's leIG 18 on a map-fire mission flagged `cb`; player 1 holds
+/// one marked and one pending counter-battery spot of player 0; a few
+/// S11a2 counters. (The `AiArty` with `cb` is in `staged_s10b_ai`.)
+fn staged_s11a2_gun(w: &mut World, leig: u16) {
+    use frontline_sim::command::{Command, CommandKind};
+    use frontline_sim::counter_battery::CbSpot;
+    use frontline_sim::fx::{Fx, FxVec2};
+    use frontline_sim::game::Order;
+    let c = |x: i32, y: i32| FxVec2::from_int(x, y);
+    let gun = w
+        .spawn_squad_at(
+            PlayerId(0),
+            leig,
+            c(300, 360),
+            FxVec2::new(Fx::ONE, Fx::ZERO),
+        )
+        .unwrap();
+    for _ in 0..30 {
+        w.step(&[]);
+    }
+    let target = c(300, 760);
+    assert!(w.mark_intel(PlayerId(0), target));
+    w.step(&[Command {
+        player: PlayerId(0),
+        seq: 900_001,
+        kind: CommandKind::FireMission {
+            squad: gun,
+            target,
+            rounds: 4,
+        },
+    }]);
+    assert!(w.edit_squad(gun, |q| match &mut q.order {
+        Order::FireMission { m, .. } => m.cb = true,
+        o => panic!("the staged leIG 18 is not on a mission: {o:?}"),
+    }));
+    let tick = w.tick();
+    let sec = tick.div_ceil(30) * 30;
+    assert!(w.edit_player(PlayerId(1), |p| {
+        p.cb = vec![
+            CbSpot {
+                of: 0,
+                pos: c(300, 360),
+                at: c(320, 380),
+                err_mm: 90_000,
+                heard_mm: 600_000,
+                evidence: 4,
+                shots: 5,
+                decay_at: sec + 300 * 30,
+                mark_at: 0,
+                marked: true,
+            },
+            CbSpot {
+                of: 0,
+                pos: c(500, 360),
+                at: c(500, 360),
+                err_mm: 0,
+                heard_mm: 0,
+                evidence: 3,
+                shots: 3,
+                decay_at: sec + 290 * 30,
+                mark_at: sec + 15 * 30,
+                marked: false,
+            },
+        ];
+        p.s11a2.cb_marks = 1;
+        p.s11a2.cb_err_first_mm = 90_000;
+        p.s11a2.ff_kills = [1, 0];
+    }));
 }
 
 /// Fuzz stage `staged_s10b_ai` (S10b-ai Build A): player 0's AI holds one
@@ -1158,6 +1383,155 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             k += 1;
         }
     });
+    // S10c-ai Build B chunk 2 (fuzz stage `staged_s10b_ai + a FrontAp job
+    // in Watch with 5 mines laid`): player 0's saved front lane of point 0
+    // and a FrontAp job on it watching its work on the sixth segment, the
+    // first five mines laid; the job's line is the rest of the lane line.
+    let ap_line = [c(640, 560), c(670, 560)];
+    let front_sq = w
+        .spawn_squad_at(PlayerId(0), eng, c(650, 555), east)
+        .unwrap();
+    for k in 0..5 {
+        w.lay_mine_now(ap, c(642 + 2 * k, 560), PlayerId(0))
+            .unwrap();
+    }
+    let mut fw = 0;
+    w.edit_fort(|f| {
+        fw = f.next_work;
+        f.next_work += 1;
+        f.works.insert(
+            fw,
+            frontline_sim::fort::Work {
+                owner: PlayerId(0),
+                fort: ap,
+                line: ap_line.to_vec(),
+                yaw: Fx::ZERO,
+                builder: front_sq,
+                hq: None,
+                step: frontline_sim::fort::WorkStep::Build,
+                seg: 5,
+                work: 0,
+                got_g: 0,
+            },
+        );
+        f.accounts[0].mines_laid += 5;
+    });
+    w.edit_squad(front_sq, |q| q.order = Order::Fortify { work: fw });
+    assert!(w.with_ai_state(0, |ai| {
+        ai.front_lanes = vec![frontline_sim::ai::FrontLane {
+            point: 0,
+            since: tick,
+            ap: ap_line,
+            wire: [c(645, 570), c(665, 570)],
+            ap_done: false,
+            wire_done: false,
+            // Fix pass 3 (C-5): a saved AT row line (the fuzz mutates its
+            // tag and positions).
+            at: Some([c(640, 600), c(680, 600)]),
+        }];
+        ai.forts.insert(
+            front_sq,
+            AiFortJob {
+                fort: ap,
+                point: 0,
+                line: vec![c(650, 560), c(670, 560)],
+                phase: FortPhase::Watch,
+                start: tick,
+                since: tick,
+                work: Some(fw),
+                tries: frontline_sim::fort::WorkStep::Build as u8,
+            },
+        );
+    }));
+    // S10c-ai Build C chunk 2 (fuzz stage `staged_s10b_ai + a Belt job in
+    // Watch with two pieces standing`): two of player 0's hedgehogs 4 m
+    // apart and a Baupioniere squad's hedgehog job of point 0 watching its
+    // work on the row's third site.
+    let belt_sq = w
+        .spawn_squad_at(PlayerId(0), pio, c(604, 612), east)
+        .unwrap();
+    for x in [600, 604] {
+        assert!(w.build_now(hh, &[c(x, 620), c(x, 630)], PlayerId(0)));
+    }
+    let belt_line = vec![c(608, 620), c(608, 630)];
+    let mut bwk = 0;
+    w.edit_fort(|f| {
+        bwk = f.next_work;
+        f.next_work += 1;
+        f.works.insert(
+            bwk,
+            frontline_sim::fort::Work {
+                owner: PlayerId(0),
+                fort: hh,
+                line: belt_line.clone(),
+                yaw: Fx::ZERO,
+                builder: belt_sq,
+                hq: None,
+                step: frontline_sim::fort::WorkStep::Build,
+                seg: 0,
+                work: 0,
+                got_g: 0,
+            },
+        );
+    });
+    w.edit_squad(belt_sq, |q| q.order = Order::Fortify { work: bwk });
+    assert!(w.with_ai_state(0, |ai| {
+        ai.forts.insert(
+            belt_sq,
+            AiFortJob {
+                fort: hh,
+                point: 0,
+                line: belt_line.clone(),
+                phase: FortPhase::Watch,
+                start: tick,
+                since: tick,
+                work: Some(bwk),
+                tries: frontline_sim::fort::WorkStep::Build as u8,
+            },
+        );
+        // S11a1 (spec 3): one infantry-gun record, one observer-team
+        // record and a breach job with `prep_at` (the fuzz mutates them).
+        ai.arty.insert(
+            front_sq,
+            frontline_sim::ai::AiArty {
+                phase: frontline_sim::ai::ArtyPhase::Ready,
+                since: tick,
+                last_order: tick,
+                missions: 2,
+                prep: true,
+                // S11a2: a counter-fire record.
+                cb: true,
+                cb_shots: 4,
+            },
+        );
+        ai.counters.ff_lifts = 1;
+        ai.fo.insert(
+            belt_sq,
+            frontline_sim::ai::AiFo {
+                point: 1,
+                post: Some(c(600, 600)),
+                cursor: 3,
+                since: tick,
+                arrived: true,
+                retry_at: tick + 30,
+            },
+        );
+        ai.fo_lost_at = tick;
+        ai.breaches.insert(
+            belt_sq,
+            frontline_sim::ai::AiBreach {
+                point: 1,
+                crossing: c(620, 620),
+                section: 1,
+                phase: frontline_sim::ai::BreachPhase::Stage,
+                since: tick,
+                tries: 0,
+                suppress_at: None,
+                smoke_at: None,
+                prep_at: Some(tick),
+            },
+        );
+    }));
     // Just before the save: the second sweeper squad is wiped out and the
     // second demolition's tank wrecked (the next plan drops both jobs).
     for m in w.game().unwrap().squads()[&gone_sq].members.clone() {
@@ -1235,8 +1609,14 @@ fn staged_s10b_save_holds_its_state() {
 /// `+ an AiDemolish with one piece done and a charge burning`, Build D
 /// chunk 4. `+ a Done sweep, a sweep of a wiped-out squad, a Repath
 /// demolition, a demolition of a wrecked tank, an AtRow2 job, refusals and
-/// blasts at their caps of 32`, S10b-ai review 4.
-const STAGED_MUST_HOLD: [&str; 15] = [
+/// blasts at their caps of 32`, S10b-ai review 4. `+ a FrontAp job in
+/// Watch with 5 mines laid`, S10c-ai Build B chunk 2. `+ a Belt job in
+/// Watch with two pieces standing`, S10c-ai Build C chunk 2. `+ a marked and
+/// a pending counter-battery spot and a gun mission flagged cb`, S11a2 Build A.
+const STAGED_MUST_HOLD: [&str; 20] = [
+    "cb_marked",
+    "cb_pending",
+    "cb_mission",
     "blasts",
     "lost_on_known",
     "ai_at_field_watch",
@@ -1252,6 +1632,8 @@ const STAGED_MUST_HOLD: [&str; 15] = [
     "ai_at_row2",
     "ai_refused_full",
     "blasts_full",
+    "ai_front_ap_watch",
+    "ai_belt_watch",
 ];
 
 /// S10b review R1: `FortSetup::mine_item` of a saved setup was never

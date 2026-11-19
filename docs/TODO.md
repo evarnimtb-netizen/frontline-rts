@@ -267,29 +267,154 @@ Full text in the archive file. None blocks a slice; answer any you care about.
   S10b-ai-D2 Sweep lane losses: DECIDED single file: `lane_file` 1, attackers walk a swept lane on its centre line.
   S10b-ai-D3 Tank gap: DECIDED (B) narrowed now: the obstacle piece's vehicle block pad lets a medium tank through a
   4 m hedgehog row once 2 adjacent pieces are gone (12 m between standing centres); path layer and movement agree.
-- S10b-ai open owner questions (OPEN, asked 2026-11-15; the slice ran on (A) and (A) is listed first):
-  S10b-ai-E1 Bunker and the single job slot. The bunker takes the one S10b job slot for long, and Germany's mines
-  in matches fell from about 45 % to about 25 % once the bunker changes went in. (A) Keep bunker first.
-  (B) A bunker waiting for a truck gives up the slot. (C) `bunker_truck_first` off.
-  S10b-ai-E3 Satchels. The AI never opens a hedgehog row in a match (T114e/f 0). (A) A second engineer squad takes
-  over the job when the first has no satchel. (B) Two satchels on the engineer cards (a card change). (C) Accept.
+- S10b-ai owner questions (asked 2026-11-15; ALL DECIDED, E4-E8 by the owner 2026-11-16 on the recommendation; (A) is listed first):
+  S10b-ai-E1 Bunker and the single job slot: DECIDED 2026-11-15 (B) on the orchestrator's default (owner B1 Q2),
+  built in B1-0: switch `[ai.obstacles] bunker_yields` (default 1), see `docs/slices/B1-log.md`. The bunker takes the one S10b job
+  slot for long, and Germany's mines in matches fell from about 45 % to about 25 % once the bunker changes went in.
+  (A) Keep bunker first. (B) A bunker waiting for a truck gives up the slot. (C) `bunker_truck_first` off.
+  S10b-ai-E3 Satchels: DECIDED 2026-11-15 (A) a second engineer squad takes over the job when the first has no
+  satchel; no card change. Switch `[ai.obstacles] demolish_handover` (default 1), built in B1-0 (`B1-log.md`).
   S10b-ai-E4 Player key to choose 1-3 mine rows while placing a field (not the wheel; may need a protocol bump).
-  Not built. (A) Leave for a later slice. (B) Build in the next slice.
-  S10b-ai-E5 Demolished wire leaves debris that slows walking. Not built. (A) Leave for a later slice. (B) Build in
-  the next slice.
-  S10b-ai-E6 AI use is far under the targets (mines, obstacles, bunker, AT fields). (A) Leave for the balance pass;
+  Not built. DECIDED 2026-11-16 (A) leave for a later slice (with other work that needs a protocol bump). (B) Build in the next slice.
+  S10b-ai-E5 Demolished wire leaves debris that slows walking. Not built. DECIDED 2026-11-16 (A) leave for a later
+  slice. (B) Build in the next slice.
+  S10b-ai-E6 AI use is far under the targets (mines, obstacles, bunker, AT fields). DECIDED 2026-11-16 (B) a
+  follow-up slice that raises use; not scheduled or built yet (B1 built E1 and E3 only). (A) Leave for the balance pass;
   treat T109, T110a-d, T112, T113 as reports until then. (B) A follow-up slice that raises use (more job slots,
   builder assignment for mines).
-  S10b-ai-E7 A new blast in a swept lane costs a whole new sweep and the attackers wait. (A) Keep. (B) Re-sweep only
-  the part of the lane.
-  S10b-ai-E8 T113 bunker target: 20 % was written for the old denominator. (A) Reset to about 10 % of all matches.
-  (B) Keep 20 %.
+  S10b-ai-E7 A new blast in a swept lane costs a whole new sweep and the attackers wait. DECIDED 2026-11-16 (A) keep.
+  (B) Re-sweep only the part of the lane.
+  S10b-ai-E8 T113 bunker target: 20 % was written for the old denominator. DECIDED 2026-11-16 (A) reset to about
+  10 % of all matches; NOT YET APPLIED: T113a still has `min = 20` in `targets/S10b-ai.toml` and `targets/B1.toml`,
+  change it in the next slice's targets. (B) Keep 20 %.
 - S10b-ai not numbered, open: `s10b-ai` was merged into main 2026-11-15 with the owner's OK. The process proposals of the
   2026-11-12 audit were adopted by the orchestrator for this slice; the owner has not yet confirmed them. The parallel
   `tools/verify.sh` took 248 min 52 s (the old serial run took 38 min); it needs a look before the next slice.
 - S10b open notes (not numbered): F8 from S10a-ai (an S8b truck re-orders an
   unreachable HQ goal about every 5 min) is planned in S10b-ai Build D (L5, switch `refusal_memory`; droppable). Bunker notes from Build E: MG fire from 150 m does not hit men
   in the pit, with or without the bunker; the bunker pit has no spoil bank because it filled the slit.
+
+## B1 balance pass open questions (asked 2026-11-16; branch `balance-pass`, log `docs/slices/B1-log.md`)
+
+- B1-1 DECIDED by the owner 2026-11-16: (A) accept for now, balance again when the roster is stable. Was: Germany at about 42 % (42.29 % of 480 on seeds 1-280, band 45-55 missed). No fort setting passes both seed groups
+  with the floors. (A) Accept for now and balance again when the roster is stable. (B) Let the AI fortify less than the
+  minimum-use floors. (C) Another diagnosis outside fortification (why fortifying helps the USA more).
+- B1-2 Latent S10b-ai fault T115c: own obstacle rows at base 0 block own vehicles, and `count_own_blocked` recounts a
+  (vehicle, piece) pair each time it reappears (seed 104 normal: 13). Needs its own fix.
+- B1-3 USA wire floor is already missed at defaults (56-58 % of matches against 60).
+- B1-4 Delayed forts are mostly never built (cause not measured).
+
+## S10c-ai open owner questions (asked 2026-11-16; the slice ran on the listed default)
+
+Spec `docs/slices/S10c-ai.md` 10 (the first option is (A)); log `docs/slices/S10c-ai-log.md`; measures from
+`target/s10c-verify/measure.txt` (480 matches, commit `cc4af7c`). Two numbers per set are Germany / USA.
+
+- S10c-1 Builders near the enemy. Ran on (A): a front builder works on until a known enemy is within 50 m of the site
+  (80 m on the walk). (B) 80 m throughout: safer, far fewer front fields (not run). Measured: front builders lost a
+  match 0.55 / 0.84, 0.61 / 0.76, 0.69 / 0.66 (T125 report, bound 0.5): both sides over the bound in all three sets.
+- S10c-2 Builder squads. Ran on (B), not (A): `builder_cards_min` 2 is the default, waiting for the owner's answer.
+  Measured on the 40 set (floor 0 `C1a40`, floor 2 `C1b40`): mines in 70 / 50 % of matches at floor 0 and 95 / 82.5 %
+  at floor 2; floor 0 missed the home works floor, floor 2 kept it. Builder buys a match 1.91 / 2.56, 1.95 / 2.45,
+  2.04 / 2.35 on the 480.
+- S10c-3 Demolition. Ran on (A): vehicles drive round an obstacle when a way round exists; demolition stays rare and is
+  reported. Measured: demolitions wanted 0 in every set (T126 report).
+- S10c-4 USA belts. Ran on (A): US engineers build the belt as one log barrier line. Measured: belts in 10.0 / 1.9,
+  8.75 / 1.25, 8.1 / 2.5 % of matches.
+- S10c-5 T109 mines. Ran on (A): 45 % of matches (`S10c-ai.toml`), in place of 50 %. Measured: T109 is not among the
+  misses in `measure.txt`.
+- S10c-6 Front wire shape. Ran on (A): a 20 m front line with a 30 m mine row behind it. Measured: own wire seen by the
+  enemy AI 55.5 / 40.1, 51.0 / 27.8, 43.0 / 36.2 % (T122 bound 50; the US rows miss); breaches 0 in every set (T123
+  report). (B) 60 m lines with a field at each end stays open for a later slice.
+- Open items, no answer needed yet:
+  - own_blocked 3 / 2 on seeds 1-80 (0 / 1 and 0 / 0 on the other sets; T115, bound 0). Cause in the log (seed 15,
+    Germany base 0). Rule R6b (B1-2) is proposed in the log and not built; it needs its own key.
+  - Breaches stay 0: the short front line is rounded (S10c-6); covering fire is S11.
+  - Front builders lost is over the 0.5 bound on both sides, not only the US.
+  - Belts are rare (1.25-10 % of matches) and no demolition is wanted.
+  - The front AT row waits behind FrontAp and wire (`at_wait` in the log; options A and B there, not decided).
+  - Not run yet: the full release suite (`check.sh tests`), `tools/verify.sh` and GitHub CI on the branch.
+
+## S11a1 open owner questions (asked 2026-11-16 by the Plan stage; each runs on (A): "assumed overnight 2026-11-16, owner asleep")
+
+Spec `docs/slices/S11a1.md` 11; log `docs/slices/S11a1-log.md`; targets `docs/slices/targets/S11a1.toml`. Built on the
+branch; measured at `e149258` (item 16 and 17). The design's gate "S11a ships only if S5 and S6 met their HE-share targets" is met (S5b 13.3-13.9 %, S6
+19.4 %, cap 26.3 %; S10c-ai 19.8 %), so it is not a question.
+
+- S11a1-1 Split of S11a. (A) Two slices as the design's critic note proposes: S11a1 (gun fire missions, radio
+  observers, leIG 18 and 105 mm M3, basic AI, preparation fire for the breach) and S11a2 (crate-only shells, friendly
+  fire, registration, counter-battery, displacement, defensive fire). **(A) assumed overnight 2026-11-16, owner
+  asleep.** (B) One slice S11a (about 0.9x S3; not buildable in three stages).
+- S11a1-2 Shells in S11a1. (A) Infantry guns rearm in base at the S9 shell price (every shell paid; the AI keeps a
+  25 % budget) until S11a2 adds crates at the gun and AI crate carrying; switch `[supply] arty_base_rearm`. **(A)
+  assumed overnight 2026-11-16, owner asleep.** (B) HQ, dump and truck only now: an AI gun in base fires one load
+  (10-12 rounds) a card. Either way Q4's "the base does not refill guns" becomes the default in S11a2.
+- S11a1-3 Friendly fire from indirect HE (Q22, decided yes for S11a). (A) Built in S11a2 behind its own switch and
+  ablation, because it changes every mortar mission of both sides; until then the AI lifts fire with own men within
+  50 m and a human's own shells do not hurt his men. **(A) assumed overnight 2026-11-16, owner asleep.** (B) In S11a1.
+- S11a1-4 Tows. (A) Both gun cards come without a tow; the AI emplaces the gun where it arrives (in base: both guns
+  cover Kessel Ridge from there); tow variants, siting and displacement in S11a2. **(A) assumed overnight 2026-11-16,
+  owner asleep.** (B) The M3 card brings a CCKW now (380 + tow); the AI still does not move it.
+- S11a1-5 Prices and caps. (A) leIG 18 320 MP (gun cards have no German cut, S9-4), 105 mm M3 380, VB-Trupp 80 (the
+  roster's 100 less the German 20 % cut, S5a-37), FO Party 120; guns at most 2 alive, unlock 3:00 / 4:00; the AI buys
+  at most one gun and one observer team. **(A) assumed overnight 2026-11-16, owner asleep.** (B) VB-Trupp 100 (no cut
+  for a support team).
+- S11a1-6 Preparation fire. (A) Only the breach job waits for it, at most 60 s; ordinary assaults go as today.
+  **(A) assumed overnight 2026-11-16, owner asleep.** (B) Every assault on a point with a known trench holds its first
+  bound 60 s for the guns (design 6.4; changes every attack, so it needs its own ablation: S11a2 candidate).
+- S11a1-7 Breach target T131. (A) Hard: with preparation fire the staged AI breach opens the wire and places its
+  charge in at least 60 % of 20 runs (the S10a-16 (A) bar; 0 % today: the base `breach_ai` row, review C-7), attackers' losses a report. **(A) assumed
+  overnight 2026-11-16, owner asleep.** (B) A report until S11a2. Note: breach jobs still do not START in matches
+  (T123, S10c-6); preparation fire does not change that.
+- S11a1-8 HEAT rounds (Igr 38 HL, M67). (A) In S11a2 (2 a gun, rare cap), so this slice's measure does not move the
+  armour rows. **(A) assumed overnight 2026-11-16, owner asleep.** (B) Now.
+- S11a1-9 Human play before a presenter pass. (A) The four cards are buyable on the branch although the HUD has no
+  gun fire-mission tool and no model for them; a presenter pass and the `godot` headless tests come before a merge to
+  main is asked. **(A) assumed overnight 2026-11-16, owner asleep.** (B) Add a `hidden` card key and hide them first.
+- S11a1-10 T131 while the breach job gives up (review C-7, 2026-11-17). (A) Keep T131a/b as reports until the breach
+  job's give-up rule is decided (S10a-16); the staged row's mortar now observes the nest. **(A) recommended, assumed
+  overnight 2026-11-17, owner asleep.** (B) Loosen the `run_breach` `lost` rule for breach jobs under preparation fire.
+
+## S11a2 open owner questions (asked 2026-11-17 by the Plan stage; each runs on (A): "assumed overnight 2026-11-17, owner asleep")
+
+Spec `docs/slices/S11a2.md` 11; log `docs/slices/S11a2-log.md`; targets `docs/slices/targets/S11a2.toml`. Built on the
+branch and measured at `e149258` (item 17).
+
+- S11a2-1 Scope of S11a2 (two Build stages tonight). (A) Friendly fire from indirect HE (Q22) and counter-battery by
+  sound with AI counter-fire (the answer to a gun in base); crates, tows, displacement, registration, flash and
+  defensive fire go to S11a3. **(A) assumed overnight 2026-11-17, owner asleep.** (B) Crates and AI crate carrying
+  instead of counter-battery.
+- S11a2-2 Extent of friendly fire. (A) Own men only (blast, suppression, fragments) from fire-mission rounds of
+  mortars and infantry guns; own vehicles, guns, structures, wire and tracks stay immune; a round in flight passes
+  through own men. **(A) assumed overnight 2026-11-17, owner asleep.** (B) Everything own is hit.
+- S11a2-3 Own-fire deaths in the numbers. (A) Not kills (the HE share and the kill tables keep their meaning); a
+  separate count per player; losses and tickets as any death. **(A) assumed overnight 2026-11-17, owner asleep.**
+  (B) Counted as kills of the firing player.
+- S11a2-4 AI safety distances under friendly fire. (A) No mission, and a lift of a running one, with own men inside
+  50 m of the target or walking onto it inside 100 m; the mortar spotter stands 70 m short (was 35).
+  **(A) assumed overnight 2026-11-17, owner asleep.** (B) 100 m for every case.
+- S11a2-5 What the enemy can hear. (A) Fire-mission rounds of infantry guns only (marker after 3 rounds); mortars
+  (5 rounds) and flash ranging later. **(A) assumed overnight 2026-11-17, owner asleep.** (B) Mortars now too.
+- S11a2-6 AI counter-fire. (A) Before its observed targets, one mission of 4 rounds per new evidence, map fire on a
+  marker no wider than 60 m, inside the reserve and the 25 % shell budget (the one case where the AI fires
+  unobserved). **(A) assumed overnight 2026-11-17, owner asleep.** (B) Only when the gun has no observed target.
+- S11a2-7 Target T134 (AI gun rounds observed >= 80 %). (A) Counter-fire rounds count with the observed ones.
+  **(A) assumed overnight 2026-11-17, owner asleep.** (B) Keep the S11a1 metric and accept a miss.
+- S11a2-8 Shells by crate (follow-up of S11a1-2). (A) Infantry guns keep the priced base rearm until guns leave the
+  base (S11a3, with tows and siting): inside the base a crate run is a 20 m walk at the same price, and one 32 kg
+  crate holds a single 19 kg M1 round. **(A) assumed overnight 2026-11-17, owner asleep.** (B) Turn base rearm off
+  now with no AI carrying (an AI gun then fires one load a card).
+- S11a2-9 Target T142 (the AI lifts its fire in time in >= 90 % of 20 staged runs; the design's test 10). (A) Hard.
+  **(A) assumed overnight 2026-11-17, owner asleep.** (B) A report until S11a3.
+- S11a2-10 US counter-fire share over 50 %. Measured at `e149258`: US counter-fire is 62.8 % of its gun rounds (T148d,
+  report bound 50). The S11a2 log names the knob outside the spec's keys. (A) recommended: add a per-gun counter-fire
+  round budget in the next pass. (B) Accept the share; T148 stays a report. Not decided: the branch runs as measured.
+- S11a2-11 AT guns in cover fell under the floor. Measured at `e149258`: 57.8 % (Germany, T81a) and 56.4 % (USA, T81b)
+  against a floor of 60; they were 84-94 % at S10c-ai. Cause not found (first suspects: the artillery pot or the
+  new guns changing AT-gun siting; the cover metric counting infantry guns). (A) recommended: diagnose and fix before
+  merging S11a1 and S11a2 to main. (B) Merge, then fix after.
+- S11a2-12 Artillery manpower lowers vehicle buys. M10 bought in 32 % of matches (56 % at S10c-ai), M3A1 16 % (36 %);
+  Pz IV bought in 89.4 % (T54a, floor 90) with MP share 9.97 (T54c, floor 11). (A) recommended: lower the artillery pot
+  in the balance pass. (B) Accept the lower buys and the two misses.
 
 ## Planned work queue
 
@@ -310,8 +435,11 @@ Full text in the archive file. None blocks a slice; answer any you care about.
 10. S10a fortifications, mechanics half: built, reviewed, fixed and verified (head `6d7b98c`; log `docs/slices/S10a-log.md`, spec `docs/slices/S10a-fortifications.md`, targets `S10a.toml`). Merged to main `fa45332` (owner OK 2026-11-11).
 11. S10a-ai, the fortification AI and balance half: built, reviewed, fixed and verified, merged to main 2026-11-11 with the owner's OK. Germany 41.67 %; 26 target misses, 21 of them hard; F8 open. (Plan done 2026-11-11: spec `docs/slices/S10a-ai.md`, targets `S10a-ai.toml`). Stages: Build A (layout SAVE 23, S17 path fix, wire index, counters), Build B (buys, materials, building), Build C (breaching, AI breach row, ablation tooling), measure and ablations, Review, Fix, Tune only by spec 9, Docs. Main = `8acc534`.
 12. S10b mechanics: built, reviewed, fixed and verified on branch `s10b-obstacles` (from `8acc534`) on 2026-11-12. Merged to main 2026-11-12 with the owner's OK. Verify: 881 tests pass; Germany 41.67 % of 480; 373 targets pass, 25 miss, 6 hard (T106b is the new one, owner decision S10b-5). Log `docs/slices/S10b-log.md`, spec `docs/slices/S10b-obstacles.md`, targets `S10b.toml`.
-13. **S10b-ai: done and merged into main 2026-11-15** (from main `72b2970`). Verified: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. Spec `docs/slices/S10b-ai.md`, log `S10b-ai-log.md`, targets `S10b-ai.toml`. Open questions S10b-ai-E1 and E3-E8 below.
+13. **S10b-ai: done and merged into main 2026-11-15** (from main `72b2970`). Verified: 965 tests pass; Germany 41.88 % of 480; 410 targets pass, 46 miss, 26 hard. Spec `docs/slices/S10b-ai.md`, log `S10b-ai-log.md`, targets `S10b-ai.toml`. Questions S10b-ai-E1 and E3-E8 are all decided (see above).
 14. Dedicated balance pass, after S10b-ai or S11 once the roster is stable: fine balance to 45-55 % and the soft per-unit targets (T5c, T5d, T31a-d, T55a/b, T95b/d) are settled there. Slice order: S10b, S10b-ai, S11a/b, then this pass, then S12 to S15.
+15. **S10c-ai: done on branch `claude/project-thread-e7nsak` (2026-11-16), merged to main 2026-11-19 with the owner's OK.** Verified so far: `check.sh quick 54009f6` ok, 881 tests pass; c_off 40 set = main 40/40; Germany 40.00 % of 480 (sets 40.6 / 37.5 / 41.9); 270 targets pass, 71 miss (41 hard). Full suite, `tools/verify.sh` and CI not run yet. Spec `docs/slices/S10c-ai.md`, log `S10c-ai-log.md`, targets `S10c-ai.toml`. Owner questions S10c-1..6 above. Next: the merge decision after verify, then S11.
+16. **S11a1: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A, B and C, with review fixes C-1..C-7 (B-5 not done). Check at the last fix: `check.sh quick 730e67f` all ok, 961 tests. Measured with S11a2 at `e149258` (item 17). Spec `docs/slices/S11a1.md`, log `S11a1-log.md`, targets `S11a1.toml`. Owner questions S11a1-1..10 above. Open: T131 stays a report (S11a1-10); preparation fire never runs in matches (T138). Waits for the owner's merge decision.
+17. **S11a2: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A and B, with the Fix of Build B (B-1..B-7). Verified: `check.sh quick 730e67f` all ok, 982 tests at the head `e149258`. GitHub CI on `affb26e` (S11a1 complete plus S11a2 stage A): Linux build, release and debug sim tests, simulate, clippy, rustfmt and cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on main (fixed by PR 1); macOS cancelled; cross-platform hash check skipped. CI on `e149258` was still running when written. Measured 480 at `e149258`: Germany 41.67 % (sets 46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0; 318 targets pass, 82 miss (44 hard). New hard misses: T9b, T54a, T54c, T81a, T81b, T119b; gone: T8a, T115d, T121d. `tools/verify.sh` not run. Spec `docs/slices/S11a2.md`, log `S11a2-log.md`, targets `S11a2.toml`. Owner questions S11a2-1..12 above. Next: the merge decisions for S10c-ai, S11a1, S11a2 and PR 1; then the open items in STATE.md; then S11b.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 

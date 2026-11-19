@@ -378,6 +378,9 @@ fn ai_world() -> World {
 pub(crate) fn s10b_ai_off(s: &mut frontline_content::MatchSetup) {
     let o = &mut s.rules.ai.obstacles;
     (o.mines, o.obstacles, o.bunker, o.sweep, o.demolish) = (0, 0, 0, 0, 0);
+    // S10c-ai Build B chunk 2: the front rules (on by default) too, so
+    // these scenes keep testing the S10a works at a lone point.
+    o.front = 0;
 }
 
 fn ai1(w: &mut World) -> &mut crate::ai::AiState {
@@ -419,6 +422,7 @@ fn ai_busy() -> (World, SquadId, SquadId) {
             tries: 2,
             suppress_at: Some(tick),
             smoke_at: None,
+            prep_at: None,
         },
     );
     ai.wire_known = vec![2, 5, 9];
@@ -2544,6 +2548,233 @@ fn ai_holds_a_builder_only_while_its_job_can_start() {
     };
     assert_eq!(second(1), (Some(1), false), "no room: b is not held");
     assert!(second(2).1, "control: room, b takes the dugout");
+}
+
+/// Fix F15 jobs over 20 s: the most fort jobs at once and whether squad
+/// `id` had one.
+fn jobs_seen(w: &mut World, id: SquadId) -> (usize, bool) {
+    let (mut most, mut had) = (0, false);
+    for _ in 0..20 {
+        play(w, 1);
+        most = most.max(ai_ro(w).forts.len());
+        had |= ai_ro(w).forts.contains_key(&id);
+    }
+    (most, had)
+}
+
+#[test]
+fn ai_hold_max_0_holds_no_builder_but_jobs_still_start() {
+    // B1-4 `hold_max` 0: the dugout point (a neutral point 360 m off)
+    // holds no builder, so the full engineer squad there goes to the
+    // other point and starts no job. Failing control: `hold_max` 2 (the
+    // default) holds it and it takes the dugout.
+    let far = |max: u32| {
+        let (mut w, pos, line) = held_far(360, |s| {
+            s.rules.ai.fort.wire = 0;
+            s.rules.ai.fort.hold_max = max;
+        });
+        dugout_wanted(&mut w, pos, line);
+        let a = squad_at(&mut w, ENG, pos, 120);
+        let (_, had) = jobs_seen(&mut w, a);
+        (had, task_point(&w, a))
+    };
+    assert_eq!(
+        far(0),
+        (false, Some(1)),
+        "hold_max 0: not held, at the other point"
+    );
+    assert!(far(2).0, "control hold_max 2: held, it takes the dugout");
+    // Yet a free engineer assigned to the point without a hold (the only
+    // point) still starts the job with `hold_max` 0. Its failing control
+    // is `far(0)` above: there the hold was what kept it at the point.
+    let (mut w, pos, _) = held(|s| s.rules.ai.fort.hold_max = 0);
+    let a = squad_at(&mut w, ENG, pos, 120);
+    assert!(jobs_seen(&mut w, a).1, "hold_max 0: the job still starts");
+}
+
+/// [`held`] with point 1 also player 1's (its trench dug, `sep` m from
+/// point 0 across the enemy direction) and neutral points 2 and 3 `back`
+/// m behind points 0 and 1 (away from the enemy); decision quality 100,
+/// wire off; one full engineer squad at each own point. Returns the world
+/// and the two squads (point 0's first).
+fn held_pair(sep: i32, back: i32, max: u32) -> (World, SquadId, SquadId) {
+    let mut p1 = FxVec2::ZERO;
+    let (mut w, pos, _) = held(|s| {
+        s.rules.difficulty.normal.decision_quality_pct = 100;
+        s.rules.ai.fort.wire = 0;
+        s.rules.ai.fort.hold_max = max;
+        let p0: FxVec2 = s.map.points[0].pos.into();
+        let b0: FxVec2 = s.map.bases[s.players[0].base as usize].center.into();
+        let d = (b0 - p0).normalize_or_zero();
+        let side = d.perp() * Fx::from_int(sep);
+        let back = d * Fx::from_int(-back);
+        for at in [p0 + side, p0 + back, p0 + side + back] {
+            let mut q = s.map.points[0].clone();
+            q.pos = frontline_content::FixedVec2 {
+                x: frontline_content::Fixed(at.x.raw()),
+                y: frontline_content::Fixed(at.y.raw()),
+            };
+            s.map.points.push(q);
+        }
+        p1 = p0 + side;
+    });
+    let line1 = {
+        let g = w.state.game.as_mut().unwrap();
+        g.points[1].owner = Some(PlayerId(1));
+        let s = &g.setup;
+        let dir = (g.base_of(PlayerId(0)) - p1).normalize_or_zero();
+        let mid = p1 + dir * Fx::from(s.rules.ai.dig_offset);
+        let half = dir.perp() * Fx::from(s.rules.ai.dig_length).div_int(2);
+        let line = [mid - half, mid + half];
+        g.ai[1]
+            .as_mut()
+            .unwrap()
+            .trenches
+            .push(AiTrench { point: 1, line });
+        line
+    };
+    trench_done(&mut w, line1);
+    let a = squad_at(&mut w, ENG, pos, 120);
+    let b = squad_at(&mut w, ENG, p1, 120);
+    (w, a, b)
+}
+
+#[test]
+fn ai_hold_max_1_holds_at_most_one_point() {
+    // B1-4 `hold_max` 1: two own trenched points want their nest, each
+    // with a full engineer squad; only point 0 (points ascending) holds
+    // its builder, point 1's goes to its neutral point: one job at most.
+    // Failing control: `hold_max` 2 holds both, two jobs at once.
+    let run = |max: u32| {
+        let (mut w, a, b) = held_pair(120, 300, max);
+        let (most, had_a) = jobs_seen(&mut w, a);
+        (
+            most,
+            had_a,
+            ai_ro(&w).forts.contains_key(&b) || task_point(&w, b) == Some(1),
+        )
+    };
+    let (most, had_a, b_home) = run(1);
+    assert_eq!(most, 1, "hold_max 1: one job at most");
+    assert!(
+        had_a && !b_home,
+        "point 0 holds its builder, point 1 does not"
+    );
+    assert_eq!(
+        run(2).0,
+        2,
+        "control hold_max 2: both points hold, two jobs"
+    );
+    assert_eq!(run(0).0, 0, "hold_max 0: no point holds, no job");
+}
+
+#[test]
+fn ai_build_after_s_holds_no_builder_and_starts_no_job_before_the_time() {
+    // B1-5 `build_after_s` 60: before 60 s of match time the dugout
+    // point holds no builder (the engineer goes to the other point) and
+    // the only point starts no job; after it the job starts. Failing
+    // control: `build_after_s` 0 (the default) holds and starts at once.
+    let far = |after: u32| {
+        let (mut w, pos, line) = held_far(360, |s| {
+            s.rules.ai.fort.wire = 0;
+            s.rules.ai.fort.build_after_s = after;
+        });
+        assert!(w.state.tick < 30 * 30, "the scene starts early");
+        dugout_wanted(&mut w, pos, line);
+        let a = squad_at(&mut w, ENG, pos, 120);
+        let (_, had) = jobs_seen(&mut w, a);
+        (had, task_point(&w, a))
+    };
+    assert_eq!(far(600), (false, Some(1)), "before the time: not held");
+    assert!(
+        far(0).0,
+        "control build_after_s 0: held, it takes the dugout"
+    );
+    // The only point: no job before 60 s, the job once the time is up.
+    let one = |after: u32| {
+        let (mut w, pos, _) = held(|s| s.rules.ai.fort.build_after_s = after);
+        let a = squad_at(&mut w, ENG, pos, 120);
+        let early = jobs_seen(&mut w, a).1;
+        let start = w.state.tick;
+        let later = play_until(&mut w, 120, |w| ai_ro(w).forts.contains_key(&a));
+        (early, later, start)
+    };
+    let (early, later, start) = one(60);
+    assert!(start < 60 * 30, "20 s in, still before the time");
+    assert!(!early, "build_after_s 60: no job before the time");
+    assert!(later, "build_after_s 60: the job starts after it");
+    assert!(one(0).0, "control build_after_s 0: the job starts at once");
+}
+
+/// [`held`] (the only point) with `build_min_squads` `min` and a full
+/// engineer squad at the point; a rifle squad in player 1's base too when
+/// `rifle`. Returns the world, the engineers and the riflemen.
+fn gate_squads(min: u32, rifle: bool) -> (World, SquadId, Option<SquadId>) {
+    let (mut w, pos, _) = held(|s| s.rules.ai.fort.build_min_squads = min);
+    let a = squad_at(&mut w, ENG, pos, 120);
+    let r = rifle.then(|| {
+        let b = w.game().unwrap().base_of(PlayerId(1));
+        let (x, y) = (b.x.floor_int(), b.y.floor_int());
+        spawn(&mut w, 1, "ww2:usa_rifle_squad", x, y)
+    });
+    (w, a, r)
+}
+
+#[test]
+fn ai_build_min_squads_starts_no_job_below_the_count() {
+    // B1-5 `build_min_squads` 2: one foot squad alive (the engineers) is
+    // below the count, no hold and no job; with a rifle squad as well (2
+    // foot squads) the job starts. Failing control: `build_min_squads` 0
+    // (the default) starts it with the engineers alone.
+    let (mut w, a, _) = gate_squads(2, false);
+    assert!(!jobs_seen(&mut w, a).1, "1 foot squad < 2: no job");
+    assert!(ai_ro(&w).forts.is_empty());
+    let (mut w, a, _) = gate_squads(2, true);
+    assert!(jobs_seen(&mut w, a).1, "2 foot squads: the job starts");
+    let (mut w, a, _) = gate_squads(0, false);
+    assert!(jobs_seen(&mut w, a).1, "control build_min_squads 0: job");
+    // The hold too: below the count the dugout point holds no builder.
+    let far = |min: u32| {
+        let (mut w, pos, line) = held_far(360, |s| {
+            s.rules.ai.fort.wire = 0;
+            s.rules.ai.fort.build_min_squads = min;
+        });
+        dugout_wanted(&mut w, pos, line);
+        let a = squad_at(&mut w, ENG, pos, 120);
+        let (_, had) = jobs_seen(&mut w, a);
+        (had, task_point(&w, a))
+    };
+    assert_eq!(far(2), (false, Some(1)), "below the count: not held");
+    assert!(
+        far(0).0,
+        "control build_min_squads 0: held, takes the dugout"
+    );
+}
+
+#[test]
+fn ai_build_gate_never_cancels_a_running_job() {
+    // B1-5: a job started with 2 foot squads goes on when the rifle squad
+    // dies (1 foot squad < `build_min_squads` 2): the gate stops new
+    // jobs only. Control `build_min_squads` 0: the same job goes on too
+    // (it is no job end of its own); a closed gate that cancelled jobs
+    // would fail the first assert.
+    let run = |min: u32| {
+        let (mut w, a, r) = gate_squads(min, true);
+        assert!(play_until(&mut w, 20, |w| ai_ro(w).forts.contains_key(&a)));
+        let fort = ai_ro(&w).forts[&a].fort;
+        thin(&mut w, r.unwrap(), 0);
+        let mut kept = true;
+        for _ in 0..30 {
+            play(&mut w, 1);
+            kept &= ai_ro(&w)
+                .forts
+                .get(&a)
+                .is_some_and(|j| j.fort == fort && j.phase != FortPhase::Done);
+        }
+        kept
+    };
+    assert!(run(2), "gate closed after the start: the job goes on");
+    assert!(run(0), "control build_min_squads 0: the job goes on");
 }
 
 #[test]

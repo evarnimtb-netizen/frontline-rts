@@ -112,6 +112,10 @@ pub struct Mission {
     pub observer: Option<SimId>,
     /// The mission started from a remembered ranging cell.
     pub ranged: bool,
+    /// S11a2 K4: a gun mission aimed within `intel_snap_m` of one of the
+    /// player's counter-battery markers (set by the sim at order time,
+    /// never by a command; only on a gun squad's mission).
+    pub cb: bool,
 }
 
 /// One remembered target area of a mortar squad (saved, hashed).
@@ -154,10 +158,15 @@ pub enum FireMissionRefusal {
     UnknownGround = 5,
     /// A counted squad holding no bombs.
     NoBombs = 6,
+    /// S11a1 G2: every solution's arc meets the ground.
+    Masked = 7,
+    /// S11a1 G1: the gun is not emplaced, or its gunner or loader slot is
+    /// unmanned.
+    NotReady = 8,
 }
 
 impl FireMissionRefusal {
-    pub const COUNT: usize = 7;
+    pub const COUNT: usize = 9;
     pub const NAMES: [&str; Self::COUNT] = [
         "not_mortar",
         "rounds",
@@ -166,6 +175,8 @@ impl FireMissionRefusal {
         "cannot_reach",
         "unknown_ground",
         "no_bombs",
+        "masked",
+        "not_ready",
     ];
 
     /// The HUD's reason line.
@@ -178,6 +189,8 @@ impl FireMissionRefusal {
             Self::CannotReach => "Cannot reach: too close for the highest elevation",
             Self::UnknownGround => "Unknown ground: no observer sees it and nothing was seen there",
             Self::NoBombs => "No bombs",
+            Self::Masked => "Masked: the ground blocks every arc",
+            Self::NotReady => "Not ready: emplace the gun and man it",
         }
     }
 }
@@ -244,12 +257,87 @@ pub struct FmCounters {
     pub no_solution: u32,
 }
 
+/// S11a1 per-player counters of infantry-gun fire (saved, hashed; the
+/// `s11a1` JSON block). An `inf_gun`'s missions and rounds count here only,
+/// never in [`FmCounters`] or the S9 gun counters.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct S11Counters {
+    /// Gun missions accepted, by their mode at order time.
+    pub gun_missions: [u32; mode::COUNT],
+    /// Gun mission rounds fired, by mode.
+    pub gun_rounds: [u32; mode::COUNT],
+    /// Sum of the planned miss of those rounds, by mode (mm).
+    pub gun_miss_mm: [u64; mode::COUNT],
+    /// Orders refused `Masked` / `NotReady`.
+    pub masked: u32,
+    pub not_ready: u32,
+    /// Rounds whose observer was linked by radio only.
+    pub radio_rounds: u32,
+    /// Rounds fired on the low / high root.
+    pub low_rounds: u32,
+    pub high_rounds: u32,
+    /// Gun missions ended by a seen enemy within `gun_break_m` (G6).
+    pub gun_breaks: u32,
+    /// Manpower paid for infantry-gun rounds (micro-MP).
+    pub gun_shell_micro: u64,
+    /// Men killed by infantry guns.
+    pub gun_kills: u32,
+    /// Infantry guns that arrived.
+    pub guns_bought: u32,
+    /// Direct (non-mission) rounds of infantry guns.
+    pub gun_direct_rounds: u32,
+    /// Gun mission bursts with an own man within `[ai.arty] danger_close_m`.
+    pub near_own_bursts: u32,
+}
+
+/// S11a2 per-player counters of friendly fire and counter-battery (saved,
+/// hashed; the `s11a2` JSON block of Build B). Index `[0]` mortar, `[1]`
+/// infantry gun where a pair is kept.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct S11a2Counters {
+    /// Own men killed by an own mortar / gun mission burst (F4).
+    pub ff_kills: [u32; 2],
+    /// Own men hurt and not killed by an own mission burst (per burst).
+    pub ff_wounds: u32,
+    /// Own mission bursts that hurt an own man.
+    pub ff_bursts: u32,
+    /// Mortar mission bursts with an own man within `[ai.arty]
+    /// danger_close_m` (the gun twin is `S11Counters::near_own_bursts`).
+    pub mortar_near_own_bursts: u32,
+    /// Own gun rounds the enemy counted as evidence (K1).
+    pub cb_heard: u32,
+    /// Markers this player made (K2) ...
+    pub cb_marks: u32,
+    /// ... and the sum of their first errors (mm).
+    pub cb_err_first_mm: u64,
+    /// Spots this player forgot: decayed to none or pushed out (K1, K3).
+    pub cb_dropped: u32,
+    /// Gun missions aimed at an own marker (K4) ...
+    pub cb_missions: u32,
+    /// ... their rounds by the round's mode ...
+    pub cb_rounds: [u32; mode::COUNT],
+    /// ... their bursts, and those within `cb_near_m` of a living enemy
+    /// infantry gun.
+    pub cb_bursts: u32,
+    pub cb_near_bursts: u32,
+}
+
 /// One burst of a mission round (Damage stage), for the observation pass.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct MissionBurst {
+    /// The round's mission id as the projectile carries it (with
+    /// [`CB_ROUND`] for a counter-fire round).
     pub mission: u32,
     pub pos: FxVec3,
+    /// The firing player.
+    pub player: u8,
 }
+
+/// S11a2 fix B-2: the high bit of a projectile's `mission` marks a round
+/// of a counter-fire mission, so its burst counts (`cb_bursts`,
+/// `cb_near_bursts`) after the mission ended too. Mission ids stay below
+/// it (`next_mission` counts missions).
+pub(crate) const CB_ROUND: u32 = 1 << 31;
 
 /// One entry of the diagnostic burst log (`World::enable_burst_log`,
 /// mortar-bench): not saved, not hashed, never read by the sim.
@@ -295,10 +383,27 @@ pub(crate) fn start_error(fm: &FireMissionTuning, map: bool, d: Fx) -> Fx {
     Fx::from_raw((d.raw() as i64 * pct as i64 / 100) as i32).max(m(min))
 }
 
+/// G4: the start error of a mission, gun keys for a gun (`gun_*`), the
+/// mortar keys otherwise (same as `start_error`).
+pub(crate) fn start_error_for(fm: &FireMissionTuning, map: bool, d: Fx, gun: bool) -> Fx {
+    if !gun {
+        return start_error(fm, map, d);
+    }
+    let (pct, min) = if map {
+        (fm.gun_map_fire_error_pct, fm.gun_map_fire_error_min_m)
+    } else {
+        (fm.gun_first_round_error_pct, fm.gun_first_round_error_min_m)
+    };
+    Fx::from_raw((d.raw() as i64 * pct as i64 / 100) as i32).max(m(min))
+}
+
 /// The largest start error any mission can have on this map (load check).
 pub(crate) fn max_error(fm: &FireMissionTuning, map_size: i32) -> Fx {
     let diag = Fx::from_int(map_size).mul_int(3).div_int(2);
-    start_error(fm, true, diag).max(start_error(fm, false, diag))
+    start_error(fm, true, diag)
+        .max(start_error(fm, false, diag))
+        .max(start_error_for(fm, true, diag, true))
+        .max(start_error_for(fm, false, diag, true))
 }
 
 impl MatchState {
@@ -330,6 +435,17 @@ impl MatchState {
                     .he
                     .is_some()
         })
+    }
+
+    /// S11a1: where squad `sq`'s tube stands: its mortar gunner, or for a
+    /// gun squad with an `[indirect]` main gun, the gun.
+    pub(crate) fn tube_pos(&self, ents: &Entities, sq: &Squad) -> Option<FxVec2> {
+        if self.gun_indirect_weapon(sq).is_some() {
+            let g = *sq.members.first()?;
+            return Some(ents.transform[g.index()].pos.xy());
+        }
+        self.mortar_gunner(ents, sq)
+            .map(|g| ents.transform[g.index()].pos.xy())
     }
 
     /// The observers of squad `q` (`(man, observe range)`): its leader and
@@ -383,9 +499,57 @@ impl MatchState {
         )
     }
 
+    /// S11a1: the firing unit of squad `id`: its squads (a gun squad and
+    /// the crew squad serving it; a mortar squad alone) and the man whose
+    /// voice gives Direct (the crew's leader; the mortar squad's leader).
+    pub(crate) fn firing_unit(
+        &self,
+        ents: &Entities,
+        id: SquadId,
+    ) -> (Vec<SquadId>, Option<SimId>) {
+        let Some(sq) = self.squads.get(&id) else {
+            return (Vec::new(), None);
+        };
+        if self.gun_indirect_weapon(sq).is_none() {
+            return (vec![id], self.squad_leader(ents, sq));
+        }
+        let crew = sq
+            .members
+            .first()
+            .and_then(|g| self.vehicles.get(g))
+            .and_then(|vs| vs.served.as_ref())
+            .and_then(|sv| sv.crew)
+            .filter(|q| self.squads.get(q).is_some_and(|c| c.owner == sq.owner));
+        match crew {
+            Some(q) => (vec![id, q], self.squad_leader(ents, &self.squads[&q])),
+            None => (vec![id], None),
+        }
+    }
+
+    /// S11a1 G5: the living men of squad `q` with the `radio` trait.
+    fn radio_men(&self, ents: &Entities, q: &Squad) -> impl Iterator<Item = SimId> {
+        let ty = &self.setup.squad_types[q.type_idx as usize];
+        let any = ty
+            .members
+            .iter()
+            .any(|s| s.traits & member_trait::RADIO != 0);
+        q.members.iter().copied().filter(move |&mm| {
+            let i = mm.index();
+            any && ents.kind[i] == EntityKind::Soldier
+                && ents.combat[i].hp > 0
+                && ty
+                    .members
+                    .get(ents.kit[i].slot as usize)
+                    .is_some_and(|s| s.traits & member_trait::RADIO != 0)
+        })
+    }
+
     /// Linked observers of squad `id` whose observe range reaches `point`:
     /// `(direct, man)`, the own non-detached leader first, then ascending
-    /// id.
+    /// id. Linked: within `observer_link_m` of the tube at `gunner` (voice),
+    /// or (S11a1 G5, `radio_link` 1) a living `radio` man of the
+    /// observer's squad within the link of him and one of the firing unit
+    /// within the link of the tube.
     fn linked(
         &self,
         ents: &Entities,
@@ -397,8 +561,14 @@ impl MatchState {
         let Some(sq) = self.squads.get(&id) else {
             return Vec::new();
         };
-        let own_leader = self.squad_leader(ents, sq);
+        let (unit, own_leader) = self.firing_unit(ents, id);
         let link = m(fm.observer_link_m);
+        let at = |o: SimId| ents.transform[o.index()].pos.xy();
+        let unit_radio = fm.radio_link != 0
+            && unit.iter().any(|q| {
+                self.radio_men(ents, &self.squads[q])
+                    .any(|r| within(at(r), gunner, link))
+            });
         let mut obs = Vec::new();
         let mut out = Vec::new();
         for (&qid, q) in &self.squads {
@@ -408,11 +578,17 @@ impl MatchState {
             obs.clear();
             self.observers_of(ents, fm, q, &mut obs);
             for &(o, r) in &obs {
-                let at = ents.transform[o.index()].pos.xy();
-                if !within(at, gunner, link) || !within(at, point, r) {
+                let p = at(o);
+                if !within(p, point, r) {
                     continue;
                 }
-                let direct = qid == id && Some(o) == own_leader && !ents.unit[o.index()].detached;
+                if !within(p, gunner, link)
+                    && !(unit_radio && self.radio_men(ents, q).any(|x| within(at(x), p, link)))
+                {
+                    continue;
+                }
+                let direct =
+                    unit.contains(&qid) && Some(o) == own_leader && !ents.unit[o.index()].detached;
                 out.push((direct, o));
             }
         }
@@ -549,6 +725,11 @@ impl MatchState {
         if s.map.points.iter().any(|c| within(c.pos.into(), pt, cap)) {
             return true;
         }
+        // S11a2 K4: (d) one of the player's counter-battery markers
+        // (it reveals nothing else).
+        if self.near_own_marker(p, pt) {
+            return true;
+        }
         // (c) an intel cell within the snap distance.
         if let Some(intel) = self.players.get(p.0 as usize).map(|pl| &pl.intel)
             && !intel.is_empty()
@@ -676,6 +857,26 @@ impl MatchState {
         }
     }
 
+    /// S11a2 K4: player `owner`'s counter-fire burst at `p` counts
+    /// `cb_bursts`, and `cb_near_bursts` within `cb_near_m` of a living
+    /// enemy infantry gun (a report; live or ended mission, fix B-2).
+    fn count_cb_burst(&mut self, ents: &Entities, fm: &FireMissionTuning, owner: usize, p: FxVec2) {
+        let r = m(fm.cb_near_m);
+        let near = self.vehicles.iter().any(|(&v, vs)| {
+            ents.kind.get(v.index()) == Some(&EntityKind::Vehicle)
+                && ents.owner[v.index()].0 as usize != owner
+                && self.setup.vehicles[vs.type_idx as usize].role
+                    == frontline_content::VehicleRole::InfGun
+                && within(ents.transform[v.index()].pos.xy(), p, r)
+        });
+        let Some(pl) = self.players.get_mut(owner) else {
+            return;
+        };
+        let c = &mut pl.s11a2;
+        c.cb_bursts = c.cb_bursts.saturating_add(1);
+        c.cb_near_bursts = c.cb_near_bursts.saturating_add(near as u32);
+    }
+
     /// S5b: the linked observers of the missions whose rounds burst this
     /// tick look for the burst (Damage stage, serial, burst order). A seen
     /// burst of an observed or direct mission shrinks its aim offset; the
@@ -692,15 +893,22 @@ impl MatchState {
         };
         let hz = self.setup.tick_hz as u64;
         for b in bursts {
-            let Some((&id, _)) = self.squads.iter().find(
-                |(_, sq)| matches!(&sq.order, Order::FireMission { m, .. } if m.id == b.mission),
-            ) else {
+            let mid = b.mission & !CB_ROUND;
+            let Some((&id, _)) = self
+                .squads
+                .iter()
+                .find(|(_, sq)| matches!(&sq.order, Order::FireMission { m, .. } if m.id == mid))
+            else {
                 // The mission ended (its last round is still in the air, or
-                // the squad got another order): nobody adjusts on it.
+                // the squad got another order): nobody adjusts on it. A
+                // counter-fire round's burst still counts (fix B-2).
+                if b.mission & CB_ROUND != 0 {
+                    self.count_cb_burst(ents, &fm, b.player as usize, b.pos.xy());
+                }
                 if let Some(log) = self.burst_log.as_mut() {
                     log.push(BurstRecord {
                         tick,
-                        mission: b.mission,
+                        mission: mid,
                         pos: b.pos,
                         seen: false,
                         live: false,
@@ -713,9 +921,8 @@ impl MatchState {
             let Order::FireMission { target, m: mi, .. } = sq.order else {
                 continue;
             };
-            let gunner = self
-                .mortar_gunner(ents, sq)
-                .map(|g| ents.transform[g.index()].pos.xy());
+            let gunner = self.tube_pos(ents, sq);
+            let gun = self.gun_indirect_weapon(sq).is_some();
             let seen = mi.mode != mode::MAP
                 && gunner.is_some_and(|g| {
                     let cands = self.linked(ents, &fm, id, g, b.pos.xy());
@@ -748,16 +955,43 @@ impl MatchState {
             }
             let off = mi.offset.length();
             let map = mi.mode == mode::MAP;
-            let c = &mut self.players[owner].fm;
-            if seen {
-                c.seen += 1;
-            } else if !map {
-                c.unseen += 1;
+            let mcb = mi.cb;
+            // Bursts within `[ai.arty] danger_close_m` of an own man (a
+            // report; S11a1 for guns, S11a2 for mortars).
+            let r = m(self.setup.rules.ai.arty.danger_close_m);
+            let p = b.pos.xy();
+            let near = self.squads.values().any(|q| {
+                q.owner.0 as usize == owner
+                    && q.members.iter().any(|&mm| {
+                        let i = mm.index();
+                        ents.kind[i] == EntityKind::Soldier
+                            && ents.combat[i].hp > 0
+                            && within(ents.transform[i].pos.xy(), p, r)
+                    })
+            });
+            // S11a1: a gun's bursts count in `S11Counters` only.
+            if gun {
+                // S11a2 K4: a counter-fire burst, near a living enemy
+                // infantry gun or not (a report).
+                if mcb {
+                    self.count_cb_burst(ents, &fm, owner, p);
+                }
+                let c = &mut self.players[owner].s11;
+                c.near_own_bursts = c.near_own_bursts.saturating_add(near as u32);
+            } else {
+                let c = &mut self.players[owner].s11a2;
+                c.mortar_near_own_bursts = c.mortar_near_own_bursts.saturating_add(near as u32);
+                let c = &mut self.players[owner].fm;
+                if seen {
+                    c.seen += 1;
+                } else if !map {
+                    c.unseen += 1;
+                }
             }
             if let Some(log) = self.burst_log.as_mut() {
                 log.push(BurstRecord {
                     tick,
-                    mission: b.mission,
+                    mission: mid,
                     pos: b.pos,
                     seen,
                     live: true,

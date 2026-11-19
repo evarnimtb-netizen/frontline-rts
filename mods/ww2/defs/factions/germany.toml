@@ -33,6 +33,10 @@ roster = [
     # S10a: the assault and construction engineers (appended; ai_weight 0 until the S10a AI half).
     "ww2:ger_sturmpioniergruppe",
     "ww2:ger_baupioniergruppe",
+    # S11a1: the infantry gun and the observer team (appended; ai_weight 0
+    # until the S11a1 AI stage).
+    "ww2:ger_leig18_squad",
+    "ww2:ger_vb_trupp",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

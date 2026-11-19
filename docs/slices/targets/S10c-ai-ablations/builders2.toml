@@ -1,0 +1,3 @@
+# S10c-ai ablation (C3, owner question S10c-2): the AI keeps two builder squads alive.
+[ai.obstacles]
+builder_cards_min = 2

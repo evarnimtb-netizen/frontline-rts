@@ -591,6 +591,9 @@ const LIVENESS: &[(JobKind, StageSetup, bool)] = &[
     (JobKind::Sweep, sweep_row, false),
     (JobKind::Demolish, demolish_row, false),
     (JobKind::TruckGoal, truck_row, false),
+    (JobKind::Fort, front_ap_row, false),
+    (JobKind::Fort, belt_row, false),
+    (JobKind::Fort, front_wire_row, false),
 ];
 
 /// The TruckGoal row (Build D, L5): the AI's loaded truck in a trench ring
@@ -598,7 +601,7 @@ const LIVENESS: &[(JobKind, StageSetup, bool)] = &[
 /// reached (the truck's 180 s drop limit ends it); the refusal is at the
 /// HQ. Control: `refusal_memory` 0 -> no refusal (the check fails: "no
 /// refusal", seen).
-fn truck_row() -> (World, Stage) {
+pub(crate) fn truck_row() -> (World, Stage) {
     use frontline_content::setup::StockKind;
     let mut w = ai_world();
     let hq_at = c(700, 700);
@@ -689,7 +692,7 @@ fn sweep_row() -> (World, Stage) {
 /// AI is taken out; the row's state keeps its trench. Control: `refused_s`
 /// 0 -> each refusal is followed by a restart the same plan (one job alive
 /// to the end: the check fails, seen).
-fn fort_row() -> (World, Stage) {
+pub(crate) fn fort_row() -> (World, Stage) {
     use super::s10b_ai_lay_tests::{held, squad_at};
     let (mut w, h) = held(|s| {
         s.rules.ai.fort.wire = 0;
@@ -710,6 +713,173 @@ fn fort_row() -> (World, Stage) {
         habit: crate::ai::AiHabit::Fort,
         args: crate::ai::DriveArgs {
             squad: Some(eng),
+            point: 0,
+            ..Default::default()
+        },
+        goal,
+        ai,
+    };
+    (w, stage)
+}
+
+/// The FrontAp row (S10c-ai Build B chunk 2, spec 5 "Generic"): the
+/// held point with `front` on and its saved lane (found by a few seconds of
+/// the match AI, then taken out); an own tank stands on the AP line's
+/// middle (the spec's slope over 25 % needs relief the flat test map
+/// lacks; any refusal drives L1-L4 the same, as the LogBarrier row), so
+/// every `Fortify` is refused (BadSpot). The refusal is at the line's
+/// middle. Control: `refused_s` 0 -> a restart each plan (the check fails,
+/// seen).
+fn front_ap_row() -> (World, Stage) {
+    use super::s10b_ai_lay_tests::{held, squad_at};
+    let (mut w, h) = held(|s| {
+        s.rules.ai.fort.wire = 0;
+        s.rules.ai.obstacles.at_mines = 0;
+        s.rules.ai.obstacles.front = 1;
+        // S10c-ai Build C (F1): the lone held point is the home point;
+        // plain F1 keeps it a front point.
+        s.rules.ai.obstacles.front_home = 1;
+    });
+    steps(&mut w, 3 * 30);
+    let lane = w.game().unwrap().ai[1].as_ref().unwrap().front_lanes[0];
+    let goal = (lane.ap[0] + lane.ap[1]).div_int(2);
+    spawn(
+        &mut w,
+        1,
+        "ww2:usa_m4a3_75_squad",
+        goal.x.floor_int(),
+        goal.y.floor_int(),
+    );
+    let eng = squad_at(&mut w, "ww2:usa_engineer_squad", h.pos, 120);
+    let ai = w.state.game.as_mut().unwrap().ai[1].take();
+    let stage = Stage {
+        habit: crate::ai::AiHabit::Fort,
+        args: crate::ai::DriveArgs {
+            squad: Some(eng),
+            point: 0,
+            ..Default::default()
+        },
+        goal,
+        ai,
+    };
+    (w, stage)
+}
+
+/// The FrontWire row (S10c-ai fix pass 1, finding B-1): the held point
+/// with `front` on (`front_home` 1), the S10a wire habit on, AT mines and
+/// the R1 field off, so FrontWire is the only want; its saved lane
+/// (found by 3 s of the match AI, FrontAp marked done, then taken out)
+/// with its wire line moved off the map, so every `Fortify` is refused
+/// (BadSpot). The refusal is at the line's middle. Control: `refused_s` 0 -> a restart
+/// each plan (the check fails, seen); and before the fix (a refused
+/// FrontWire job parked, not refused, and wanted again) the row failed:
+/// one job alive to the end, re-ordered every plan, 0 refusals (seen).
+pub(crate) fn front_wire_row() -> (World, Stage) {
+    use super::s10b_ai_lay_tests::{held, squad_at};
+    let (mut w, h) = held(|s| {
+        let o = &mut s.rules.ai.obstacles;
+        s.rules.ai.fort.wire = 1;
+        o.at_mines = 0;
+        o.fields_per_point = 0;
+        o.front = 1;
+        o.front_home = 1;
+    });
+    steps(&mut w, 3 * 30);
+    w.state.game.as_mut().unwrap().ai[1]
+        .as_mut()
+        .unwrap()
+        .front_lanes[0]
+        .ap_done = true;
+    // Wire may stand on a vehicle and the flat map has no slope: the saved
+    // wire line is moved off the map's west edge (an in-memory edit; a
+    // save would refuse it), so every `Fortify` is refused (BadSpot).
+    let goal = c(-20, h.pos.y.floor_int());
+    w.state.game.as_mut().unwrap().ai[1]
+        .as_mut()
+        .unwrap()
+        .front_lanes[0]
+        .wire = [goal - c(10, 0), goal + c(10, 0)];
+    let eng = squad_at(&mut w, "ww2:usa_engineer_squad", h.pos, 120);
+    let ai = w.state.game.as_mut().unwrap().ai[1].take();
+    let stage = Stage {
+        habit: crate::ai::AiHabit::Fort,
+        args: crate::ai::DriveArgs {
+            squad: Some(eng),
+            point: 0,
+            ..Default::default()
+        },
+        goal,
+        ai,
+    };
+    (w, stage)
+}
+
+/// The Belt row (S10c-ai Build C chunk 2, spec 5 "Generic"): the held
+/// point with `front` and `belt` on (`front_home` 1: the lone point is a
+/// front point), its saved lane (found by 3 s of the match AI, FrontAp
+/// marked done, then taken out) and its AT row 1 laid (ten own AT mines
+/// 60 m out across the way to the enemy base, `at_rows` 1); a Baupioniere
+/// squad carrying 100 kg (`fields_per_point` 0: no R1 field). An own tank stands on the belt's first hedgehog
+/// site (10 m beyond the row, 8 m toward its lower end), so every
+/// `Fortify` there is refused (BadSpot; the flat map has no slope). The
+/// refusal is at that site. Control: `refused_s` 0 -> a restart each plan
+/// (the check fails, seen).
+fn belt_row() -> (World, Stage) {
+    use super::s10b_ai_lay_tests::{held, squad_at};
+    let (mut w, h) = held(|s| {
+        let o = &mut s.rules.ai.obstacles;
+        s.rules.ai.fort.wire = 0;
+        o.front = 1;
+        o.front_home = 1;
+        o.belt = 1;
+        o.at_rows = 1;
+        // No R1 field at the trenched point (it would take the squad
+        // the plan its belt job fails).
+        o.fields_per_point = 0;
+    });
+    steps(&mut w, 3 * 30);
+    w.state.game.as_mut().unwrap().ai[1]
+        .as_mut()
+        .unwrap()
+        .front_lanes[0]
+        .ap_done = true;
+    let at = fort_of(w.match_setup().unwrap(), WorkKind::AtField).unwrap();
+    let row = |k: i32| h.pos + h.enemy * Fx::from_int(60) + h.along * Fx::from_int(4 * k - 18);
+    for k in 0..10 {
+        w.lay_mine_now(at, row(k), PlayerId(1)).unwrap();
+    }
+    // C4's row: centred 10 m beyond the field, its first site 8 m toward
+    // the field's lower end (positions sorted by x, then y).
+    let (e0, e1) = (row(0), row(9));
+    let lo = if (e0.x.raw(), e0.y.raw()) <= (e1.x.raw(), e1.y.raw()) {
+        e0
+    } else {
+        e1
+    };
+    let centre = h.pos + h.enemy * Fx::from_int(70);
+    let goal = centre + (lo - (e0 + e1).div_int(2)).normalize_or_zero() * Fx::from_int(8);
+    // S10c-ai fix pass 3 (C-5): the lane's saved AT row line, as the next
+    // plan's `front_lanes_update` saves it from these mines (the drive
+    // hook runs the habit only).
+    let hi = if lo == e0 { e1 } else { e0 };
+    w.state.game.as_mut().unwrap().ai[1]
+        .as_mut()
+        .unwrap()
+        .front_lanes[0]
+        .at = Some([lo, hi]);
+    spawn(
+        &mut w,
+        1,
+        "ww2:usa_m4a3_75_squad",
+        goal.x.floor_int(),
+        goal.y.floor_int(),
+    );
+    let bau = squad_at(&mut w, "ww2:ger_baupioniergruppe", h.pos, 100);
+    let ai = w.state.game.as_mut().unwrap().ai[1].take();
+    let stage = Stage {
+        habit: crate::ai::AiHabit::Fort,
+        args: crate::ai::DriveArgs {
+            squad: Some(bau),
             point: 0,
             ..Default::default()
         },
@@ -1176,4 +1346,51 @@ fn a_base_give_up_ages_so_a_lone_truck_returns() {
         }
     }
     assert!(back, "never sent back");
+}
+
+/// S10c-ai fix pass 1 (finding B-1): the FrontWire row alone, with its
+/// control in the test: `refused_s` 0 -> the job is re-ordered (and
+/// refused) every plan, one job alive to the end, so the check fails (L4).
+/// Before the fix the main run failed too ("job alive from 91 to the end:
+/// past its deadline (L1) (0 refusals)": a refused FrontWire job was
+/// parked, never refused, and re-ordered every plan; seen with the code
+/// edit `wire = false` in `fort_continue`). The row also runs in
+/// `ai_jobs_end_and_never_reorder_a_refused_goal`.
+#[test]
+fn front_wire_job_ends_and_is_not_reordered() {
+    let run = |refused_s: Option<u32>| {
+        let (mut w, stage) = front_wire_row();
+        if let Some(r) = refused_s {
+            w.state
+                .game
+                .as_mut()
+                .unwrap()
+                .setup
+                .rules
+                .ai
+                .obstacles
+                .refused_s = r;
+        }
+        let s = w.match_setup().unwrap();
+        let (hz, o) = (s.tick_hz as u64, s.rules.ai.obstacles.clone());
+        let l = Limits {
+            job_max: o.job_max_s as u64 * hz,
+            refused: o.refused_s as u64 * hz,
+            slack: 2 * o.recheck_s.max(5) as u64 * hz,
+        };
+        let tr = drive_row(&mut w, JobKind::Fort, &stage, LIVENESS_MIN * 60 * hz);
+        let refusals = tr
+            .windows(2)
+            .filter(|p| p[1].refused_at > p[0].refused_at)
+            .count();
+        (check_liveness(&tr, &l), refusals)
+    };
+    let (ok, n) = run(None);
+    if let Err(e) = ok {
+        panic!("FrontWire: {e} ({n} refusals)");
+    }
+    assert!((2..=5).contains(&n), "{n} refusals in 20 min");
+    let (bad, n) = run(Some(0));
+    assert!(bad.is_err(), "control refused_s 0 passed ({n} refusals)");
+    assert!(n > 100, "control: {n} refusals, not one each plan");
 }

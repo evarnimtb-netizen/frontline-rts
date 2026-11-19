@@ -421,6 +421,12 @@ impl MatchState {
         events: &mut Vec<ArmourEv>,
     ) {
         let i = id.index();
+        // S11a1 G3: a gun on a fire mission lays and fires only for it
+        // (no main-gun target); its MGs, if any, run as usual.
+        let on_mission = match self.vderived.frame(id).copied() {
+            Some(f) => self.gun_mission_tick(ents, ctx, id, &f, out, events),
+            None => false,
+        };
         let setup = &self.setup;
         let hz = setup.tick_hz.max(1);
         let owner = ents.owner[i];
@@ -441,6 +447,9 @@ impl MatchState {
             let Some(main) = v.main_gun() else {
                 break 'main None;
             };
+            if on_mission {
+                break 'main None;
+            }
             let gunner = vs.manned(v, SeatRole::Gunner);
             // S9: a served gun's recoil system must be whole.
             let gun_ok = gunner
@@ -834,14 +843,324 @@ impl MatchState {
         self.vehicles.get_mut(&id).expect("listed").mgs = mgs;
         if let Some(ev) = fired {
             // S9: gun rounds, and those from behind a hold-fire order.
+            // S11a1: an infantry gun's direct rounds count in `s11` only.
+            let inf = self.setup.vehicles[self.vehicles[&id].type_idx as usize].role
+                == frontline_content::VehicleRole::InfGun;
             if let Some(sv) = self.vehicles[&id].served.as_ref() {
                 let held = sv.hold_fire_m > 0;
-                let s9 = &mut self.players[owner.0 as usize].s9;
-                s9.gun_rounds = s9.gun_rounds.saturating_add(1);
-                s9.ai_ambush_rounds = s9.ai_ambush_rounds.saturating_add(held as u32);
+                let p = &mut self.players[owner.0 as usize];
+                if inf {
+                    p.s11.gun_direct_rounds = p.s11.gun_direct_rounds.saturating_add(1);
+                } else {
+                    p.s9.gun_rounds = p.s9.gun_rounds.saturating_add(1);
+                }
+                p.s9.ai_ambush_rounds = p.s9.ai_ambush_rounds.saturating_add(held as u32);
             }
             self.push_event(events, ev);
         }
+    }
+
+    /// S11a1 G3: one tick of the fire mission of gun `id` (frame `f`), if
+    /// its squad has one. Returns whether the gun is on a mission (then it
+    /// picks no main-gun target this tick). Ends the mission (G6) when the
+    /// rounds are spent, the gun is not emplaced or was captured, no HE is
+    /// left, no solution is found, or a seen enemy is within `gun_break_m`
+    /// (then direct fire resumes this tick). Waits while the gunner or the
+    /// loader seat is empty. Phases and modes as the mortar's (`combat.rs`
+    /// `fire_mission_tick`) with the `gun_*` keys; rounds and missions
+    /// count in `S11Counters` only.
+    pub(crate) fn gun_mission_tick(
+        &mut self,
+        ents: &Entities,
+        ctx: &GunCtx,
+        id: SimId,
+        f: &VehicleFrame,
+        out: &mut Vec<FireRequest>,
+        events: &mut Vec<ArmourEv>,
+    ) -> bool {
+        use crate::fire_mission::{mode, phase};
+        let i = id.index();
+        let Some(sid) = ents.squad[i] else {
+            return false;
+        };
+        let Some(sq) = self.squads.get(&sid) else {
+            return false;
+        };
+        let Order::FireMission { target, rounds, m } = sq.order else {
+            return false;
+        };
+        let Some(wi) = self.gun_indirect_weapon(sq) else {
+            return false;
+        };
+        let sq_owner = sq.owner;
+        let tick = ctx.tick;
+        let setup = &self.setup;
+        let hz = setup.tick_hz.max(1);
+        let vs = &self.vehicles[&id];
+        let v = &setup.vehicles[vs.type_idx as usize];
+        let fm = match setup.rules.fire_mission.as_ref() {
+            Some(fm) if fm.gun_missions != 0 => fm.clone(),
+            _ => {
+                self.end_mission(sid, ents, tick);
+                return false;
+            }
+        };
+        let Some(main) = v.main_gun().cloned() else {
+            return false;
+        };
+        let he = self.gun_he_slot(v);
+        // Emplaced, with its crew (a crew ordered off is released: G6).
+        let emplaced = vs.served.as_ref().is_some_and(|sv| {
+            sv.state == crate::vehicle::GunState::Emplaced
+                    // Review A-4a: a crew link naming a dead squad ends it too.
+                    && sv.crew.is_some_and(|q| self.squads.contains_key(&q))
+        });
+        let he_left = he.is_some_and(|k| {
+            vs.loaded == Some(k) || vs.ammo.get(k as usize).is_some_and(|n| *n > 0)
+        });
+        if rounds == 0 || !emplaced || ents.owner[i] != sq_owner || !he_left {
+            self.end_mission(sid, ents, tick);
+            return false;
+        }
+        let Some(he) = he else { return false };
+        // G6 self-defence: a seen enemy within `gun_break_m`.
+        let gp = f.origin.xy();
+        let brk = Fx::from_int(fm.gun_break_m as i32);
+        let bit = 1u32 << sq_owner.0;
+        let near = |p: FxVec2| (p - gp).length_sq_raw() <= range_sq(brk);
+        let mut threat = false;
+        ctx.soldiers.for_each_near(gp, brk, |t| {
+            let ti = t.index();
+            threat |= ents.kind[ti] == EntityKind::Soldier
+                && ents.combat[ti].hp > 0
+                && ents.owner[ti] != sq_owner
+                && ents.combat[ti].seen_by as u32 & bit != 0
+                && near(ents.transform[ti].pos.xy());
+        });
+        threat = threat
+            || self.vehicles.iter().any(|(&t, ts)| {
+                let ti = t.index();
+                ts.wreck_tick.is_none()
+                    && ents.kind[ti] == EntityKind::Vehicle
+                    && ents.owner[ti] != sq_owner
+                    && ents.combat[ti].seen_by as u32 & bit != 0
+                    && near(ents.transform[ti].pos.xy())
+            });
+        if threat {
+            let c = &mut self.players[sq_owner.0 as usize].s11;
+            c.gun_breaks = c.gun_breaks.saturating_add(1);
+            self.end_mission(sid, ents, tick);
+            return false;
+        }
+        let w = &setup.weapons[wi as usize];
+        let Some(ind) = w.indirect.clone() else {
+            return false;
+        };
+        let min: Fx = w.range_min.into();
+        let vs = self.vehicles.get_mut(&id).expect("listed");
+        vs.target = None;
+        vs.since_fire = vs.since_fire.saturating_add(1);
+        vs.reload = vs.reload.saturating_sub(1);
+        let crew_ok = vs.manned(v, SeatRole::Gunner)
+            && vs.manned(v, SeatRole::Loader)
+            && vs.component(ComponentKind::Gun) > 0
+            && vs.component(ComponentKind::Recoil) > 0
+            && vs.repairing.is_none()
+            // Review A-5: no round while the trail is re-laid.
+            && vs.gun_ready();
+        if !crew_ok {
+            // Waits for the S9 slot swap (or the repair).
+            vs.lay_turn = None;
+            return true;
+        }
+        // The solution to the aim point (no scatter: laying), from the
+        // muzzle as it is laid now.
+        let muzzle = main_muzzle(f, vs, &main);
+        let mount = crate::indirect::GunMount {
+            hull: f.hull.axes,
+            lo: deg(main.elevation_deg[0]),
+            hi: deg(main.elevation_deg[1]),
+        };
+        let aim0 = ctx.terrain.clamp(target + m.offset);
+        let to0 = aim0.extend(ctx.terrain.height_at(aim0));
+        let shot0 = match crate::indirect::solve_gun(
+            &ind,
+            muzzle,
+            to0,
+            ctx.terrain,
+            fm.mask != 0,
+            Some(&mount),
+            min,
+        ) {
+            Ok(s) => s,
+            Err(_) => {
+                self.end_mission(sid, ents, tick);
+                return false;
+            }
+        };
+        let (want_yaw, want_pitch) = to_lay(&f.hull.axes, shot0.vel);
+        if let Some([lo, hi]) = v.gun_arc_deg {
+            let margin = deg(setup.rules.vehicles.gunnery.casemate_margin_deg as i32);
+            let (lo, hi) = (deg(lo) + margin, deg(hi) - margin);
+            let want = want_yaw.wrap_angle();
+            vs.lay_turn = (want < lo.min(Fx::ZERO) || want > hi.max(Fx::ZERO))
+                .then(|| (f.yaw + want).wrap_angle());
+        }
+        let laid = lay_gun(vs, v, want_yaw, want_pitch, hz);
+        // Loading: HE only; another round goes back to the rack first.
+        let reload_ticks = reload_of(vs, v, setup);
+        if vs.reload == 0 {
+            match vs.loaded {
+                Some(k) if k != he => {
+                    vs.ammo[k as usize] = vs.ammo[k as usize].saturating_add(1);
+                    vs.loaded = None;
+                    vs.reload = reload_ticks;
+                }
+                None => {
+                    if let Some(n) = vs.ammo.get_mut(he as usize)
+                        && *n > 0
+                    {
+                        *n -= 1;
+                        vs.loaded = Some(he);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut m = m;
+        let fhz = hz as u64;
+        if tick < m.ready_at {
+            return true;
+        }
+        if m.wait_burst {
+            if tick >= m.burst_by {
+                // The adjusting round never burst.
+                m.wait_burst = false;
+                m.ready_at = tick + fm.adjust_wait_s as u64 * fhz;
+                self.set_mission(sid, m);
+            }
+            return true;
+        }
+        let vs = &self.vehicles[&id];
+        if !laid || vs.reload > 0 || vs.loaded != Some(he) {
+            return true;
+        }
+        // Phases (as the mortar's, without the `FmCounters`).
+        let (new, obs) = self.mode_for(ents, ctx.terrain, sid, gp, target, tick);
+        if m.phase == phase::LAYING {
+            m.phase = if new == mode::MAP
+                || (m.ranged && m.offset.length() <= Fx::from_int(fm.ffe_error_m as i32))
+            {
+                phase::EFFECT
+            } else {
+                phase::ADJUST
+            };
+        } else if m.mode == mode::MAP && new != mode::MAP {
+            m.phase = phase::ADJUST;
+            m.adjust = 0;
+        } else if m.mode != mode::MAP && new == mode::MAP {
+            m.phase = phase::EFFECT;
+        }
+        if m.phase == phase::ADJUST
+            && m.adjust > 0
+            && ((m.seen > 0 && m.offset.length() <= Fx::from_int(fm.ffe_error_m as i32))
+                || m.adjust as u32 >= fm.gun_adjust_rounds_max)
+        {
+            m.phase = phase::EFFECT;
+        }
+        m.mode = new;
+        m.observer = obs;
+        // G4 round scatter: the table's `spread_mrad`, triangular.
+        let d = (target - gp).length();
+        let mut rng = RngStream::new(ctx.seed, tick, id, Purpose::SHELL_AIM);
+        let sp = d.mul(ind.spread.into());
+        let aim_xy = ctx
+            .terrain
+            .clamp(target + m.offset + FxVec2::new(tri(&mut rng, sp), tri(&mut rng, sp)));
+        let to = aim_xy.extend(ctx.terrain.height_at(aim_xy));
+        let shot = crate::indirect::solve_gun(
+            &ind,
+            muzzle,
+            to,
+            ctx.terrain,
+            fm.mask != 0,
+            Some(&mount),
+            min,
+        )
+        .unwrap_or(shot0);
+        let setup = &self.setup;
+        let ammo = main.ammo[he as usize].ammo;
+        let ttl = (shot.flight + Fx::from_int(4))
+            .mul_int(SUBSTEP_HZ)
+            .floor_int();
+        out.push(FireRequest {
+            shooter: id,
+            seq: 0,
+            pos: muzzle,
+            vel: shot.vel,
+            weapon: main.weapon,
+            player: sq_owner.0,
+            ttl: ttl.clamp(2, u16::MAX as i32) as u16,
+            he: true,
+            ammo,
+            // S11a2 fix B-2: a counter-fire round carries the flag.
+            mission: m.id
+                | if m.cb {
+                    crate::fire_mission::CB_ROUND
+                } else {
+                    0
+                },
+        });
+        let reload_ticks = reload_of(&self.vehicles[&id], v, setup);
+        let vs = self.vehicles.get_mut(&id).expect("listed");
+        vs.loaded = None;
+        vs.reload = reload_ticks;
+        vs.since_fire = 0;
+        let ev = ArmourEv::new(ArmourEventKind::Fired, id, sq_owner.0, sq_owner.0)
+            .component(2)
+            .ammo(ammo)
+            .at(muzzle);
+        self.push_event(events, ev);
+        let flight_ticks = shot.flight.mul_int(hz as i32).round_int().max(0) as u64;
+        m.fired = m.fired.saturating_add(1);
+        m.charge = shot.charge;
+        m.flight = flight_ticks.min(u16::MAX as u64) as u16;
+        if m.phase == phase::ADJUST {
+            m.wait_burst = true;
+            m.burst_by = tick + flight_ticks + 4 * fhz;
+            m.adjust = m.adjust.saturating_add(1);
+        }
+        let radio = m.observer.is_some_and(|o| {
+            (ents.transform[o.index()].pos.xy() - gp).length_sq_raw()
+                > range_sq(Fx::from_int(fm.observer_link_m as i32))
+        });
+        let c = &mut self.players[sq_owner.0 as usize].s11;
+        let md = m.mode as usize;
+        c.gun_rounds[md] = c.gun_rounds[md].saturating_add(1);
+        c.gun_miss_mm[md] += ((aim_xy - target).length().raw().max(0) as u64 * 1000) >> 16;
+        if shot.tan < Fx::ONE {
+            c.low_rounds = c.low_rounds.saturating_add(1);
+        } else {
+            c.high_rounds = c.high_rounds.saturating_add(1);
+        }
+        c.radio_rounds = c.radio_rounds.saturating_add(radio as u32);
+        // S11a2 K4: a counter-fire mission's rounds, by mode.
+        if m.cb {
+            let c = &mut self.players[sq_owner.0 as usize].s11a2;
+            c.cb_rounds[md] = c.cb_rounds[md].saturating_add(1);
+        }
+        // S11a2 K1: the enemy hears the round.
+        self.cb_note(ents, sq_owner, gp, tick, m.cb);
+        let left = rounds - 1;
+        let sq = self.squads.get_mut(&sid).expect("live");
+        if let Order::FireMission { rounds, m: sm, .. } = &mut sq.order {
+            *rounds = left;
+            *sm = m;
+        }
+        if left == 0 {
+            self.end_mission(sid, ents, tick);
+        }
+        true
     }
 
     /// S3b, `Auto`: whether the special penetrator should go at vehicle `t`

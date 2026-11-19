@@ -1,0 +1,34 @@
+# The leIG 18's crew (S11a1 C1): five soldiers in the gun's service slots
+# (tag `gun_crew`, never bought; the card is ger_leig18_squad). Order:
+# gunner, loader, commander (the radio man of the G5 link), two ammo men.
+# artillery-on-map.md 2.1: crew 5 (hist. about 6 plus drivers).
+id = "ww2:ger_leig18_crew"
+name = "IG-Bedienung (7,5 cm)"
+faction = "ww2:germany"
+tags = ["gun_crew"]
+capabilities = ["gun_crew", "recrew"]
+cost = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+
+[[members]]
+slot = "gunner"
+weapon = "ww2:p38"
+
+[[members]]
+slot = "loader"
+weapon = "ww2:kar98k"
+
+# The commander carries the radio (S11a1 G5). The `leader` trait is only
+# allowed on the first slot, so he takes `radio` alone.
+[[members]]
+slot = "commander"
+weapon = "ww2:mp40"
+traits = ["radio"]
+
+[[members]]
+slot = "ammo"
+count = 2
+weapon = "ww2:kar98k"

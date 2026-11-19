@@ -143,16 +143,52 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // 0xc424340dd0d06dfe, 0x33f42ad7211cedcf, 0x9294ac68191a1fd5. Build E chunk 5
 // (`[ai.obstacles] lane_file, at_rows`) changed it; the chunk 1 values were
 // 0xed3e344352f5e554, 0xaa4f332cb114ca1f, 0x9577526eb7785017,
-// 0xed3e344352f5e554, 0xa23a77af71f9120d, 0x46f180c13093cc93.
+// 0xed3e344352f5e554, 0xa23a77af71f9120d, 0x46f180c13093cc93. B1-0
+// (`[ai.obstacles] demolish_handover`) changed it; the Build E values were
+// 0x0edd3625cbff8850, 0x0e0a12502122989d, 0x771679e82a61e35a,
+// 0x0edd3625cbff8850, 0xd98c0abff58b7f89, 0x83e1eae4d9de7cb1. B1-0
+// (`[ai.obstacles] bunker_yields`) changed it; the demolish_handover values
+// were 0x0dbb2ea64d0f56cd, 0x2e7377f64b709c5b, 0x08cccfc6cd91f66f,
+// 0x0dbb2ea64d0f56cd, 0x63b149a1e71e2639, 0xbce2882c973caa06. B1-4
+// (`[ai.fort] hold_max`) changed it; the bunker_yields values were
+// 0x78ab8e38b1ec8a4e, 0x39f9a099bdbc2d57, 0x0c80ed27e0794560,
+// 0x78ab8e38b1ec8a4e, 0xfa771bad0d1d41c0, 0xa8cbb4b522ccd0ad.
+// B1-5 (`[ai.fort] build_after_s`, `build_min_squads`) changed it; the
+// hold_max values were 0x70fe1d236b6c3536, 0xdb2c08dad1cd5288,
+// 0x6bf2340bb8651f64, 0x70fe1d236b6c3536, 0x8a04fcd06bb1a586,
+// 0x1a6a1fe9fc9e0b87. S10c-ai Build A (twelve `[ai.obstacles]` keys at
+// their off values) changed it; the B1-5 values were 0x3fda6cc1e7f9652d,
+// 0x12007755d5f26050, 0x05deb39271659bd5, 0x3fda6cc1e7f9652d,
+// 0xfe6544dc30f25cd8, 0x45a2537d719f0f76. S10c-ai Build A chunk 2
+// (`front_slots` 1, `front_wire_len_m` 40 -> 20) changed it; the chunk 1
+// values were 0x9593ad852cb77c7f, 0xc4ca2fa4e0ae9a91, 0x3d7b158596ff4ef5,
+// 0x9593ad852cb77c7f, 0x9fc35b22ef854e62, 0xf8178a4c8cd678c8.
+// S10c-ai Build B chunk 2 (`front` 0 -> 1, the new `front_home` 0)
+// changed it; the Build A chunk 2 values were 0x8e1ac06d2914f09e,
+// 0x3f920dd77be28a04, 0x0eeeb39b82fd2eb3, 0x8e1ac06d2914f09e,
+// 0xbd30df1752d8f7db, 0x97b96122cc6d095c.
+// S10c-ai fix pass 3 (the new `[ai.obstacles] mine_assign_reach_m` 450)
+// changed it; the Build B chunk 2 values were 0xcaa4642889a6f13c,
+// 0x13c5225b50488cd8, 0x1a0487ab11070c7c, 0xcaa4642889a6f13c,
+// 0x9ed4bb657bfadea6, 0x23d580882bba6d30.
+// S11a1 Build A (the `[fire_mission]` gun keys, `[supply] arty_base_rearm`,
+// `[ai.arty]`, and `IndirectSetup::{low_angle, range, spread}`) changed
+// it; the fix pass 3 values were 0xe3126bd862ff1dca, 0x1aef21fc0c166eb7,
+// 0x22d77a202d9da7d1, 0xe3126bd862ff1dca, 0x6fa9aae9eeab9435,
+// 0x82578541945f24ad.
+// S11a2 Build A (the new `[fire_mission]` friendly-fire and counter-battery
+// keys and the four new `[ai.arty]` keys) changed it; the S11a1 values were
+// 0xf5b40609e6521881, 0xb898a6ecbbe46227, 0x83a1f236e5b268cb,
+// 0xf5b40609e6521881, 0x196c9824ba128d6b, 0xd7d21eb2ceaf5e48.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x0edd3625cbff8850),
-    ("skirmish usa-ger seed 7 hard", 0x0e0a12502122989d),
-    ("test_unlock ger-usa seed 1 normal", 0x771679e82a61e35a),
-    ("example override ger-usa seed 1 normal", 0x0edd3625cbff8850),
-    ("human ger vs ai usa seed 3 easy", 0xd98c0abff58b7f89),
+    ("skirmish ger-usa seed 1 normal", 0x18b7613e8eea3dff),
+    ("skirmish usa-ger seed 7 hard", 0xc344d589b3b09caa),
+    ("test_unlock ger-usa seed 1 normal", 0x4c0df0133ff2fee8),
+    ("example override ger-usa seed 1 normal", 0x18b7613e8eea3dff),
+    ("human ger vs ai usa seed 3 easy", 0xf13dccae38cc7eb7),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x83e1eae4d9de7cb1,
+        0xf39a3859d272ee2e,
     ),
 ];
 

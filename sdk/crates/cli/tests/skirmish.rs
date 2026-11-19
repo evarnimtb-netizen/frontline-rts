@@ -813,14 +813,21 @@ fn fortify_s10a_rows_report_wire_roof_breach() {
 /// shipped AI) reports `factions.<f>.s10b` with the twelve counters and
 /// `used`, all 0: the AI uses nothing new. Control: the `s10b` insert in
 /// `json_out.rs` removed -> the block is the raw struct (2 keys; seen).
+/// S10c-ai Build B chunk 2: with `[ai.obstacles] front` on by default the
+/// AI lays front mines within 3 minutes, so the run takes the S10c-ai
+/// control `c_off` (front off: the AI as on main).
 #[test]
 fn s10b_counters_zero_without_use() {
     let exe = env!("CARGO_BIN_EXE_frontline-cli");
     let file = tmp("s10b.json");
     let _ = std::fs::remove_file(&file);
+    let c_off = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../docs/slices/targets/S10c-ai-ablations/c_off.toml");
     let out = Command::new(exe)
         .args(["skirmish", "--ai-vs-ai", "--seed", "5", "--seeds", "1"])
         .args(["--both-bases", "--minutes", "3", "--jobs", "2", "--summary"])
+        .arg("--rules-override")
+        .arg(&c_off)
         .arg("--json")
         .arg(&file)
         .output()
@@ -840,6 +847,36 @@ fn s10b_counters_zero_without_use() {
         for k in frontline_cli::skirmish::S10B_COUNTERS {
             assert_eq!(b[k].as_f64(), Some(0.0), "{f}.s10b.{k}");
         }
+    }
+    // S10c-ai fix pass 1 (coverage note): the same run at the shipped
+    // defaults (front on) writes the same block shape, every counter a
+    // number, and the s10c blocks.
+    let file = tmp("s10b_default.json");
+    let _ = std::fs::remove_file(&file);
+    let out = Command::new(exe)
+        .args(["skirmish", "--ai-vs-ai", "--seed", "5", "--seeds", "1"])
+        .args(["--both-bases", "--minutes", "3", "--jobs", "2", "--summary"])
+        .arg("--json")
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let j: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    for f in ["germany", "usa"] {
+        let b = j["factions"][f]["s10b"].as_object().expect("an s10b block");
+        assert_eq!(b.len(), 13, "default: {f}.s10b: twelve counters and used");
+        for k in frontline_cli::skirmish::S10B_COUNTERS {
+            assert!(b[k].is_number(), "default: {f}.s10b.{k}");
+        }
+        assert!(j["factions"][f]["s10c"].is_object(), "default: {f}.s10c");
+        assert!(
+            j["factions"][f]["s10c_derived"].is_object(),
+            "default: {f}.s10c_derived"
+        );
     }
 }
 

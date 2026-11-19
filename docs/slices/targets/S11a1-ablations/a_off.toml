@@ -1,0 +1,14 @@
+# S11a1 control (docs/slices/S11a1.md 2): every S11a1 switch at its off value.
+# The game must then play exactly as on base 730e67f (tools/neutral.py same).
+[fire_mission]
+gun_missions = 0
+radio_link = 0
+mask = 0
+
+[supply]
+arty_base_rearm = 1
+
+[ai.arty]
+buy = 0
+fo = 0
+prep = 0

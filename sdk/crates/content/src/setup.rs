@@ -30,13 +30,13 @@ use crate::issue::{ContentError, Issue};
 use crate::modset::ModDefs;
 use crate::scenario::ms_to_ticks;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiFortTuning, AiGunsTuning, AiInfantryTuning,
-    AiMortarTuning, AiObstacleTuning, AiReconTuning, AiSupplyTuning, AiTransportTuning,
-    AiTruckTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning,
-    DrivingTuning, EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning,
-    GunsTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
-    SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning,
-    VehiclePathTuning, check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiArtyTuning, AiAssaultTuning, AiFortTuning, AiGunsTuning,
+    AiInfantryTuning, AiMortarTuning, AiObstacleTuning, AiReconTuning, AiSupplyTuning,
+    AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning,
+    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning,
+    FormationTuning, GunneryTuning, GunsTuning, MortarTuning, RecrewTuning, ShareTuning,
+    SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
+    VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
@@ -630,6 +630,8 @@ pub struct AiSetup {
     pub fort: AiFortTuning,
     /// S10b-ai: `[ai.obstacles]` (or the S10b-ai starting values).
     pub obstacles: AiObstacleTuning,
+    /// S11a1: `[ai.arty]` (or the S11a1 starting values, switches off).
+    pub arty: AiArtyTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -888,6 +890,14 @@ pub struct IndirectSetup {
     /// `tan` of the lowest and highest elevation.
     pub tan_min: Fixed,
     pub tan_max: Fixed,
+    /// S11a1: a gun's table: the solver tries the low root too, and the
+    /// band may start below 45 deg.
+    pub low_angle: bool,
+    /// S11a1: the indirect range (m; default the weapon's `range_m`).
+    pub range: Fixed,
+    /// S11a1: a mission round's scatter half-angle (rad; default the
+    /// weapon's spread).
+    pub spread: Fixed,
 }
 
 impl IndirectSetup {
@@ -905,7 +915,23 @@ impl IndirectSetup {
                 .collect(),
             tan_min: tan(d.elevation_deg[0]),
             tan_max: tan(d.elevation_deg[1]),
+            low_angle: d.low_angle,
+            range: Fixed::from_int(d.range_m.unwrap_or(0).min(20_000) as i32),
+            spread: Fixed::from_ratio(d.spread_mrad.unwrap_or(0) as i64, 1000),
         }
+    }
+
+    /// S11a1: [`Self::lower`] with the weapon's range (m) and spread (rad)
+    /// where the table leaves them out.
+    pub fn lower_for(d: &crate::defs::IndirectDef, range_m: u32, spread: Fixed) -> IndirectSetup {
+        let mut s = Self::lower(d);
+        if d.range_m.is_none() {
+            s.range = Fixed::from_int(range_m.min(20_000) as i32);
+        }
+        if d.spread_mrad.is_none() {
+            s.spread = spread;
+        }
+        s
     }
 
     /// Range checks for a loaded setup (saves are untrusted).
@@ -915,10 +941,13 @@ impl IndirectSetup {
             && c.iter()
                 .all(|v| (Fixed::from_int(20)..=Fixed::from_int(600)).contains(v))
             && c.windows(2).all(|p| p[0] < p[1])
-            // tan 45 deg = 1 .. tan 89 deg = 57.29
-            && Fixed::ONE <= self.tan_min
+            // tan 45 deg = 1 .. tan 89 deg = 57.29 (S11a1 low_angle: from
+            // tan 0 deg = 0)
+            && (if self.low_angle { Fixed::ZERO } else { Fixed::ONE }) <= self.tan_min
             && self.tan_min < self.tan_max
             && self.tan_max <= Fixed::from_int(58)
+            && (Fixed::ZERO..=Fixed::from_int(20_000)).contains(&self.range)
+            && (Fixed::ZERO..=Fixed::ONE).contains(&self.spread)
     }
 }
 
@@ -1015,16 +1044,19 @@ pub mod member_trait {
     /// S5b: observes fire missions at the long `observe_observer_m` (FO
     /// teams; binoculars and training).
     pub const OBSERVER: u8 = 16;
+    /// S11a1: carries a radio (the fire-mission radio link, G5).
+    pub const RADIO: u8 = 32;
     /// Trait names in bit order.
-    pub const NAMES: [(&str, u8); 5] = [
+    pub const NAMES: [(&str, u8); 6] = [
         ("leader", LEADER),
         ("crew_gunner", CREW_GUNNER),
         ("crew_assistant", CREW_ASSISTANT),
         ("ammo_bearer", AMMO_BEARER),
         ("observer", OBSERVER),
+        ("radio", RADIO),
     ];
     /// Every trait bit.
-    pub const ALL: u8 = LEADER | CREW_GUNNER | CREW_ASSISTANT | AMMO_BEARER | OBSERVER;
+    pub const ALL: u8 = LEADER | CREW_GUNNER | CREW_ASSISTANT | AMMO_BEARER | OBSERVER | RADIO;
 }
 
 /// S4 capabilities: what a unit can do; orders and sim rules follow them
@@ -1445,7 +1477,16 @@ impl ModDefs {
                 burst_rounds: w.burst_rounds,
                 burst_pause_ticks: ms_to_ticks(w.burst_pause_ms, hz),
                 hold_beyond_pct: w.hold_beyond_pct,
-                indirect: w.indirect.as_ref().map(IndirectSetup::lower),
+                indirect: w.indirect.as_ref().map(|i| {
+                    IndirectSetup::lower_for(
+                        i,
+                        w.range_m,
+                        Fixed::from_ratio(
+                            w.spread_mrad as i64 * 1000 + w.spread_urad as i64,
+                            1_000_000,
+                        ),
+                    )
+                }),
                 pen: w
                     .penetration
                     .iter()
@@ -2049,6 +2090,7 @@ impl ModDefs {
                         guns: a.guns.clone().unwrap_or_default(),
                         fort: a.fort.clone().unwrap_or_default(),
                         obstacles: a.obstacles.clone().unwrap_or_default(),
+                        arty: a.arty.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2902,6 +2944,7 @@ impl MatchSetup {
                 ai_guns: &a.guns,
                 ai_fort: &a.fort,
                 ai_obstacles: &a.obstacles,
+                ai_arty: &a.arty,
             },
         );
         r.at_ditch
@@ -3025,9 +3068,11 @@ impl MatchSetup {
             );
             if let Some(ind) = &w.indirect {
                 check(
-                    ind.ok() && w.class == WeaponClass::Mortar && w.he.is_some(),
+                    ind.ok()
+                        && ((w.class == WeaponClass::Mortar && w.he.is_some())
+                            || (ind.low_angle && w.class == WeaponClass::Cannon)),
                     "weapons.indirect",
-                    "charges or elevation limits out of range, or not a mortar",
+                    "charges or elevation limits out of range, or not a mortar (or low-angle gun)",
                 );
             }
             let launcher = w.class == WeaponClass::Launcher;

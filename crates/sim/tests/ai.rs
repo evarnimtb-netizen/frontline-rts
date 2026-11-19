@@ -93,7 +93,10 @@ fn ai_commands_wait_for_the_reaction_delay() {
 fn ai_takes_the_map_from_an_idle_human() {
     let mut w =
         World::new_match(setup(2, Difficulty::Normal, Difficulty::Normal, false), 2).unwrap();
-    while w.tick() < 6 * 60 * 30 {
+    // S10c-ai Build B chunk 2: with `[ai.obstacles] front` 1 (default) the
+    // builder lays the front field at its first points before it walks on,
+    // so the fourth point falls at 7:30 on this seed (was before 6:00).
+    while w.tick() < 8 * 60 * 30 {
         w.step(&[]);
     }
     let g = w.game().unwrap();
@@ -168,6 +171,12 @@ fn ai_vs_ai_plays_by_the_rules() {
                         .iter()
                         .any(|p| (FxVec2::from(p.pos) - mid).length() < Fx::from_int(30));
                     assert!(near, "trench at {mid:?} is not at a point");
+                }
+                // S11a1: an infantry gun's mission (its band is the sim's
+                // order check; the AI asks it first).
+                Order::FireMission { .. } if ty.vehicle.is_some() => {
+                    let v = &s.vehicles[ty.vehicle.unwrap() as usize];
+                    assert_eq!(v.role, frontline_content::VehicleRole::InfGun);
                 }
                 // Mortars fire at targets inside their range band.
                 Order::FireMission { target, .. } if seen.barrages.insert(id) => {

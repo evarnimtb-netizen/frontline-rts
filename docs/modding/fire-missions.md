@@ -99,6 +99,66 @@ mission's burst deadline against the weapon's own bound (`2 v / g` of the
 highest charge + 20 s for a target below the muzzle + 4 s, at least 60 s),
 so long-flight tables load (S5b review L1).
 
+## Guns (`[indirect] low_angle`, S11a1)
+
+A served gun (role `inf_gun` or `at_gun`, `crew_model = "served"`) whose
+main weapon has an `[indirect]` table takes a fire mission on its own
+squad (`[fire_mission] gun_missions`). A gun's table sets `low_angle`:
+
+```toml
+[indirect]
+charges_m_s = [92, 120, 150, 180, 210]   # rising
+elevation_deg = [0, 73]                  # the band may start below 45 deg
+low_angle = true                         # try each charge's high root, then its low root
+range_m = 3550                           # indirect range (default: the weapon's range_m)
+spread_mrad = 8                          # mission round scatter (default: the weapon's spread)
+```
+
+Candidates run lowest charge first, the high root before the low root,
+each inside the band; with `[fire_mission] mask` 1 a candidate counts only
+if its arc clears the ground at steps 2..=16 of 20 (0.5 m above it) and its
+elevation, taken onto the hull's pitch where the gun stands, lies inside
+the mount's own elevation limits. None in the band: `cannot_reach` (or
+`inside_minimum`); none clear: `masked`. A mortar's table (no `low_angle`)
+solves exactly as before. Refusal order for a gun: `off_map`,
+`not_mortar`, `rounds`, `not_ready` (not emplaced, or gunner or loader
+slot unmanned), `no_bombs` (no HE round in the rack), `unknown_ground`,
+`inside_minimum` / `cannot_reach`, `masked`. A gun's mission uses the
+`gun_*` timing and error keys; an infantry gun counts in the player's
+`S11Counters`, never in the mortar counters. Radio (`radio_link`): an
+observer whose squad has a living `radio` man near him is linked when the
+firing unit also has a living `radio` man within `observer_link_m` of the
+tube (a gun: its crew squad). The gun's weapon is a `cannon`; with a
+low-angle table its main mount may elevate to 89 deg (60 otherwise). The
+mission ends (order Idle, ranging memory kept) when its rounds or its HE
+are spent, no solution is left, the gun is packed, pushed, hitched,
+abandoned or captured, its crew is ordered off, or a seen enemy comes
+within `gun_break_m` (direct fire resumes). With `[supply]
+arty_base_rearm` 0 an `inf_gun` gets nothing in its base zone.
+
+Checks (S11a1 Build B): the main mount may name up to +89 deg in the
+vehicle file; above +60 the cross-check wants a weapon with a `low_angle`
+table (one rule, `vehicle::low_angle_top`, in the def check and the setup
+check). A gun order past the table's `range_m` is `cannot_reach`. A gun
+squad's refusals are not added to the mortar row `fm.refused` (the event
+and `S11Counters::masked` / `not_ready` still count). The `radio` trait
+is allowed on any member; `leader` stays first-slot only, so a gun crew's
+radio man is its commander slot without `leader`.
+
+The ww2 guns and observers (S11a1; `artillery-on-map.md` 2.1, 2.2, 4.7):
+
+| Card | Gun | Crew | Elevation | Charges (m/s) | Range | Rate | Rounds | Cost / pop / cooldown / unlock |
+|---|---|---|---|---|---|---|---|---|
+| `ger_leig18_squad` | 7.5 cm leIG 18, 400 kg | 5 | -10..+73 | 92-210 | 3,550 m | 8/min | 12 Igr 18 | 320 / 2 / 90 s / 3:00 |
+| `usa_105mm_m3_squad` | 105 mm M3, 1,130 kg | 6 | -9..+30 | 205-311 | 7,600 m | 3/min | 10 M1 HE | 380 / 2 / 120 s / 4:00 |
+| `ger_vb_trupp` | observer (leader; Funker `radio`) | 2 | | | | | | 80 / 2 / 60 s / 0:00 |
+| `usa_fo_party` | observer (officer; radio operator `radio`) | 3 | | | | | | 120 / 3 / 60 s / 0:00 |
+
+Both guns are pushed (no tow in S11a1), `max_alive` 2; the AI buys none
+until the S11a1 AI stage (`ai_weight` 0). The M1 HE's blast, fragment
+reach, suppression and crater are the 75 mm values times 1.46 (the cube
+root of the filler ratio 2.2 / 0.7), 160 fragment rays.
+
 ## The AI (`[ai.mortar]`, S5b Part B)
 
 Each plan, a mortar squad that is not on a mission (`crates/sim/src/ai/mortar.rs`):
@@ -144,6 +204,29 @@ The skirmish summary's `S5b <faction> AI:` line counts missions by the
 mode the AI expected, spotters sent, missions through a spotter, spotter
 time-outs and recalls, map fire held (reserve / walking), blind targets
 passed over and waits for the ray budget.
+
+### Own men and counter-fire (`[ai.arty]` `ff_safe`, `counter_fire`; S11a2)
+
+With `[fire_mission] friendly_fire` 1 own mission bursts hurt own men, so
+with `ff_safe` 1 the AI keeps one own-men rule for mortars and guns
+(`crates/sim/src/ai/arty.rs` `own_near`): a target is "near own men" when a
+living own man (not of the firing squad) stands inside `[ai.arty]
+danger_close_m` (50 m) of it, or an own squad on the move has its goal
+inside 50 m and its leader inside `lift_m` (100 m). Such a target is not
+ordered (`ff_holds`); every own mission whose target becomes near own men
+gets one `Stop` before the mortars and guns plan (`ff_lifts`; bombs in the
+air still land). A mortar's spotter stands `danger_close_m + 20` short of
+its target. With `ff_safe` 0 the S11a1 rules hold (35 m mortar filter, the
+gun lift A6, the prep lift P3).
+
+With `[fire_mission] counter_battery` 1 the enemy's infantry-gun rounds
+leave markers; with `counter_fire` 1 a Ready AI gun with no mission answers
+its own sharpest marker (no wider than `cb_max_error_m`, 60 m) with map
+fire of `mission_rounds`, after preparation fire and before observed
+targets, once per new round heard (`cb_shots`), inside the reserve and the
+shell budget, never on own men, and never an order the sim would refuse
+(`cb_masked`: the low-angle M3 behind a crest). Counter-fire bursts are
+counted only while their mission runs (`cb_bursts`, `cb_near_bursts`).
 
 ## Rules without `[fire_mission]`
 

@@ -406,6 +406,11 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         // S8a.
         put_postcard(&p.s8a, out);
         put_postcard(&p.s9, out);
+        // S11a1.
+        put_postcard(&p.s11, out);
+        // S11a2.
+        put_postcard(&p.s11a2, out);
+        put_postcard(&p.cb, out);
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);

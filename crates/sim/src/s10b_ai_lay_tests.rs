@@ -60,6 +60,10 @@ pub(crate) fn held(edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> (Wo
         s.squad_types.iter_mut().for_each(|t| t.ai_weight = 0);
         // The S10a works (nest, dugout) would take the builder first.
         s.rules.ai.fort.works = 0;
+        // S10c-ai Build B chunk 2: the front rules are on by default; a
+        // lone held point would be a front point (the S10c tests turn
+        // them back on in `edit`).
+        s.rules.ai.obstacles.front = 0;
         edit(s);
     });
     let h = {

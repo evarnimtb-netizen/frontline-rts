@@ -9,7 +9,17 @@ Compares the CLI JSON files present in both directories:
   records keyed by (seed, side) must be equal in every field but `hash`;
   the aggregate blocks equal recursively, ignoring tick_p99_ms, jobs,
   schema and wall times. A key only in NEW must be 0, empty or false (new
-  counters that stay zero); a key only in BASE fails. The set header's
+  counters that stay zero); a key only in BASE fails. S10c-ai (Build A):
+  a key starting `s10c` that BASE lacks is skipped (its observer counters
+  read state, so they are not zero with the switches off); when both have
+  it, it is compared like any other. S11a1: a key starting `s11a1` that
+  BASE lacks must be 0 in every counter (review B-4); only its denominator
+  keys (`S11A1_DENOMS`: matches, kills, income) may be non-zero. A list
+  under the key `refused` that grew is equal when the new tail is zero
+  (`s5b.refused` 7 -> 9 items; review B-3: no other list). S11a2 (Build B
+  M1): a key starting `s11a2` that BASE lacks is skipped (its derived
+  shares read S11a1 gun rounds, so they are not blank with the switches
+  off; the S11a2 counters are 0 by the switch tests). The set header's
   `overrides` list (the `-o` files a run was given) is not part of the
   verdict: when it differs the line gets a note `(note: overrides N -> M
   items)`.
@@ -33,6 +43,11 @@ MATCH_IGNORED = {"hash"}
 # Set-header fields that record how a run was made, not what it did: a
 # difference is printed as a note, never counted.
 HEADER_NOTED = {"overrides"}
+# S11a1 (review B-4): the keys of an `s11a1` block that hold denominators,
+# not counters; every other value there must be blank in an all-off run.
+S11A1_DENOMS = {"matches", "kills", "income_mp", "gun_kills_in_tank_he"}
+# S11a1 (review B-3): the only lists that may grow with a zero tail.
+GROWN_LISTS = {"refused"}
 
 
 def ignored(key):
@@ -56,6 +71,13 @@ def is_blank(v):
     return False
 
 
+def blank_but_denoms(v):
+    """An `s11a1` block with every counter blank (denominators aside)."""
+    if isinstance(v, dict):
+        return all(k in S11A1_DENOMS or blank_but_denoms(x) for k, x in v.items())
+    return is_blank(v)
+
+
 def diff(base, new, path, out, strict, skip=frozenset()):
     """Appends `path: base -> new` lines to `out`."""
     if isinstance(base, dict) and isinstance(new, dict):
@@ -66,12 +88,23 @@ def diff(base, new, path, out, strict, skip=frozenset()):
             if k not in new:
                 out.append(f"{p}: only in BASE")
             elif k not in base:
+                if k.startswith("s10c") or k.startswith("s11a2"):
+                    continue
+                if k.startswith("s11a1"):
+                    if strict and not blank_but_denoms(new[k]):
+                        out.append(f"{p}: only in NEW and a counter is not zero ({json.dumps(new[k])[:60]})")
+                    continue
                 if strict and not is_blank(new[k]):
                     out.append(f"{p}: only in NEW and not zero ({json.dumps(new[k])[:60]})")
             else:
                 diff(base[k], new[k], p, out, strict, skip)
         return
     if isinstance(base, list) and isinstance(new, list):
+        # S11a1 B: a counter array that grew (e.g. `s5b.refused`, 7 -> 9
+        # refusal kinds) is equal when the new tail is all zero.
+        grown = path.rsplit(".", 1)[-1] in GROWN_LISTS
+        if grown and len(new) > len(base) and all(is_blank(x) for x in new[len(base):]):
+            new = new[: len(base)]
         if len(base) != len(new) and (strict or len(new) < len(base)):
             out.append(f"{path}: {len(base)} items -> {len(new)}")
             return

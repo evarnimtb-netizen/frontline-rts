@@ -1,0 +1,5 @@
+# S10c-ai ablation (orchestrator 2026-11-16): the home point (the map point
+# nearest the own base) counts as a front point like any other (plain F1, as
+# Build B chunk 1 played).
+[ai.obstacles]
+front_home = 1

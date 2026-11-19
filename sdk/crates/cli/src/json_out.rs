@@ -102,6 +102,84 @@ fn median(v: &mut [f64]) -> f64 {
 
 // ------------------------------------------------------------- skirmish --
 
+/// `--side-detail` (B1 diagnosis): adds `sides`, one object per player, to
+/// each `per_match` entry of a [`skirmish`] document. Read-only.
+pub fn add_sides(doc: &mut Value, r: &ManyReport) {
+    let Some(list) = doc.get_mut("per_match").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for (v, m) in list.iter_mut().zip(&r.matches) {
+        let sides: Vec<Value> = m
+            .report
+            .players
+            .iter()
+            .map(|p| {
+                let f = &p.s10.fort;
+                let ai = &p.s10.ai;
+                // S10c-ai: the same raw counters as `factions.<f>.s10c`.
+                let mut one = crate::skirmish::S10cFaction::default();
+                one.add(&p.s10c, &p.s10);
+                let mut side = json!({
+                    "faction": p.faction,
+                    "base": p.base,
+                    "defeat": p.defeat,
+                    "tickets": p.tickets,
+                    "manpower": p.manpower,
+                    "kills": p.kills,
+                    "losses": p.losses,
+                    "squads_fielded": p.squads_fielded,
+                    "squads_alive": p.squads_alive,
+                    "soldiers_alive": p.soldiers_alive,
+                    "points_held": p.points_held,
+                    "hold_s": p.hold_s,
+                    "pop_at_min": p.s4.pop_at_min,
+                    "pop_cap_holds": p.s4.pop_cap_holds,
+                    "capture_orders": p.s4.capture_orders,
+                    "bought": p.s4.bought,
+                    "fired": fired_class::NAMES.iter().zip(p.s5a.fired).map(|(n, v)| ((*n).to_string(), json!(v))).collect::<Map<_, _>>(),
+                    "kills_by": kill_class::NAMES.iter().zip(p.s5a.kills_by).map(|(n, v)| ((*n).to_string(), json!(v))).collect::<Map<_, _>>(),
+                    "ammo_mp": round3(p.s5a.paid_micro.iter().sum::<u64>() as f64 / 1e6),
+                    "fort_jobs": ai[0],
+                    "fort_build_plans": ai[2],
+                    "infantry_plans": ai[3],
+                    "works_started": f.works_started,
+                    "pieces_built": f.pieces_built,
+                    "pieces_lost": f.pieces_lost,
+                    "works_done": p.s10.works_done,
+                    "wire_built": f.wire_built,
+                    "wire_crushed": f.wire_crushed,
+                    "men_lost_in_wire": f.men_lost_in_wire,
+                    "fort_mp": round3(f.materials_micro as f64 / 1e6),
+                    "s10b_mp": round3(p.s10.s10b_materials_micro as f64 / 1e6),
+                    "income_mp": p.s10.income_mp,
+                    "mines_laid": f.mines_laid,
+                    "obstacles_built": f.obstacles_built,
+                    "s10b_jobs": p.s10.s10b_ai[0],
+                    "own_blocked": p.s10.s10b_ai[11],
+                    "vehicles_lost": p.armour.vehicles_lost,
+                    "squads_at_min": p.squads_at_min,
+                    "deaths": crate::skirmish::DEATH_PLACES.iter().zip(p.death_places).map(|(n, v)| ((*n).to_string(), json!(v))).collect::<Map<_, _>>(),
+                });
+                // S11a1: the raw counters of this side.
+                let mut s11 = crate::skirmish::S11a1Faction::default();
+                s11.add(&p.s11a1, p.kills, p.s10.income_mp);
+                // S11a2: the raw friendly-fire and counter-battery counters.
+                let mut s11a2 = crate::skirmish::S11a2Faction::default();
+                s11a2.add(&p.s11a2, p.losses, p.s11a1.s11.gun_rounds);
+                if let Some(o) = side.as_object_mut() {
+                    o.insert("s10c".into(), s10c_blocks(&one).0);
+                    o.insert("s11a1".into(), s11a1_blocks(&s11).0);
+                    o.insert("s11a2".into(), s11a2_blocks(&s11a2).0);
+                }
+                side
+            })
+            .collect();
+        if let Some(o) = v.as_object_mut() {
+            o.insert("sides".into(), Value::Array(sides));
+        }
+    }
+}
+
 /// The summary document of a `--seeds` run (or of one match).
 pub fn skirmish(r: &ManyReport) -> Value {
     let s = &r.summary;
@@ -558,6 +636,24 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
         o.insert("s10b_ai".into(), raw);
         o.insert("s10b_ai_derived".into(), derived);
     }
+    // S10c-ai (docs/slices/S10c-ai.md 7): counters, exposure, shares.
+    {
+        let (raw, derived) = s10c_blocks(&f.s10c);
+        o.insert("s10c".into(), raw);
+        o.insert("s10c_derived".into(), derived);
+    }
+    // S11a1 (docs/slices/S11a1.md 7): counters by name, derived shares.
+    {
+        let (raw, derived) = s11a1_blocks(&f.s11a1);
+        o.insert("s11a1".into(), raw);
+        o.insert("s11a1_derived".into(), derived);
+    }
+    // S11a2 (docs/slices/S11a2.md 7): counters by name, derived shares.
+    {
+        let (raw, derived) = s11a2_blocks(&f.s11a2);
+        o.insert("s11a2".into(), raw);
+        o.insert("s11a2_derived".into(), derived);
+    }
     o.insert(
         "s6_derived".into(),
         json!({
@@ -822,6 +918,12 @@ pub fn fortify(r: &FortifyReport) -> Value {
         // S10b-ai Build E stage check: the S10b-ai rows (T110i-T116b read
         // `fortify10.s10b_ai.*`); before this they were only in the text.
         "s10b_ai": serde_json::to_value(&r.s10b_ai).unwrap_or_default(),
+        // S10c-ai Build C chunk 2 (C7): `fortify10.s10c.belt.*`.
+        "s10c": serde_json::to_value(&r.s10c).unwrap_or_default(),
+        // S11a1 Build B (C5): `fortify10.s11a1.{gun_fm,mask,barrage,breach_prep}.*`.
+        "s11a1": serde_json::to_value(&r.s11a1).unwrap_or_default(),
+        // S11a2 Build B (M2, M3): `fortify10.s11a2.{ff,cb,ff_lift}.*`.
+        "s11a2": serde_json::to_value(&r.s11a2).unwrap_or_default(),
         "hard_failed": checks.iter().filter(|c| c["pass"] == json!(false)).count(),
         "checks": checks,
         "rows": rows,
@@ -972,6 +1074,245 @@ pub fn s10b_ai_blocks(c: &crate::skirmish::S10bAiFaction) -> (Value, Value) {
         "jobs_overdue": c.get("jobs_overdue"),
         "refused_reorders": c.get("refused_reorders"),
         "lost_on_known_per_match": per(c.lost_on_known),
+    });
+    (Value::Object(raw), derived)
+}
+
+/// S11a1: a faction's `s11a1` (raw: every `S11Counters` field by name,
+/// arrays by mode name; every S11a1 `AiCounters` field; the two new
+/// refusals as `refused_masked` / `refused_not_ready`; denominators) and
+/// `s11a1_derived` (spec 7 names; null where the denominator is 0).
+/// Gun kills also count as `tank_he` in `kills_by` and in
+/// `tank_mp_killed` (the round class of a gun's HE; review A-3): the flag
+/// `gun_kills_in_tank_he` says so.
+pub fn s11a1_blocks(c: &crate::skirmish::S11a1Faction) -> (Value, Value) {
+    use frontline_sim::fire_mission::mode;
+    let n = c.matches.max(1) as f64;
+    let m = c.matches as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let by_mode = |a: &[u64; 3]| -> Value {
+        Value::Object(
+            mode::NAMES
+                .iter()
+                .zip(a.iter())
+                .map(|(k, v)| ((*k).to_string(), json!(v)))
+                .collect(),
+        )
+    };
+    let mut raw = Map::new();
+    raw.insert("matches".into(), json!(c.matches));
+    raw.insert("gun_missions".into(), by_mode(&c.gun_missions));
+    raw.insert("gun_rounds".into(), by_mode(&c.gun_rounds));
+    raw.insert("gun_miss_mm".into(), by_mode(&c.gun_miss_mm));
+    for (k, v) in [
+        ("masked", c.masked),
+        ("not_ready", c.not_ready),
+        ("refused_masked", c.masked),
+        ("refused_not_ready", c.not_ready),
+        ("radio_rounds", c.radio_rounds),
+        ("low_rounds", c.low_rounds),
+        ("high_rounds", c.high_rounds),
+        ("gun_breaks", c.gun_breaks),
+        ("gun_shell_micro", c.gun_shell_micro),
+        ("gun_kills", c.gun_kills),
+        ("guns_bought", c.guns_bought),
+        ("gun_direct_rounds", c.gun_direct_rounds),
+        ("near_own_bursts", c.near_own_bursts),
+        ("kills", c.kills),
+        ("income_mp", c.income_mp),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    for (k, name) in crate::skirmish::S11A1_AI.iter().enumerate() {
+        raw.insert((*name).into(), json!(c.ai[k]));
+    }
+    for (k, v) in [
+        ("matches_with_gun", c.matches_with_gun),
+        ("matches_gun_fired", c.matches_gun_fired),
+        ("matches_with_fo", c.matches_with_fo),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    raw.insert("gun_kills_in_tank_he".into(), json!(true));
+    let rounds: u64 = c.gun_rounds.iter().sum();
+    let seen = (c.gun_rounds[mode::DIRECT as usize] + c.gun_rounds[mode::OBSERVED as usize]) as f64;
+    let posts = c.get("fo_posts") + c.get("fo_post_fails");
+    let with_target = c.get("arty_missions") + c.get("arty_no_observer");
+    let derived = json!({
+        "gun_bought_matches_pct": pct_or_null(c.matches_with_gun as f64, m),
+        "guns_bought_per_match": per(c.guns_bought),
+        "fo_bought_matches_pct": pct_or_null(c.matches_with_fo as f64, m),
+        "gun_fired_matches_pct": pct_or_null(c.matches_gun_fired as f64, c.matches_with_gun as f64),
+        "gun_rounds_per_match": per(rounds),
+        "gun_observed_pct": pct_or_null(seen, rounds as f64),
+        "gun_kill_share_pct": pct_or_null(c.gun_kills as f64, c.kills as f64),
+        "gun_shell_mp_pct": pct_or_null(c.gun_shell_micro as f64 / 1e6, c.income_mp as f64),
+        "near_own_bursts_per_match": per(c.near_own_bursts),
+        "gun_refused_total": c.gun_refused,
+        "prep_missions_per_match": per(c.get("arty_prep_missions") + c.get("mortar_prep_missions")),
+        "fo_lost_per_match": per(c.get("fo_lost")),
+        "fo_post_fail_pct": pct_or_null(c.get("fo_post_fails") as f64, posts as f64),
+        "arty_no_observer_pct": pct_or_null(c.get("arty_no_observer") as f64, with_target as f64),
+    });
+    (Value::Object(raw), derived)
+}
+
+/// S11a2: a faction's `s11a2` (raw: every `S11a2Counters` field by name,
+/// `ff_kills` as {mortar, gun}, arrays by mode name; every S11a2
+/// `AiCounters` field, the AI's `cb_missions` as `ai_cb_missions` (the
+/// sim's own `cb_missions` counts every mission on a marker, any
+/// player); `matches_with_marker`, `matches_with_counter_fire`) and
+/// `s11a2_derived` (spec 7 names; null where the denominator is 0).
+/// Counter-fire bursts count also after the mission ended (`cb_bursts`,
+/// `cb_near_bursts`; S11a2 fix B-2).
+pub fn s11a2_blocks(c: &crate::skirmish::S11a2Faction) -> (Value, Value) {
+    use frontline_sim::fire_mission::mode;
+    let n = c.matches.max(1) as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let by_mode = |a: &[u64; 3]| -> Value {
+        Value::Object(
+            mode::NAMES
+                .iter()
+                .zip(a.iter())
+                .map(|(k, v)| ((*k).to_string(), json!(v)))
+                .collect(),
+        )
+    };
+    let mut raw = Map::new();
+    raw.insert("matches".into(), json!(c.matches));
+    raw.insert(
+        "ff_kills".into(),
+        json!({"mortar": c.ff_kills[0], "gun": c.ff_kills[1]}),
+    );
+    raw.insert("cb_rounds".into(), by_mode(&c.cb_rounds));
+    for (k, v) in [
+        ("ff_wounds", c.ff_wounds),
+        ("ff_bursts", c.ff_bursts),
+        ("mortar_near_own_bursts", c.mortar_near_own_bursts),
+        ("cb_heard", c.cb_heard),
+        ("cb_marks", c.cb_marks),
+        ("cb_err_first_mm", c.cb_err_first_mm),
+        ("cb_dropped", c.cb_dropped),
+        ("cb_missions", c.cb_missions),
+        ("cb_bursts", c.cb_bursts),
+        ("cb_near_bursts", c.cb_near_bursts),
+        ("losses", c.losses),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    for (k, name) in crate::skirmish::S11A2_AI.iter().enumerate() {
+        raw.insert((*name).into(), json!(c.ai[k]));
+    }
+    for (k, v) in [
+        ("matches_with_marker", c.matches_with_marker),
+        ("matches_marker_fired", c.matches_marker_fired),
+        ("matches_with_counter_fire", c.matches_with_counter_fire),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    let ff = c.ff_kills[0] + c.ff_kills[1];
+    let gun: u64 = c.gun_rounds.iter().sum();
+    let cb: u64 = c.cb_rounds.iter().sum();
+    let seen = c.gun_rounds[mode::DIRECT as usize]
+        + c.gun_rounds[mode::OBSERVED as usize]
+        + c.cb_rounds[mode::MAP as usize];
+    let first_m = if c.cb_marks == 0 {
+        Value::Null
+    } else {
+        json!(round3(
+            c.cb_err_first_mm as f64 / c.cb_marks as f64 / 1000.0
+        ))
+    };
+    let derived = json!({
+        "ff_kills_per_match": per(ff),
+        "ff_kills_mortar_per_match": per(c.ff_kills[0]),
+        "ff_kills_gun_per_match": per(c.ff_kills[1]),
+        "ff_loss_share_pct": pct_or_null(ff as f64, c.losses as f64),
+        "ff_wounds_per_match": per(c.ff_wounds),
+        "ff_lifts_per_match": per(c.get("ff_lifts")),
+        "ff_holds_per_match": per(c.get("ff_holds")),
+        "mortar_near_own_bursts_per_match": per(c.mortar_near_own_bursts),
+        "cb_marks_per_match": per(c.cb_marks),
+        "cb_first_error_m": first_m,
+        "cb_fired_matches_pct": pct_or_null(c.matches_marker_fired as f64, c.matches_with_marker as f64),
+        "cb_missions_per_match": per(c.cb_missions),
+        "cb_rounds_per_match": per(cb),
+        "cb_near_burst_pct": pct_or_null(c.cb_near_bursts as f64, c.cb_bursts as f64),
+        "cb_masked_per_match": per(c.get("cb_masked")),
+        "cb_wide_holds_per_match": per(c.get("cb_wide_holds")),
+        "cb_stale_holds_per_match": per(c.get("cb_stale_holds")),
+        "cb_shell_share_pct": pct_or_null(cb as f64, gun as f64),
+        "gun_observed_or_cb_pct": pct_or_null(seen as f64, gun as f64),
+    });
+    (Value::Object(raw), derived)
+}
+
+/// S10c-ai: a faction's `s10c` (raw: the S10c counters by name,
+/// `front_why_<name>`, `mine_want_why_<name>`, the by-point arrays in map
+/// point order, `mines_home`, `mines_front`, the exposure tallies) and
+/// `s10c_derived` (spec 7). A share over an empty set is null, not 0.
+pub fn s10c_blocks(c: &crate::skirmish::S10cFaction) -> (Value, Value) {
+    let n = c.matches.max(1) as f64;
+    let m = c.matches as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let mut raw = Map::new();
+    for (k, name) in crate::skirmish::S10C_AI.iter().enumerate() {
+        raw.insert((*name).into(), json!(c.ai[k]));
+    }
+    for (k, name) in frontline_sim::ai::FRONT_WHY.iter().enumerate() {
+        raw.insert(format!("front_why_{name}"), json!(c.front_why[k]));
+    }
+    for (k, name) in frontline_sim::ai::MINE_WANT_WHY.iter().enumerate() {
+        raw.insert(format!("mine_want_why_{name}"), json!(c.mine_want_why[k]));
+    }
+    raw.insert("works_by_point".into(), json!(c.works_by_point));
+    raw.insert("mines_by_point".into(), json!(c.mines_by_point));
+    for (k, v) in [
+        ("mines_home", c.mines_home),
+        ("mines_front", c.mines_front),
+        ("mines_seen", c.mines_seen),
+        ("mines_approached", c.mines_approached),
+        ("mines_set_off", c.mines_set_off),
+        ("s10b_jobs", c.s10b_jobs),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    for (k, v) in [
+        ("matches_with_mines", c.matches_with_mines),
+        ("matches_mines_approached", c.matches_mines_approached),
+        ("matches_wire_seen", c.matches_wire_seen),
+        ("matches_wire_approached", c.matches_wire_approached),
+        ("matches_obstacle_approached", c.matches_obstacle_approached),
+        ("matches_knew_enemy_wire", c.matches_knew_enemy_wire),
+        ("matches_with_front_field", c.matches_with_front_field),
+        ("matches_with_belt", c.matches_with_belt),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    let mines = (c.mines_home + c.mines_front) as f64;
+    let derived = json!({
+        "defence_job_fail_pct": pct_or_null(c.get("fort_job_fails") as f64, c.s10b_jobs as f64),
+        "front_mines_share_pct": pct_or_null(c.mines_front as f64, mines),
+        "matches_mines_approached_pct": pct_or_null(
+            c.matches_mines_approached as f64,
+            c.matches_with_mines as f64
+        ),
+        "mines_set_off_per_match": per(c.mines_set_off),
+        "matches_with_wire": c.matches_with_wire,
+        "wire_seen_by_enemy_pct": pct_or_null(c.matches_wire_seen as f64, c.matches_with_wire as f64),
+        "matches_wire_approached_pct": pct_or_null(
+            c.matches_wire_approached as f64,
+            c.matches_with_wire as f64
+        ),
+        "matches_obstacle_approached_pct": pct_or_null(c.matches_obstacle_approached as f64, m),
+        "front_calm_pct": pct_or_null(c.get("front_calm_plans") as f64, c.get("front_plans") as f64),
+        "front_jobs_per_match": per(c.get("front_jobs")),
+        "front_drop_pct": pct_or_null(c.get("front_drops") as f64, c.get("front_jobs") as f64),
+        "front_builders_lost_per_match": per(c.get("front_lost")),
+        "matches_with_belt_pct": pct_or_null(c.matches_with_belt as f64, m),
+        "matches_with_front_field_pct": pct_or_null(c.matches_with_front_field as f64, m),
+        "builder_buys_per_match": per(c.get("builder_buys")),
+        "knew_enemy_wire_pct": pct_or_null(c.matches_knew_enemy_wire as f64, m),
     });
     (Value::Object(raw), derived)
 }

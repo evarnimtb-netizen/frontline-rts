@@ -1,0 +1,3 @@
+# S11a1 ablation: no observer team (A3 off): a gun fires only what its own crew leader sees.
+[ai.arty]
+fo = 0

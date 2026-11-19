@@ -1,0 +1,3 @@
+# S10c-ai ablation (C2): a front work takes only builders assigned to its point.
+[ai.obstacles]
+mine_assign = 0

@@ -29,6 +29,10 @@ roster = [
     "ww2:usa_57mm_m1_squad",
     # S10a: the assault and construction engineers (appended; ai_weight 0 until the S10a AI half).
     "ww2:usa_assault_section",
+    # S11a1: the infantry howitzer and the observer party (appended; ai_weight
+    # 0 until the S11a1 AI stage).
+    "ww2:usa_105mm_m3_squad",
+    "ww2:usa_fo_party",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

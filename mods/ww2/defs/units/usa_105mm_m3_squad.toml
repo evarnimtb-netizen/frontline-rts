@@ -1,0 +1,12 @@
+# The 105 mm M3 card (S11a1 C2): the howitzer and its crew; no tow in S11a1
+# (S11a1-4 (A)). Price, pop, cooldown and unlock are on the vehicle def.
+# AI weight 5 (Build C), as the leIG 18 card.
+id = "ww2:usa_105mm_m3_squad"
+name = "105 mm Howitzer M3"
+short_name = "105 mm M3"
+faction = "ww2:usa"
+tags = ["vehicle"]
+vehicle = "ww2:usa_105mm_m3"
+ai_weight = 5
+# artillery-on-map.md 4.7: at most 2 alive.
+max_alive = 2

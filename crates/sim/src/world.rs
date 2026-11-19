@@ -450,8 +450,24 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// suspects_seen}`, `AiFortJob::start`, fourteen `AiCounters`,
 /// `FortState::blasts`, four `FortAccount` counters; in the setup
 /// `[ai.obstacles]`, four `[fortify]` mine path keys and `[ai.truck]
-/// refusal_memory`). One bump for the whole slice.
-const SAVE_VERSION: u32 = 25;
+/// refusal_memory`). One bump for the whole slice. 26: S10c-ai (fourteen
+/// `AiCounters` fields with `front_why` and `mine_want_why`,
+/// `AiState::front_lanes`; in the setup fourteen `[ai.obstacles]` keys,
+/// `front_home` added in Build B chunk 2 with no bump: nothing released
+/// since; fix pass 3 added `FrontLane::at`, a thirteenth `front_why`
+/// entry and the key `mine_assign_reach_m`, also with no bump: no save of
+/// version 26 exists outside the slice branch). One bump for the whole
+/// slice. 27: S11a1 (the kill-class carrier widened to `u16` in
+/// `CookOff::class` and every pass of it; `PlayerState::s11`;
+/// `FireMissionRefusal::{Masked, NotReady}` grow `FmCounters::refused`;
+/// `AiState::{arty, fo, fo_lost_at}`, `AiBreach::prep_at`, fourteen
+/// `AiCounters`; in the setup the S11a1 `[fire_mission]`, `[supply]` and
+/// `[ai.arty]` keys, `IndirectSetup::{low_angle, range_m, spread_mrad}`,
+/// the `radio` trait and the `inf_gun` role). One bump for the whole slice.
+/// 28: S11a2 (`Mission::cb`, `PlayerState::{s11a2, cb}` with `CbSpot`,
+/// `AiArty::{cb, cb_shots}`, six `AiCounters`; in the setup the S11a2
+/// `[fire_mission]` and `[ai.arty]` keys). One bump for the whole slice.
+const SAVE_VERSION: u32 = 28;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -883,7 +899,7 @@ impl World {
                     .slots()
                     .iter()
                     .flatten()
-                    .any(|p| p.mission >= g.next_mission)
+                    .any(|p| p.mission & !crate::fire_mission::CB_ROUND >= g.next_mission)
                 {
                     return Err(err("projectile of an unknown fire mission"));
                 }
@@ -1432,6 +1448,8 @@ impl World {
                 seed,
                 tick,
                 fallen: Vec::new(),
+                ff_dead: Vec::new(),
+                ff_hit: Vec::new(),
             };
             game.as_mut().expect("match world").apply_blows(
                 &mut ctx,
@@ -1544,6 +1562,8 @@ impl World {
                 game.spring_holds(&mut self.state.entities, &mut self.hash);
                 // S5b: the players' knowledge maps.
                 game.update_intel(&self.state.entities, tick);
+                // S11a2 K2, K3: counter-battery spots (nothing without any).
+                game.cb_tick(&self.state.entities, tick);
                 game.update_rules(&self.state.entities);
             }
         }
@@ -2362,6 +2382,32 @@ impl World {
         end
     }
 
+    /// S11a2 M3 fortify-test hook (`docs/slices/S11a2.md` 4 M3): one world
+    /// step with player `player`'s S3 lift step alone run on `ai`, a fresh
+    /// state the caller keeps (not part of the match), a plan every
+    /// `replan_ticks`; its `Stop` commands wait in `ai.pending` for the
+    /// reaction delay and are applied as the player's (as
+    /// [`Self::drive_breach`]).
+    pub fn drive_ff_lift(&mut self, ai: &mut crate::ai::AiState, player: PlayerId) {
+        let tick = self.state.tick;
+        if let Some(game) = self.state.game.as_ref()
+            && (player.0 as usize) < game.players.len()
+        {
+            game.drive_ff_lift_plan(ai, &self.state.entities, &self.state.terrain, tick, player);
+        }
+        let n = ai.pending.iter().take_while(|c| c.due <= tick).count();
+        let cmds: Vec<Command> = ai
+            .pending
+            .drain(..n)
+            .map(|c| Command {
+                player,
+                seq: c.seq,
+                kind: c.kind,
+            })
+            .collect();
+        self.step(&cmds);
+    }
+
     /// S10b staging tool (tests: the save checks of the new orders): edits
     /// squad `id` directly. The caller keeps it valid; false when there is
     /// no such squad.
@@ -2884,6 +2930,24 @@ mod s10b_gap_tests;
 #[cfg(test)]
 #[path = "s10b_tests.rs"]
 mod s10b_tests;
+#[cfg(test)]
+#[path = "s10c_ai_front_tests.rs"]
+mod s10c_ai_front_tests;
+#[cfg(test)]
+#[path = "s10c_ai_tests.rs"]
+mod s10c_ai_tests;
+#[cfg(test)]
+#[path = "s11a1_ai_tests.rs"]
+mod s11a1_ai_tests;
+#[cfg(test)]
+#[path = "s11a1_tests.rs"]
+mod s11a1_tests;
+#[cfg(test)]
+#[path = "s11a2_ai_tests.rs"]
+mod s11a2_ai_tests;
+#[cfg(test)]
+#[path = "s11a2_tests.rs"]
+mod s11a2_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;
@@ -5418,6 +5482,8 @@ mod tests {
             seed: 1,
             tick,
             fallen: Vec::new(),
+            ff_dead: Vec::new(),
+            ff_hit: Vec::new(),
         };
         let g = game.as_mut().unwrap();
         g.deal(
@@ -5533,6 +5599,8 @@ mod tests {
                 seed: 1,
                 tick: 9,
                 fallen: Vec::new(),
+                ff_dead: Vec::new(),
+                ff_hit: Vec::new(),
             };
             let g = state.game.as_mut().unwrap();
             let ko = g.deal(
@@ -6522,6 +6590,7 @@ mod tests {
             flight: _,
             observer: _,
             ranged: _,
+            cb: _,
         } = Mission::default();
         let RangingCell {
             target: _,

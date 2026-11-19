@@ -72,6 +72,9 @@ pub mod s10a;
 pub mod s10b;
 /// S10b-ai: the AI's mine, obstacle and path rows (three-part rows).
 pub mod s10b_ai;
+pub mod s10c_ai;
+pub mod s11a1;
+pub mod s11a2;
 
 /// Longest rifle fight, in game seconds.
 pub const RIFLE_FIGHT_S: u64 = 180;
@@ -202,6 +205,17 @@ pub struct FortifyReport {
     /// S10b-ai: paths round known mines, the AI's fields (report rows with
     /// exposure and control; not in `pass`).
     pub s10b_ai: s10b_ai::S10bAiReport,
+    /// S10c-ai: the belt beyond the AI's AT field (report row; left out
+    /// with `--no-s10b-ai` as the S10b-ai rows).
+    pub s10c: s10c_ai::S10cAiReport,
+    /// S11a1: gun fire missions, the crest mask, the M1 HE barrage
+    /// (report rows with exposure and control; left out with
+    /// `--no-s10b-ai`, as the S10b-ai rows).
+    pub s11a1: s11a1::S11a1Report,
+    /// S11a2: friendly fire of an own mission, a gun found by sound and
+    /// the answer, the AI lift (rows with exposure and control; left out
+    /// with `--no-s10b-ai`, as the S10b-ai rows).
+    pub s11a2: s11a2::S11a2Report,
     /// Rifles, mortar and smoke pass (the grenade assault has no threshold
     /// yet).
     pub pass: bool,
@@ -1043,6 +1057,21 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     } else {
         s10b_ai::s10b_ai_rows(args, seeds.clone())?
     };
+    let s10c = if args.no_s10b_ai {
+        s10c_ai::S10cAiReport::default()
+    } else {
+        s10c_ai::s10c_ai_rows(args, seeds.clone())?
+    };
+    let s11a1 = if args.no_s10b_ai {
+        s11a1::S11a1Report::default()
+    } else {
+        s11a1::s11a1_rows(args, seeds.clone())?
+    };
+    let s11a2 = if args.no_s10b_ai {
+        s11a2::S11a2Report::default()
+    } else {
+        s11a2::s11a2_rows(args, seeds.clone())?
+    };
     let mut rifles = Vec::new();
     let mut mortar = Vec::new();
     let mut mortar_ranged = Vec::new();
@@ -1211,6 +1240,9 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
             bunker,
         },
         s10b_ai,
+        s10c,
+        s11a1,
+        s11a2,
     })
 }
 
@@ -1413,6 +1445,9 @@ pub fn summary_text(r: &FortifyReport) -> String {
     out += &s10a::summary_text(&r.s10a);
     out += &s10b::summary_text(&r.s10b);
     out += &s10b_ai::summary_text(&r.s10b_ai);
+    out += &s10c_ai::summary_text(&r.s10c);
+    out += &s11a1::summary_text(&r.s11a1);
+    out += &s11a2::summary_text(&r.s11a2);
     out += &format!("fortify-test: {}", if r.pass { "PASS" } else { "FAIL" });
     out
 }

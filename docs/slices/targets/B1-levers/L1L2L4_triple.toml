@@ -1,0 +1,4 @@
+[ai.fort]
+builders_max = 1
+works_per_point = 2
+builder_reach_m = 120

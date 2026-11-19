@@ -13,6 +13,8 @@ lane_file = 0
 bunker_assign = 0
 bunker_truck_first = 0
 at_rows = 1
+demolish_handover = 0
+bunker_yields = 0
 barrier_job_max_s = 900
 
 [fortify]

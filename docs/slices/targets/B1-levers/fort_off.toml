@@ -1,0 +1,6 @@
+# B1-1 cause check (a): every [ai.fort] switch off
+[ai.fort]
+works = 0
+wire = 0
+breach = 0
+cards = 0

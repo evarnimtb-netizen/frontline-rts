@@ -1,0 +1,33 @@
+# The 105 mm M3's crew (S11a1 C2): six soldiers in the gun's service slots
+# (tag `gun_crew`, never bought). Order: gunner, loader, section chief (the
+# radio man of the G5 link), three ammo men. artillery-on-map.md 2.2: crew 6
+# (hist. about 8).
+id = "ww2:usa_105mm_m3_crew"
+name = "Howitzer Section (105 mm)"
+faction = "ww2:usa"
+tags = ["gun_crew"]
+capabilities = ["gun_crew", "recrew"]
+cost = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+
+[[members]]
+slot = "gunner"
+weapon = "ww2:m1911a1"
+
+[[members]]
+slot = "loader"
+weapon = "ww2:m1_garand"
+
+# The section chief carries the radio (S11a1 G5); `leader` is first-slot only.
+[[members]]
+slot = "commander"
+weapon = "ww2:m1_carbine"
+traits = ["radio"]
+
+[[members]]
+slot = "ammo"
+count = 3
+weapon = "ww2:m1_garand"

@@ -1471,6 +1471,31 @@ impl BlockLayer {
         segment_any(terrain, a, b, |n| self.is_margin(n))
     }
 
+    /// S10c-ai C5: a copy of this layer with the nodes nearest `pts`
+    /// blocked as obstacle pieces, and their margin band: the own route's
+    /// search with a belt that does not stand yet. The copy is read only
+    /// (no `update`).
+    pub(crate) fn with_pieces_at(&self, terrain: &Heightfield, pts: &[FxVec2]) -> BlockLayer {
+        let mut b = self.clone();
+        let dim = b.dim;
+        let max = dim.saturating_sub(1);
+        if dim == 0 || b.blocked.len() != (dim * dim) as usize {
+            return b;
+        }
+        for &p in pts {
+            let k = node_at(terrain, p).min(dim * dim - 1);
+            b.blocked[k as usize] = true;
+            b.piece[k as usize] = true;
+            let (gx, gy) = (k % dim, k / dim);
+            for ny in gy.saturating_sub(1)..=(gy + 1).min(max) {
+                for nx in gx.saturating_sub(1)..=(gx + 1).min(max) {
+                    b.margin[(ny * dim + nx) as usize] = true;
+                }
+            }
+        }
+        b
+    }
+
     /// Marks the nodes around the world rectangle `lo..hi` for recompute.
     pub(crate) fn mark_rect(&mut self, lo: FxVec2, hi: FxVec2) {
         if self.dim == 0 {

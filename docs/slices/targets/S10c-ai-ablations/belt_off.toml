@@ -1,0 +1,3 @@
+# S10c-ai ablation (C4): no belt on the vehicle lane.
+[ai.obstacles]
+belt = 0

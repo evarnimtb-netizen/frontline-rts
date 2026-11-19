@@ -1,0 +1,3 @@
+# S11a1 ablation: voice link only (G5 off): an observer must stand within observer_link_m of the gun.
+[fire_mission]
+radio_link = 0

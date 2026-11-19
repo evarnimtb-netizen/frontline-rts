@@ -110,6 +110,9 @@ pub struct AiBreach {
     /// When the base of fire was seen firing, and the smoke thrown.
     pub suppress_at: Option<u64>,
     pub smoke_at: Option<u64>,
+    /// S11a1 P2: when the preparation mission near the focus had fired
+    /// `prep_rounds_min` rounds (Build C sets it).
+    pub prep_at: Option<u64>,
 }
 
 /// How a breach job ended (the fortify-test hook reads it).
@@ -412,6 +415,7 @@ impl super::Planner<'_> {
                 tries: 0,
                 suppress_at: None,
                 smoke_at: None,
+                prep_at: None,
             };
             let units: Vec<SimId> = g.squads[&m.id]
                 .members
@@ -547,8 +551,9 @@ impl super::Planner<'_> {
                     job.suppress_at = Some(tick);
                     self.ai.counters.breach_suppress += 1;
                 }
-                let covered = job.suppress_at.is_some()
-                    || tick >= job.since + 2 * f.suppress_lead_s as u64 * hz;
+                let covered = (job.suppress_at.is_some()
+                    || tick >= job.since + 2 * f.suppress_lead_s as u64 * hz)
+                    && !self.prep_wait(job, focus);
                 // Stage D: a smoke man whose throw reaches the smoke aim on
                 // the walk up throws at once (after the base fired); the
                 // carrier then goes `suppress_lead_s` later from there.
@@ -641,6 +646,67 @@ impl super::Planner<'_> {
             BreachPhase::Through => {}
         }
         None
+    }
+
+    /// S11a1 P2: whether the staged job waits for preparation fire: with
+    /// `[ai.arty] prep` 1, an own fire mission within `prep_near_m` of the
+    /// focus that has fired fewer than `prep_rounds_min` rounds holds the
+    /// walk up, at most `prep_wait_s` after the job's `since`
+    /// (`breach_prep_timeouts`). `prep_at` is set when the wait ends
+    /// (rounds fired, or the timeout), so it is counted once. No such
+    /// mission: no wait (the job goes on as before).
+    fn prep_wait(&mut self, job: &mut AiBreach, focus: Option<FxVec2>) -> bool {
+        let g = self.g;
+        let a = &g.setup.rules.ai.arty;
+        if a.prep == 0 || job.prep_at.is_some() {
+            return false;
+        }
+        let Some(focus) = focus else {
+            return false;
+        };
+        let hz = g.setup.tick_hz.max(1) as u64;
+        let near = sq_m(Fx::from_int(a.prep_near_m.min(2000) as i32));
+        let fired = g
+            .squads
+            .values()
+            .filter(|q| q.owner == self.me)
+            .filter_map(|q| match &q.order {
+                Order::FireMission { target, m, .. }
+                    if (*target - focus).length_sq_raw() <= near =>
+                {
+                    Some(m.fired)
+                }
+                _ => None,
+            })
+            .max();
+        let Some(fired) = fired else {
+            return false;
+        };
+        if fired as u32 >= a.prep_rounds_min {
+            job.prep_at = Some(self.tick);
+            return false;
+        }
+        if self.tick >= job.since + a.prep_wait_s as u64 * hz {
+            job.prep_at = Some(self.tick);
+            self.ai.counters.breach_prep_timeouts += 1;
+            return false;
+        }
+        self.ai.counters.breach_prep_waits += 1;
+        true
+    }
+
+    /// S11a1 P1: the preparation target: with `[ai.arty] prep` 1, the
+    /// focus of the first breach job (ascending squad id) in phase Stage
+    /// or Suppress that has one.
+    pub(super) fn prep_focus(&self, known: &[Known]) -> Option<FxVec2> {
+        if self.g.setup.rules.ai.arty.prep == 0 {
+            return None;
+        }
+        self.ai
+            .breaches
+            .values()
+            .filter(|b| matches!(b.phase, BreachPhase::Stage | BreachPhase::Suppress))
+            .find_map(|b| self.breach_focus_of(b, known))
     }
 
     /// The reaction delay (ticks): a command sent this plan applies then.
@@ -948,6 +1014,34 @@ impl super::Planner<'_> {
                 let at = self.base_of_fire(m, p, &line, first);
                 first.get_or_insert(at);
             }
+        }
+        // S11a1 P1 (fortify row `s11a1.breach_prep`): with `prep` 1 the
+        // player's other mortar squads and infantry guns plan as in a
+        // match (the mortar planner and `ai::arty`), so the preparation
+        // fire of the job is the habits' own. No tube: nothing runs.
+        if g.setup.rules.ai.arty.prep != 0 {
+            let tubes: Vec<Mine> = g
+                .squads
+                .iter()
+                .filter(|(id, q)| {
+                    q.owner == me
+                        && !ids.contains(id)
+                        && !q.members.is_empty()
+                        && g.setup.squad_types[q.type_idx as usize].has(Capability::FireMission)
+                })
+                .map(|(&id, q)| {
+                    let ty = &g.setup.squad_types[q.type_idx as usize];
+                    Mine {
+                        id,
+                        role: super::ai_kind(&g.setup, q.type_idx),
+                        lead: self.ents.transform[q.lead(self.ents).index()].pos.xy(),
+                        strength_pct: q.members.len() as u32 * 100 / ty.men.max(1) as u32,
+                        caps: ty.caps,
+                    }
+                })
+                .collect();
+            self.mortars(&tubes, &[], &known);
+            self.arty(&[], &known);
         }
         None
     }

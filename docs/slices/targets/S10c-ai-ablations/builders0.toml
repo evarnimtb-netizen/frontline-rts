@@ -1,0 +1,4 @@
+# S10c-ai ablation (C3, owner question S10c-2 (A)): no builder-card floor, the
+# weighted pick alone (the default is 2 since Build C chunk 2, orchestrator 2026-11-16).
+[ai.obstacles]
+builder_cards_min = 0

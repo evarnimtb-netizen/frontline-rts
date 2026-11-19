@@ -311,7 +311,7 @@ impl MatchState {
         idx: usize,
         piece: u32,
         damage: u32,
-        he: (u8, u8),
+        he: (u8, u16),
         tick: u64,
     ) {
         let pct = self

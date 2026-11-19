@@ -40,7 +40,9 @@ fn s10a_cards_resolve_with_their_ai_weights() {
     };
     let ger = roster("ww2:germany");
     let usa = roster("ww2:usa");
-    // Appended: existing indices unchanged (the S9 cards end before them).
+    // Appended: existing indices unchanged (the S9 cards end before them;
+    // S11a1 appends two cards a side after them).
+    let (ger, usa) = (&ger[..ger.len() - 2], &usa[..usa.len() - 2]);
     assert_eq!(
         &ger[ger.len() - 3..],
         [

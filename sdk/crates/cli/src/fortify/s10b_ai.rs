@@ -98,8 +98,11 @@
 //!   way round on any map), ordered [`DEMOLISH_TANK_M`] - 60 m on toward the
 //!   point (it stops at the ring); `p`'s engineers stand 40 m aside with the
 //!   card's own satchels (S10b-ai E3: two adjacent pieces of a 4 m ring or
-//!   row open a medium tank's way; the tests stage [`DEMOLISH_SATCHELS`]).
-//!   `drive_ai_habit(Demolish)` (engineers the squad, the tank `others`)
+//!   row open a medium tank's way; the tests stage [`DEMOLISH_SATCHELS`]),
+//!   and (B1-0, owner E3) a second engineer squad 40 m to the other side
+//!   which takes the job over when the first has no satchel left.
+//!   `drive_ai_habit(Demolish)` (engineers the squad, the tank and the
+//!   second squad `others`)
 //!   until the habit ends (at most [`DEMOLISH_DRIVE_S`]), then
 //!   [`DEMOLISH_PASS_S`] s more (still driven): `gap_opened_pct` (the habit ended Done),
 //!   `tank_passed_pct` (the tank got [`RING_M`] + 5 m from its start),
@@ -107,6 +110,8 @@
 //!   `tank_blocked_pct` (runs in which the AI saw the tank blocked by a
 //!   known obstacle: `demolish_wanted` > 0). Control (`control.*`):
 //!   `[ai.obstacles] demolish` 0 (a minute's drive, the tank stays in).
+//!   Control `handover0.*`: `demolish_handover` 0 (B1-0: one piece per
+//!   card squad, the ring stays closed).
 
 use anyhow::{Result, bail};
 use frontline_sim::{CommandKind, Fx, FxVec2, PlayerId, SimId, World};
@@ -365,6 +370,8 @@ pub struct DemolishRow {
     /// Exposure: runs in which the AI saw the tank blocked.
     pub tank_blocked_pct: Option<f64>,
     pub control: DemolishControl,
+    /// B1-0 control: `demolish_handover` 0 (no second squad takes over).
+    pub handover0: DemolishControl,
 }
 
 /// The S10b-ai rows (`fortify10.s10b_ai`).
@@ -569,7 +576,7 @@ pub fn paths_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Path
 /// Stages `p` holding the capture point nearest its base with its AI
 /// trench dug across the way to the enemy base: (point index, point,
 /// enemy base, trench line).
-fn hold_point(w: &mut World, p: u8) -> Result<(usize, FxVec2, FxVec2, [FxVec2; 2])> {
+pub(super) fn hold_point(w: &mut World, p: u8) -> Result<(usize, FxVec2, FxVec2, [FxVec2; 2])> {
     let enemy = 1 - p;
     let (i, pt, base_e, line) = {
         let g = w.game().unwrap();
@@ -1349,6 +1356,7 @@ fn demolish_once(
     seed: u64,
     p: u8,
     demolish: u32,
+    handover: u32,
     satchels: Option<u8>,
 ) -> Result<(bool, bool, u32, bool)> {
     use frontline_sim::ItemKind;
@@ -1357,6 +1365,7 @@ fn demolish_once(
     let eng_card = format!("ww2:{}", ENGINEERS[p as usize]);
     let mut w = world_with(args, seed, |s| {
         s.rules.ai.obstacles.demolish = demolish;
+        s.rules.ai.obstacles.demolish_handover = handover;
         let k = ItemKind::Satchel.index();
         if let Some(n) = satchels {
             for t in s.squad_types.iter_mut().filter(|t| t.id == eng_card) {
@@ -1416,6 +1425,11 @@ fn demolish_once(
     let Some(eng) = w.spawn_squad_at(PlayerId(p), ety, eng_at, dir) else {
         bail!("the engineers were not spawned");
     };
+    // B1-0: the second engineer squad, mirrored.
+    let eng2_at = short(DEMOLISH_TANK_M) - side * Fx::from_int(40);
+    let Some(eng2) = w.spawn_squad_at(PlayerId(p), ety, eng2_at, dir) else {
+        bail!("the second engineers were not spawned");
+    };
     step_with(
         &mut w,
         p,
@@ -1431,7 +1445,7 @@ fn demolish_once(
     let drive = DriveArgs {
         squad: Some(eng),
         point: i,
-        others: vec![tank],
+        others: vec![tank, eng2],
         ..Default::default()
     };
     let t0 = w.tick();
@@ -1470,17 +1484,22 @@ fn demolish_row_with(
 ) -> Result<DemolishRow> {
     let (mut opened, mut passed, mut used, mut blocked, mut runs) = (0u32, 0u32, 0u32, 0u32, 0u32);
     let (mut c_opened, mut c_passed, mut c_used) = (0u32, 0u32, 0u32);
+    let (mut h_opened, mut h_passed, mut h_used) = (0u32, 0u32, 0u32);
     for seed in seeds {
         for p in [0u8, 1] {
-            let (o, pa, u, b) = demolish_once(args, seed, p, 1, satchels)?;
+            let (o, pa, u, b) = demolish_once(args, seed, p, 1, 1, satchels)?;
             opened += o as u32;
             passed += pa as u32;
             used += u;
             blocked += b as u32;
-            let c = demolish_once(args, seed, p, 0, satchels)?;
+            let c = demolish_once(args, seed, p, 0, 1, satchels)?;
             c_opened += c.0 as u32;
             c_passed += c.1 as u32;
             c_used += c.2;
+            let h = demolish_once(args, seed, p, 1, 0, satchels)?;
+            h_opened += h.0 as u32;
+            h_passed += h.1 as u32;
+            h_used += h.2;
             runs += 1;
         }
     }
@@ -1493,6 +1512,11 @@ fn demolish_row_with(
             gap_opened_pct: pct(c_opened, runs),
             tank_passed_pct: pct(c_passed, runs),
             pieces_used: (runs > 0).then(|| c_used as f64 / runs as f64),
+        },
+        handover0: DemolishControl {
+            gap_opened_pct: pct(h_opened, runs),
+            tank_passed_pct: pct(h_passed, runs),
+            pieces_used: (runs > 0).then(|| h_used as f64 / runs as f64),
         },
     })
 }
@@ -1511,8 +1535,8 @@ mod tests {
     #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
     fn demolish_opens_only_when_the_tank_passed() {
         for p in [0u8, 1] {
-            let r =
-                demolish_once(&FortifyArgs::default(), 1, p, 1, Some(DEMOLISH_SATCHELS)).unwrap();
+            let r = demolish_once(&FortifyArgs::default(), 1, p, 1, 1, Some(DEMOLISH_SATCHELS))
+                .unwrap();
             assert!(
                 !r.0 || r.1,
                 "player {p}: opened but the tank did not pass: {r:?}"
@@ -1530,8 +1554,15 @@ mod tests {
     #[cfg_attr(debug_assertions, ignore = "long; run with --release")]
     fn demolish_man_places_the_second_piece() {
         for seed in [1u64, 2] {
-            let r = demolish_once(&FortifyArgs::default(), seed, 0, 1, Some(DEMOLISH_SATCHELS))
-                .unwrap();
+            let r = demolish_once(
+                &FortifyArgs::default(),
+                seed,
+                0,
+                1,
+                1,
+                Some(DEMOLISH_SATCHELS),
+            )
+            .unwrap();
             assert!(r.2 >= 2, "seed {seed}: charges laid {}: {r:?}", r.2);
         }
     }

@@ -1,0 +1,4 @@
+# B1-0 ablation (owner S10b-ai-E3): a demolition job whose squad has no
+# satchel left ends as before; no second squad takes it over.
+[ai.obstacles]
+demolish_handover = 0

@@ -72,6 +72,83 @@ class Neutral(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("only in NEW", "\n".join(lines))
 
+    def test_s10c_keys_skipped_only_when_base_lacks_them(self):
+        # S10c-ai Build A: observer blocks read state, so they are not zero
+        # with the switches off. Control: the same block under another name
+        # fails (only in NEW and not zero).
+        new = copy.deepcopy(BASE)
+        new["factions"]["germany"]["s10c"] = {"mines_seen": 7}
+        new["factions"]["germany"]["s10c_derived"] = {"front_calm_pct": 50.0}
+        lines, ok = self.run_dirs(BASE, new)
+        self.assertTrue(ok, lines)
+        other = copy.deepcopy(BASE)
+        other["factions"]["germany"]["x10c"] = {"mines_seen": 7}
+        lines, ok = self.run_dirs(BASE, other)
+        self.assertFalse(ok, lines)
+        # Both have it: compared.
+        base = copy.deepcopy(new)
+        changed = copy.deepcopy(new)
+        changed["factions"]["germany"]["s10c"]["mines_seen"] = 8
+        lines, ok = self.run_dirs(base, changed)
+        self.assertFalse(ok, lines)
+        self.assertIn("factions.germany.s10c.mines_seen: 7 -> 8", lines[1])
+
+    def test_neutral_skips_s11a1_keys_the_base_lacks(self):
+        # S11a1 (review B-4): an `s11a1` block BASE lacks passes when its
+        # counters are zero (denominators may be set). Controls: a non-zero
+        # counter fails; the same block under another name fails.
+        new = copy.deepcopy(BASE)
+        new["factions"]["germany"]["s11a1"] = {
+            "guns_bought": 0, "matches": 40, "kills": 9, "income_mp": 900,
+            "gun_kills_in_tank_he": True, "gun_rounds": [0, 0, 0]}
+        new["factions"]["germany"]["s11a1_derived"] = {"gun_observed_pct": None}
+        lines, ok = self.run_dirs(BASE, new)
+        self.assertTrue(ok, lines)
+        bad = copy.deepcopy(new)
+        bad["factions"]["germany"]["s11a1"]["guns_bought"] = 1
+        self.assertFalse(self.run_dirs(BASE, bad)[1])
+        bad = copy.deepcopy(new)
+        bad["factions"]["germany"]["s11a1_derived"]["gun_observed_pct"] = 50.0
+        self.assertFalse(self.run_dirs(BASE, bad)[1])
+        other = copy.deepcopy(BASE)
+        other["factions"]["germany"]["x11a1"] = {"guns_bought": 1}
+        self.assertFalse(self.run_dirs(BASE, other)[1])
+
+    def test_neutral_skips_s11a2_keys_the_base_lacks(self):
+        # S11a2 Build B (M1): an `s11a2` block BASE lacks is skipped, even
+        # with a share set. Controls: present in both and different fails;
+        # the same block under another name fails.
+        new = copy.deepcopy(BASE)
+        new["factions"]["germany"]["s11a2_derived"] = {"gun_observed_or_cb_pct": 97.0}
+        lines, ok = self.run_dirs(BASE, new)
+        self.assertTrue(ok, lines)
+        base = copy.deepcopy(new)
+        changed = copy.deepcopy(new)
+        changed["factions"]["germany"]["s11a2_derived"]["gun_observed_or_cb_pct"] = 50.0
+        self.assertFalse(self.run_dirs(base, changed)[1])
+        other = copy.deepcopy(BASE)
+        other["factions"]["germany"]["x11a2"] = {"ff_lifts": 1}
+        self.assertFalse(self.run_dirs(BASE, other)[1])
+
+    def test_grown_list_with_zero_tail_is_equal(self):
+        # S11a1 Build B: `s5b.refused` grew 7 -> 9. Control: a non-zero
+        # tail, or a shorter list, still fails.
+        base = copy.deepcopy(BASE)
+        base["factions"]["germany"]["s5b"] = {"refused": [1, 0, 2]}
+        new = copy.deepcopy(base)
+        new["factions"]["germany"]["s5b"]["refused"] = [1, 0, 2, 0, 0]
+        lines, ok = self.run_dirs(base, new)
+        self.assertTrue(ok, lines)
+        new["factions"]["germany"]["s5b"]["refused"] = [1, 0, 2, 0, 1]
+        self.assertFalse(self.run_dirs(base, new)[1])
+        new["factions"]["germany"]["s5b"]["refused"] = [1, 0]
+        self.assertFalse(self.run_dirs(base, new)[1])
+        # Review B-3: another list with a zero tail still fails.
+        base["factions"]["germany"]["s5b"]["other"] = [1, 0, 2]
+        new = copy.deepcopy(base)
+        new["factions"]["germany"]["s5b"]["other"] = [1, 0, 2, 0]
+        self.assertFalse(self.run_dirs(base, new)[1])
+
     def test_key_only_in_base_fails(self):
         new = copy.deepcopy(BASE)
         del new["wins"]["usa"]

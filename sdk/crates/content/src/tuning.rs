@@ -1114,6 +1114,9 @@ tuning_table! {
         /// (review M2): brakes the base battery (artillery-on-map.md §4.10)
         /// until S6 crates.
         base_bomb_after_fire_s: 0..=1800 = "default_base_bomb_after_fire_s",
+        /// S11a1 G7: 1 = an infantry gun rearms in the own base at the
+        /// shells price (as an AT gun); 0 = at an HQ, dump or truck only.
+        arty_base_rearm: 0..=1 = "d_fm_one",
         /// HUD "low" marker below this share of a squad's load (%).
         low_pct: 1..=100,
         /// S6: a crate this close to a mortar's gunner, a man or a tank's
@@ -1692,7 +1695,30 @@ tuning_table! {
         gap_clear_m: 0..=50,
         /// Urgent breach buys alive at once.
         breach_cards_max: 0..=8,
+        /// B1-4: at most this many own points hold a builder for their
+        /// wanted work (fix F15, the assign bonus); 2 (the old cap, set by
+        /// `builders_max` 2) is today's behaviour. Jobs still start for
+        /// engineers assigned without a hold. Inside `builders_max`.
+        hold_max: 0..=16 = "d_fort_hold_max",
+        /// B1-5: no fort hold and no new fort job (S10a works, wire and
+        /// the S10b point fields, obstacles, bunker, barriers) before this
+        /// many seconds of match time (s); 0 = off (today's behaviour). A
+        /// running job is never cancelled.
+        build_after_s: 0..=3600 = "d_fort_gate_off",
+        /// B1-5: no fort hold and no new fort job while the side has fewer
+        /// than this many foot squads with a man alive (every own squad
+        /// with no vehicle that is not a crew: rifle, MG, AT, mortar,
+        /// engineer, other); 0 = off. A running job is never cancelled.
+        build_min_squads: 0..=64 = "d_fort_gate_off",
     }
+}
+
+fn d_fort_gate_off() -> u32 {
+    0
+}
+
+fn d_fort_hold_max() -> u32 {
+    2
 }
 
 impl AiFortTuning {
@@ -1742,6 +1768,9 @@ impl Default for AiFortTuning {
             breach_max_s: 180,
             gap_clear_m: 2,
             breach_cards_max: 1,
+            hold_max: d_fort_hold_max(),
+            build_after_s: d_fort_gate_off(),
+            build_min_squads: d_fort_gate_off(),
         }
     }
 }
@@ -1827,7 +1856,100 @@ tuning_table! {
         /// S10b-ai Build E: rows of an AI AT field (the second one step
         /// behind the first, shifted half a step along it).
         at_rows: 1..=2 = "d_obst_at_rows",
+        /// B1-0 switch (owner S10b-ai-E3): a demolition job whose squad
+        /// has no satchel for its next piece passes to another free own
+        /// `demolish` squad with one (nearest the vehicle first).
+        demolish_handover: 0..=1 = "d_obst_one",
+        /// B1-0 switch (owner S10b-ai-E1): a bunker job whose heavy step
+        /// waits for material its squad does not carry gives up the S10b
+        /// job slot (`jobs_max`), so one other S10b job may start.
+        bunker_yields: 0..=1 = "d_obst_one",
+        /// S10c-ai switch (F1-F9, docs/slices/S10c-ai.md 2): hasty works
+        /// (AP field, wire, AT field) on the enemy approach lanes of the
+        /// front points, with no trench, nest or wire first. Off: 0.
+        front: 0..=1 = "d_obst_zero",
+        /// S10c-ai switch (C2): a wanted front work with no fit squad at
+        /// its point takes one free builder from anywhere. Off: 0.
+        mine_assign: 0..=1 = "d_obst_zero",
+        /// S10c-ai switch (C4): a blocking belt across the vehicle lane
+        /// beyond a front point's AT field. Off: 0.
+        belt: 0..=1 = "d_obst_zero",
+        /// S10c-ai (F1): the own points nearest the enemy base that are
+        /// front points.
+        front_points: 0..=8 = "d_obst_front_points",
+        /// S10c-ai (F3): the front wire lies this far out along the foot
+        /// lane (m; the AP field `ap_beyond_wire_m` beyond it).
+        front_out_m: 0..=500 = "d_obst_front_out_m",
+        /// S10c-ai (F3): length of a front wire line (m).
+        front_wire_len_m: 0..=500 = "d_obst_front_wire_len_m",
+        /// S10c-ai (F5): a front job does not start, and is dropped, while
+        /// a known enemy is this close to its site (m; the builder keeps
+        /// `[ai] threat_radius`).
+        front_site_threat_m: 0..=500 = "d_obst_front_site_threat_m",
+        /// S10c-ai (F7): front AP fields per player.
+        front_fields_max: 0..=16 = "d_obst_front_fields_max",
+        /// S10c-ai (C8): front jobs (FrontAp, FrontWire, a front AT field,
+        /// a belt) running at once.
+        front_slots: 0..=16 = "d_obst_one",
+        /// S10c-ai F1 (orchestrator 2026-11-16): 1 = the home point (the
+        /// map point nearest the own base) may be a front point; 0 = only
+        /// while it is the player's only own point. Off: 0.
+        front_home: 0..=1 = "d_obst_zero",
+        /// S10c-ai (C4): blocking pieces in a belt ...
+        belt_pieces: 0..=20 = "d_obst_belt_pieces",
+        /// ... this far beyond the AT field, on the enemy side (m).
+        belt_gap_m: 0..=500 = "d_obst_belt_gap_m",
+        /// S10c-ai (C5): the own route round a belt may be at most this
+        /// share of the route without it (%; 0 = rule off).
+        belt_detour_pct: 0..=1000 = "d_obst_belt_detour_pct",
+        /// S10c-ai (C3): with fewer living builder squads than this the
+        /// next buy is the faction's builder card (0 = off).
+        builder_cards_min: 0..=8 = "d_obst_zero",
+        /// S10c-ai C2 (fix pass 3, orchestrator 2026-11-16): `mine_assign`
+        /// pulls a free builder only within this of the site (m; sweeps
+        /// and demolitions keep `sweep_reach_m`).
+        mine_assign_reach_m: 0..=2000 = "d_obst_mine_assign_reach_m",
     }
+}
+
+fn d_obst_zero() -> u32 {
+    0
+}
+
+fn d_obst_front_points() -> u32 {
+    2
+}
+
+fn d_obst_front_out_m() -> u32 {
+    50
+}
+
+fn d_obst_front_wire_len_m() -> u32 {
+    20
+}
+
+fn d_obst_front_site_threat_m() -> u32 {
+    50
+}
+
+fn d_obst_front_fields_max() -> u32 {
+    2
+}
+
+fn d_obst_belt_pieces() -> u32 {
+    5
+}
+
+fn d_obst_belt_gap_m() -> u32 {
+    10
+}
+
+fn d_obst_belt_detour_pct() -> u32 {
+    130
+}
+
+fn d_obst_mine_assign_reach_m() -> u32 {
+    450
 }
 
 fn d_obst_one() -> u32 {
@@ -1886,6 +2008,23 @@ impl Default for AiObstacleTuning {
             barrier_job_max_s: d_obst_barrier_job_max_s(),
             lane_file: d_obst_one(),
             at_rows: d_obst_at_rows(),
+            demolish_handover: d_obst_one(),
+            bunker_yields: d_obst_one(),
+            front: d_obst_zero(),
+            mine_assign: d_obst_zero(),
+            belt: d_obst_zero(),
+            front_points: d_obst_front_points(),
+            front_out_m: d_obst_front_out_m(),
+            front_wire_len_m: d_obst_front_wire_len_m(),
+            front_site_threat_m: d_obst_front_site_threat_m(),
+            front_fields_max: d_obst_front_fields_max(),
+            front_slots: d_obst_one(),
+            front_home: d_obst_zero(),
+            belt_pieces: d_obst_belt_pieces(),
+            belt_gap_m: d_obst_belt_gap_m(),
+            belt_detour_pct: d_obst_belt_detour_pct(),
+            builder_cards_min: d_obst_zero(),
+            mine_assign_reach_m: d_obst_mine_assign_reach_m(),
         }
     }
 }
@@ -2208,7 +2347,110 @@ tuning_table! {
         intel_snap_m: 0..=500,
         /// Rounds in a mission ordered from the HUD tool.
         player_rounds: 1..=50,
+        /// S11a1 G1 switch: a served gun whose main weapon has `[indirect]`
+        /// takes fire missions (0: refused `not_mortar`, as before S11a1).
+        gun_missions: 0..=1 = "d_fm_one",
+        /// S11a1 G5 switch: an observer is also linked by radio (a living
+        /// `radio` man of his squad near him and one of the firing unit
+        /// near the tube; 0: the voice link only).
+        radio_link: 0..=1 = "d_fm_one",
+        /// S11a1 G2 switch: a gun's solution must clear the ground (0: no
+        /// ground test of the arc).
+        mask: 0..=1 = "d_fm_one",
+        /// S11a1 G3: a gun mission's order to first round, observed or map
+        /// fire (s; direct fire keeps `direct_s`).
+        gun_fire_direction_s: 0..=3600 = "d_fm_gun_fire_direction_s",
+        /// S11a1 G3: a gun mission's adjusting rounds at most.
+        gun_adjust_rounds_max: 1..=50 = "d_fm_one",
+        /// S11a1 G4: a gun mission's first-round aim error, observed and
+        /// direct (% of range) ...
+        gun_first_round_error_pct: 0..=50 = "d_fm_gun_first_round_error_pct",
+        /// ... at least this (m).
+        gun_first_round_error_min_m: 0..=2000 = "d_fm_gun_first_round_error_min_m",
+        /// S11a1 G4: a gun's map fire aim error (% of range) ...
+        gun_map_fire_error_pct: 0..=50 = "d_fm_gun_map_fire_error_pct",
+        /// ... at least this (m).
+        gun_map_fire_error_min_m: 0..=2000 = "d_fm_gun_map_fire_error_min_m",
+        /// S11a1 G6: a seen enemy this close to the gun ends its mission
+        /// (crew self-defence) (m).
+        gun_break_m: 0..=2000 = "d_fm_gun_break_m",
+        /// S11a2 F1 switch: bursts of mortar and gun fire-mission rounds
+        /// hurt the firing player's own men (blast, suppression, fragments;
+        /// 0: own men are spared, as before S11a2).
+        friendly_fire: 0..=1 = "d_fm_zero",
+        /// S11a2 K1 switch: infantry-gun mission rounds leave sound evidence
+        /// with the enemy, who marks the gun (0: no evidence, no marker).
+        counter_battery: 0..=1 = "d_fm_zero",
+        /// S11a2 K2: rounds heard from one spot before it is marked.
+        cb_rounds_to_mark: 1..=50 = "d_fm_cb_rounds_to_mark",
+        /// S11a2 K3: a spot loses one piece of evidence this often; at none
+        /// it is forgotten with its marker (s).
+        cb_decay_s: 1..=3600 = "d_fm_cb_decay_s",
+        /// S11a2 K2: the marker is made this long after the marking round (s).
+        cb_delay_s: 1..=3600 = "d_fm_cb_delay_s",
+        /// S11a2 K2: the first marker's error radius (% of the listener's
+        /// distance to the gun) ...
+        cb_error_pct: 1..=100 = "d_fm_cb_error_pct",
+        /// ... each further round heard leaves this share of it (%) ...
+        cb_error_step_pct: 1..=100 = "d_fm_cb_error_step_pct",
+        /// ... down to this share of the listener's distance (%).
+        cb_error_floor_pct: 1..=100 = "d_fm_cb_error_floor_pct",
+        /// S11a2 K1: a round fired within this of a spot (or within its
+        /// marker's error, if larger) counts for that spot (m).
+        cb_reset_m: 0..=2000 = "d_fm_cb_reset_m",
+        /// S11a2 K4 (a report): a counter-fire burst this close to an enemy
+        /// infantry gun counts as near (m).
+        cb_near_m: 0..=2000 = "d_fm_cb_near_m",
     }
+}
+
+fn d_fm_one() -> u32 {
+    1
+}
+fn d_fm_gun_fire_direction_s() -> u32 {
+    20
+}
+fn d_fm_gun_first_round_error_pct() -> u32 {
+    3
+}
+fn d_fm_gun_first_round_error_min_m() -> u32 {
+    25
+}
+fn d_fm_gun_map_fire_error_pct() -> u32 {
+    6
+}
+fn d_fm_gun_map_fire_error_min_m() -> u32 {
+    50
+}
+fn d_fm_gun_break_m() -> u32 {
+    150
+}
+fn d_fm_zero() -> u32 {
+    0
+}
+fn d_fm_cb_rounds_to_mark() -> u32 {
+    3
+}
+fn d_fm_cb_decay_s() -> u32 {
+    300
+}
+fn d_fm_cb_delay_s() -> u32 {
+    15
+}
+fn d_fm_cb_error_pct() -> u32 {
+    15
+}
+fn d_fm_cb_error_step_pct() -> u32 {
+    80
+}
+fn d_fm_cb_error_floor_pct() -> u32 {
+    5
+}
+fn d_fm_cb_reset_m() -> u32 {
+    75
+}
+fn d_fm_cb_near_m() -> u32 {
+    20
 }
 
 impl FireMissionTuning {
@@ -2218,6 +2460,21 @@ impl FireMissionTuning {
             table,
             ("first_round_error_min_m", self.first_round_error_min_m),
             ("map_fire_error_min_m", self.map_fire_error_min_m),
+        );
+        check_order(
+            out,
+            table,
+            (
+                "gun_first_round_error_min_m",
+                self.gun_first_round_error_min_m,
+            ),
+            ("gun_map_fire_error_min_m", self.gun_map_fire_error_min_m),
+        );
+        check_order(
+            out,
+            table,
+            ("cb_error_floor_pct", self.cb_error_floor_pct),
+            ("cb_error_pct", self.cb_error_pct),
         );
     }
 }
@@ -2496,6 +2753,119 @@ impl FortTuning {
     }
 }
 
+tuning_table! {
+    /// `[ai.arty]` (S11a1, docs/slices/S11a1.md 2, rules A1-A6, P1-P3):
+    /// how the AI buys and fires its infantry gun, places its observer
+    /// team and fires preparation for a breach. The three switches are 0
+    /// until Build C (absent: these values).
+    pub struct AiArtyTuning {
+        /// A1 switch: buy an infantry gun.
+        buy: 0..=1,
+        /// A3 switch: buy and post an observer team.
+        fo: 0..=1,
+        /// P1-P3 switch: preparation fire for the breach job.
+        prep: 0..=1,
+        /// A1: no gun before this match time (s).
+        after_s: 0..=3600,
+        /// A1: infantry-gun cards cost at most this share of the income so
+        /// far (%).
+        income_max_pct: 0..=100,
+        /// A1: manpower that stays after a gun is bought.
+        reserve_mp: 0..=10000,
+        /// A1: infantry guns alive or called in at once.
+        max_guns: 0..=8,
+        /// A3: observer teams alive at once ...
+        fo_max: 0..=8,
+        /// ... and the wait after one is lost before the next (s).
+        fo_rebuy_s: 0..=3600,
+        /// A4: rounds of one AI gun mission.
+        mission_rounds: 1..=50,
+        /// A4, A5: no new mission at or under this share of the gun's HE
+        /// load (%).
+        reserve_pct: 0..=100,
+        /// A5: gun shells cost at most this share of the income so far (%).
+        shell_mp_max_pct: 0..=100,
+        /// A4, A6: own men this close to a target: no mission, or lift (m).
+        danger_close_m: 0..=2000,
+        /// A3: the first post candidate this far short of the point (m) ...
+        post_m: 0..=2000,
+        /// ... and at this sideways offset either side (m).
+        post_side_m: 0..=2000,
+        /// A3: sight rays a plan's post search may cast.
+        post_rays: 0..=48,
+        /// A3: a candidate with a known enemy this close is passed over (m).
+        post_clear_m: 0..=2000,
+        /// A3: after a failed search, the next one waits this long (s).
+        post_retry_s: 0..=3600,
+        /// P2: a mission within this of the breach focus counts as its
+        /// preparation (m) ...
+        prep_near_m: 0..=2000,
+        /// ... once it has fired this many rounds ...
+        prep_rounds_min: 1..=50,
+        /// ... and the breach job waits for it at most this long (s).
+        prep_wait_s: 0..=3600,
+        /// S11a2 S1-S3 switch: one own-men predicate for the order filter
+        /// and the lift of every own mission (0: the S11a1 behaviour).
+        ff_safe: 0..=1 = "d_arty_zero",
+        /// S11a2 R1-R3 switch: an AI gun answers an own counter-battery
+        /// marker with map fire.
+        counter_fire: 0..=1 = "d_arty_zero",
+        /// S11a2 S1 (ii): an own squad walking to within `danger_close_m`
+        /// of a target counts once its lead is this close to it (m).
+        lift_m: 0..=2000 = "d_arty_lift_m",
+        /// S11a2 R2: no counter-fire on a marker wider than this (m).
+        cb_max_error_m: 0..=2000 = "d_arty_cb_max_error_m",
+    }
+}
+
+fn d_arty_zero() -> u32 {
+    0
+}
+fn d_arty_lift_m() -> u32 {
+    100
+}
+fn d_arty_cb_max_error_m() -> u32 {
+    60
+}
+
+impl AiArtyTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for AiArtyTuning {
+    /// S11a1 starting values (a rules def without `[ai.arty]`): every
+    /// switch off.
+    fn default() -> AiArtyTuning {
+        AiArtyTuning {
+            buy: 0,
+            fo: 0,
+            prep: 0,
+            after_s: 240,
+            income_max_pct: 15,
+            reserve_mp: 0,
+            max_guns: 1,
+            fo_max: 1,
+            fo_rebuy_s: 180,
+            mission_rounds: 4,
+            reserve_pct: 30,
+            shell_mp_max_pct: 25,
+            danger_close_m: 50,
+            post_m: 300,
+            post_side_m: 60,
+            post_rays: 8,
+            post_clear_m: 150,
+            post_retry_s: 60,
+            prep_near_m: 40,
+            prep_rounds_min: 2,
+            prep_wait_s: 60,
+            ff_safe: 0,
+            counter_fire: 0,
+            lift_m: 100,
+            cb_max_error_m: 60,
+        }
+    }
+}
+
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
 pub const TABLES: &[(&str, &[TuningKey])] = &[
@@ -2512,6 +2882,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("ai.guns", AiGunsTuning::KEYS),
     ("ai.fort", AiFortTuning::KEYS),
     ("ai.obstacles", AiObstacleTuning::KEYS),
+    ("ai.arty", AiArtyTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -2578,6 +2949,7 @@ pub(crate) struct TuningRefs<'a> {
     pub ai_guns: &'a AiGunsTuning,
     pub ai_fort: &'a AiFortTuning,
     pub ai_obstacles: &'a AiObstacleTuning,
+    pub ai_arty: &'a AiArtyTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -2641,6 +3013,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.ai_guns.check(&p("ai.guns"), out);
     t.ai_fort.check(&p("ai.fort"), out);
     t.ai_obstacles.check(&p("ai.obstacles"), out);
+    t.ai_arty.check(&p("ai.arty"), out);
 }
 
 #[cfg(test)]

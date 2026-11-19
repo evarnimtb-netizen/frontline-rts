@@ -835,7 +835,7 @@ impl MatchState {
         ctx: &mut DamageCtx,
         id: SimId,
         dealt: &[Dealt],
-        by: (u8, u8),
+        by: (u8, u16),
         rack_key: SimId,
         fires: &mut FireRolls,
         events: &mut Vec<ArmourEv>,
@@ -1065,7 +1065,7 @@ impl MatchState {
         ctx: &mut DamageCtx,
         id: SimId,
         dealt: &[Dealt],
-        by: (u8, u8),
+        by: (u8, u16),
         pos: FxVec3,
         fires: &mut FireRolls,
         events: &mut Vec<ArmourEv>,
@@ -1101,7 +1101,7 @@ impl MatchState {
         pos: FxVec3,
         he: &HeSetup,
         damage: u32,
-        by: (u8, u8),
+        by: (u8, u16),
         inside: Option<(SimId, u8)>,
         fires: &mut FireRolls,
         events: &mut Vec<ArmourEv>,
@@ -1254,7 +1254,7 @@ impl MatchState {
 
     /// Counts `n` crewmen of `owner` lost, killed by `by` with a round of
     /// `game::kill_class` `class`.
-    fn crew_lost(&mut self, owner: PlayerId, by: Option<u8>, class: u8, n: u32) {
+    fn crew_lost(&mut self, owner: PlayerId, by: Option<u8>, class: u16, n: u32) {
         if let Some(p) = self.players.get_mut(owner.0 as usize) {
             p.losses += n;
         }
@@ -1282,7 +1282,7 @@ impl MatchState {
         ctx: &mut DamageCtx,
         id: SimId,
         cause: u8,
-        class: u8,
+        class: u16,
         events: &mut Vec<ArmourEv>,
     ) {
         let mut c = Ctx {
@@ -1301,7 +1301,7 @@ impl MatchState {
         stats: &mut Stats,
         id: SimId,
         cause: u8,
-        class: u8,
+        class: u16,
         events: &mut Vec<ArmourEv>,
     ) {
         let i = id.index();
@@ -1553,8 +1553,16 @@ impl MatchState {
                     repair_step(vs, v, k);
                 }
             }
-            // Base repair, rearm and crew.
-            if in_base {
+            // Base repair, rearm and crew. S11a1 G7: none for an infantry
+            // gun with `arty_base_rearm` 0.
+            let no_base = v.role == frontline_content::VehicleRole::InfGun
+                && self
+                    .setup
+                    .rules
+                    .supply
+                    .as_ref()
+                    .is_some_and(|s| s.arty_base_rearm == 0);
+            if in_base && !no_base {
                 vs.base_ticks = vs.base_ticks.saturating_add(1);
                 let n = vs.base_ticks as u64;
                 for c in &v.components {
@@ -1808,9 +1816,9 @@ mod tests {
                 "ww2:ger_opel_blitz" | "ww2:usa_cckw" => (2, 0, 3),
                 // S9 served guns: no seat boxes (the crew are soldiers),
                 // one rack box; gun and recoil.
-                "ww2:ger_pak40" | "ww2:usa_57mm_m1" | "ww2:ger_pak38" | "ww2:usa_3in_m5" => {
-                    (0, 1, 2)
-                }
+                // S11a1: the two infantry guns are built the same way.
+                "ww2:ger_pak40" | "ww2:usa_57mm_m1" | "ww2:ger_pak38" | "ww2:usa_3in_m5"
+                | "ww2:ger_leig18" | "ww2:usa_105mm_m3" => (0, 1, 2),
                 // S9 tractor: two crew, no rack; engine and transmission.
                 "ww2:ger_sdkfz11" => (2, 0, 2),
                 _ => (5, 3, 4),

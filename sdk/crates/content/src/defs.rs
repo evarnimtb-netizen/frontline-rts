@@ -16,13 +16,13 @@ use serde::{Deserialize, Serialize};
 use crate::issue::Issue;
 use crate::setup::DigProfile;
 use crate::tuning::{
-    AiAmmoTuning, AiArmourTuning, AiAssaultTuning, AiFortTuning, AiGunsTuning, AiInfantryTuning,
-    AiMortarTuning, AiObstacleTuning, AiReconTuning, AiSupplyTuning, AiTransportTuning,
-    AiTruckTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning, CoverTuning, DigCommonTuning,
-    DrivingTuning, EscortTuning, FireMissionTuning, FireTuning, FormationTuning, GunneryTuning,
-    GunsTuning, MortarTuning, RecrewTuning, ShareTuning, SupplyTuning, SuppressTuning,
-    SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs, VehicleDamageTuning,
-    VehiclePathTuning, check_tuning,
+    AiAmmoTuning, AiArmourTuning, AiArtyTuning, AiAssaultTuning, AiFortTuning, AiGunsTuning,
+    AiInfantryTuning, AiMortarTuning, AiObstacleTuning, AiReconTuning, AiSupplyTuning,
+    AiTransportTuning, AiTruckTuning, BailTuning, BlastTuning, BodyTuning, CallInTuning,
+    CoverTuning, DigCommonTuning, DrivingTuning, EscortTuning, FireMissionTuning, FireTuning,
+    FormationTuning, GunneryTuning, GunsTuning, MortarTuning, RecrewTuning, ShareTuning,
+    SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
+    VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
 
 /// Map side limits (the sim's 64 m tiling).
@@ -713,11 +713,23 @@ pub const MAX_PEN_ROWS: usize = 8;
 /// rising, the lowest first) and the elevation limits (whole degrees, high
 /// angle: 45 to 89). The solver takes the lowest charge that reaches the
 /// target at an elevation inside the limits.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+///
+/// S11a1: a gun's table sets `low_angle = true`: its band may start below
+/// 45 deg (`[0, 73]`), the solver tries each charge's high root and then
+/// its low root, and the weapon may be a cannon. `range_m` (default the
+/// weapon's `range_m`) is the indirect range; `spread_mrad` (default the
+/// weapon's spread) the round scatter of a mission.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IndirectDef {
     pub charges_m_s: Vec<u32>,
     pub elevation_deg: [u32; 2],
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub low_angle: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range_m: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spread_mrad: Option<u32>,
 }
 
 /// Most charges in an `[indirect]` table.
@@ -765,6 +777,10 @@ impl IndirectDef {
             return;
         }
         let [lo, hi] = self.elevation_deg;
+        if self.low_angle {
+            self.check_gun(w, out);
+            return;
+        }
         if !(45..=89).contains(&lo) || !(45..=89).contains(&hi) || lo >= hi {
             out.push(
                 Issue::new(
@@ -812,6 +828,54 @@ impl IndirectDef {
                     ((w.range_m as f64) * 9.81).sqrt().ceil() as u32
                 )),
             );
+        }
+    }
+}
+
+impl IndirectDef {
+    /// S11a1: the checks of a `low_angle` table (a gun's): the band within
+    /// 0..=89 with min < max, a mortar with `[he]` or a cannon, `range_m`
+    /// and `spread_mrad` in range, the highest charge reaching `range_m`.
+    fn check_gun(&self, w: &WeaponDef, out: &mut Vec<Issue>) {
+        let [lo, hi] = self.elevation_deg;
+        if lo > 89 || hi > 89 || lo >= hi {
+            out.push(Issue::new(
+                "indirect.elevation_deg",
+                format!("must be [min, max] within 0..=89 with min < max, got [{lo}, {hi}]"),
+            ));
+            return;
+        }
+        let ok_class =
+            (w.class == WeaponClass::Mortar && w.he.is_some()) || w.class == WeaponClass::Cannon;
+        if !ok_class {
+            out.push(Issue::new(
+                "indirect",
+                "a low_angle table needs a cannon or a mortar with an [he] table",
+            ));
+        }
+        let range = self.range_m.unwrap_or(w.range_m);
+        if !(1..=20_000).contains(&range) {
+            out.push(Issue::new(
+                "indirect.range_m",
+                format!("must be in 1..=20000 m, got {range}"),
+            ));
+            return;
+        }
+        if self.spread_mrad.is_some_and(|v| v > 100) {
+            out.push(Issue::new(
+                "indirect.spread_mrad",
+                "must be in 0..=100 mrad",
+            ));
+        }
+        let top = hi.min(45);
+        let longest = indirect_range_m(*self.charges_m_s.last().expect("non-empty"), top);
+        if longest < range as f64 {
+            out.push(Issue::new(
+                "indirect.range_m",
+                format!(
+                    "no charge reaches {range} m (the highest at {top} deg reaches {longest:.0} m)"
+                ),
+            ));
         }
     }
 }
@@ -1994,6 +2058,9 @@ pub struct AiDef {
     /// S10b-ai: `[ai.obstacles]` (default: the S10b-ai starting values).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub obstacles: Option<AiObstacleTuning>,
+    /// S11a1: `[ai.arty]` (default: the S11a1 starting values, switches off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arty: Option<AiArtyTuning>,
 }
 
 impl AiDef {
@@ -3163,6 +3230,7 @@ impl RulesDef {
                 ai_guns: &a.guns.clone().unwrap_or_default(),
                 ai_fort: &a.fort.clone().unwrap_or_default(),
                 ai_obstacles: &a.obstacles.clone().unwrap_or_default(),
+                ai_arty: &a.arty.clone().unwrap_or_default(),
             },
         );
         match (a.barrage_rounds, &a.mortar) {

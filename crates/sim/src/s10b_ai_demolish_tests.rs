@@ -9,7 +9,9 @@
 //! pieces, so in a match an AI demolition opens one piece, the second
 //! Demolish is refused and the job fails (fortify `s10b_ai.demolish`:
 //! `pieces_used` 1, `gap_opened_pct` 0). These tests check the job logic
-//! with enough satchels, not what a card squad can do.
+//! with enough satchels, not what a card squad can do. B1-0 (owner E3):
+//! with `demolish_handover` a second card squad takes the job over; the
+//! hand-over tests at the end use the card's own satchel.
 
 use super::s6_tests::{run, spawn, steps};
 use super::s10b_ai_sweep_tests::{Attack, attack_world};
@@ -40,10 +42,21 @@ pub(crate) struct Blocked {
 }
 
 pub(crate) fn blocked(edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> Blocked {
+    blocked_with(Some(3), edit)
+}
+
+/// [`blocked`] with the engineer leader's satchels set to `satchels`
+/// (`None`: the card's own, 1).
+fn blocked_with(
+    satchels: Option<u8>,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> Blocked {
     let (mut w, a) = attack_world(|s| {
         let k = ItemKind::Satchel.index();
         for t in s.squad_types.iter_mut().filter(|t| t.id == ENG) {
-            t.members[0].items[k] = 3;
+            if let Some(n) = satchels {
+                t.members[0].items[k] = n;
+            }
         }
         edit(s)
     });
@@ -302,5 +315,150 @@ fn ai_demolish_charge_spares_own_tank() {
         assert!(!after.immobile(&g.setup.vehicles[after.type_idx as usize]));
         assert_eq!(after.components, before.components, "own tank harmed");
         assert_eq!(after.seats, before.seats, "crew harmed");
+    }
+}
+
+// ------------------------------------------------ B1-0 hand-over (E3) --
+
+/// B1-0 (owner S10b-ai-E3): [`blocked`] with the card's own satchel (1 per
+/// squad), `demolish_handover` as given, and (`second`) a second engineer
+/// squad 40 m to the other side; the habit args name both.
+fn handover_world(handover: u32, second: bool) -> (Blocked, DriveArgs, Option<SquadId>) {
+    let mut b = blocked_with(None, |s| s.rules.ai.obstacles.demolish_handover = handover);
+    let k = ItemKind::Satchel.index();
+    let g = b.w.game().unwrap();
+    let carried: u32 = g.squads[&b.eng]
+        .members
+        .iter()
+        .map(|m| b.w.state.entities.kit[m.index()].items[k] as u32)
+        .sum();
+    assert_eq!(carried, 1, "the card carries one satchel");
+    let mut a = args(&b);
+    let eng2 = second.then(|| {
+        let e = b.a.short(150) - b.a.side * Fx::from_int(40);
+        spawn(&mut b.w, 1, ENG, e.x.floor_int(), e.y.floor_int())
+    });
+    a.others.extend(eng2);
+    (b, a, eng2)
+}
+
+/// B1-0: two engineer squads with one satchel each open the 4 m ring: the
+/// first blows a piece, has no satchel left, the job passes to the second
+/// (same pieces, `done`, start), which blows the neighbour; the tank
+/// leaves the ring. Failing control: `demolish_handover` 0 -> one charge,
+/// the job fails (the refused second `Demolish`), no gap (seen).
+#[test]
+fn ai_demolish_hands_over_to_a_second_squad() {
+    for handover in [1u32, 0] {
+        let (mut b, args, eng2) = handover_world(handover, true);
+        let eng2 = eng2.unwrap();
+        let start = tank_pos(&b.w, b.tank);
+        let mut ai = AiState::new(b.w.state.tick);
+        let h = hz(&b.w);
+        let mut handed = false;
+        let mut end = None;
+        for _ in 0..900 {
+            end = drive(&mut b.w, &mut ai, &args, h);
+            if let Some(j) = ai.demolitions.get(&eng2) {
+                handed = true;
+                assert!(j.done >= 1, "{j:?}");
+                assert!(!ai.demolitions.contains_key(&b.eng));
+            }
+            if end.is_some() {
+                break;
+            }
+        }
+        let used = charges_laid(&b.w);
+        let c = &ai.counters;
+        if handover == 0 {
+            assert_eq!(end, Some(HabitEnd::Failed), "control {c:?}");
+            assert!(!handed);
+            assert_eq!((used, c.gaps_opened), (1, 0), "control");
+            continue;
+        }
+        assert!(handed, "no hand-over: {c:?}");
+        assert_eq!(end, Some(HabitEnd::Done), "{c:?}");
+        assert_eq!((c.demolitions_started, c.gaps_opened), (1, 1));
+        assert!(used >= 2, "pieces used {used}");
+        drive(&mut b.w, &mut ai, &args, 60 * h);
+        let moved = (tank_pos(&b.w, b.tank) - start).length();
+        assert!(moved > Fx::from_int(RING_M + 5), "moved {moved:?}");
+    }
+}
+
+/// B1-0: one squad alone with the card's one satchel still fails: after
+/// its piece the job finds no squad to take over and ends (L3, refusal at
+/// the tank), with no `Demolish` sent without a satchel. Failing control:
+/// the same with a second squad -> the job opens the ring (Done; seen).
+#[test]
+fn ai_demolish_one_squad_alone_still_fails() {
+    for second in [false, true] {
+        let (mut b, args, _) = handover_world(1, second);
+        let mut ai = AiState::new(b.w.state.tick);
+        let h = hz(&b.w);
+        let end = drive(&mut b.w, &mut ai, &args, 900 * h);
+        let c = &ai.counters;
+        if second {
+            assert_eq!(end, Some(HabitEnd::Done), "control {c:?}");
+            continue;
+        }
+        assert_eq!(end, Some(HabitEnd::Failed), "{c:?}");
+        assert_eq!((charges_laid(&b.w), c.gaps_opened), (1, 0));
+        assert_eq!(c.s10b_refused, 1);
+        assert!(!ai.refused.is_empty());
+        let g = b.w.game().unwrap();
+        assert!(
+            !matches!(g.squads[&b.eng].order, crate::game::Order::Demolish { .. }),
+            "a Demolish without a satchel"
+        );
+    }
+}
+
+/// B1-0: a save made right after the hand-over (the job keyed by the second
+/// squad, the first free) loads with the AI state in it (`validate_s10b`)
+/// and runs on to the same hash and AI state. Failing control:
+/// `demolish_handover` 0 -> no hand-over happens (the job never moves to
+/// the second squad; seen).
+#[test]
+fn ai_demolish_handover_saves_and_loads() {
+    for handover in [1u32, 0] {
+        let (mut b, args, eng2) = handover_world(handover, true);
+        let eng2 = eng2.unwrap();
+        let mut ai = AiState::new(b.w.state.tick);
+        let h = hz(&b.w);
+        let mut handed = false;
+        for _ in 0..600 * h {
+            if drive(&mut b.w, &mut ai, &args, 1).is_some() {
+                break;
+            }
+            if ai.demolitions.contains_key(&eng2) {
+                handed = true;
+                break;
+            }
+        }
+        if handover == 0 {
+            assert!(!handed, "control");
+            continue;
+        }
+        assert!(handed, "no hand-over: {:?}", ai.counters);
+        // The AI state rides in the save as a match AI's does: player 1
+        // becomes an AI player holding the hook's state (the edited world
+        // is loaded once so its caches agree), then that world is saved and
+        // loaded again; both play on under the match AI (the job goes on).
+        let g = b.w.state.game.as_mut().unwrap();
+        g.setup.players[1].is_ai = true;
+        g.ai[1] = Some(ai.clone());
+        let mut w1 = World::load(&b.w.save(), 1).expect("hand-over save loads");
+        let mut w2 = World::load(&w1.save(), 1).expect("hand-over save loads again");
+        let ai2 = w2.game().unwrap().ai[1].clone().unwrap();
+        assert_eq!(ai, ai2);
+        assert!(ai2.demolitions.contains_key(&eng2) && !ai2.demolitions.contains_key(&b.eng));
+        assert_eq!(w1.state_hash(), w2.state_hash());
+        steps(&mut w1, 60 * h);
+        steps(&mut w2, 60 * h);
+        assert_eq!(w1.state_hash(), w2.state_hash());
+        let ai = w1.game().unwrap().ai[1].clone();
+        let ai2 = w2.game().unwrap().ai[1].clone();
+        assert_eq!(ai, ai2);
     }
 }

@@ -1011,6 +1011,13 @@ fn empty_fort_state_changes_nothing() {
         (f.works, f.wire, f.breach, f.cards) = (0, 0, 0, 0);
         // S10b-ai: its habits off too.
         super::s10a_ai_tests::s10b_ai_off(&mut setup);
+        // S11a1 Build C: and the artillery AI (the fight was found without).
+        let a = &mut setup.rules.ai.arty;
+        (a.buy, a.fo, a.prep) = (0, 0, 0);
+        // S11a2 Build B: and its switches (the fight was found without).
+        (a.ff_safe, a.counter_fire) = (0, 0);
+        let fm = setup.rules.fire_mission.as_mut().unwrap();
+        (fm.friendly_fire, fm.counter_battery) = (0, 0);
         let mut w = World::new_match(setup, 1).unwrap();
         w.state.game.as_mut().unwrap().fort_off = off;
         let mut hashes = Vec::new();

@@ -415,3 +415,178 @@ fn ai_bunker_divert_needs_a_run_that_can_start() {
     assert_eq!(sent, 0, "never sent");
     assert!(!done);
 }
+
+/// Plays the bunker world until the bunker's 250 kg step waits for kg; from
+/// then on the only truck stays in tank service (Follow, loaded,
+/// `bunker_truck_first` 0), so the step waits up to L1. Then AP mines are
+/// switched on and US engineers with 120 kg stand at the point. `yields`
+/// the `[ai.obstacles] bunker_yields` key. (an AP job started while the
+/// bunker job still waited, the AP job's point, counters).
+fn yields_run(yields: u32) -> (bool, Option<u8>, crate::ai::AiCounters) {
+    // S10c-ai C1 made 2 the default; this scene is about one slot.
+    let (mut w, h, bau, b) = yields_world(yields, 1);
+    squad_at(&mut w, ENG, h.pos + c(5, 0), 120);
+    let ap = w
+        .match_setup()
+        .unwrap()
+        .forts
+        .iter()
+        .position(|f| f.id == "ww2:ap_minefield")
+        .unwrap() as u16;
+    let (mut started, mut point) = (false, None);
+    for _ in 0..180 {
+        play(&mut w, 1);
+        let ai = ai_ro(&w);
+        let bunker_waits = ai
+            .forts
+            .get(&bau)
+            .is_some_and(|j| j.fort == b && j.phase == FortPhase::Watch);
+        if let Some(j) = ai
+            .forts
+            .values()
+            .find(|j| j.fort == ap && j.phase != FortPhase::Done)
+        {
+            started = bunker_waits;
+            point = Some(j.point);
+            break;
+        }
+    }
+    (started, point, ai_ro(&w).counters.clone())
+}
+
+/// The bunker world of [`yields_run`] played until the bunker step waits
+/// (truck in service, mines switched on then); `jobs_max` as given.
+/// (world, point, the bunker squad, the bunker blueprint).
+fn yields_world(yields: u32, jobs_max: u32) -> (World, Held, SquadId, u16) {
+    let (mut w, h) = bunker_world(1, |s| {
+        s.rules.ai.obstacles.bunker_yields = yields;
+        s.rules.ai.obstacles.jobs_max = jobs_max;
+        // Two slots: room for three builder jobs (`builders_max` 2 would
+        // stop the third whatever the slots).
+        if jobs_max > 1 {
+            s.rules.ai.fort.builders_max = 4;
+        }
+        s.rules.ai.obstacles.at_mines = 0;
+        let f = &mut s.rules.ai.fort;
+        f.works = 1;
+        f.nest = 0;
+        f.dugout = 0;
+        f.roof = 0;
+        f.sandbags = 0;
+    });
+    let base = w.game().unwrap().base_of(PlayerId(1));
+    let truck = squad_at(&mut w, "ww2:usa_cckw_squad", base, 0);
+    let tv = w.game().unwrap().squads[&truck].members[0];
+    let bau = squad_at(&mut w, BAU, h.pos, 40);
+    let b = bunker(&w);
+    let mut waited = false;
+    for _ in 0..30 * 600 {
+        steps(&mut w, 1);
+        waited = w
+            .game()
+            .unwrap()
+            .fort()
+            .works
+            .values()
+            .any(|k| k.fort == b && k.builder == bau && k.step == crate::fort::WorkStep::Wait);
+        if waited {
+            break;
+        }
+    }
+    assert!(
+        waited,
+        "the bunker step waited for kg: why {:?}",
+        ai_ro(&w).counters.bunker_why
+    );
+    {
+        let t = w.state.tick;
+        let g = w.state.game.as_mut().unwrap();
+        // A full load of shells: Follow never returns on its own.
+        g.vehicles.get_mut(&tv).unwrap().cargo_g = [320_000, 120_000, 40_000];
+        let j = g.ai[1]
+            .as_mut()
+            .unwrap()
+            .trucks
+            .get_mut(&truck)
+            .expect("a truck job");
+        j.phase = crate::ai::TruckPhase::Follow;
+        j.since = t;
+        g.setup.rules.ai.obstacles.bunker_truck_first = 0;
+        g.setup.rules.ai.obstacles.mines = 1;
+    }
+    (w, h, bau, b)
+}
+
+/// S10c-ai C1 (Build C item 1): with two S10b slots (`jobs_max` 2) and the
+/// bunker waiting as in [`yields_run`], two engineers (AT mines on too)
+/// start the AP and the AT field at once beside it: a third S10b job.
+/// Control: `bunker_yields` 0 -> one of them only (the bunker keeps its
+/// slot).
+#[test]
+fn ai_bunker_yields_a_slot_with_two_slots() {
+    let most = |yields: u32| {
+        let (mut w, h, bau, b) = yields_world(yields, 2);
+        w.state
+            .game
+            .as_mut()
+            .unwrap()
+            .setup
+            .rules
+            .ai
+            .obstacles
+            .at_mines = 1;
+        squad_at(&mut w, ENG, h.pos + c(5, 0), 120);
+        squad_at(&mut w, ENG, h.pos + c(-5, 0), 120);
+        let s = w.match_setup().unwrap().clone();
+        let mut most = 0;
+        for _ in 0..180 {
+            play(&mut w, 1);
+            let ai = ai_ro(&w);
+            if !ai
+                .forts
+                .get(&bau)
+                .is_some_and(|j| j.fort == b && j.phase == FortPhase::Watch)
+            {
+                continue;
+            }
+            let n = ai
+                .forts
+                .values()
+                .filter(|j| {
+                    j.phase != FortPhase::Done
+                        && j.fort != b
+                        && s.forts[j.fort as usize].mine_item.is_some()
+                })
+                .count();
+            most = most.max(n);
+        }
+        most
+    };
+    assert_eq!(most(1), 2, "AP and AT beside the waiting bunker");
+    assert_eq!(most(0), 1, "control: bunker_yields 0");
+}
+
+/// B1-0 (owner S10b-ai-E1, `bunker_yields`): while the bunker job waits for
+/// its truck-borne 250 kg (nothing carried by its squad), it gives up the
+/// one S10b job slot (`jobs_max` 1) and an AP field job starts (at the
+/// bunker's point: the only one) while the bunker job stays in Watch.
+/// Control: `bunker_yields` 0 -> no AP job while the bunker waits (the slot
+/// stays taken).
+#[test]
+fn ai_bunker_waiting_for_a_truck_yields_the_job_slot() {
+    let (started, point, c) = yields_run(1);
+    println!(
+        "yields 1: AP job {started} at {point:?}, s10b_jobs {}, why {:?}",
+        c.s10b_jobs, c.bunker_why
+    );
+    assert!(started, "an AP job starts while the bunker waits");
+    let (started, point, c) = yields_run(0);
+    println!(
+        "yields 0: AP job {started} at {point:?}, s10b_jobs {}",
+        c.s10b_jobs
+    );
+    assert!(
+        point.is_none(),
+        "control: bunker_yields 0 -> no AP job while the bunker waits"
+    );
+}

@@ -182,6 +182,7 @@ use frontline_content::ItemKind;
 
 mod ammo;
 mod armour;
+pub(crate) mod arty;
 mod assault;
 mod breach;
 mod demolish;
@@ -204,10 +205,14 @@ pub use transport::{
     AiRideLock, AiRideMeas, AiTransport, MAX_RIDE_MEAS, MAX_TRANSPORTS, TransportPhase,
 };
 
+pub use arty::{AiArty, AiFo, ArtyPhase, MAX_ARTY, MAX_FO};
 pub use breach::{
     AiBreach, BreachEnd, BreachPhase, MAX_BREACH_TRIES, MAX_BREACHES, MAX_WIRE_KNOWN,
 };
-pub use fort::{AiFortJob, BUNKER_WHY, FortPhase, MAX_FORT_JOBS, MAX_FORT_TRIES};
+pub use fort::{
+    AiFortJob, BUNKER_WHY, FRONT_WHY, FortPhase, FrontLane, MAX_FORT_JOBS, MAX_FORT_TRIES,
+    MAX_FRONT_LANES, MINE_WANT_WHY,
+};
 pub use guns::{AiGun, GunPhase, MAX_GUNS, MAX_RECREW_TRIES};
 pub use obstacles::{
     AiDemolish, AiHabit, AiRefusal, AiSweep, DemolishPhase, DriveArgs, HabitEnd, JobKind,
@@ -380,6 +385,16 @@ pub struct AiState {
     /// [`MAX_BLOCKED_PAIRS`]; a pair counts when it first appears (saved,
     /// Build D: a stuck pair is not counted again after a load).
     pub blocked_pairs: Vec<(SquadId, u32)>,
+    /// S10c-ai (spec 3, F2): the saved lanes of the front points, strictly
+    /// ascending by point, at most [`MAX_FRONT_LANES`] (Build B fills it).
+    pub front_lanes: Vec<FrontLane>,
+    /// S11a1 (`ai::arty`, Build C fills it): infantry-gun jobs, by the
+    /// gun's squad (at most [`MAX_ARTY`]).
+    pub arty: BTreeMap<SquadId, AiArty>,
+    /// S11a1: observer teams, by squad (at most [`MAX_FO`]).
+    pub fo: BTreeMap<SquadId, AiFo>,
+    /// S11a1 A3: tick the last observer team was lost (0: none).
+    pub fo_lost_at: u64,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -658,6 +673,66 @@ pub struct AiCounters {
     /// `bunkers_max` and no bunker job, the first check that kept one from
     /// starting; and how bunker jobs ended (`fort::BUNKER_WHY` order).
     pub bunker_why: [u32; 16],
+    /// S10c-ai (docs/slices/S10c-ai.md 3), the refusal split: S10b fort
+    /// jobs ended failed (`s10b_end`), truck give-ups remembered (L5) and
+    /// own-route (R6) rejects that wrote an L3 refusal. `s10b_refused` is
+    /// still their sum plus the sweep and demolition refusals.
+    pub fort_job_fails: u32,
+    pub truck_give_ups: u32,
+    pub route_refusals: u32,
+    /// S10c-ai: plans with at least one front point (`fort::front_points`),
+    /// and of those the plans with no known enemy within `[ai]
+    /// threat_radius` of any front point (counted with `front` 0 too).
+    pub front_plans: u32,
+    pub front_calm_plans: u32,
+    /// S10c-ai (Build B): front jobs started, dropped by the site threat
+    /// rule (F5), ended by the squad gone or under 60 %, resumed (F6).
+    pub front_jobs: u32,
+    pub front_drops: u32,
+    pub front_lost: u32,
+    pub front_resumes: u32,
+    /// S10c-ai (Build B): the first check that kept a wanted front work
+    /// from starting (`fort::FRONT_WHY` order; fix pass 3: a 13th entry,
+    /// `at_wait`, counted beside them).
+    pub front_why: [u32; 13],
+    /// S10c-ai (review finding 12): per plan and own point whose R1 or R2
+    /// field is switched on and not laid, the first check that kept it from
+    /// starting (`fort::MINE_WANT_WHY` order).
+    pub mine_want_why: [u32; 8],
+    /// S10c-ai (Build C): belt jobs started, belt sites rejected by the
+    /// own-route detour rule (C5), builder cards bought by the floor (C3).
+    pub belt_jobs: u32,
+    pub belt_route_rejects: u32,
+    pub builder_buys: u32,
+    /// S11a1 (spec 3; Build C counts them): guns and observer teams
+    /// bought, gun missions ordered, preparation missions of guns and
+    /// mortars, lifts (A6), budget and reserve holds (A5), plans with a
+    /// target and no non-map mode, posts found and failed, observer teams
+    /// lost, breach jobs waiting on preparation fire and wait timeouts (P2).
+    pub arty_buys: u32,
+    pub fo_buys: u32,
+    pub arty_missions: u32,
+    pub arty_prep_missions: u32,
+    pub mortar_prep_missions: u32,
+    pub arty_lifts: u32,
+    pub arty_budget_holds: u32,
+    pub arty_reserve_holds: u32,
+    pub arty_no_observer: u32,
+    pub fo_posts: u32,
+    pub fo_post_fails: u32,
+    pub fo_lost: u32,
+    pub breach_prep_waits: u32,
+    pub breach_prep_timeouts: u32,
+    /// S11a2 (spec 3; Build B counts them): own missions lifted for own
+    /// men (S3), targets the own-men filter passed over (S2), counter-fire
+    /// missions ordered (R3), markers held as too wide or with no new
+    /// evidence, and counter-fire the sim would refuse (R2).
+    pub ff_lifts: u32,
+    pub ff_holds: u32,
+    pub cb_missions: u32,
+    pub cb_wide_holds: u32,
+    pub cb_stale_holds: u32,
+    pub cb_masked: u32,
 }
 
 impl AiState {
@@ -702,6 +777,10 @@ impl AiState {
             refused: Vec::new(),
             suspects_seen: 0,
             blocked_pairs: Vec::new(),
+            front_lanes: Vec::new(),
+            arty: BTreeMap::new(),
+            fo: BTreeMap::new(),
+            fo_lost_at: 0,
         }
     }
 
@@ -853,6 +932,8 @@ impl AiState {
             || !self.validate_fort(g, player, tick)
             // S10b-ai.
             || !self.validate_s10b(g, player, tick, ents_len)
+            // S11a1.
+            || !arty::validate_arty(g, player, tick, &self.arty, &self.fo, self.fo_lost_at)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             // Due one reaction delay after its plan at most (the save fuzz).
             || self.pending.last().is_some_and(|c| {
@@ -924,6 +1005,7 @@ impl AiState {
                     && b.tries <= MAX_BREACH_TRIES
                     && b.suppress_at.is_none_or(|t| t <= tick)
                     && b.smoke_at.is_none_or(|t| t <= tick)
+                    && b.prep_at.is_none_or(|t| t <= tick)
             })
             && self.wire_known.len() <= MAX_WIRE_KNOWN
             && self.wire_known.windows(2).all(|w| w[0] < w[1])
@@ -938,6 +1020,19 @@ impl AiState {
                 .iter()
                 .all(|(&p, &t)| (p as usize) < np && t <= tick)
             && self.material_run.is_none_or(|(id, _)| own(&id))
+            // S10c-ai: front lanes (spec 3): cap, points in range, unique
+            // and ascending, found in the past, sites on the map.
+            && self.front_lanes.len() <= MAX_FRONT_LANES
+            // Fix pass 1 (finding B-5): no lanes with the front rules off.
+            && (self.front_lanes.is_empty() || fort::front_on(&g.setup))
+            && self.front_lanes.windows(2).all(|w| w[0].point < w[1].point)
+            && self.front_lanes.iter().all(|l| {
+                (l.point as usize) < np
+                    && l.since <= tick
+                    && l.ap.iter().chain(l.wire.iter()).all(on_map)
+                    // Fix pass 3 (C-5): the saved AT row line too.
+                    && l.at.iter().flatten().all(on_map)
+            })
     }
 }
 
@@ -1021,6 +1116,7 @@ fn mix_slot(s: &MatchSetup, t: u16) -> Option<usize> {
                     | frontline_content::VehicleRole::Truck
                     | frontline_content::VehicleRole::AtGun
                     | frontline_content::VehicleRole::Tractor
+                    | frontline_content::VehicleRole::InfGun
             )
         });
     if ty.has_tag(s.tag("crew")) || own_buy {
@@ -1126,6 +1222,27 @@ impl MatchState {
         tick: u64,
         out: &mut Vec<crate::Command>,
     ) {
+        // S11a1: a gun mission whose gun is no longer ready when it comes
+        // due (a crew man fell, the gun was packed, its last HE fired) is
+        // withdrawn as a dry mortar mission is (fix C-1: counted in
+        // `fm_dry_drops`, and taken back out of `arty_missions`), so the
+        // sim refuses no AI gun order (T137).
+        let gun_dry: Vec<SquadId> = self
+            .ai
+            .iter()
+            .flatten()
+            .flat_map(|ai| ai.pending.iter().take_while(|c| c.due <= tick))
+            .filter_map(|c| match c.kind {
+                CommandKind::FireMission { squad, .. } => Some(squad),
+                _ => None,
+            })
+            .filter(|q| {
+                self.squads
+                    .get(q)
+                    .is_some_and(|sq| self.gun_indirect_weapon(sq).is_some())
+                    && !self.gun_ready_for_mission(ents, *q)
+            })
+            .collect();
         let squads = &self.squads;
         let setup = &self.setup;
         for (p, ai) in self.ai.iter_mut().enumerate() {
@@ -1139,6 +1256,29 @@ impl MatchState {
                         let CommandKind::FireMission { squad, .. } = &c.kind else {
                             return true;
                         };
+                        if gun_dry.contains(squad) {
+                            // S11a1 fix C-1: a withdrawn gun mission is a
+                            // dry drop, not a mission.
+                            dropped += 1;
+                            let c = &mut ai.counters;
+                            let r = ai.arty.get_mut(squad);
+                            // S11a2 (review A-4): a counter-fire mission
+                            // counts in `cb_missions`, not `arty_missions`.
+                            if r.as_ref().is_some_and(|r| r.cb) {
+                                c.cb_missions = c.cb_missions.saturating_sub(1);
+                            } else {
+                                c.arty_missions = c.arty_missions.saturating_sub(1);
+                            }
+                            if let Some(r) = r {
+                                if r.prep {
+                                    c.arty_prep_missions = c.arty_prep_missions.saturating_sub(1);
+                                }
+                                r.missions = r.missions.saturating_sub(1);
+                                r.prep = false;
+                                r.cb = false;
+                            }
+                            return false;
+                        }
                         let dry = setup.rules.fire_mission.is_some()
                             && squads.get(squad).is_some_and(|sq| {
                                 crate::supply::mortar_bombs(setup, ents, sq).0 == 0
@@ -1154,6 +1294,33 @@ impl MatchState {
             );
             ai.counters.fm_dry_drops += dropped;
         }
+    }
+
+    /// S11a1: whether gun squad `q` is emplaced, its gunner and loader
+    /// seats manned and an HE round aboard (the sim's `NotReady` and
+    /// `NoBombs` checks).
+    fn gun_ready_for_mission(&self, ents: &Entities, q: SquadId) -> bool {
+        let Some(gun) = self
+            .squads
+            .get(&q)
+            .and_then(|sq| sq.members.first().copied())
+        else {
+            return false;
+        };
+        let Some(vs) = self.vehicles.get(&gun) else {
+            return false;
+        };
+        let v = &self.setup.vehicles[vs.type_idx as usize];
+        ents.kind[gun.index()] == crate::ecs::EntityKind::Vehicle
+            && vs
+                .served
+                .as_ref()
+                .is_some_and(|sv| sv.state == crate::vehicle::GunState::Emplaced)
+            && vs.manned(v, frontline_content::SeatRole::Gunner)
+            && vs.manned(v, frontline_content::SeatRole::Loader)
+            && self.gun_he_slot(v).is_some_and(|k| {
+                vs.ammo.get(k as usize).is_some_and(|n| *n > 0) || vs.loaded == Some(k)
+            })
     }
 
     /// Counts a rejected AI command for `player`.
@@ -1301,6 +1468,8 @@ impl Planner<'_> {
 
         // S9: guns, tows and crews are the gun jobs'.
         let guns = self.take_guns(&mut tanks, &mut mine);
+        // S11a1: observer teams are the artillery habit's.
+        self.take_arty(&mut mine);
         self.retreats(&mut mine, &known);
         // S10a-ai: shelled marks, then the fort jobs keep their squads.
         self.fort_marks(&known);
@@ -1326,8 +1495,11 @@ impl Planner<'_> {
         self.buy(&kv);
         self.buy_recon_truck();
         self.buy_gun();
+        self.buy_arty();
         let mut points = self.evaluate_points(&known, &kv);
         self.fort_points(&mut points);
+        // S10c-ai: front exposure (counters only, every plan).
+        self.front_count(&known, &kv);
         self.gun_jobs(&guns, &mut mine, &points, &known, &kv);
         self.fort_holds(&mine, &known, &kv, &mut points);
         let assigned = self.assign(&mine, &mut points);
@@ -1357,7 +1529,12 @@ impl Planner<'_> {
         let loading = self.transport_loads(&waiting, &mine, &assigned, &points, &claimed);
         claimed.extend(loading);
         self.order_infantry(&mine, &assigned, &mut points, &known, &escorting, &claimed);
+        // S11a2 S3: lift every own mission with own men near its target
+        // before the mortar and gun steps (`ff_safe` 1).
+        self.ff_lift();
         self.mortars(&mine, &points, &known);
+        // S11a1: the infantry guns and observers, with the rays left.
+        self.arty(&points, &known);
         self.throws(&mine, &known, &kv);
     }
 
@@ -1458,6 +1635,67 @@ impl Planner<'_> {
 
     // -------------------------------------------------------------- buy --
 
+    /// S10c-ai C3: the builder card the floor buys now (see `buy`), or
+    /// None (`builder_cards_min` 0, habits off, no own point, enough
+    /// builders alive or bought, no such card the AI buys: `ai_weight` 0,
+    /// or an S10a card with `[ai.fort] cards` 0; its mix slot is not
+    /// needed). Fix pass 2 (finding C-6): a living builder squad counts
+    /// only at 60 % strength or more (a weaker one can take no fort job,
+    /// `can_take`); pending buys count.
+    fn builder_floor_card(&self) -> Option<u16> {
+        let g = self.g;
+        let s = &g.setup;
+        let n = s.rules.ai.obstacles.builder_cards_min;
+        if n == 0
+            || !fort::habits_on(s)
+            || !self.build_gate_open()
+            || !g.points.iter().any(|c| c.owner == Some(self.me))
+        {
+            return None;
+        }
+        let is_builder = |t: usize| {
+            let ty = &s.squad_types[t];
+            ty.has(Capability::PlaceMines)
+                && ty.has(Capability::BuildStructure)
+                && !ty.has(Capability::Breach)
+        };
+        let fit = g
+            .squads
+            .values()
+            .filter(|q| {
+                let ty = &s.squad_types[q.type_idx as usize];
+                q.owner == self.me
+                    && is_builder(q.type_idx as usize)
+                    && q.members.len() as u32 * 100 >= 60 * ty.men.max(1) as u32
+            })
+            .count() as u32;
+        let pending = self
+            .ai
+            .pending
+            .iter()
+            .filter(|c| {
+                matches!(c.kind, CommandKind::CallIn { squad_type } if is_builder(squad_type as usize))
+            })
+            .count() as u32;
+        if fit + pending >= n {
+            return None;
+        }
+        let faction = &s.factions[s.players[self.me.0 as usize].faction as usize];
+        faction
+            .roster
+            .iter()
+            .copied()
+            .filter(|&t| {
+                let ty = &s.squad_types[t as usize];
+                is_builder(t as usize)
+                    && ty.ai_weight > 0
+                    && (s.rules.ai.fort.cards != 0 || !fort::is_s10a_card(ty))
+            })
+            .enumerate()
+            .min_by_key(|&(k, t)| (s.squad_types[t as usize].cost, k))
+            .map(|(_, t)| t)
+    }
+
     fn buy(&mut self, kv: &[KnownVehicle]) {
         let g = self.g;
         let s = &g.setup;
@@ -1545,8 +1783,9 @@ impl Planner<'_> {
             })
             .count() as i64;
         let pl = &g.players[p];
-        // S9: the guns' own budget (`ai::guns`) is not for other cards.
-        let mut budget = pl.manpower as i64 - self.gun_pot();
+        // S9: the guns' own budget (`ai::guns`) is not for other cards;
+        // S11a1: nor the infantry guns' (`ai::arty`).
+        let mut budget = pl.manpower as i64 - self.held_pots();
         // S5a: keep `float_mp` back while an own unit waits for a paid
         // refill in the base.
         if self.waiting_refill() {
@@ -1667,6 +1906,18 @@ impl Planner<'_> {
         } else {
             None
         };
+        // S10c-ai C3 (`[ai.obstacles] builder_cards_min` N > 0): with the
+        // fort habits on, an own point (a habit may want works there) and
+        // fewer than N own living builder squads at 60 % strength or more
+        // (`place_mines` and `build_structure`, no `breach`; squads on a
+        // job and pending buys count), the faction's cheapest such card
+        // (roster order on a tie) comes before the weighted pick, if ready,
+        // affordable and inside the pop cap. Fix pass 2 (finding C-6): it
+        // comes after the urgent buys: the urgent breach card first (as
+        // before the floor), then an urgent AT team (more enemy vehicles in
+        // sight than own AT teams and vehicles, an AT card ready), then
+        // the floor.
+        let mut urgent_builder = self.builder_floor_card();
         for _ in 0..self.g.setup.rules.ai.infantry.buys_per_plan {
             if let Some(t) = urgent_breach.take()
                 && ready(t, &bought, &alive_by_type)
@@ -1688,6 +1939,41 @@ impl Planner<'_> {
                         c.bought.resize(s.squad_types.len(), 0);
                     }
                     c.bought[t as usize] += 1;
+                    continue;
+                }
+            }
+            // The urgent AT rule of the weighted pick below, with an AT
+            // card ready: the floor waits for a later buy.
+            let at_due = urgent_builder.is_some()
+                && at_slot.is_some_and(|a| {
+                    mix[a] > 0
+                        && cards[a].iter().any(|&t| ready(t, &bought, &alive_by_type))
+                        && 2 * armoured as i64
+                            > 2 * (count_of(&counts, at_slot) + count_of(&counts, veh_slot))
+                                + pzf_squads
+                });
+            if !at_due
+                && let Some(t) = urgent_builder.take()
+                && ready(t, &bought, &alive_by_type)
+            {
+                let ty = &s.squad_types[t as usize];
+                let men = ty.pop(&s.vehicles) as i64;
+                if budget >= ty.cost as i64 && pop + men <= s.rules.pop_cap as i64 {
+                    self.ai
+                        .emit(self.due, CommandKind::CallIn { squad_type: t });
+                    budget -= ty.cost as i64;
+                    pop += men;
+                    bought.push(t);
+                    alive_by_type[t as usize] += 1;
+                    if let Some(r) = mix_slot(s, t) {
+                        counts[r] += 1;
+                    }
+                    let c = &mut self.ai.counters;
+                    if c.bought.len() < s.squad_types.len() {
+                        c.bought.resize(s.squad_types.len(), 0);
+                    }
+                    c.bought[t as usize] += 1;
+                    c.builder_buys += 1;
                     continue;
                 }
             }

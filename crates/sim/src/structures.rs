@@ -126,7 +126,7 @@ pub struct CookOff {
     /// The player whose HE broke the box (its bursts are his).
     pub player: u8,
     /// `game::kill_class` of that HE.
-    pub class: u8,
+    pub class: u16,
     /// Index into `MatchSetup::ammo`.
     pub ammo: u16,
     pub left: u8,
@@ -474,6 +474,10 @@ impl SupplyState {
                     .ammo
                     .get(k.ammo as usize)
                     .is_none_or(|a| a.blast.is_none())
+                // S11a1: the widened kill class names a class and a type
+                // that exist.
+                || crate::game::kill_class::base(k.class) as usize >= crate::game::kill_class::COUNT
+                || crate::game::kill_class::vehicle(k.class).is_some_and(|t| t >= setup.vehicles.len())
             {
                 return Err("cook-off out of range");
             }
@@ -1807,7 +1811,7 @@ impl MatchState {
         pos: FxVec3,
         cook: bool,
         by: u8,
-        class: u8,
+        class: u16,
     ) {
         let Some(vs) = self.vehicles.get_mut(&id) else {
             return;
@@ -1906,7 +1910,7 @@ impl MatchState {
     /// `he`: the player and kill class of the HE that hit it (a cook-off
     /// when it breaks a box holding shells or explosives); `None`: a
     /// bullet or a solid shot.
-    pub(crate) fn hit_static(&mut self, idx: usize, dmg: u32, he: Option<(u8, u8)>, tick: u64) {
+    pub(crate) fn hit_static(&mut self, idx: usize, dmg: u32, he: Option<(u8, u16)>, tick: u64) {
         let Some(b) = self.statics.0.get(idx).copied() else {
             return;
         };
@@ -2019,7 +2023,7 @@ impl MatchState {
         tick: u64,
         pos: FxVec3,
         player: u8,
-        class: u8,
+        class: u16,
         ammo: u16,
         kg: u32,
         owner: usize,
@@ -2047,7 +2051,7 @@ impl MatchState {
 
     /// Cook-off bursts due at `tick`: `(id, pos, player, class, ammo)`, in
     /// id order; finished cook-offs are dropped.
-    pub(crate) fn due_cookoffs(&mut self, tick: u64) -> Vec<(u32, FxVec3, u8, u8, u16)> {
+    pub(crate) fn due_cookoffs(&mut self, tick: u64) -> Vec<(u32, FxVec3, u8, u16, u16)> {
         let mut out = Vec::new();
         for k in self.supply6.cookoffs.iter_mut() {
             if k.next_tick <= tick && k.left > 0 {

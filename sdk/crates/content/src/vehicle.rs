@@ -343,6 +343,15 @@ impl AmmoMechanism {
     }
 }
 
+/// S11a1: the highest main-gun elevation a vehicle def may name (deg).
+pub const LOW_ANGLE_TOP_DEG: i32 = 89;
+/// S11a1, one rule for the def cross-check and the setup check: a main gun
+/// elevates above +60 deg only when its weapon has a `low_angle` `[indirect]`
+/// table (an infantry gun's high-angle fire).
+pub fn low_angle_top(low_angle: bool) -> i32 {
+    if low_angle { LOW_ANGLE_TOP_DEG } else { 60 }
+}
+
 /// What a vehicle is for (S7: assault guns and tank destroyers; the AI's
 /// habits read it).
 #[derive(
@@ -365,6 +374,10 @@ pub enum VehicleRole {
     AtGun,
     /// S9: a gun tractor (`[tow]`, no weapons needed); outside the limit.
     Tractor,
+    /// S11a1: a served infantry gun or field howitzer (`crew_model =
+    /// "served"`, fire missions through its weapon's `[indirect]`);
+    /// outside the vehicle limit. The AT-gun AI never takes it.
+    InfGun,
 }
 
 impl VehicleRole {
@@ -378,6 +391,7 @@ impl VehicleRole {
             VehicleRole::Truck => "truck",
             VehicleRole::AtGun => "at_gun",
             VehicleRole::Tractor => "tractor",
+            VehicleRole::InfGun => "inf_gun",
         }
     }
 
@@ -390,7 +404,13 @@ impl VehicleRole {
                 | VehicleRole::Truck
                 | VehicleRole::AtGun
                 | VehicleRole::Tractor
+                | VehicleRole::InfGun
         )
+    }
+
+    /// S11a1: a served gun's role (`at_gun` or `inf_gun`).
+    pub const fn is_served_gun(self) -> bool {
+        matches!(self, VehicleRole::AtGun | VehicleRole::InfGun)
     }
 }
 
@@ -1866,10 +1886,14 @@ impl VehicleDef {
                                 .with_hint("elevation_deg = [-8, 20]"),
                         ),
                         Some([lo, hi]) => {
-                            if !(-30..=0).contains(&lo) || !(1..=60).contains(&hi) {
+                            // S11a1: up to +89 here; above +60 needs a main weapon
+                            // with a `low_angle` [indirect] table (`low_angle_top`,
+                            // checked where the weapon is known: `ModSet::cross_check`).
+                            let top = LOW_ANGLE_TOP_DEG;
+                            if !(-30..=0).contains(&lo) || !(1..=top).contains(&hi) {
                                 out.push(Issue::new(
                                     format!("{p}.elevation_deg"),
-                                    format!("must be [-30..=0, 1..=60], got [{lo}, {hi}]"),
+                                    format!("must be [-30..=0, 1..={top}], got [{lo}, {hi}]"),
                                 ));
                             }
                         }
@@ -2279,11 +2303,11 @@ impl VehicleDef {
         let served = self.crew_model == CrewModel::Served;
         let m = &self.mobility;
         let towed = m.kind == MobilityKind::Towed;
-        let gun_role = self.role == VehicleRole::AtGun;
+        let gun_role = self.role.is_served_gun();
         if served != gun_role || served != towed {
             out.push(Issue::new(
                 "crew_model",
-                "role `at_gun`, `crew_model = \"served\"` and `mobility.type = \"towed\"` go together",
+                "role `at_gun` or `inf_gun`, `crew_model = \"served\"` and `mobility.type = \"towed\"` go together",
             ));
         }
         let keys = [
@@ -4017,7 +4041,7 @@ pub(crate) fn check_vehicle(
     {
         return Some("vehicles.seats: missing, repeated or outside the frame");
     }
-    if v.served() != (v.role == VehicleRole::AtGun)
+    if v.served() != v.role.is_served_gun()
         || v.served() != (v.mobility.kind == MobilityKind::Towed)
         || v.service.len() > MAX_SERVICE_SLOTS
         || v.mobility.towed.is_some() != v.served()
@@ -4066,8 +4090,10 @@ pub(crate) fn check_vehicle(
         {
             return Some("vehicles.mounts: main gun not first, wrong class or seat");
         }
+        // S11a1: a gun with a low-angle `[indirect]` table elevates to 89.
+        let top = low_angle_top(ws.indirect.as_ref().is_some_and(|i| i.low_angle));
         let elev_ok = !main
-            || ((-30..=0).contains(&w.elevation_deg[0]) && (1..=60).contains(&w.elevation_deg[1]));
+            || ((-30..=0).contains(&w.elevation_deg[0]) && (1..=top).contains(&w.elevation_deg[1]));
         let ammo_ok = if main {
             (1..=MAX_MAIN_AMMO).contains(&w.ammo.len())
                 && w.ammo
