@@ -24,9 +24,10 @@ With --csv DIR each input JSON is also written to DIR/<block>_<name>.csv
 (seed,side,winner,length_s): small enough to commit, so the pairing can be
 redone after target/ is lost.
 
---detail reads BASE files played with --side-detail and prints, per faction
-and per length bin, wins, mean hold_s, points held at the end and pop at 5
-min: the reading hypothesis H1 needs.
+--detail reads files played with --side-detail and prints, per faction (all
+matches, and split by who won), men alive at 5 and 10 min and foot squads at
+1, 3 and 5 min. hold_s and points held are NOT printed: both are larger for
+whoever won, so they cannot test hypothesis H1.
 """
 import csv
 import json
@@ -156,41 +157,46 @@ def paired(argv):
     line = "%s n=%d base %.1f %% lever %.1f %% diff %+.1f up %d down %d z %+.2f blocks %s" % (
         name, n, 100.0 * gb / n, 100.0 * gl / n, 100.0 * (gl - gb) / n, up, down, z,
         " ".join("%+.1f" % x for x in blocks))
-    if len(bj) == len(files) // 2:
+    if bj:
         bad = floors(pooled(bj, None), pooled(lj, None))
         line += " | floors " + ("ok" if not bad else "FAIL: " + "; ".join(bad))
+        if len(bj) < len(files) // 2:
+            line += " (read on %d of %d blocks: the others are csv)" % (len(bj), len(files) // 2)
     else:
         line += " | floors not read (csv input)"
     print(line)
 
 
 def detail(paths):
-    bins = ((0, 14), (14, 17), (17, 20), (20, 24), (24, 99))
+    """Per faction, all matches and split by who won: men alive at 5 / 10
+    min and foot squads at 1 / 3 / 5 min. Split by winner only to show the
+    spread: the winner has more of everything late, so only the "all" rows
+    and the minute 1-5 columns say anything about the opening (H1)."""
     acc = {}
     for p in paths:
         j = json.load(open(p))
         for m in j["per_match"]:
             if "sides" not in m:
                 sys.exit("%s was not played with --side-detail" % p)
-            mins = m["length_s"] / 60.0
-            b = next(i for i, (lo, hi) in enumerate(bins) if lo <= mins < hi)
             for s in m["sides"]:
                 f = s["faction"]
-                a = acc.setdefault((b, f), {"n": 0, "wins": 0, "hold": 0, "points": 0, "pop5": 0.0, "kills": 0, "losses": 0})
-                a["n"] += 1
-                a["wins"] += 1 if m.get("winner_faction") == f and m.get("result") == "won" else 0
-                a["hold"] += s["hold_s"]
-                a["points"] += s["points_held"]
-                pop = s.get("pop_at_min") or [0]
-                a["pop5"] += pop[0] or 0
-                a["kills"] += s["kills"]
-                a["losses"] += s["losses"]
-    print("bin(min) faction n wins% hold_s points_end pop5 kills losses")
-    for (b, f), a in sorted(acc.items()):
+                won = m.get("result") == "won" and m.get("winner_faction") == f
+                for key in ((f, "all"), (f, "won" if won else "lost")):
+                    a = acc.setdefault(key, {"n": 0, "pop": [0.0, 0.0], "sq": [0.0, 0.0, 0.0], "k": 0, "l": 0})
+                    a["n"] += 1
+                    pop = s.get("pop_at_min") or []
+                    for i in (0, 1):  # minutes 5, 10
+                        a["pop"][i] += (pop[i] if i < len(pop) and pop[i] is not None else 0)
+                    sq = s.get("squads_at_min") or []
+                    for i, k in enumerate((0, 2, 3)):  # minutes 1, 3, 5 of [1, 2, 3, 5, 10]
+                        a["sq"][i] += (sq[k][0] if k < len(sq) and sq[k] else 0)
+                    a["k"] += s["kills"]
+                    a["l"] += s["losses"]
+    print("faction matches n pop5 pop10 squads1 squads3 squads5 kills losses (means; a match shorter than the minute counts 0)")
+    for (f, w), a in sorted(acc.items()):
         n = a["n"]
-        print("%2d-%2d %-12s %3d %5.1f %7.0f %5.2f %5.1f %5.1f %5.1f" % (
-            bins[b][0], bins[b][1], f, n, 100.0 * a["wins"] / n, a["hold"] / n, a["points"] / n,
-            a["pop5"] / n, a["kills"] / n, a["losses"] / n))
+        print("%-12s %-4s %3d %5.1f %5.1f %5.2f %5.2f %5.2f %5.1f %5.1f" % (
+            f, w, n, a["pop"][0] / n, a["pop"][1] / n, a["sq"][0] / n, a["sq"][1] / n, a["sq"][2] / n, a["k"] / n, a["l"] / n))
 
 
 if __name__ == "__main__":

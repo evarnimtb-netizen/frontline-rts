@@ -1,7 +1,7 @@
 # B2 targets (docs/slices/B2-balance.md 6). GENERATED: do not edit by hand.
 #   python3 -I docs/slices/targets/B2-levers/rebase_targets.py target/s11a2-measure > docs/slices/targets/B2.toml
-# A copy of S11b.toml; changed rows (24) carry a `# B2:` line: T30a T30b T30c T30d T31a T31b T31c T31d T40a T40b T40c T40d T54a T54b T54c T54d T54e T54f T72a T72b T97a T97b T97c T97d.
-# Not re-based, with reasons (B2-balance.md 6): T8, T9, T55, T56, T81, T88, T95, T110-T115, T119, T122.
+# A copy of S11b.toml; changed rows (20) carry a `# B2:` line: T30a T30b T30c T30d T31a T31b T31c T31d T40a T40b T40c T40d T54a T54b T54c T54d T54e T54f T72a T72b.
+# Not re-based, with reasons (B2-balance.md 6): T8, T9, T55, T56, T81, T88, T95, T97, T110-T115, T119, T122.
 
 # S11b targets (docs/slices/S11b.md 7, 8), machine-checkable part.
 # A copy of S11a2.toml at 8d2731b (T4-T148 unchanged in value and kind) except:
@@ -443,22 +443,22 @@ kind = "report"
 # Card and vehicle keys are the def ids without the namespace.
 
 # --- T30: the AI buys the new cards in most matches ---------------------------
-# B2: floor 60 -> 40 (rule R on 60.0 / 48.8 / 48.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 60 -> 40 (rule R, x0.85, on 60.0 / 48.8 / 48.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T30a"
 metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
 min = 40
-# B2: floor 60 -> 25 (rule R on 32.5 / 30.0 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 60 -> 25 (rule R, x0.85, on 32.5 / 30.0 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T30b"
 metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
 min = 25
-# B2: floor 60 -> 40 (rule R on 60.0 / 48.8 / 48.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 60 -> 40 (rule R, x0.85, on 60.0 / 48.8 / 48.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T30c"
 metric = "skirmish160_oos.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
 min = 40
-# B2: floor 60 -> 25 (rule R on 32.5 / 30.0 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 60 -> 25 (rule R, x0.85, on 32.5 / 30.0 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T30d"
 metric = "skirmish160_oos.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
@@ -689,22 +689,22 @@ note = "B1 held-out set (seeds 301-380); pooled with T5c-T5e in the log (640, ba
 # cards ger_sdkfz251_1_squad, usa_m3a1_squad; vehicles ger_sdkfz251_1, usa_m3a1.
 
 # --- T40: the AI buys the half-tracks in most matches -------------------------
-# B2: floor 60 -> 25 (rule R on 40.6 / 33.1 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 60 -> 25 (rule R, x0.85, on 40.6 / 33.1 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T40a"
 metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_sdkfz251_1_squad"
 min = 25
-# B2: floor 60 -> 10 (rule R on 13.8 / 15.6 / 17.5). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 60 -> 10 (rule R, x0.85, on 13.8 / 15.6 / 17.5). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T40b"
 metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
 min = 10
-# B2: floor 60 -> 25 (rule R on 40.6 / 33.1 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 60 -> 25 (rule R, x0.85, on 40.6 / 33.1 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T40c"
 metric = "skirmish160_oos.factions.germany.s7_derived.bought_matches_pct.ger_sdkfz251_1_squad"
 min = 25
-# B2: floor 60 -> 10 (rule R on 13.8 / 15.6 / 17.5). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 60 -> 10 (rule R, x0.85, on 13.8 / 15.6 / 17.5). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T40d"
 metric = "skirmish160_oos.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
@@ -987,32 +987,32 @@ min = 60
 # --- T54: tanks keep their place (S8a: half-tracks displaced tanks) ------------
 # Each tank card bought in most matches and its manpower share not collapsed.
 # Baseline: Pz IV 15.9 %, Sherman 14.8 % of manpower; bought in 99-100 %.
-# B2: floor 90 -> 70 (rule R on 89.4 / 86.9 / 88.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 90 -> 80 (rule R, near miss x0.95, on 89.4 / 86.9 / 88.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T54a"
 metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_pz4_h_squad"
-min = 70
-# B2: floor 90 -> 60 (rule R on 76.2 / 73.8 / 76.2). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+min = 80
+# B2 (owner decides, B2-3): floor 90 -> 60 (rule R, x0.85, on 76.2 / 73.8 / 76.2). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T54b"
 metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m4a3_75_squad"
 min = 60
-# B2: floor 11 -> 8 (rule R on 10.0 / 10.0 / 10.2). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 11 -> 9 (rule R, near miss x0.95, on 10.0 / 10.0 / 10.2). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T54c"
 metric = "skirmish160.factions.germany.s7_derived.mp_share_pct.ger_pz4_h_squad"
-min = 8
-# B2: floor 10 -> 5.5 (rule R on 7.0 / 7.0 / 7.4). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+min = 9
+# B2 (owner decides, B2-3): floor 10 -> 5.5 (rule R, x0.85, on 7.0 / 7.0 / 7.4). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T54d"
 metric = "skirmish160.factions.usa.s7_derived.mp_share_pct.usa_m4a3_75_squad"
 min = 5.5
-# B2: floor 80 -> 40 (rule R on 60.0 / 48.8 / 48.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 80 -> 40 (rule R, x0.85, on 60.0 / 48.8 / 48.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T54e"
 metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
 min = 40
-# B2: floor 75 -> 25 (rule R on 32.5 / 30.0 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 75 -> 25 (rule R, x0.85, on 32.5 / 30.0 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T54f"
 metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
@@ -1317,12 +1317,12 @@ max = 5
 # --- T72: the half-track's numbers stay put (S8a T40, T42 stay) ----------------
 # Tick time: T14a keeps its S8a band; the log reports both timing40 figures
 # against S8a after Fix (0.488 all / 0.621 peak; profile a rise above 25 %).
-# B2: floor 60 -> 25 (rule R on 40.6 / 33.1 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 60 -> 25 (rule R, x0.85, on 40.6 / 33.1 / 33.1). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T72a"
 metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_sdkfz251_1_squad"
 min = 25
-# B2: floor 60 -> 10 (rule R on 13.8 / 15.6 / 17.5). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
+# B2 (owner decides, B2-3): floor 60 -> 10 (rule R, x0.85, on 13.8 / 15.6 / 17.5). stale by design: the gun and observer cards (S11a1) and the howitzer (S11b) take the manpower (S11b-10 (A))
 [[target]]
 id = "T72b"
 metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
@@ -1936,26 +1936,22 @@ kind = "report"
 # Share of the AI's infantry squad-plans spent on a fort job. Source: the
 # engineer mix weight 15 of 175 (8.6 % of buys) plus the new cards; 12 % caps
 # it so a weight tune cannot turn line infantry into builders.
-# B2: cap 12 -> 21 (1.1 x the highest of both sides' sets, 16.5 / 16.5 / 16.8 / 18.0 / 18.2 / 18.1). Stale by design: S10c-ai's builder floor (builder_cards_min 2) and front jobs (jobs_max 2) put more plans on fort jobs than the engineer mix weight the 12 came from (owner question B2-4)
 [[target]]
 id = "T97a"
 metric = "skirmish160.factions.germany.s10_derived.builder_share_pct"
-max = 21
-# B2: cap 12 -> 21 (1.1 x the highest of both sides' sets, 16.5 / 16.5 / 16.8 / 18.0 / 18.2 / 18.1). Stale by design: S10c-ai's builder floor (builder_cards_min 2) and front jobs (jobs_max 2) put more plans on fort jobs than the engineer mix weight the 12 came from (owner question B2-4)
+max = 12
 [[target]]
 id = "T97b"
 metric = "skirmish160.factions.usa.s10_derived.builder_share_pct"
-max = 21
-# B2: cap 12 -> 21 (1.1 x the highest of both sides' sets, 16.5 / 16.5 / 16.8 / 18.0 / 18.2 / 18.1). Stale by design: S10c-ai's builder floor (builder_cards_min 2) and front jobs (jobs_max 2) put more plans on fort jobs than the engineer mix weight the 12 came from (owner question B2-4)
+max = 12
 [[target]]
 id = "T97c"
 metric = "skirmish160_oos.factions.germany.s10_derived.builder_share_pct"
-max = 21
-# B2: cap 12 -> 21 (1.1 x the highest of both sides' sets, 16.5 / 16.5 / 16.8 / 18.0 / 18.2 / 18.1). Stale by design: S10c-ai's builder floor (builder_cards_min 2) and front jobs (jobs_max 2) put more plans on fort jobs than the engineer mix weight the 12 came from (owner question B2-4)
+max = 12
 [[target]]
 id = "T97d"
 metric = "skirmish160_oos.factions.usa.s10_derived.builder_share_pct"
-max = 21
+max = 12
 
 # --- T98: materials do not starve the economy --------------------------------
 # Source: S10a-18 (A): materials at most [ai.fort] materials_max_pct (3) of the

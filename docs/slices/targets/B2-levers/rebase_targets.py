@@ -13,8 +13,9 @@ of matches) or 0.5 (manpower share), never above the old floor. One 160 set
 has a standard error of about 3-4 points on such a share, so 15 % is two to
 three of them: the floor guards against further displacement, it is not a
 design goal (the old bound stays in the comment as the unmet design figure).
-T97 (cap): 1.1 x the highest of both sides' three sets, rounded up to a whole
-number (one cap for all four rows).
+A near miss (the lowest set within 10 % of the old floor) takes 0.95 instead of
+0.85: a row that almost holds is not loosened far. T97 is NOT re-based (B2-4).
+These bounds live only in B2.toml; no older target file is changed.
 --applied (run 2, only when B2 changed a default): T5c, T5d, T5e become the
 hard per-set band 40-60.
 """
@@ -40,7 +41,7 @@ FLOORS = {
     "T54c": ("germany", M + "ger_pz4_h_squad", 0.5), "T54d": ("usa", M + "usa_m4a3_75_squad", 0.5),
     "T54e": ("germany", B + "ger_stug3_g_squad", 5), "T54f": ("usa", B + "usa_m10_squad", 5),
 }
-CAPS = {"T97a": "germany", "T97b": "usa", "T97c": "germany", "T97d": "usa"}
+CAPS = {}
 NOTES = {
     "T31a": 1, "T31b": 1, "T31c": 1, "T31d": 1,
 }
@@ -86,19 +87,11 @@ def main():
                 f, path, step = FLOORS[tid]
                 vals = [get(s, f, path) for s in sets]
                 old = next(float(b.split("=")[1]) for b in block if b.startswith("min = "))
-                new = min(old, math.floor(0.85 * min(vals) / step) * step)
+                near = min(vals) >= 0.9 * old
+                new = min(old, math.floor((0.95 if near else 0.85) * min(vals) / step) * step)
                 block = ["min = %s" % fmt(new) if b.startswith("min = ") else b for b in block]
-                note = "# B2: floor %s -> %s (rule R on %s). %s" % (
-                    fmt(old), fmt(new), " / ".join("%.1f" % v for v in vals), WHY)
-            elif tid in CAPS:
-                vals = [s["factions"][f]["s10_derived"]["builder_share_pct"] for f in ("germany", "usa") for s in sets]
-                old = next(float(b.split("=")[1]) for b in block if b.startswith("max = "))
-                new = max(old, math.ceil(1.1 * max(vals)))
-                block = ["max = %s" % fmt(new) if b.startswith("max = ") else b for b in block]
-                note = ("# B2: cap %s -> %s (1.1 x the highest of both sides' sets, %s). Stale by design: S10c-ai's builder floor "
-                        "(builder_cards_min 2) and front jobs (jobs_max 2) put more plans on fort jobs than the "
-                        "engineer mix weight the 12 came from (owner question B2-4)" % (
-                            fmt(old), fmt(new), " / ".join("%.1f" % v for v in vals)))
+                note = "# B2 (owner decides, B2-3): floor %s -> %s (rule R, %s, on %s). %s" % (
+                    fmt(old), fmt(new), "near miss x0.95" if near else "x0.85", " / ".join("%.1f" % v for v in vals), WHY)
             elif tid in NOTES:
                 block = ['note = "%s"' % T31_NOTE if b.startswith("note = ") else b for b in block]
                 note = "# B2: note only (T31 is settled as a report; see the note)"
@@ -123,7 +116,7 @@ def main():
         "#   python3 -I docs/slices/targets/B2-levers/rebase_targets.py %s%s > docs/slices/targets/B2.toml" % (
             args[0], " --applied" if applied else ""),
         "# A copy of S11b.toml; changed rows (%d) carry a `# B2:` line: %s." % (len(changed), " ".join(changed)),
-        "# Not re-based, with reasons (B2-balance.md 6): T8, T9, T55, T56, T81, T88, T95, T110-T115, T119, T122.",
+        "# Not re-based, with reasons (B2-balance.md 6): T8, T9, T55, T56, T81, T88, T95, T97, T110-T115, T119, T122.",
         "",
     ]
     want = set(FLOORS) | set(CAPS) | set(NOTES) | ({"T5c", "T5d", "T5e"} if applied else set())

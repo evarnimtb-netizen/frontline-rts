@@ -8,7 +8,6 @@
 #   queue.sh check                 # every lever file loads; prints what it changes
 #   queue.sh BLOCK NAME...         # BLOCK: first seed (2001, 2101, 2201); 80 seeds, both bases
 #   queue.sh --dry BLOCK NAME...   # prints the commands only
-#   queue.sh diag40 NAME           # seeds 2001-2020 both bases (40 matches), base and NAME
 #
 # NAME is a file of this folder without .toml; "a+b" applies a.toml then
 # b.toml (a combination). The base is always played first, with
@@ -43,7 +42,7 @@ play() { # OUT.json SEED SEEDS [-o FILE]...
 }
 
 block() { # DIR SEED SEEDS NAME...
-    local dir=$1 seed=$2 seeds=$3 name o
+    local dir=$1 seed=$2 seeds=$3 name o tag
     shift 3
     play "$dir/base.json" "$seed" "$seeds" || { echo "base failed"; return 1; }
     for name in "$@"; do
@@ -52,7 +51,13 @@ block() { # DIR SEED SEEDS NAME...
         play "$dir/$name.json" "$seed" "$seeds" $o || { echo "$name failed"; continue; }
         [ -n "$DRY" ] && continue
         mkdir -p "$R"
-        python3 -I "$L/paired.py" --csv "$R" "$name@$(basename "$dir")" "$dir/base.json" "$dir/$name.json" | tee -a "$R/paired.txt"
+        tag="$name@$(basename "$dir")"
+        # A resumed queue reads a lever again: its old line is replaced, not repeated.
+        if [ -f "$R/paired.txt" ]; then
+            grep -v -F -- "$tag " "$R/paired.txt" >"$R/paired.txt.tmp" || true
+            mv "$R/paired.txt.tmp" "$R/paired.txt"
+        fi
+        python3 -I "$L/paired.py" --csv "$R" "$tag" "$dir/base.json" "$dir/$name.json" | tee -a "$R/paired.txt"
     done
 }
 
@@ -69,11 +74,8 @@ case "${1:-}" in
         done
         exit $rc
         ;;
-    diag40)
-        block target/b2/d2001 2001 20 "${2:?usage: queue.sh diag40 NAME}"
-        ;;
     "" | -h | --help)
-        sed -n 2,18p "$0"
+        sed -n 2,17p "$0"
         exit 2
         ;;
     *)

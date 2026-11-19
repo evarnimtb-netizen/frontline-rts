@@ -1,5 +1,8 @@
-# B2 lever A4 (tier 1, symmetric). [ai.arty] income_max_pct 15 -> 30
+# B2 lever A4 (tier 1, symmetric; OPTIONAL, the first lever cut). [ai.arty] income_max_pct 15 -> 30
 # (range 15-30). Why: the S11b diagnosis read Germany 57.5 % on ONE 40 set
-# with it (noise of a 40 set: +-15 points); S11b-10 (B). Tests hypothesis H4.
+# with it (noise of a 40 set: +-15 points); S11b-10 (B). Probably near inert:
+# the key governs only the infantry-gun card (max_guns 1, bought in 99-100 %
+# of matches), not shells (shell_mp_max_pct, never binding: budget holds 0).
+# Its counter: the gun is bought earlier, so the vehicle cards bought a match.
 [ai.arty]
 income_max_pct = 30

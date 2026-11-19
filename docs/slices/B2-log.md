@@ -10,21 +10,30 @@ Branch `claude/project-thread-e7nsak`. Another agent may work in this checkout: 
 - BASE is the S11b head at that time (not known when this was written). Run 1 chunk 0 records the commit, the batch world
   key and BASE's pooled share.
 - Hypotheses, in order (plan 2): H1 the USA wins the first clash with the free start squads and the forts keep the lead
-  (Germany wins 24.6 % of the 114 matches that end at 14-17 min, 47.0 % of the other 366); H2 a Rifle Squad beats a
-  Grenadiergruppe by more than its price, slot for slot (B1: `line` 70 cost Germany 13 points); H3 US vehicle MGs, and a
-  suspect M3A1 kill count; H4 artillery is not the cause; H5 pop cap; H6 builder cards.
-- Screen order on block 2001-2080: base (`--side-detail`), `diag_ger_start3`, `mix_line35`, `mix_vehicle30`, then the 40-set
-  `diag_m3a1_w0`, then `arty_share30`, `ger_line_vg150`, `ger_line_g7_150`, then `own_pop170`, `own_ger_price95`, `mix_mg30`.
+  (weak: the 14-17 minute bin was picked after looking; tested by `diag_ger_start3`); H2 a Rifle Squad beats a
+  Grenadiergruppe slot for slot (B1: `line` 70 cost Germany 13 points); H3 the 57 mm's armed M3A1 tow makes 5.7 of the USA's
+  12.8 vehicle-MG kills a match (tested by `own_57mm_truck_tow`, owner class); H4 artillery is not the cause; H5 pop cap;
+  H6 builder cards.
+- Run 1, six 160 sets on block 2001-2080: base (`--side-detail`), `mix_line35`, `own_57mm_truck_tow`, `diag_ger_start3`,
+  `mix_vehicle30`, `ger_line_g7_150`. Optional after them: `mix_line42` (dose rule), `ger_line_vg150`, `own_ger_price95`,
+  `mix_mg30`, `own_pop170`, `arty_share30`.
 - Pass mark of the screen: paired gain at least +5 points in the predicted direction, `floors ok`, own counter moved. At
-  most two tier 1 candidates go to run 2. Owner-class files and diagnostics are logged only.
-- Confirmation (run 2): fresh 320 gain at least +4 and z at least 1.64, positive in both blocks; all 480 z at least 2.5;
-  level 45-55; floors. Then the orchestrator's judge on seeds 1-280 and the held-out set 301-380.
-- Not checked by a CLI run (the plan was written while S11b was building): every lever file (parsed as TOML only; ids and
-  keys checked by eye against `mods/`), `queue.sh check`, `paired.py --detail`. `paired.py`'s pairing, floors and CSV output
-  were run on `target/s11a2-measure/skirmish40*.json` (c_off: +7.5, up 11 down 8, z +0.69, as counted by hand).
-- `B2.toml` was generated from `target/s11a2-measure`; run 2 makes it again from BASE's measure.
+  most two tier 1 candidates go to run 2. Owner-class files and diagnostics are logged only, never applied.
+- Confirmation (run 2, at most seven sets): on the fresh 320 alone z at least 1.64 and positive in both blocks, level 45-55,
+  floors. Then the orchestrator's judge on seeds 1-280 and the held-out set 5001-5080.
+- Not checked by a CLI run: every lever file (parsed as TOML only), `queue.sh check`, `paired.py --detail`. `paired.py`'s
+  pairing, floors and CSV output were run on `target/s11a2-measure/skirmish40*.json`.
+- `B2.toml` was generated from `target/s11a2-measure` (16 floors re-based, T31 notes); run 2 makes it again from BASE's measure.
 
 ## Plan (2026-11-19)
 Evidence read: `target/s11a2-measure` (three 160 sets and the 40-set controls), `target/s10c-verify`, B1 log history
 (`git log --follow docs/slices/B1-log.md`), S11a1, S11a2, S11b logs, `crates/sim/src/ai.rs` `buy` and `builder_floor_card`.
 No match was played and neither cargo nor the CLI was run. Owner questions B2-1..8 are in `docs/TODO.md`, each on (A).
+
+## Plan revision (2026-11-19, after an independent review: 3 major, 7 minor; all verified in the files)
+1 H3 rewritten: every 57 mm card brings an armed M3A1 tow (`usa_57mm_m1_squad.toml` `tow`); `diag_m3a1_w0` and the counting-fault
+rule dropped; `own_57mm_truck_tow` added (owner class). 2 H1 marked as a selection effect; `--detail` prints `pop_at_min` and
+`squads_at_min`, no `hold_s`. 3 `arty_share30` near inert: optional, first cut. 4 The dose is chosen on the screen block.
+5 The fresh-block z is the one guard; the 480 line is a description. 6 Held out 5001-5080 (301-380 was played by S6b).
+7 Near misses take 0.95 (T54a 80, T54c 9); T97 not re-based. 8 `mkdir -p target/b2`; `queue.sh` replaces a resumed line;
+`paired.py` reads floors on the JSON blocks it has. 9 Run 1 six sets, run 2 at most seven. 10 `ger_line_vg150` is owner class.

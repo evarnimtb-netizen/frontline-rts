@@ -4,7 +4,7 @@ Written 2026-11-19 by the Plan stage; nothing was played for it (S11b was being 
 from files that already exist: `target/s11a2-measure/*.json` (480 matches at `e149258`), `target/s10c-verify/*.json`, the B1 log
 (all its versions in git) and the S11a1, S11a2 and S11b logs. Stage contracts: `B2-run-1.md` (screen), `B2-run-2.md` (confirm and
 apply). Lever files, the paired reader and the queue: `docs/slices/targets/B2-levers/`. Targets: `targets/B2.toml`. Log `B2-log.md`.
-Roadmap: `docs/TODO.md` item 14 (fine balance to 45-55 % and the soft per-unit targets). Owner questions B2-1..8 in section 9.
+Roadmap: `docs/TODO.md` item 14 (fine balance to 45-55 % and the soft per-unit targets). Owner questions B2-1..8 in section 9. Revised the same day after an independent review (3 major, 7 minor findings; log).
 
 **The pass runs on the S11b head** (after its stage C, review and 480 measure; called BASE below). It changes TOML only: no sim
 code, no SAVE or PROTOCOL change. If it needs code, it stops and says so (section 8).
@@ -37,18 +37,19 @@ and artillery budgets, mortar results, base side (its lean flips sign between se
 Germany**: its infantry costs 33.0 MP a man bought (USA 46.5), so 81.3 men lost are about 2,680 MP against 65.7 x 46.5 = 3,055 MP
 for the USA. Germany loses matches while winning the attrition by value: the gap is ground held, not men.
 
-**H1 (first). The USA wins the first clash with the free start squads, and the fortification AI then keeps that lead.**
-- Evidence. By match length (480): under 14 min Germany wins 43.6 % (n 55); **14-17 min 24.6 % (28 of 114)**; 17-20 min 49.6 %
-  (117); 20-24 min 46.2 % (104); over 24 min 46.7 % (90). Outside the 14-17 minute bin Germany wins 47.0 % of 366. A match
-  that ends at 14-17 min is 500 tickets drained at 40 a minute: a two-point lead held from about minute 3 to the end. The USA
-  wins 86 of those, Germany 28. The start force is 32 men with 27 Garands and 2 BARs against 28 men with 20 Kar 98k and 2 MG 42;
-  by the ranking rule in `ai.rs` `buy` (read, not measured) both AIs' first buys are a mortar team and an MG team, not line squads.
-  B1: Germany wins 37 % of matches under 20 min, 48.5 % of the longer ones; `after600` (no forts for 10 min) turned the
-  under-20 matches from 48 / 33 to 67 / 31; the gap appeared in one step when the AI began to fortify (48.75 to 41.67 %).
-- Experiment (free): the base of the screen block is played with `--side-detail`; `paired.py --detail` prints wins, `hold_s`,
-  points and pop at 5 min per faction and length bin. H1 holds if the 14-17 bin shows the USA with the larger `hold_s` at
-  equal pop. Plus one diagnostic 160 set, `diag_ger_start3` (a third free Grenadiergruppe; never a candidate): H1 predicts at
-  least +10 points and the 14-17 bin near even.
+**H1 (first, but weakly supported). The USA wins the first clash with the free start squads, and the forts then keep that lead.**
+- Evidence. US wins are shorter: median 17.8 min against 19.6 for German wins. Matches that end at 14-17 min go to Germany in
+  28 of 114, all others in 172 of 366 (47.0 %). **That bin was picked after looking at the data, and "the faster winner's
+  matches are short" follows from the USA winning more: it is a selection effect, not proof of an opening.** What does not
+  depend on the bin: the start force is 32 men with 27 Garands and 2 BARs against 28 men with 20 Kar 98k and 2 MG 42; by the
+  ranking rule in `ai.rs` `buy` (read, not measured) both AIs' first buys are a mortar team and an MG team, not line squads;
+  B1's `after600` (no forts for 10 min) turned the under-20-minute matches from 48 / 33 to 67 / 31; the gap appeared in one
+  step when the AI began to fortify (48.75 to 41.67 %).
+- Experiment. The real test is one diagnostic 160 set, `diag_ger_start3` (a third free Grenadiergruppe; never a candidate):
+  H1 predicts at least +10 points. Beside it, free: the base is played with `--side-detail` and `paired.py --detail` prints
+  per faction men alive at 5 and 10 min (`pop_at_min`) and foot squads at 1, 3 and 5 min (`squads_at_min`), with kills and
+  losses. `hold_s` and `points_held` are NOT used: both are larger for whoever won, so they cannot test H1. No counter gives
+  points held or kills by minute; adding one is code and out of this pass.
 
 **H2. A Rifle Squad out-fights a Grenadiergruppe by more than its price, slot for slot.**
 - Evidence. The table: US rifles kill 48.3 a match against 28.9; the MG 42 that replaces three rifles in a Gruppe kills at a
@@ -59,20 +60,26 @@ for the USA. Germany loses matches while winning the attrition by value: the gap
 - Experiment: `mix_line35` on 160 (H2 predicts Germany up); `ger_line_vg150` and `ger_line_g7_150` say which German line card
   serves the slot best.
 
-**H3. US vehicle machine guns kill twice as much with fewer rounds; the M3A1 figure may be a counting fault.**
-- Evidence. Vehicle MG kills 12.8 against 6.7 a match. `kills_by_vehicle_pct.usa_m3a1` is 7.0 % of US kills (950 in 160
-  matches) with the card bought in 13.75 % of matches: about 36 kills a half-track bought, against 0.4 for the Sd.Kfz. 251/1
-  (23 kills, bought in 40.6 %). The share was 7.3 % at S10c-ai when the card was bought in 34-41 % of matches: it did not
-  fall when the buys halved, which a real effect would.
-- Experiment: `diag_m3a1_w0` on a 40 set (2.5 min). Share still near 7 %: the kills are booked to the wrong vehicle (CLI
-  fault, B2-8; T33, T55 and T56 vehicle rows are then suspect). Share 0 and Germany up: the M3A1 is real and strong.
+**H3. The 57 mm gun's armed tow.** Every US 57 mm card arrives behind an M3A1 with its .50 (`usa_57mm_m1_squad.toml` `tow`, owner
+choice S9-3 (A)); the Pak 40's tow, the Sd.Kfz. 11, is unarmed.
+- Evidence. About 290 guns bought per 160 matches bring about 314 M3A1 hulls with the 22 bought as cards; 950 kills are about
+  3 a hull. The M3A1 makes 5.7 of the USA's 12.8 vehicle-MG kills a match, most of the 6.1 gap to Germany's 6.7. Its share
+  of kills (7.0 %) did not fall when the card's own buys halved, because the hulls come with the guns. It is a real
+  asymmetry, not a counting fault; T33, T55 and T56 are sound.
+- Experiment: `own_57mm_truck_tow` on 160 (owner class, screened only): the gun card's `tow` becomes the unarmed CCKW (S9-3
+  option B). The override is one line, `[defs.units."ww2:usa_57mm_m1_squad"] tow = "ww2:usa_cckw_squad"`; the truck's `[tow]
+  max_kg` 3000 carries the gun's 1,230 kg. Not checked by a CLI run: `queue.sh check` must show the change, and run 1 logs
+  what the AI does with a tow whose role is "truck".
 
 **H4. Artillery is not the cause; its income share may be a lever.**
 - Evidence. Germany 40.00 % before the artillery AI and 41.67 % with it. Kills fell on both sides (Germany -4.8, USA -2.5 a
   match at 480); the USA lost more vehicle buys (-0.71 a match against -0.40). US counter-fire 2.3 missions a match against
   1.2, shells 6.8 % of income against 2.6 %. `income_max_pct` 30 read 57.5 % on one 40 set, which is inside a 40 set's noise.
-- Experiment: `arty_share30` on 160 paired. S11b's own ablations (`how_off`, `rg_off`, `light_off`, `how_share_10`) are read
-  from the orchestrator's S11b measure, not replayed.
+- Experiment: none in the fixed queue. `arty_share30` is close to inert: `income_max_pct` governs only the infantry-gun card
+  (`max_guns` 1, bought in 99-100 % of matches), and shells have their own cap (`shell_mp_max_pct` 25, never binding: budget
+  holds 0). It can only move the time of the first gun buy; its counter is the vehicle cards bought a match. It is the first
+  lever cut (optional slot). S11b's own ablations (`how_off`, `rg_off`, `light_off`, `how_share_10`) are read from the
+  orchestrator's S11b measure, not replayed.
 
 **H5. Germany's price cut turns into men it cannot field.** Germany is held by the pop cap 11.7 plans a match (USA 0), pop at
 20 min 120 against 104. But Germany wins 46.7 % of the long matches, where the cap binds most: weak. Experiment: `own_pop170`
@@ -82,7 +89,7 @@ for the USA. Germany loses matches while winning the attrition by value: the gap
 the full Engineer Squad for the USA (7 Garands, an SMG, a satchel, 280 MP, 2.6 a match), so the USA's builders also fight.
 B1 found no fort setting that helps; not screened again. Recorded for the owner (section 9, B2-2).
 
-Expected outcome, said first: H1 and H2 point at unit content (start squads, squad make-up), which the pass may not change.
+Expected outcome, said first: H1, H2 and H3 point at unit content (start squads, squad make-up, a gun's tow), which the pass may not change.
 The tier 1 levers act on the later buys, not on the first clash. B2 may end as B1 did, with a sharper diagnosis and measured
 owner-class levers. That is a valid result (section 8).
 
@@ -91,15 +98,14 @@ owner-class levers. That is a valid result (section 8).
 **Tier 1: the pass may apply these** (TOML, an AI habit or a card's buy weight, inside the range given; none is a price, a
 weapon, a squad's make-up, a start squad, a cap or an economy value).
 
-| File (`B2-levers/`) | Key | Now | Screened at | Range | Tests |
+| File (`B2-levers/`) | Key | Now | Screened at | Range | Tests; own counter |
 |---|---|---|---|---|---|
-| `mix_line35` | `[ai.mix] line` | 50 | 35 | 35-50 | H2; B1 L5 measured 60 and 70 |
-| `mix_vehicle30` | `[ai.mix] vehicle` | 20 | 30 | 20-30 | S11b-10 displacement; T30, T40, T54 |
-| `arty_share30` | `[ai.arty] income_max_pct` | 15 | 30 | 15-30 | H4 |
-| `ger_line_vg150` | VG-Sturmgruppe `ai_weight` | 50 | 150 | 50-150 | H2 (8 StG 44 a slot) |
-| `ger_line_g7_150` | Grenadiergruppe (7) `ai_weight` | 50 | 150 | 50-150 | H1, H2 (an MG 42 per 165 MP) |
-| `mix_mg30` (optional, last) | `[ai.mix] mg` | 20 | 30 | 20-30 | splits "fewer line" from "more MG" |
-| `mix_line42` (run 2 only) | `[ai.mix] line` | 50 | 42 | | the middle dose if 35 overshoots |
+| `mix_line35` | `[ai.mix] line` | 50 | 35 | 35-50 | H2 (B1 L5 measured 60 and 70); line cards bought a match |
+| `mix_vehicle30` | `[ai.mix] vehicle` | 20 | 30 | 20-30 | S11b-10 displacement, T30, T40, T54; tanks and TDs bought |
+| `ger_line_g7_150` | Grenadiergruppe (7) `ai_weight` | 50 | 150 | 50-150 | H1, H2 (an MG 42 per 165 MP); that card's buys |
+| `mix_line42` (run 1, optional) | `[ai.mix] line` | 50 | 42 | | the middle dose, only if 35 passes above 53 % |
+| `arty_share30` (optional, first cut) | `[ai.arty] income_max_pct` | 15 | 30 | 15-30 | H4, near inert; vehicle cards bought |
+| `mix_mg30` (optional, last) | `[ai.mix] mg` | 20 | 30 | 20-30 | splits "fewer line" from "more MG"; MG teams bought |
 
 Symmetric keys act differently because the rosters differ; card weights are per faction, as S7-2, S8a-21 and B1's L6 / L7 were.
 
@@ -107,10 +113,11 @@ Symmetric keys act differently because the rosters differ; card weights are per 
 
 | File | Change | Whose decision |
 |---|---|---|
-| `own_pop170` | `pop_cap` 150 to 170 | owner, S4 Q6 |
-| `own_ger_price95` | the nine German infantry cards x0.95 (the S6 tune's knob) | owner, S5a-37; B1 limit "no price of an existing card" |
+| `own_57mm_truck_tow` | the 57 mm card towed by the unarmed CCKW (H3) | owner, S9-3 |
+| `ger_line_vg150` | VG-Sturmgruppe `ai_weight` 50 to 150: the 309 MP squad becomes Germany's most-bought line card | owner (how the faction plays) |
+| `own_pop170` (optional) | `pop_cap` 150 to 170 | owner, S4 Q6 |
+| `own_ger_price95` (optional) | the nine German infantry cards x0.95 (the S6 tune's knob) | owner, S5a-37; B1 limit "no price of an existing card" |
 | `diag_ger_start3` | a third free Grenadiergruppe (diagnostic) | owner (how a faction opens) |
-| `diag_m3a1_w0` | the AI never buys the M3A1 (diagnostic, 40 set) | not a change |
 
 **Not moved, not screened**: weapons, ammunition, armour, penetration, lethality, squad make-up, card cooldowns, `max_alive`,
 `unlock_s`, `[economy]`, tickets, capture, the map, `[ai.guns]` (owner Q4 of B1), every `[ai.fort]` and `[ai.obstacles]` key
@@ -131,17 +138,19 @@ sqrt(0.38 / n), barely under an unpaired one. z = (up - down) / sqrt(up + down),
 | 480 | 2.25, +-4.5 | 2.8 | 5.6 | 7.0 |
 
 Consequences, fixed before any run:
-- A 40 set decides nothing about the share (only the H3 counter, a 7-point share against 0, is read from one).
+- A 40 set decides nothing about the share; the pass plays none.
 - The gap to the band's edge is 3.3 points; no affordable run can prove a 3-point gain. **The pass aims at 47-53 %** (a gain of
-  6-8 points), which 480 paired matches can show at z 2.5 (B2-6). A lever that gives +3 is left for the owner, not applied.
+  6-8 points), which 320 fresh pairs can show at z 1.64 (about +5.7) and the judges then test again (B2-6). A lever that gives +3 is left for the owner, not applied.
 - A 160 screen cannot confirm anything. It only ranks. Its false-positive rate at the pass mark below is about 1 in 7 per
-  lever, so with 6-8 levers one false pass is expected: the confirmation is on matches the screen never saw.
+  lever, so with five or six levers about one false pass is expected: the confirmation is on matches the screen never saw.
 
 ## 5. Method and decision rule (fixed in advance)
 
 Seeds. Screen block S 2001-2080; fresh blocks F1 2101-2180 and F2 2201-2280 (each 80 seeds x both bases = 160 matches; B1 used
-1001-1280). Judges 1-80, 101-180, 201-280: played only by the orchestrator's measure, never to search. Held out 301-380 (B1's,
-never played): once, after acceptance. The base of every block is BASE unchanged, played with `--side-detail`.
+1001-1280). Judges 1-80, 101-180, 201-280: played only by the orchestrator's measure, never to search. **Held out 5001-5080**,
+once, after acceptance: B1's block 301-380 was already played by S6b (`S6b-log.md` line 61). Checked by a search of `docs/`,
+`tools/`, `mods/` and the CLI sources for seed numbers: none at 3000 or above is used anywhere. The base of every block is BASE
+unchanged, played with `--side-detail`.
 
 **Screen (run 1).** Each lever at its far end on block S against the base. A lever goes on to confirmation if all hold:
 1. the sign is the predicted one and the paired gain for Germany is at least **+5 points** (z about 1.0);
@@ -153,45 +162,50 @@ never played): once, after acceptance. The base of every block is BASE unchanged
 3. its own counter moved (the buys or the mix it changes; a lever that changes no purchase is inert and dropped).
 At most the **two best** tier 1 levers go on, by paired gain. A combination of two is a new candidate and may go on as the
 second one only if both parts passed alone. Owner-class levers and diagnostics are logged, never confirmed or applied.
+**The dose is chosen here, on the screen block only**: if a passing lever puts Germany above 53 % on block S, run 1 plays its
+middle dose (`mix_line42`, or the midpoint of the range) on block S; the dose that passes the three rules with its level
+nearer 50 is the candidate. F1 and F2 never choose a dose.
 
-**Confirm (run 2).** The candidate on F1 and F2 against their bases (320 fresh pairs). It is applied only if all hold:
-1. **fresh matches alone** (320): gain at least +4 points, z at least 1.64, and the gain is positive in F1 and in F2;
-2. **all three blocks** (480): z at least 2.5 (B1's mark);
-3. Germany's level with the lever over the 480 is inside 45-55, and every floor of the screen holds on the 480 pooled;
-4. if that level is above 53: the middle dose (`mix_line42`, or the midpoint of the lever's range in a new file) is played on
-   F1 and F2 and must pass rule 1 itself; the dose nearer 50 is taken.
-One candidate set is applied, not a mix of partial winners. No rule is relaxed after seeing a result; a near miss is logged as
-a miss with its numbers.
+**Confirm (run 2).** The candidate on F1 and F2 against their bases (320 fresh pairs). **One rule is the guard:**
+1. on the fresh matches alone: **z at least 1.64** (one-sided 5 %; on 320 pairs that is a gain of about +5.7 points), with a
+   positive gain in F1 and in F2;
+2. Germany's level with the lever on the fresh 320 inside 45-55, and every floor of the screen holds on them.
+The line over all three blocks (480) is logged as a description only: it contains the block the lever was picked on, so its
+z is inflated and decides nothing. B1's z 2.5 is replaced by two independent tests: the fresh blocks, then the judges.
+F1 and F2 are spent once a candidate was read on them. One candidate set is applied, not a mix of partial winners. No rule
+is relaxed after seeing a result; a near miss is logged as a miss with its numbers.
 
 **Judge (orchestrator, after run 2).** `tools/measure.sh` on the judges with `B2.toml`. The change stays only if: Germany
 pooled 480 inside 45-55; each 160 set inside 40-60; no match without a winner; paired against BASE's measure on the same
 seeds the gain is above zero; no hard target that passes in BASE's measure (read with `B2.toml`) now misses; re-based rows are
 listed apart and never counted as closed. Otherwise the apply commit is reverted (`git revert`, as B1's `b477036`) and the
-log says so. Then the held-out set once: 40-60 on the set, 45-55 on the pool of 640; if it fails, no retune: report.
+log says so. Then the held-out set 5001-5080 once: 40-60 on the set, 45-55 on the pool of 640; if it fails, no retune: report.
 
 ## 6. Targets: what is stale, and `targets/B2.toml`
 
 `B2.toml` is generated: `python3 -I docs/slices/targets/B2-levers/rebase_targets.py MEASURE_DIR > docs/slices/targets/B2.toml`.
 The committed file was made from `target/s11a2-measure`; run 2 makes it again from BASE's measure (the howitzer displaces
-vehicles further, S11b-3). 24 rows change, each with a `# B2:` line giving the old bound and the reason.
+vehicles further, S11b-3). **The new bounds live only in `B2.toml`; no older target file changes, and the owner decides each
+(B2-3, (A) assumed).** 16 floors change and 4 notes (T31), each with a `# B2:` line giving the old bound and the reason.
 
-Rule R for floors made stale by design: 0.85 x the lowest of the three sets, rounded down to 5 (share of matches) or 0.5
-(manpower share). A 160 set has a standard error of 3-4 points on such a share, so the margin is two to three of them. A
-re-based floor guards against further displacement; it is not a design goal, and the old figure stays in the comment.
+Rule R for floors made stale by design (S11b-10 (A)): 0.85 x the lowest of the three sets, rounded down to 5 (share of matches)
+or 0.5 (manpower share); **a near miss (lowest set within 10 % of the old floor) takes 0.95**, so a row that almost holds is
+not loosened far. A re-based floor guards against further displacement; it is not a design goal, and the old figure stays in
+the comment. Reason for every row: the gun and observer cards take 400-500 MP a match.
 
-| Rows | Old | Measured (three sets) | New | Reason |
-|---|---|---|---|---|
-| T54a Pz IV bought | 90 | 89.4 / 86.9 / 88.1 | 70 | gun and observer cards take 400-500 MP a match (S11b-10 (A)) |
-| T54b M4 bought | 90 | 76.2 / 73.8 / 76.2 | 60 | same |
-| T54c Pz IV manpower | 11 | 10.0 / 10.0 / 10.2 | 8 | same |
-| T54d M4 manpower | 10 | 7.0 / 7.0 / 7.4 | 5.5 | same |
-| T30a/c, T54e StuG bought | 60, 80 | 60.0 / 48.8 / 48.1 | 40 | same |
-| T30b/d, T54f M10 bought | 60, 75 | 32.5 / 30.0 / 33.1 | 25 | same |
-| T40a/c, T72a 251/1 bought | 60 | 40.6 / 33.1 / 33.1 | 25 | same |
-| T40b/d, T72b M3A1 bought | 60 | 13.8 / 15.6 / 17.5 | 10 | same; see H3 before trusting any M3A1 row |
-| T97a-d builders' share (cap) | 12 | 16.5-16.8 and 18.0-18.2 | 21 | S10c-ai's builder floor and front jobs, by design; the 12 came from the old engineer mix weight (B2-4) |
-| T31a-d vehicles' share of kills | 30, report | Germany 32.0-33.5, USA 27.8-29.2 | 30, report | settled as a report: AT guns (4-4.5 %) and infantry guns (3.5-4 %) are inside the metric (B2-5) |
-| T5c, T5d, T5e (only with `--applied`) | 35-65 guard | | 40-60 hard | the per-set band of an accepted pass; the pool 45-55 is read in the log |
+| Rows re-based (16) | Old | Measured (three sets) | New |
+|---|---|---|---|
+| T54a Pz IV bought | 90 | 89.4 / 86.9 / 88.1 | 80 (near miss) |
+| T54b M4 bought | 90 | 76.2 / 73.8 / 76.2 | 60 |
+| T54c Pz IV manpower | 11 | 10.0 / 10.0 / 10.2 | 9 (near miss) |
+| T54d M4 manpower | 10 | 7.0 / 7.0 / 7.4 | 5.5 |
+| T30a, T30c, T54e StuG bought | 60, 60, 80 | 60.0 / 48.8 / 48.1 | 40 |
+| T30b, T30d, T54f M10 bought | 60, 60, 75 | 32.5 / 30.0 / 33.1 | 25 |
+| T40a, T40c, T72a Sd.Kfz. 251/1 bought | 60 | 40.6 / 33.1 / 33.1 | 25 |
+| T40b, T40d, T72b M3A1 card bought | 60 | 13.8 / 15.6 / 17.5 | 10 |
+
+Notes only: T31a-d (all vehicles' share of kills, cap 30, Germany 32.0-33.5) stay reports; AT guns (4-4.5 %) and infantry guns
+(3.5-4 %) are inside the metric (B2-5). With `--applied` only: T5c, T5d, T5e become the hard per-set band 40-60.
 
 Not re-based, with reasons:
 - T8b (HE share 19.8, floor 20) and T9b (US mortar share 7.7-9.0, floor 10): S11b adds rifle grenades and light mortars to
@@ -203,6 +217,8 @@ Not re-based, with reasons:
   floor 0.55): the targets fell 31 % (US tanks and TDs bought 1.62 to 1.12 a match) but the result fell 40 %: partly real,
   stays hard and open. T88b/d stay reports (B1 Q4).
 - T95b/d (US wire 87.5-90 %, floor 60): pass; settled as they are. T56: pass.
+- T97a-d (builders' share 16.5-18.2 %, cap 12): NOT re-based. A cap set just above today's value would only bless it; it
+  stays a visible hard miss until the owner decides (B2-4).
 - T110-T113, T115, T119, T122 (AI use of mines, obstacles, bunker; own-side mistakes): not balance (owner E6, B1-2).
 The soft rows named by item 14 are thereby settled: T5c/d (above), T31 (report), T55 (report, owner question), T95 (hard, met).
 
@@ -210,12 +226,14 @@ The soft rows named by item 14 are thereby settled: T5c/d (above), T31 (report),
 
 | Stage | Who | Machine time | Result |
 |---|---|---|---|
-| B2-1 screen (`B2-run-1.md`) | Tune-tier agent, medium effort (workflows.md 3) | about 85 min: check 3, base 10, diagnostic 10, five tier 1 levers 50, 40-set diagnostic 5, then owner-class and optional levers while time lasts | one line per lever in the log; at most two candidates named, or "none" |
-| B2-2 confirm and apply (`B2-run-2.md`) | Tune-tier agent, medium effort (workflows.md 3) | about 60-80 min: two bases 20, candidate 20, second candidate or middle dose 20, apply and `check.sh quick` 10 | the default changed in one commit with before and after, or "nothing passes" |
+| B2-1 screen (`B2-run-1.md`) | Tune-tier agent, medium effort (workflows.md 3) | **six 160 sets, about 65 min** with the check: base, `mix_line35`, `own_57mm_truck_tow`, `diag_ger_start3`, `mix_vehicle30`, `ger_line_g7_150` | one line per lever in the log; at most two candidates named, or "none" |
+| B2-2 confirm and apply (`B2-run-2.md`) | Tune-tier agent, medium effort | **at most seven 160 sets, about 70 min, plus `check.sh quick` about 5**: two bases, candidate 1 on both, candidate 2 on both only if 1 fails, the applied proof set | the default changed in one commit with before and after, or "nothing passes" |
 | Judge | orchestrator | 480 measure about 35 min, held-out set 10 | accept, or revert |
 | Review | Review-tier agent, short | no runs | the diff against sections 3 and 5; a cheap stage decided, so a review follows (dev-speed 6) |
 | Docs | Docs-tier agent, exact text given | | STATE.md, TODO.md, log at most 150 lines |
 
+Optional sets, only if run 1's six finish early, in this order (so the cut order is the reverse): `mix_line42` (only by the
+dose rule), `ger_line_vg150`, `own_ger_price95`, `mix_mg30`, `own_pop170`, `arty_share30`.
 No foreground command over 4 minutes: sets run through `queue.sh` in the background (`tools/run.sh`), polled in steps of at most
 200 s. The container can restart: `queue.sh` resumes from the batch cache when `target/` survives; every finished lever's line
 and per-match CSV land in `docs/slices/targets/B2-results/` and are committed at once, so the pairing survives without it.
@@ -236,21 +254,28 @@ Check base: `tools/check.sh quick 8d2731b`. Tick time and the full suite only fr
 
 ## 9. Owner questions (copied to `docs/TODO.md`; each runs on (A): "assumed 2026-11-19, owner asked not to be asked")
 
-- B2-1 What the pass may change alone. (A) Only AI rule keys and card `ai_weight`s inside the ranges of section 3; prices, pop
-  cap, start squads, squad make-up and weapons are screened as override files and reported with numbers, not applied. (B)
-  Also apply one owner-class lever if it passes the same rule.
-- B2-2 If no AI setting passes (the evidence points at the start squads and the line squads). (A) Change nothing, as B1; the
-  owner then picks from the measured list: a third German start squad or a cheaper one, the German price cut, the pop cap, an
-  AI opening-buy rule (code), or accept about 42 %. (B) The pass applies the best owner-class lever itself.
-- B2-3 Re-based floors T30, T40, T54, T72 by rule R (S11b-10 (A) asked for them). (A) As in `B2.toml`. (B) Keep the design
-  floors as visible hard misses.
-- B2-4 T97 builders' share cap 12 to 21. (A) Re-base: S10c-ai raised it by design. (B) Keep 12 and lower `builder_cards_min`.
+- B2-1 What the pass may change alone. (A) Only AI rule keys and card `ai_weight`s of section 3's tier 1; prices, pop cap,
+  start squads, squad make-up, a gun's tow, the VG-Sturmgruppe's weight and weapons are screened as override files and
+  reported with numbers, not applied. (B) Also apply one owner-class lever if it passes the same rule.
+- B2-2 If no AI setting passes (the evidence points at unit content). (A) Change nothing, as B1; the owner then picks from the
+  measured list: the 57 mm towed by a truck, a third or cheaper German start squad, more VG-Sturmgruppen, the German price
+  cut, the pop cap, an AI opening-buy rule (code), or accept about 42 %. (B) The pass applies the best owner-class lever.
+- B2-3 The 16 re-based floors (T30a-d, T40a-d, T54a-f, T72a/b; table in section 6; S11b-10 (A) asked for them). (A) As in
+  `B2.toml` only. (B) Keep the design floors as visible hard misses.
+- B2-4 T97 builders' share (16.5-18.2 %, cap 12). (A) Not re-based: it stays a visible hard miss until the owner chooses a
+  cap or lowers `builder_cards_min`. (B) Re-base the cap to about 20.
 - B2-5 T31 and T55. (A) Both stay reports; a vehicles-only kill share is a later CLI change; the Sd.Kfz. 234/1 (15 % of
   Germany's kills) is not touched while Germany is under 45 %. (B) Lower `[ai.recon] income_max_pct` now.
 - B2-6 The aim. (A) 47-53 %: a gain the runs can prove; a +3 lever is reported, not applied. (B) Apply any gain that reaches 45.
-- B2-7 Seeds. (A) Screen 2001-2080, confirm 2101-2280, judges 1-280, held out 301-380 once. (B) Reuse B1's blocks 1001-1280.
-- B2-8 The M3A1's kill count (H3). (A) One 40-set diagnostic; if it is a counting fault, fix the CLI count in a later change
-  and treat the vehicle kill rows as suspect until then. (B) Fix it inside B2 (CLI code, a review gate).
+- B2-7 Seeds. (A) Screen 2001-2080, confirm 2101-2280, judges 1-280, held out 5001-5080 once (301-380 was played by S6b).
+  (B) Reuse B1's blocks 1001-1280.
+- B2-8 The 57 mm's armed tow (H3; S9-3 (A)). (A) Screen the truck tow as an override and report its number; the owner
+  decides. (B) Leave S9-3 alone and do not screen it.
+
+**Owner decisions inside this plan, each on (A) assumed 2026-11-19 and to be shown to the owner in the final report:**
+the 16 re-based target floors (B2-3, in `B2.toml` only); T97 left a hard miss (B2-4); T31 and T55 left reports (B2-5); the
+aim 47-53 % (B2-6); and the three screened-only content levers the pass must never apply: `own_57mm_truck_tow` (B2-8),
+`ger_line_vg150` (B2-1), `diag_ger_start3` (B2-2), with `own_pop170` and `own_ger_price95` if played.
 
 ## 10. Risks
 
@@ -260,6 +285,6 @@ Check base: `tools/check.sh quick 8d2731b`. Tick time and the full suite only fr
 - `mix_line35` may pass by thinning the infantry: fewer line squads on both sides. The floors watch HE, mortar and vehicle
   shares and the match length; the review reads the line squads bought a match before and after.
 - A symmetric key that helps Germany by making the US AI buy worse is a fit, not a fix: the log gives both sides' buys.
-- `paired.py --detail` and `queue.sh check` were written without a CLI run (no `--side-detail` file exists yet): run 1 fixes
+- No lever file was loaded by the CLI (TOML-parsed only); `paired.py --detail` and `queue.sh check` were written without a CLI run (no `--side-detail` file exists yet): run 1 fixes
   a wrong key name in place and says so.
 - Later slices (S12-S15) will move the share again; the pass does not promise more than the judge's number.

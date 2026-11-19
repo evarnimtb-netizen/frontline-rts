@@ -472,32 +472,34 @@ Plan `docs/slices/B2-balance.md` 9; stage contracts `B2-run-1.md`, `B2-run-2.md`
 `e149258`: Germany wins 24.6 % of the 114 matches that end at 14-17 minutes and 47.0 % of the other 366; its manpower
 exchange is not worse than the USA's; US rifles kill 48.3 men a match against 28.9.
 
-- B2-1 What the pass may change alone. (A) Only AI rule keys and card `ai_weight`s inside the plan's ranges (`[ai.mix]`
-  line, vehicle, mg; `[ai.arty] income_max_pct`; the weights of the two German line variants). Prices, the pop cap, start
-  squads, squad make-up and weapons are screened as override files and reported with numbers, not applied. **(A) assumed 2026-11-19, owner asked not to be asked.**
-  (B) Also apply one owner-class lever if it passes the same rule.
-- B2-2 If no AI setting passes (the evidence points at the free start squads and the line squads, which the pass may not
-  change). (A) Change nothing, as B1; the owner picks from the measured list: a third or cheaper German start squad, the
-  German price cut, the pop cap, an AI opening-buy rule (code), or accept about 42 %. **(A) assumed 2026-11-19, owner asked not to be asked.**
+- B2-1 What the pass may change alone. (A) Only AI rule keys and card `ai_weight`s of the plan's tier 1 (`[ai.mix]`
+  line, vehicle, mg; `[ai.arty] income_max_pct`; the 7-man Grenadiergruppe's weight). Prices, the pop cap, start squads,
+  squad make-up, a gun's tow, the VG-Sturmgruppe's weight and weapons are screened as override files and reported with
+  numbers, not applied. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Also apply one owner-class lever if it passes the same rule.
+- B2-2 If no AI setting passes (the evidence points at unit content). (A) Change nothing, as B1; the owner picks from the
+  measured list: the 57 mm towed by a truck, a third or cheaper German start squad, more VG-Sturmgruppen, the German
+  price cut, the pop cap, an AI opening-buy rule (code), or accept about 42 %. **(A) assumed 2026-11-19, owner asked not to be asked.**
   (B) The pass applies the best owner-class lever itself.
-- B2-3 Re-based vehicle floors (S11b-10 (A) asked for them): T30, T40, T54, T72 at 0.85 x the lowest measured set (Pz IV
-  bought 90 to 70 % of matches, M4 90 to 60, StuG 60 / 80 to 40, M10 60 / 75 to 25, Sd.Kfz. 251/1 60 to 25, M3A1 60 to 10;
-  manpower shares 11 to 8 and 10 to 5.5; made again from the S11b measure). (A) As in `B2.toml`. **(A) assumed 2026-11-19, owner asked not to be asked.**
-  (B) Keep the design floors as visible hard misses.
-- B2-4 T97, builders' share of the infantry plans: cap 12 to 21 (measured 16.5-18.2 since S10c-ai's builder floor and front
-  jobs). (A) Re-base. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Keep 12 and lower `builder_cards_min`.
+- B2-3 **16 target floors re-based, in `B2.toml` only; the owner decides** (S11b-10 (A) asked for them). Rule: 0.85 x the
+  lowest measured set, 0.95 for a near miss. T54a Pz IV bought 90 to 80 % of matches; T54b M4 90 to 60; T54c Pz IV manpower
+  11 to 9; T54d M4 manpower 10 to 5.5; T30a, T30c, T54e StuG 60 / 60 / 80 to 40; T30b, T30d, T54f M10 60 / 60 / 75 to 25;
+  T40a, T40c, T72a Sd.Kfz. 251/1 60 to 25; T40b, T40d, T72b M3A1 card 60 to 10 (made again from the S11b measure).
+  (A) As in `B2.toml`. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Keep the design floors as visible hard misses.
+- B2-4 T97, builders' share of the infantry plans (16.5-18.2 %, cap 12 since S10c-ai's builder floor and front jobs). (A) Not
+  re-based: a visible hard miss until the owner chooses a cap or lowers `builder_cards_min`. **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) Re-base the cap to about 20.
 - B2-5 T31 (all vehicles' share of kills; Germany 32.0-33.5 %, cap 30) and T55 (Sd.Kfz. 234/1 at 14.7-15.3 % of Germany's
   kills, cap 10). (A) Both stay reports: AT and infantry guns are counted inside T31 (a vehicles-only share is a later CLI
   change), and the armoured car is not touched while Germany is under 45 %. **(A) assumed 2026-11-19, owner asked not to be asked.**
   (B) Lower `[ai.recon] income_max_pct` now.
-- B2-6 The aim. (A) 47-53 %: 480 paired matches can prove a gain of 7 points at z 2.5, not the 3.3 points to the band's
+- B2-6 The aim. (A) 47-53 %: 320 fresh paired matches can prove a gain of about 6 points, not the 3.3 points to the band's
   edge; a lever worth +3 is reported, not applied. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Apply any gain that reaches 45 %.
-- B2-7 Seeds. (A) Screen 2001-2080, confirm 2101-2280, judges 1-280 (the measure only), held out 301-380 once.
-  **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Reuse B1's blocks 1001-1280.
-- B2-8 The M3A1's kill count: 7.0 % of US kills with the card bought in 13.75 % of matches (about 36 kills a half-track
-  bought; 0.4 for the Sd.Kfz. 251/1), and the share did not fall when the buys halved. (A) One 40-set diagnostic in run 1;
-  if it is a counting fault, fix the CLI count in a later change and treat the vehicle kill rows (T33, T55) as suspect
-  until then. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Fix it inside B2 (CLI code, with a review).
+- B2-7 Seeds. (A) Screen 2001-2080, confirm 2101-2280, judges 1-280 (the measure only), held out 5001-5080 once (B1's
+  301-380 was already played by S6b). **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Reuse B1's blocks 1001-1280.
+- B2-8 The 57 mm's armed tow (S9-3 (A)): every US 57 mm card brings an M3A1 with a .50, which makes 5.7 of the USA's 12.8
+  vehicle-MG kills a match; the Pak 40's Sd.Kfz. 11 is unarmed. (A) Screen the gun towed by the unarmed CCKW (S9-3 option B)
+  as an override and report its number; never applied without the owner. **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) Leave S9-3 alone and do not screen it.
 
 ## Planned work queue
 
