@@ -419,40 +419,51 @@ branch and measured at `e149258` (item 17).
 ## S11b open owner questions (asked 2026-11-19 by the Plan stage; each runs on (A): "assumed 2026-11-19, owner asked not to be asked")
 
 Spec `docs/slices/S11b.md` 11; log `docs/slices/S11b-log.md`; targets `docs/slices/targets/S11b.toml`. Planned, not built.
-The rifle-grenade numbers and several howitzer values are not in the design documents (S11b-7): a citation task.
+Revised the same day with the measured diagnosis of S11a2-10..12 and a plan review.
 
 - S11b-1 Scope of S11b (three Build stages). (A) Field howitzers as base guns, light mortars, HE rifle grenades, and
-  the three fixes from the S11a2 measure (S11a2-10..12); tows, displacement and crates stay S11a3. **(A) assumed
+  the fixes from the S11a2 measure (S11a2-10, S11a2-11); tows, displacement and crates stay S11a3. **(A) assumed
   2026-11-19, owner asked not to be asked.** (B) Tows and displacement first, S11b after.
 - S11b-2 Field howitzers without a tow. (A) The leFH 18 and 105 mm M2A1 cards bring no tow: the gun emplaces where it
   arrives (the base), cannot be pushed, and fires flat from there; often "masked" on Kessel Ridge. **(A) assumed
   2026-11-19, owner asked not to be asked.** (B) Human-only tow variant cards now (the AI still does not move them).
-- S11b-3 The AI's howitzer. (A) A second gun from 8:00, inside the same 15 % income share as the infantry gun, no
-  manpower held back for it, 300 MP kept after the buy. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) It
-  replaces the infantry gun (the AI never holds two guns).
+- S11b-3 The AI's howitzer. (A) A second gun from 8:00 with its own 15 % income share (beside the infantry gun's 15 %)
+  and 300 MP kept after the buy: bought at about minute 11 (Germany) and 12 (USA); the median match lasts 18-19.4
+  minutes. It displaces vehicles further (S11b-10). **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Inside
+  the infantry gun's share: bought at about minute 20-22, after most matches end.
 - S11b-4 Light mortar prices. (A) kz. GrW 42 181 MP (the roster's 220 with the German cut and the S6 factor, as the
   heavy team's 300 became 247), 60 mm M2 240 MP. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) 220 and 240.
 - S11b-5 Light mortar range. (A) Scaled as the heavy tubes are (600 m in the game for 2,400 / 2,900 m): kz. GrW 42
   275 m, 60 mm M2 370 m. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) 600 m like the heavy tubes.
 - S11b-6 Rifle grenadiers. (A) Two riflemen of a full US Rifle Squad and one of a full Grenadiergruppe carry three HE
-  rifle grenades each; card prices unchanged; refill in the base at the shell price. **(A) assumed 2026-11-19, owner
-  asked not to be asked.** (B) One grenadier a squad on both sides.
-- S11b-7 Rifle grenade figures (the design holds none). (A) Plan values until sourced: 150 m, 30 m minimum, 3 s to fit
-  and 3 s to stow, the burst of the faction's hand grenade. **(A) assumed 2026-11-19, owner asked not to be asked.**
-  (B) No rifle grenades until the figures are sourced.
+  rifle grenades each; card prices unchanged; the base does NOT refill them (crate-only by design; a crate source comes
+  with crates), so three is a man's load. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) One grenadier a
+  squad on both sides.
+- S11b-7 Rifle grenade figures: the design holds none; **owner to confirm.** (A) M17 on the M7 launcher: the Mk 2
+  body, about 0.68 kg, about 57 g TNT, maximum taken as 180 m (about 180-200 m); Gewehr-Sprenggranate from the
+  Schiessbecher: about 250 g, about 30 g filler, maximum about 250 m, about 60 m/s; so the German burst is about half
+  the US one with more reach. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) No rifle grenades until sourced.
 - S11b-8 Rifle grenade kills in the numbers. (A) Their own kill class, counted inside the HE share (design 6.2; T8's
   top of 26.3 % stays hard). **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Counted with hand grenades,
   outside the HE share.
-- S11b-9 Counter-fire round budget (follow-up of S11a2-10 (A)). (A) An AI gun's counter-fire rounds stay within 50 %
-  of all rounds it has ordered. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) 33 %.
-- S11b-10 Vehicle buys beside the artillery (follow-up of S11a2-12). (A) The hold on the infantry-gun pot is released
-  only if a 40 set shows M10 buys up by 10 points with the gun still bought; the pot's size waits for the balance
-  pass. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Lower `[ai.arty] income_max_pct` from 15 to 10 now.
-- S11b-11 T81 (AT guns in cover; follow-up of S11a2-11). (A) Infantry-gun emplacements leave the ratio's denominator
-  (it counted them, the cover count did not), if the diagnosis confirms that cause. **(A) assumed 2026-11-19, owner
-  asked not to be asked.** (B) Keep the metric and accept the miss.
+- S11b-9 Counter-fire share (follow-up of S11a2-10 (A); measured). (A) An AI gun never orders counter-fire twice in a
+  row: on a 40 set the US share fell from 62.3 to 47.3 % and counter-fire still happened in 97 % of matches. **(A)
+  assumed 2026-11-19, owner asked not to be asked.** (B) A per-gun round budget as well.
+- S11b-10 Vehicle buys beside the artillery (follow-up of S11a2-12; measured: the gun and observer cards themselves
+  take the manpower, about 500 MP a US match; not the pot's timing, not shells). (A) Accept that a new card displaces
+  vehicles, and re-base T54, T30 and T40 in the balance pass; they stay as they are in `S11b.toml`. **(A) assumed
+  2026-11-19, owner asked not to be asked.** (B) Raise the artillery income share (30 % restored buys but read Germany
+  57.5 % on one 40 set).
+- S11b-11 T81 (AT guns in cover; follow-up of S11a2-11; measured: a counting error). (A) Infantry guns leave the
+  AT-gun emplaced and crew-lost counts; a patched set played identically and read 86.5 / 87.2 %. **(A) assumed
+  2026-11-19, owner asked not to be asked.** (B) Keep the metric and accept the miss.
 - S11b-12 Artillery limit group. (A) At most two gun cards (infantry guns and field howitzers) alive a player
   (design 4.7). **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Per-card caps only.
+- S11b-13 Other figures with no source in the design (a citation task). (A) Use the plan values until sourced:
+  `how_reserve_mp` 300; `rifle_grenade_gap_s` 15; grenade minimum 30 m, 3 s to fit and 3 s to stow, M17 speed 50 m/s;
+  howitzer top charges 325 / 333 m/s and their traverse (the M3's); the 60 mm bomb's burst (the 81 mm block x 0.75)
+  and its charges; the light mortars' game ranges (S11b-5); the FH Gr 38 complete round at 19 kg (as the M1 HE).
+  **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Hold the affected defs back until sourced.
 
 ## Planned work queue
 
@@ -478,7 +489,7 @@ The rifle-grenade numbers and several howitzer values are not in the design docu
 15. **S10c-ai: done on branch `claude/project-thread-e7nsak` (2026-11-16), merged to main 2026-11-19 with the owner's OK.** Verified so far: `check.sh quick 54009f6` ok, 881 tests pass; c_off 40 set = main 40/40; Germany 40.00 % of 480 (sets 40.6 / 37.5 / 41.9); 270 targets pass, 71 miss (41 hard). Full suite, `tools/verify.sh` and CI not run yet. Spec `docs/slices/S10c-ai.md`, log `S10c-ai-log.md`, targets `S10c-ai.toml`. Owner questions S10c-1..6 above. Next: the merge decision after verify, then S11.
 16. **S11a1: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A, B and C, with review fixes C-1..C-7 (B-5 not done). Check at the last fix: `check.sh quick 730e67f` all ok, 961 tests. Measured with S11a2 at `e149258` (item 17). Spec `docs/slices/S11a1.md`, log `S11a1-log.md`, targets `S11a1.toml`. Owner questions S11a1-1..10 above. Open: T131 stays a report (S11a1-10); preparation fire never runs in matches (T138). Waits for the owner's merge decision.
 17. **S11a2: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A and B, with the Fix of Build B (B-1..B-7). Verified: `check.sh quick 730e67f` all ok, 982 tests at the head `e149258`. GitHub CI on `affb26e` (S11a1 complete plus S11a2 stage A): Linux build, release and debug sim tests, simulate, clippy, rustfmt and cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on main (fixed by PR 1); macOS cancelled; cross-platform hash check skipped. CI on `e149258` was still running when written. Measured 480 at `e149258`: Germany 41.67 % (sets 46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0; 318 targets pass, 82 miss (44 hard). New hard misses: T9b, T54a, T54c, T81a, T81b, T119b; gone: T8a, T115d, T121d. `tools/verify.sh` not run. Spec `docs/slices/S11a2.md`, log `S11a2-log.md`, targets `S11a2.toml`. Owner questions S11a2-1..12 above. Next: the merge decisions for S10c-ai, S11a1, S11a2 and PR 1; then the open items in STATE.md; then S11b.
-18. **S11b: planned 2026-11-19** (spec `docs/slices/S11b.md`, stages `S11b-build-A.md`, `-B.md`, `-C.md`, targets `S11b.toml`, log `S11b-log.md`). Three Build stages: A (fixes for S11a2-10..12, SAVE 29, rifle-grenade mode), B (content), C (AI use, measures). Not built. Owner questions S11b-1..12 above.
+18. **S11b: planned 2026-11-19** (spec `docs/slices/S11b.md`, stages `S11b-build-A.md`, `-B.md`, `-C.md`, targets `S11b.toml`, log `S11b-log.md`). Three Build stages: A (fixes for S11a2-10 and -11, SAVE 29 and PROTOCOL 15, rifle-grenade mode), B (content), C (AI use, measures). Not built. Owner questions S11b-1..13 above.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 

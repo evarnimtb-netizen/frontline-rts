@@ -1,6 +1,5 @@
-# S11b control (docs/slices/S11b.md 4 X2, X3): the A0 fixes at their off
-# values: no counter-fire round budget, the infantry-gun pot held back from
-# other buys (as base 8d2731b). X1 is a counter and has no switch.
+# S11b ablation (docs/slices/S11b.md 4 X3): an AI gun may order counter-fire
+# twice in a row, as in S11a2. X1 is a counter fix and has no switch; X2 has
+# no fix (owner question S11b-10).
 [ai.arty]
-cb_budget_pct = 100
-pot_hold = 1
+cb_alternate = 0

@@ -1,0 +1,5 @@
+# S11b ablation (owner question S11b-3): the howitzer's own income share at
+# 10 % instead of 15: bought at about minute 18 (480 / 0.10 = 4,800 MP of
+# 600 + 240 a minute) instead of minute 11-12, so in fewer matches.
+[ai.arty]
+how_income_pct = 10

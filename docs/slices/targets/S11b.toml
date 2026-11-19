@@ -1,14 +1,16 @@
 # S11b targets (docs/slices/S11b.md 7, 8), machine-checkable part.
 # A copy of S11a2.toml at 8d2731b (T4-T148 unchanged in value and kind) except:
 #   - name changed;
-#   - skirmish40_a_off now also loads S11b-ablations/s11b_off.toml and
-#     a0_off.toml (with the S11b switches and the A0 fixes on, the older
-#     files alone no longer equal base 730e67f; the X1 counter keys
-#     s9.guns_emplaced and s9_derived.gun_in_cover_pct differ by design);
+#   - skirmish40_a_off now also loads S11b-ablations/s11b_off.toml (with the
+#     S11b switches on, the older files alone no longer equal base 730e67f;
+#     the X1 counter keys s9.guns_emplaced, s9.gun_crew_lost and the
+#     s9_derived values made of them differ by design);
 #   - five more control runs: skirmish40_s11b_off (every S11b switch 0: must
-#     equal the A0 reference set target/s11b-A0-40, tools/neutral.py),
-#     skirmish40_a0_off (the A0 fixes at their off values), skirmish40_how_off,
+#     equal the reference set target/s11b-A0-40, tools/neutral.py),
+#     skirmish40_a0_off (cb_alternate 0), skirmish40_how_off,
 #     skirmish40_light_off, skirmish40_rg_off;
+#   - T30, T40, T54 are NOT re-based (owner question S11b-10 (A): the
+#     balance pass does that);
 #   - new rows T149-T158 in three-part form (value, exposure, control).
 #   tools/measure.sh OUTDIR docs/slices/targets/S11b.toml
 # Seeds: measurement sets 1-80, 101-180, 201-280; held out 301-380 (not
@@ -18,7 +20,8 @@
 # (Build C builds them). Rows with no design figure are reports and say so.
 # Written by the Plan stage without a parse run of the CLI (another session
 # was playing match sets in the tree): Build A runs `frontline-cli targets`
-# on it first (S11b-build-A.md chunk 0).
+# on it first (S11b-build-A.md chunk 0). Revised 2026-11-19 after the
+# measured diagnosis and the plan review (T149, T150, T153, T158).
 name = "S11b: field howitzers, light mortars, HE rifle grenades, A0 fixes (S11a2 targets plus T149-T158)"
 three_parts_from = "T109"
 
@@ -83,12 +86,12 @@ both_bases = true
 minutes = 45
 rules_override = ["docs/slices/targets/S10c-ai-ablations/c_off.toml"]
 
-[runs.skirmish40_a_off]    # control: every S11a1, S11a2 and S11b switch and the A0 fixes off (must equal base 730e67f but for the X1 counter keys)
+[runs.skirmish40_a_off]    # control: every S11a1, S11a2 and S11b switch off (must equal base 730e67f but for the X1 counter keys)
 kind = "skirmish"
 seeds = 20
 both_bases = true
 minutes = 45
-rules_override = ["docs/slices/targets/S11a1-ablations/a_off.toml", "docs/slices/targets/S11a2-ablations/b_off.toml", "docs/slices/targets/S11b-ablations/s11b_off.toml", "docs/slices/targets/S11b-ablations/a0_off.toml"]
+rules_override = ["docs/slices/targets/S11a1-ablations/a_off.toml", "docs/slices/targets/S11a2-ablations/b_off.toml", "docs/slices/targets/S11b-ablations/s11b_off.toml"]
 
 [runs.skirmish40_b_off]    # control: every S11a2 switch off (must equal the S11a1 result)
 kind = "skirmish"
@@ -111,14 +114,14 @@ both_bases = true
 minutes = 45
 rules_override = ["docs/slices/targets/S11a2-ablations/ff_safe_off.toml"]
 
-[runs.skirmish40_s11b_off]   # control: every S11b switch off (how, light, rifle_grenades 0: must equal the A0 reference set)
+[runs.skirmish40_s11b_off]   # control: every S11b switch off (cb_alternate, buy_pending, how, light, rifle_grenades 0: must equal the reference set)
 kind = "skirmish"
 seeds = 20
 both_bases = true
 minutes = 45
 rules_override = ["docs/slices/targets/S11b-ablations/s11b_off.toml"]
 
-[runs.skirmish40_a0_off]   # control: the A0 fixes at their off values (cb_budget_pct 100, pot_hold 1)
+[runs.skirmish40_a0_off]   # control: cb_alternate 0: an AI gun may counter-fire twice in a row (as S11a2)
 kind = "skirmish"
 seeds = 20
 both_bases = true
@@ -4125,26 +4128,27 @@ exposure_min = 0.3
 control = "skirmish40_b_off.factions.usa.s11a2_derived.cb_masked_per_match"
 note = "report: counter-fire the AI did not order because the sim would refuse it (the flat M3 behind the ridge); exposure: markers a match; control: b_off (0)"
 
-# --- T149: the counter-fire round budget (A0 fix X3; reports) --------------------------------------
-# Source: S11b.md 4 X3; owner question S11a2-10 (A); T148c/d keep the 480 bound of 50.
+# --- T149: counter-fire alternates with ordinary missions (A0 fix X3; reports) --------------------
+# Source: S11b.md 4 X3 (measured by the diagnosis: USA 62.3 -> 47.3 % on a 40 set, counter-fire still in
+# 97 % of matches); owner question S11a2-10 (A); T148c/d keep the 480 bound of 50, T147 the answer rate.
 [[target]]
 id = "T149a"
-metric = "skirmish160.factions.germany.s11b_derived.cb_budget_holds_per_match"
+metric = "skirmish160.factions.germany.s11b_derived.cb_alt_holds_per_match"
 min = 0
 kind = "report"
 exposure = "skirmish160.factions.germany.s11a2_derived.cb_marks_per_match"
 exposure_min = 0.3
-control = "skirmish40_a0_off.factions.germany.s11b_derived.cb_budget_holds_per_match"
-note = "report: markers an AI gun passed over because its counter-fire rounds were over the budget, a match; exposure: markers a match; control: a0_off (0)"
+control = "skirmish40_a0_off.factions.germany.s11b_derived.cb_alt_holds_per_match"
+note = "report: plans in which an AI gun passed a marker over because its last mission was counter-fire, a match; exposure: markers a match; control: a0_off (0)"
 [[target]]
 id = "T149b"
-metric = "skirmish160.factions.usa.s11b_derived.cb_budget_holds_per_match"
+metric = "skirmish160.factions.usa.s11b_derived.cb_alt_holds_per_match"
 min = 0
 kind = "report"
 exposure = "skirmish160.factions.usa.s11a2_derived.cb_marks_per_match"
 exposure_min = 0.3
-control = "skirmish40_a0_off.factions.usa.s11b_derived.cb_budget_holds_per_match"
-note = "report: markers an AI gun passed over because its counter-fire rounds were over the budget, a match; exposure: markers a match; control: a0_off (0)"
+control = "skirmish40_a0_off.factions.usa.s11b_derived.cb_alt_holds_per_match"
+note = "report: plans in which an AI gun passed a marker over because its last mission was counter-fire, a match; exposure: markers a match; control: a0_off (0)"
 [[target]]
 id = "T149c"
 metric = "skirmish40.factions.germany.s11a2_derived.cb_shell_share_pct"
@@ -4153,7 +4157,7 @@ kind = "report"
 exposure = "skirmish40.factions.germany.s11a1_derived.gun_rounds_per_match"
 exposure_min = 4
 control = "skirmish40_a0_off.factions.germany.s11a2_derived.cb_shell_share_pct"
-note = "report (plan bound 50, as T148): counter-fire rounds as % of gun mission rounds with the budget; control: a0_off on the same seeds (what the budget takes off)"
+note = "report (plan bound 50, as T148): counter-fire rounds as % of gun mission rounds with cb_alternate; control: a0_off on the same seeds (what the rule takes off)"
 [[target]]
 id = "T149d"
 metric = "skirmish40.factions.usa.s11a2_derived.cb_shell_share_pct"
@@ -4162,11 +4166,12 @@ kind = "report"
 exposure = "skirmish40.factions.usa.s11a1_derived.gun_rounds_per_match"
 exposure_min = 4
 control = "skirmish40_a0_off.factions.usa.s11a2_derived.cb_shell_share_pct"
-note = "report (plan bound 50, as T148): counter-fire rounds as % of gun mission rounds with the budget; control: a0_off on the same seeds (what the budget takes off)"
+note = "report (plan bound 50, as T148): counter-fire rounds as % of gun mission rounds with cb_alternate; control: a0_off on the same seeds (what the rule takes off)"
 
 # --- T150: masks: both field howitzers are refused behind a crest (fortify row how_mask) -----------
 # Source: artillery-on-map.md line 1492 (test 3: "A leFH 18 and an M3 ... report masked"), lines 750-753
-# (no high angle for the leFH 18; the M2A1's starts at 3,300 m). Scene of T129: 530 m, a trench 80 m behind the crest.
+# (no high angle for the leFH 18; the M2A1's starts at 3,300 m). Scene: the gun 600 m from a trench 80 m behind the crest
+# (the design's distance; T129's S11a1 row stays at 530 m).
 [[target]]
 id = "T150a"
 metric = "fortify10.s11b.how_mask.lefh_masked_pct"
@@ -4244,44 +4249,46 @@ control = "fortify10.s11b.rg.usa.control.open_loss_pct"
 note = "report: the target squad's losses in a trench as % of its losses in the open, grenades on; exposure: its losses in the open (%); control: the open losses with rifle_grenades 0 (the rifles' share)"
 
 # --- T153: the AI buys a field howitzer (report) ---------------------------------------------------
-# Source: S11b.md 4 H1; artillery-on-map.md lines 837-838 (unlock 8:00, one alive). Plan bound 20 %: the
-# shared 15 % income share admits the second gun at about minute 20 (600 + 240 a minute against 320 + 480).
+# Source: S11b.md 4 H1; artillery-on-map.md lines 837-838 (unlock 8:00, one alive). The howitzer's own
+# 15 % income share admits it at minute 11 (480 / 0.15 = 3,200 MP of 600 + 240 a minute) and minute 12
+# (500 MP card). Bound 20 % of all matches (plan review 4); the exposure is the share of matches that
+# lasted 14 minutes or more (long enough to buy and emplace it), at least half of them.
 [[target]]
 id = "T153a"
 metric = "skirmish160.factions.germany.s11b_derived.how_bought_matches_pct"
 min = 20
 kind = "report"
-exposure = "skirmish160.length_min.median"
-exposure_min = 15
+exposure = "skirmish160.factions.germany.s11b_derived.how_window_matches_pct"
+exposure_min = 50
 control = "skirmish40_s11b_off.factions.germany.s11b_derived.how_bought_matches_pct"
-note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: median match length in minutes; control: s11b_off (0)"
+note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: matches that lasted 14 minutes or more (%); control: s11b_off (0)"
 [[target]]
 id = "T153b"
 metric = "skirmish160.factions.usa.s11b_derived.how_bought_matches_pct"
 min = 20
 kind = "report"
-exposure = "skirmish160.length_min.median"
-exposure_min = 15
+exposure = "skirmish160.factions.usa.s11b_derived.how_window_matches_pct"
+exposure_min = 50
 control = "skirmish40_s11b_off.factions.usa.s11b_derived.how_bought_matches_pct"
-note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: median match length in minutes; control: s11b_off (0)"
+note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: matches that lasted 14 minutes or more (%); control: s11b_off (0)"
 [[target]]
 id = "T153c"
 metric = "skirmish160_oos.factions.germany.s11b_derived.how_bought_matches_pct"
 min = 20
 kind = "report"
-exposure = "skirmish160_oos.length_min.median"
-exposure_min = 15
+exposure = "skirmish160_oos.factions.germany.s11b_derived.how_window_matches_pct"
+exposure_min = 50
 control = "skirmish40_s11b_off.factions.germany.s11b_derived.how_bought_matches_pct"
-note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: median match length in minutes; control: s11b_off (0)"
+note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: matches that lasted 14 minutes or more (%); control: s11b_off (0)"
 [[target]]
 id = "T153d"
 metric = "skirmish160_oos.factions.usa.s11b_derived.how_bought_matches_pct"
 min = 20
 kind = "report"
-exposure = "skirmish160_oos.length_min.median"
-exposure_min = 15
+exposure = "skirmish160_oos.factions.usa.s11b_derived.how_window_matches_pct"
+exposure_min = 50
 control = "skirmish40_s11b_off.factions.usa.s11b_derived.how_bought_matches_pct"
-note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: median match length in minutes; control: s11b_off (0)"
+note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: matches that lasted 14 minutes or more (%); control: s11b_off (0)"
 
 # --- T154: a bought howitzer fires, and does not take over the killing (reports) -------------------
 # Source: S11b.md 0 (a base gun behind its mask); artillery-on-map.md line 1137 (kills by infantry guns
@@ -4437,42 +4444,43 @@ exposure_min = 1
 control = "skirmish40.wins.germany_pct"
 note = "report: Germany's wins without rifle grenades (two US launchers a squad against one German); exposure: US grenades fired a match with them on; control: the default set"
 
-# --- T158: vehicle buys beside the artillery (A0 fix X2; reports) ----------------------------------
+# --- T158: vehicle buys beside the artillery (reports; no fix: diagnosis X2) -----------------------
 # Source: docs/STATE.md "Balance and checks" (M10 bought 32 % of matches, 56 % at S10c-ai; M3A1 16 %, 36 %);
-# owner question S11a2-12 (A). Plan bounds: within 6 points of the S10c-ai values. T54 stays the hard row.
+# the diagnosis: the gun and observer cards themselves take the manpower (USA about 500 MP a match). Owner
+# question S11b-10 (A): accepted, T30 / T40 / T54 re-based in the balance pass. No bound: read beside how_off.
 [[target]]
 id = "T158a"
-metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
-min = 50
-kind = "report"
-exposure = "skirmish160.length_min.median"
-exposure_min = 10
-control = "skirmish40_a0_off.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
-note = "report (plan bound): matches in which the AI bought an M10 (%); exposure: median match length; control: a0_off on the 40 set"
-[[target]]
-id = "T158b"
-metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
-min = 30
-kind = "report"
-exposure = "skirmish160.length_min.median"
-exposure_min = 10
-control = "skirmish40_a0_off.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
-note = "report (plan bound): matches in which the AI bought an M3A1 (%); exposure: median match length; control: a0_off on the 40 set"
-[[target]]
-id = "T158c"
 metric = "skirmish40.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
 min = 0
 kind = "report"
-exposure = "skirmish40.length_min.median"
+exposure = "skirmish40.factions.usa.s11b_derived.how_bought_matches_pct"
 exposure_min = 10
 control = "skirmish40_how_off.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
-note = "report: M10 buys with the howitzer buy on; exposure: median match length; control: how_off on the same seeds (what the second gun costs the armour)"
+note = "report: matches in which the AI bought the card (%), howitzer buy on; exposure: matches with a howitzer (%); control: how_off on the same seeds (what the second gun costs the armour)"
 [[target]]
-id = "T158d"
+id = "T158b"
+metric = "skirmish40.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.usa.s11b_derived.how_bought_matches_pct"
+exposure_min = 10
+control = "skirmish40_how_off.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
+note = "report: matches in which the AI bought the card (%), howitzer buy on; exposure: matches with a howitzer (%); control: how_off on the same seeds (what the second gun costs the armour)"
+[[target]]
+id = "T158c"
 metric = "skirmish40.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
 min = 0
 kind = "report"
-exposure = "skirmish40.length_min.median"
+exposure = "skirmish40.factions.germany.s11b_derived.how_bought_matches_pct"
 exposure_min = 10
 control = "skirmish40_how_off.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
-note = "report: StuG buys with the howitzer buy on; exposure: median match length; control: how_off on the same seeds"
+note = "report: matches in which the AI bought the card (%), howitzer buy on; exposure: matches with a howitzer (%); control: how_off on the same seeds (what the second gun costs the armour)"
+[[target]]
+id = "T158d"
+metric = "skirmish40.factions.germany.s7_derived.bought_matches_pct.ger_pz4_h_squad"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.germany.s11b_derived.how_bought_matches_pct"
+exposure_min = 10
+control = "skirmish40_how_off.factions.germany.s7_derived.bought_matches_pct.ger_pz4_h_squad"
+note = "report: matches in which the AI bought the card (%), howitzer buy on; exposure: matches with a howitzer (%); control: how_off on the same seeds (what the second gun costs the armour)"
