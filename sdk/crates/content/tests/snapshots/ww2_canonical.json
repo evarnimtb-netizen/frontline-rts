@@ -1935,7 +1935,7 @@
           "how_reserve_mp": 300,
           "income_max_pct": 15,
           "lift_m": 100,
-          "light": 1,
+          "light": 0,
           "max_guns": 1,
           "mission_rounds": 4,
           "post_clear_m": 150,
@@ -2543,7 +2543,7 @@
         "crew_pickup_reach_m": 30,
         "resupply_s": 20,
         "rifle_grenade_gap_s": 15,
-        "rifle_grenades": 1,
+        "rifle_grenades": 0,
         "single_shot_gap_s": 3,
         "throw": {
           "lob_tan_milli": 1000,
@@ -3152,9 +3152,6 @@
       "members": [
         {
           "count": 1,
-          "rounds": {
-            "ww2:8cm_wgr34": 6
-          },
           "slot": "leader",
           "traits": [
             "leader"
@@ -3164,7 +3161,7 @@
         {
           "count": 1,
           "rounds": {
-            "ww2:8cm_wgr34": 2
+            "ww2:8cm_wgr34": 4
           },
           "sidearm": "ww2:p38",
           "slot": "mortar_gunner",
@@ -3176,7 +3173,7 @@
         {
           "count": 1,
           "rounds": {
-            "ww2:8cm_wgr34": 4
+            "ww2:8cm_wgr34": 7
           },
           "slot": "mortar_assistant",
           "traits": [
@@ -3187,7 +3184,7 @@
         {
           "count": 1,
           "rounds": {
-            "ww2:8cm_wgr34": 6
+            "ww2:8cm_wgr34": 7
           },
           "slot": "ammo_bearer",
           "traits": [
@@ -4487,9 +4484,6 @@
       "members": [
         {
           "count": 1,
-          "rounds": {
-            "ww2:60mm_m49a2": 6
-          },
           "slot": "leader",
           "traits": [
             "leader"
@@ -4511,7 +4505,7 @@
         {
           "count": 1,
           "rounds": {
-            "ww2:60mm_m49a2": 6
+            "ww2:60mm_m49a2": 8
           },
           "slot": "mortar_assistant",
           "traits": [
@@ -4522,7 +4516,7 @@
         {
           "count": 2,
           "rounds": {
-            "ww2:60mm_m49a2": 6
+            "ww2:60mm_m49a2": 8
           },
           "slot": "ammo_bearer",
           "traits": [
