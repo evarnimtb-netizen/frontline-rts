@@ -1561,10 +1561,10 @@ ff_safe = 1                  # S1-S3 switch: one own-men predicate for the order
 counter_fire = 1             # R1-R3 switch: an AI gun answers an own counter-battery marker with map fire
 lift_m = 100                 # m (S1): an own squad walking to the target counts once its lead is this close (D 6.4)
 cb_max_error_m = 60          # m (R2): no counter-fire on a marker wider than this (D 8 ai.cb_max_error_m)
-# S11b (docs/slices/S11b.md 2): every switch 0 until Build C (ablations a0_off, how_off, light_off, s11b_off).
-cb_alternate = 0             # X3 switch: an AI gun does not order counter-fire twice in a row (0..1)
-buy_pending = 0              # H1 switch: gun buys count the manpower of call-ins still pending (0..1)
-how = 0                      # H1 switch: the AI buys a field howitzer (0..1)
+# S11b (docs/slices/S11b.md 2): Build C turns the switches on (ablations a0_off, how_off, light_off, s11b_off).
+cb_alternate = 1             # X3 switch: an AI gun does not order counter-fire twice in a row (0..1)
+buy_pending = 1              # H1 switch: gun buys count the manpower of call-ins still pending (0..1)
+how = 1                      # H1 switch: the AI buys a field howitzer (0..1)
 how_after_s = 480            # s (H1): no howitzer before this match time (D 837-838: unlock 8:00; 0..3600)
 how_max = 1                  # H1: howitzers alive or called in at once (D 789, D 837-838; 0..8)
 how_income_pct = 15          # % (H1): howitzer cards cost at most this share of the income so far, apart from income_max_pct (S11b-3; 0..100)
