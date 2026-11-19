@@ -117,7 +117,9 @@ In his own base:
   bomb until `base_bomb_after_fire_s` after the squad's mortar last fired
   (the base battery brake; 0: no wait); S11b: never a `rifle_grenade`
   item (the design's crate-only rule; an item of that kind names an HE
-  launcher round and `supply.kind = "shells"`);
+  launcher round and `supply.kind = "shells"`). "Crate-only" is read as
+  "not the base": an HQ, a dump and a crate still serve rifle grenades
+  like any item (crates are their designed source);
 - an AT team gets a rocket per `[items] resupply_s`;
 - a vehicle gets a standard round per `[vehicles] base_rearm_s` (the entry
   furthest below its load), a rare round per `rare_rearm_base_s` up to its
@@ -174,3 +176,16 @@ aboard detonates (the rack rule). `DropCrates` sets down crates of a kind;
 the rules are in `docs/slices/S8b-trucks-recon.md` 7. A vehicle draws from one
 source at a time, the fastest in reach; rates never stack. Mortars take bombs
 from a truck only as dropped crates (S8b-4). The AI's use: `[ai.truck]`.
+
+## S11b rounds and rifle grenades (ww2)
+
+| Def | What | `supply` | `[he]` | Source |
+|---|---|---|---|---|
+| `ammo/105mm_fhgr38` | 10.5 cm FH Gr 38 HE, leFH 18 | shells 19,000 g (the complete round, as the M1 HE; verify) | Sprgr 34 x 1.42 (filler 2.0 / 0.7): blast 170 cm, 160 rays to 1,700 cm, suppression 17 m, crater 85 / 43 cm | D 143, D 509, D 1051 |
+| `cartridges/60mm_m49a2` | 60 mm M49A2 bomb, M2 mortar | shells 1,330 g | on the weapon (`m2_60mm`) | GA 730 |
+| `items/m7_rifle_grenade` + `weapons/m7_launcher` + `ammo/m17_rifle_grenade` | M17 on the M7 (US) | shells 680 g | the Mk 2 block | owner to confirm, S11b-7 |
+| `items/schiessbecher_sprgr` + `weapons/schiessbecher` + `ammo/gsprgr30` | Gewehr-Sprenggranate on the Schiessbecher (Germany): 250 m, 60 m/s | shells 250 g | the Mk 2 block at about half: 48 rays, blast and reach x 0.8 | owner to confirm, S11b-7 |
+
+Rifle grenades are issued only with `[items] rifle_grenades` 1 (the US
+Rifle Squad's two `rifle_grenadier` men and the Grenadiergruppe's one, three
+each); with 0 the setup drops them and the slot is a rifleman's.
