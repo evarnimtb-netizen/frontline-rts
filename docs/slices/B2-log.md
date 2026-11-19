@@ -74,3 +74,5 @@ Lines (own counter a match per side, base -> lever):
 - `mix_vehicle30`: +8.8 (42 / 28, z +1.67), 50.6 %; HE 25.7 (under the cap); floors FAIL: mortar share G 7.3 (base 9.2), U 5.1
   (base 6.5), vehicle kill share G 38.2 (base 34.1), U 35.0 (base 28.0). Vehicle cards 3.09 -> 4.28 G, 2.36 -> 3.59 U (moved);
   StuG bought in 35.0 -> 63.1 % of matches. Verdict: fail rule 2 (floors T9, T31).
+- `ger_line_g7_150`: -3.1 (37 / 42, z -0.56), 38.8 %; floors FAIL: German vehicle kill share 36.3 (base 34.1). 7-man Gruppe
+  0.83 -> 2.16 a match (moved; full Gruppe 2.28 -> 1.39, VG 0.42 -> 0.14). Verdict: fail rule 1 (sign and gain) and rule 2.

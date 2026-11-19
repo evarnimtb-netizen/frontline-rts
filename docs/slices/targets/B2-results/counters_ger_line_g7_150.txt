@@ -1,0 +1,5 @@
+HE share 26.19 -> 26.22; median length 18.8 -> 19.2
+germany line/m 3.54->3.69; mg/m 3.31->3.73; veh/m 3.09->3.11; g7/m 0.83->2.16; stug% 35.00->33.12; vehMGk/m 6.02->6.55; m3a1k/m 0.08->0.03; cckw/m 0.00->0.00; 57/m 0.00->0.00; truck_drops/m 3.04->2.70; truck_serves/m 0.05->0.02; rg_fired/m 6.38->4.86; rg_kill% 3.95->3.20; kills/m 64.44->63.16; mortar_k% 9.22->8.22
+   buys moved >=0.15/m: ger_baupioniergruppe 2.36->2.17; ger_grenadiergruppe 2.28->1.39; ger_grenadiergruppe_7 0.83->2.16; ger_smg_gruppe 3.31->3.73; ger_vg_sturmgruppe 0.42->0.14
+usa line/m 1.80->1.74; mg/m 1.79->1.78; veh/m 2.36->2.44; g7/m 0.00->0.00; stug% 0.00->0.00; vehMGk/m 12.20->12.04; m3a1k/m 5.74->4.92; cckw/m 0.76->0.78; 57/m 1.76->1.78; truck_drops/m 1.88->2.22; truck_serves/m 0.06->0.06; rg_fired/m 7.86->8.02; rg_kill% 7.38->7.51; kills/m 80.40->78.43; mortar_k% 6.53->6.57
+   buys moved >=0.15/m: none
