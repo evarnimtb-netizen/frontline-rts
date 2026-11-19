@@ -477,7 +477,7 @@ Revised the same day with the measured diagnosis of S11a2-10..12 and a plan revi
 ## B2 balance pass open owner questions (asked 2026-11-19 by the Plan stage; each runs on (A): "assumed 2026-11-19, owner asked not to be asked")
 
 Plan `docs/slices/B2-balance.md` 9; stage contracts `B2-run-1.md`, `B2-run-2.md`; log `docs/slices/B2-log.md`; targets
-`docs/slices/targets/B2.toml`. Planned, not run (it runs on the S11b head). Found without playing a match, from the 480 at
+`docs/slices/targets/B2.toml`. Run 2026-11-19 on the S11b head (branch); results in `docs/slices/B2-log.md`; no default changed. Found without playing a match, from the 480 at
 `e149258`: Germany wins 24.6 % of the 114 matches that end at 14-17 minutes and 47.0 % of the other 366; its manpower
 exchange is not worse than the USA's; US rifles kill 48.3 men a match against 28.9.
 
@@ -509,6 +509,19 @@ exchange is not worse than the USA's; US rifles kill 48.3 men a match against 28
   vehicle-MG kills a match; the Pak 40's Sd.Kfz. 11 is unarmed. (A) Screen the gun towed by the unarmed CCKW (S9-3 option B)
   as an override and report its number; never applied without the owner. **(A) assumed 2026-11-19, owner asked not to be asked.**
   (B) Leave S9-3 alone and do not screen it.
+- B2-9 Rifle-grenade gap 15 -> 25 s (`[items] rifle_grenade_gap_s`; tested under its own rules R1-R4 and J1-J4, `B2-log.md`).
+  HE share 25.69 on fresh 320 matches and 25.73 on the 480 judges (cap 26.3; base 26.66 and 26.50); Germany unchanged at
+  44.17 %. The one miss is T121b (USA mines set off a match, floor 0.3, 0.45 -> 0.281), a target the lever does not touch.
+  (A) Apply it as one commit (a revert of `63e4b04`); the HE cap holds on both sets. (B) Leave 15.
+- B2-10 57 mm gun tow. The armed M3A1 (S9-3 (A)) makes 5.7 of the USA's kills a match. A truck tow gives Germany +16.2 points
+  on 160 matches but lifts HE to 29.3, and the AI then runs the tow trucks as supply trucks. (A) Keep the M3A1 and take its
+  gun off or price it, in a later slice. (B) Leave the tow as it is.
+- B2-11 Start content. A third free German squad gives +19.4 on 160 matches (HE 27.2, over the cap). Germany already has more
+  men at 5 minutes (49.9 against the USA's 43.7), so the USA does not win by early numbers; the USA leads at 10 minutes.
+  (A) Leave start content; look at the mid game (10 minutes on) in the next balance pass. (B) Change the German start now.
+- B2-12 HE cap 26.3. It is the floor that stops most levers that help Germany: of the four screened levers that lift Germany
+  by 8 points or more, three go over the cap (26.5, 27.2, 29.3). (A) Keep the cap and retune HE sources first. (B) Move the
+  cap, a design change; not measured.
 
 ## Planned work queue
 
@@ -534,8 +547,8 @@ exchange is not worse than the USA's; US rifles kill 48.3 men a match against 28
 15. **S10c-ai: done on branch `claude/project-thread-e7nsak` (2026-11-16), merged to main 2026-11-19 with the owner's OK.** Verified so far: `check.sh quick 54009f6` ok, 881 tests pass; c_off 40 set = main 40/40; Germany 40.00 % of 480 (sets 40.6 / 37.5 / 41.9); 270 targets pass, 71 miss (41 hard). Full suite, `tools/verify.sh` and CI not run yet. Spec `docs/slices/S10c-ai.md`, log `S10c-ai-log.md`, targets `S10c-ai.toml`. Owner questions S10c-1..6 above. Next: the merge decision after verify, then S11.
 16. **S11a1: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A, B and C, with review fixes C-1..C-7 (B-5 not done). Check at the last fix: `check.sh quick 730e67f` all ok, 961 tests. Measured with S11a2 at `e149258` (item 17). Spec `docs/slices/S11a1.md`, log `S11a1-log.md`, targets `S11a1.toml`. Owner questions S11a1-1..10 above. Open: T131 stays a report (S11a1-10); preparation fire never runs in matches (T138). Waits for the owner's merge decision.
 17. **S11a2: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A and B, with the Fix of Build B (B-1..B-7). Verified: `check.sh quick 730e67f` all ok, 982 tests at the head `e149258`. GitHub CI on `affb26e` (S11a1 complete plus S11a2 stage A): Linux build, release and debug sim tests, simulate, clippy, rustfmt and cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on main (fixed by PR 1); macOS cancelled; cross-platform hash check skipped. CI on `e149258` was still running when written. Measured 480 at `e149258`: Germany 41.67 % (sets 46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0; 318 targets pass, 82 miss (44 hard). New hard misses: T9b, T54a, T54c, T81a, T81b, T119b; gone: T8a, T115d, T121d. `tools/verify.sh` not run. Spec `docs/slices/S11a2.md`, log `S11a2-log.md`, targets `S11a2.toml`. Owner questions S11a2-1..12 above. Next: the merge decisions for S10c-ai, S11a1, S11a2 and PR 1; then the open items in STATE.md; then S11b.
-18. **S11b: planned 2026-11-19** (spec `docs/slices/S11b.md`, stages `S11b-build-A.md`, `-B.md`, `-C.md`, targets `S11b.toml`, log `S11b-log.md`). Three Build stages: A (fixes for S11a2-10 and -11, SAVE 29 and PROTOCOL 15, rifle-grenade mode), B (content), C (AI use, measures). Not built. Owner questions S11b-1..13 above.
-19. **B2 balance pass: planned 2026-11-19** (item 14; plan `docs/slices/B2-balance.md`, stages `B2-run-1.md` screen and `B2-run-2.md` confirm and apply, targets `B2.toml`, levers `targets/B2-levers/`, log `B2-log.md`). Runs on the S11b head after its measure: two agent sessions, then the orchestrator's 480 measure and the held-out set. TOML only; if nothing passes the fixed rule, nothing changes. Owner questions B2-1..8 above.
+18. **S11b: done on branch `claude/project-thread-e7nsak` (2026-11-19), waits for the owner's merge OK.** Built in Build A, B and C, with the Fix stage (spec `docs/slices/S11b.md`, stages `S11b-build-A.md`, `-B.md`, `-C.md`, targets `S11b.toml`, log `S11b-log.md`). Measured 480 at `88117de`: Germany 44.17 %, HE share 26.8 / 26.5 / 26.2 (cap 26.3). Owner questions S11b-1..14 above.
+19. **B2 balance pass: done on branch `claude/project-thread-e7nsak` (2026-11-19); NO default changed.** Plan `docs/slices/B2-balance.md` (item 14; stages `B2-run-1.md` and `B2-run-2.md`, targets `B2.toml`, levers `targets/B2-levers/`, log `B2-log.md`). No lever passed the plan's rule. `rg_gap25` was applied (`fc14f52`) and reverted (`63e4b04`) when judge rule J4 failed on T121b. Owner questions B2-1..12 above.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 
