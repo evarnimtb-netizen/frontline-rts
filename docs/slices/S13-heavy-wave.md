@@ -1,6 +1,7 @@
 # S13: heavy wave (Panther G, Tiger I, M4A3 (76) W, M36, M4A3E2): plan
 
-Status: **plan only** (2026-11-19, revision 2 after an independent review), nothing built. Base: `main` at `8d2731b` (S10c-ai,
+Status: **plan only** (2026-11-19, revision 2 after an independent review), nothing built. **Owner questions S13-1..11 settled on
+their (A)** (2026-11-19, under Eva's instruction to settle open questions on the recommended answers; any can be reopened before S13a builds). Base: `main` at `8d2731b` (S10c-ai,
 S11a1, S11a2 merged). S13 builds after S11b, the balance pass (branch `claude/project-thread-e7nsak`) and S12 (wounds and medics) are
 merged, from a fresh main. Card: `docs/design/roster/roster-expansion.md` 4.2 "S13"; design: `docs/design/roster/vehicles.md` 4.4,
 4.5, 5, 6.11, 7.5-7.6, 8.4. Working notes: `S13-research-history.md` (values, URLs, trial data), `S13-research-code-audit.md`
@@ -212,10 +213,10 @@ Hunnicutt, *Sherman*; TM 9-759; tanks-encyclopedia (M4A3E2); afvdatabase.com (M3
 Group (20-21 Aug 1944), Ordnance pamphlet on 90 mm ammunition (Jan 1945, lonesentry.com), ARDEC ARMET-TR-17002 (76 mm vs Panther),
 summarised in "The Chieftain's Hatch: US guns vs German armour" 1-2. Production and arrival: Wikipedia Panther, Tiger I, M36, M4.
 
-## 10. Owner questions (work proceeds on (A); the part in brackets is the first blocked)
+## 10. Owner questions: all DECIDED (A) on 2026-11-19 (settled on the recommendation; the part in brackets is the first affected)
 - **S13-1 Armour rule [S13a].** (A) Add O1, opt-in per round, on the 11 new rounds only, calibrated to US trials (3.3, 3.4).
   (B) Keep the cosine law: the 90 mm and 76 mm HVAP pierce the Panther glacis to ~1 km, the Jumbo falls to the 8.8 cm at 600 m.
-  (C) Lower the new rows instead: breaks "do not touch guns". **How it should play: asked.**
+  (C) Lower the new rows instead: breaks "do not touch guns". **Decided (A).**
 - **S13-1b Old rounds [balance pass].** (A) Leave existing rounds on the cosine law in S13; the balance pass decides with the leak
   table (the 3-inch M62 at least, as the 76 mm M62's twin). (B) Class all full-calibre AP and APCR rounds now and measure the change.
 - **S13-2 Mantlets [S13a].** (A) Published turret face plates (Panther 100 @ 12, Tiger 100 @ 8, Jumbo 152); the soft Panther turret
