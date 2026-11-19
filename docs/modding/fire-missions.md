@@ -179,8 +179,9 @@ buys one field howitzer from `how_after_s` (8:00) inside its own
 its pot skip `field_howitzer` cards (the two spent sums are apart), and with
 `buy_pending` 1 it too counts pending call-ins. A bought howitzer gets the
 infantry gun's record (emplace, observed missions, reserve, budget, lift,
-counter-fire). With `light` 1 the light mortar cards join the mortar slot
-of the buy mix (about one light team in three mortar buys at weight 50
+counter-fire). With `light` 1 (0 in ww2 since the S11b fix stage: the AI
+buys no light mortar, a human player still can; owner question S11b-14)
+the light mortar cards join the mortar slot of the buy mix (about one light team in three mortar buys at weight 50
 against 100); the mortar habit drives them like the heavy tubes, their
 `range_m` (275 / 370 m) being the AI's band, not a refusal. The light mortars' game
 ranges scale the heavy tubes' 600 m by their real ranges (1,100 / 2,400 and

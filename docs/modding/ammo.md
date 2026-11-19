@@ -188,4 +188,6 @@ from a truck only as dropped crates (S8b-4). The AI's use: `[ai.truck]`.
 
 Rifle grenades are issued only with `[items] rifle_grenades` 1 (the US
 Rifle Squad's two `rifle_grenadier` men and the Grenadiergruppe's one, three
-each); with 0 the setup drops them and the slot is a rifleman's.
+each); with 0 the setup drops them and the slot is a rifleman's. ww2 ships
+0 since the S11b fix stage (with them the 40 set's HE share mean is above
+its cap; owner question S11b-15), so no player is issued them by default.
