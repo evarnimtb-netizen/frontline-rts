@@ -359,6 +359,30 @@ pub struct CartridgeSetup {
 }
 
 impl MatchSetup {
+    /// S11b (Build C): every S11b switch at its Off value (spec 2): the
+    /// `[ai.arty]` switches `cb_alternate`, `buy_pending`, `how`, `light`
+    /// 0, and `[items] rifle_grenades` 0 with the `rifle_grenade` kind
+    /// dropped from every squad type, as the setup build does at resolve.
+    /// For tests and rows written before the switches shipped on.
+    pub fn s11b_off(&mut self) {
+        let a = &mut self.rules.ai.arty;
+        (a.cb_alternate, a.buy_pending, a.how, a.light) = (0, 0, 0, 0);
+        self.rifle_grenades_off();
+    }
+
+    /// S11b G1: `[items] rifle_grenades` 0 on a resolved setup (the kind
+    /// dropped from every squad type: `items[kind]` None, member counts 0).
+    pub fn rifle_grenades_off(&mut self) {
+        let k = ItemKind::RifleGrenade.index();
+        self.rules.items.rifle_grenades = 0;
+        for t in self.squad_types.iter_mut() {
+            t.items[k] = None;
+            for m in t.members.iter_mut() {
+                m.items[k] = 0;
+            }
+        }
+    }
+
     /// Index of tag `name` in [`Self::tags`].
     pub fn tag(&self, name: &str) -> Option<u16> {
         self.tags.iter().position(|t| t == name).map(|i| i as u16)

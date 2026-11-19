@@ -28,10 +28,10 @@ fn load_rejects_bad_s11b_keys() {
     let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
     let s = defs.resolve(&req).unwrap();
     let a = &s.rules.ai.arty;
-    // Build A: every switch 0, the other keys at the spec values.
+    // Build C: ww2 turns every switch on, the other keys at the spec values.
     assert_eq!(
         (a.cb_alternate, a.buy_pending, a.how, a.light),
-        (0, 0, 0, 0)
+        (1, 1, 1, 1)
     );
     assert_eq!(
         (a.how_after_s, a.how_max, a.how_income_pct, a.how_reserve_mp),
@@ -42,7 +42,7 @@ fn load_rejects_bad_s11b_keys() {
             s.rules.items.rifle_grenades,
             s.rules.items.rifle_grenade_gap_ticks
         ),
-        (0, 15 * 30)
+        (1, 15 * 30)
     );
     // Absent keys read the same values.
     let d = AiArtyTuning::default();
@@ -442,7 +442,8 @@ fn howitzers_are_inf_guns_with_a_low_angle_table() {
         let v = &s.vehicles[t.vehicle.unwrap() as usize];
         assert_eq!(v.role, frontline_content::VehicleRole::InfGun, "{card}");
         assert!(t.tags.contains(&tag), "{card}");
-        assert_eq!((t.ai_weight, t.max_alive), (0, 1), "{card}");
+        // Build C (H1): the S11a1 gun cards' weight.
+        assert_eq!((t.ai_weight, t.max_alive), (5, 1), "{card}");
         let wi = &s.weapons[v.mounts[0].weapon as usize];
         assert_eq!(wi.id, w);
         assert!(wi.indirect.as_ref().unwrap().low_angle, "{card}");

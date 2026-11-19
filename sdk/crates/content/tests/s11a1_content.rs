@@ -63,6 +63,11 @@ fn load_rejects_bad_s11a1_keys() {
             // The S11a2 switches (Build B turns them on): s11a2_content.
             ff_safe: s.rules.ai.arty.ff_safe,
             counter_fire: s.rules.ai.arty.counter_fire,
+            // The S11b switches (Build C turns them on): s11b_content.
+            cb_alternate: s.rules.ai.arty.cb_alternate,
+            buy_pending: s.rules.ai.arty.buy_pending,
+            how: s.rules.ai.arty.how,
+            light: s.rules.ai.arty.light,
             ..AiArtyTuning::default()
         }
     );
@@ -88,6 +93,11 @@ fn load_rejects_bad_s11a1_keys() {
         AiArtyTuning {
             ff_safe: s.rules.ai.arty.ff_safe,
             counter_fire: s.rules.ai.arty.counter_fire,
+            // The S11b switches (Build C turns them on): s11b_content.
+            cb_alternate: s.rules.ai.arty.cb_alternate,
+            buy_pending: s.rules.ai.arty.buy_pending,
+            how: s.rules.ai.arty.how,
+            light: s.rules.ai.arty.light,
             ..AiArtyTuning::default()
         }
     );

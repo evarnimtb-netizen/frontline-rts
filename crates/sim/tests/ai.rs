@@ -30,7 +30,10 @@ fn setup(seed: u64, d0: Difficulty, d1: Difficulty, ai0: bool) -> MatchSetup {
             },
         ],
     };
-    defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"))
+    let mut s = defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
+    // S11b Build C: written with every S11b switch off (shipped on).
+    s.s11b_off();
+    s
 }
 
 fn ai_vs_ai(seed: u64, threads: usize) -> World {

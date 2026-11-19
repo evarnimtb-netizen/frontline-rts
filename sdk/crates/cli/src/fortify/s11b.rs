@@ -28,7 +28,7 @@
 //!   point marked): `<tube>.vs_heavy_pct` (the target's losses under the
 //!   light tube as % of under the heavy one), `rounds_fired` (bursts).
 use anyhow::{Result, anyhow};
-use frontline_content::{ItemKind, MatchSetup};
+use frontline_content::ItemKind;
 use frontline_sim::{FxVec2, PlayerId, SquadId, World};
 use serde::Serialize;
 
@@ -220,19 +220,6 @@ pub fn how_barrage_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Resul
 const RG_S: u64 = 60;
 const RG_GAP_M: i32 = 100;
 
-/// The setup's rifle-grenade switch at 0 (G1: the kind dropped from every
-/// squad type, as `content/src/setup.rs` does at resolve).
-fn no_rifle_grenades(s: &mut MatchSetup) {
-    let k = ItemKind::RifleGrenade.index();
-    s.rules.items.rifle_grenades = 0;
-    for t in s.squad_types.iter_mut() {
-        t.items[k] = None;
-        for m in t.members.iter_mut() {
-            m.items[k] = 0;
-        }
-    }
-}
-
 /// Rifle grenades squad `q`'s living men carry.
 fn grenades(w: &World, q: SquadId) -> u32 {
     let k = ItemKind::RifleGrenade.index();
@@ -258,7 +245,7 @@ fn rg_once(args: &FortifyArgs, seed: u64, fp: u8, trench: bool, on: bool) -> Res
     let mut w = world_with(args, seed, |s| {
         super::s11a1::flat(s);
         if !on {
-            no_rifle_grenades(s);
+            s.rifle_grenades_off();
         }
     })?;
     let tp = 1 - fp;

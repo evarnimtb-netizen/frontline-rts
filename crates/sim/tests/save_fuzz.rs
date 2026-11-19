@@ -60,23 +60,8 @@ fn setup(seed: u64) -> MatchSetup {
     // rifle grenades leave the squad types as the setup drops them with
     // `rifle_grenades` 0 (S11b state is fuzzed in the staged save and
     // played in `save_roundtrip_carries_s11b_state`).
-    let a = &mut s.rules.ai.arty;
-    (a.cb_alternate, a.buy_pending, a.how, a.light) = (0, 0, 0, 0);
-    no_rifle_grenades(&mut s);
+    s.s11b_off();
     s
-}
-
-/// S11b G1: the setup with `[items] rifle_grenades` 0 (the kind dropped
-/// from every squad type, as the setup build does).
-fn no_rifle_grenades(s: &mut MatchSetup) {
-    let k = frontline_content::ItemKind::RifleGrenade.index();
-    s.rules.items.rifle_grenades = 0;
-    for t in s.squad_types.iter_mut() {
-        t.items[k] = None;
-        for m in t.members.iter_mut() {
-            m.items[k] = 0;
-        }
-    }
 }
 
 /// What the state holds that the fuzz should reach.

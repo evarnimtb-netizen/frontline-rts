@@ -34,6 +34,10 @@ pub(super) fn flat_world_with(
     setup.map.terrain.octaves.clear();
     setup.map.terrain.bands.clear();
     setup.map.woods.clear();
+    // S11b Build C: the tests on this world were written with every S11b
+    // switch off (shipped on since Build C); the S11b tests turn on what
+    // they test.
+    setup.s11b_off();
     edit(&mut setup);
     World::new_match(setup, threads).unwrap()
 }
