@@ -713,6 +713,8 @@ fn s10b_path(path: &str) -> bool {
         // S12: the wounds, the casualties and the counters.
         || path.contains(".wound")
         || path.starts_with("state.game.casualties")
+        // S12 Build B: aid-post beds.
+        || path.contains(".beds")
         || path.contains(".s12.")
         || path.contains("Order.ClearMines")
         || path.contains("Order.Demolish")
@@ -1123,7 +1125,9 @@ fn staged_s11b(w: &mut World, rifles: u16) {
 }
 
 /// Fuzz stage S12 (spec 3): a German rifle squad with a man mid-bandage
-/// and a man downed (a casualty bleeding out); a few S12 counters.
+/// and a man downed (a casualty bleeding out); Build B: a man mid-tend, one
+/// carried, one in an aid-post bed, one evacuating in base; a few S12
+/// counters.
 fn staged_s12(w: &mut World) {
     use frontline_sim::fx::{Fx, FxVec2};
     use frontline_sim::wounds::WOUNDED;
@@ -1151,6 +1155,65 @@ fn staged_s12(w: &mut World) {
         c.wound.by = (1, 1);
     }));
     assert!(w.down_soldier(ms[2], (1, 1)), "the staged man went down");
+    // S12 Build B: a man mid-tend (medic ms of a medic team), one carried
+    // by two riflemen, one in an aid-post bed, one evacuating in base.
+    let tick = w.tick();
+    let east = FxVec2::new(Fx::ONE, Fx::ZERO);
+    let medic_card = w
+        .game()
+        .unwrap()
+        .setup()
+        .squad_type_index("ww2:ger_sanitaetstrupp")
+        .unwrap();
+    let mt = w
+        .spawn_squad_at(PlayerId(0), medic_card, FxVec2::from_int(201, 700), east)
+        .unwrap();
+    let medic = w.game().unwrap().squads()[&mt].members[0];
+    assert!(w.edit_casualty(ms[2], |c| c.tend = Some((medic, tick + 300))));
+    assert!(w.down_soldier(ms[3], (1, 1)), "the carried man went down");
+    assert!(w.edit_casualty(ms[3], |c| {
+        c.carriers = [Some(ms[4]), Some(ms[5])];
+        c.dest = Some(FxVec2::from_int(150, 700));
+    }));
+    let st = w.game().unwrap().setup();
+    let aid = st
+        .stock_of(
+            st.players[0].faction,
+            frontline_content::setup::StockKind::Aid,
+            None,
+        )
+        .expect("the German aid post def");
+    let post = w
+        .build_structure_now(
+            PlayerId(0),
+            aid,
+            FxVec2::from_int(230, 700),
+            Fx::ZERO,
+            [0; 3],
+        )
+        .unwrap();
+    assert!(w.edit_soldier(ms[6], |_, c| {
+        c.hp = 30;
+        c.wound.state = WOUNDED;
+        c.wound.bandaged = true;
+        c.wound.paid = true;
+    }));
+    assert!(w.edit_supply6(|s| {
+        s.structures
+            .get_mut(&post)
+            .unwrap()
+            .beds
+            .push(frontline_sim::wounds::Bed {
+                man: ms[6],
+                done_at: tick + 600,
+                evac: false,
+            })
+    }));
+    let base = w.game().unwrap().base_of(PlayerId(0));
+    let bq = w.spawn_squad_at(PlayerId(0), t, base, east).unwrap();
+    let in_base = w.game().unwrap().squads()[&bq].members[1];
+    assert!(w.down_soldier(in_base, (1, 1)), "the man in base went down");
+    assert!(w.edit_casualty(in_base, |c| c.evac_at = tick + 900));
     assert!(w.edit_player(PlayerId(0), |p| {
         p.s12.downed = 1;
         p.s12.bandaged = 2;

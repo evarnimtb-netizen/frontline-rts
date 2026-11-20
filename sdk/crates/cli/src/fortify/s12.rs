@@ -68,6 +68,9 @@ const PRONE_GAP_M: i32 = 100;
 /// `mg300` (R1, R2): the MGs' distance (m). The plan's 300 m is beyond
 /// the cards' `sight_m` 150: nobody would see anybody.
 const MG_GAP_M: i32 = 100;
+/// `mg300`: where the target squad stands.
+const MG_X: i32 = 350;
+const MG_Y: i32 = 500;
 /// `mg300`: the MGs fire this long (s), then leave; the rest of `RUN_S`
 /// is the lull in which medics work and downed men bleed out.
 const MG_FIRE_S: u64 = 30;
@@ -383,56 +386,66 @@ fn downed_of(w: &World, p: u8) -> u32 {
 }
 
 /// R1/R2 run: [men, downed, outright, bled out, stabilised, down at end].
-fn mg_once(args: &FortifyArgs, seed: u64, tp: u8, medics: bool) -> Result<[u32; 6]> {
+/// The R1/R2 scene, target player `tp`, set up and not yet run: (world,
+/// target squad, medic team).
+pub fn mg_scene(
+    args: &FortifyArgs,
+    seed: u64,
+    tp: u8,
+    medics: bool,
+) -> Result<(World, SquadId, Option<SquadId>)> {
     let mut w = world_with(args, seed, edit_b(if medics { 25 } else { 0 }, false))?;
     let fp = 1 - tp;
-    let (tx, y) = (350, 500);
     let target = super::squad(&w, tp, "line")?;
     park_others(&mut w, tp, target);
     park_others(&mut w, fp, SquadId(u32::MAX));
-    w.place_squad(target, at(tx, y), EAST);
-    let mut mgs = Vec::new();
+    w.place_squad(target, at(MG_X, MG_Y), EAST);
     for dy in [-10, 10] {
-        mgs.push(spawn_tag(
-            &mut w,
-            fp,
-            "mg",
-            at(tx + MG_GAP_M, y + dy),
-            WEST,
-        )?);
+        spawn_tag(&mut w, fp, "mg", at(MG_X + MG_GAP_M, MG_Y + dy), WEST)?;
     }
     let team = if medics {
         Some(spawn_tag(
             &mut w,
             tp,
             "medic",
-            at(tx - MEDIC_BACK_M, y),
+            at(MG_X - MEDIC_BACK_M, MG_Y),
             EAST,
         )?)
     } else {
         None
     };
+    Ok((w, target, team))
+}
+
+/// One tick `k` of the R1/R2 scene: at `MG_FIRE_S` the fire lifts (the
+/// MGs leave for their own corner) and the medics come up to the squad
+/// (auto-tend from there).
+pub fn mg_step(w: &mut World, k: u64, tp: u8, team: Option<SquadId>) {
+    let hz = w.match_setup().unwrap().tick_hz as u64;
+    if k == MG_FIRE_S * hz {
+        park_others(w, 1 - tp, SquadId(u32::MAX));
+        if let Some(q) = team {
+            step_with(
+                w,
+                tp,
+                vec![CommandKind::Move {
+                    squad: q,
+                    target: at(MG_X - 4, MG_Y),
+                }],
+            );
+            return;
+        }
+    }
+    w.step(&[]);
+}
+
+fn mg_once(args: &FortifyArgs, seed: u64, tp: u8, medics: bool) -> Result<[u32; 6]> {
+    let (mut w, target, team) = mg_scene(args, seed, tp, medics)?;
     let men = members(&w, target).len() as u32;
     let s0 = s12_of(&w, tp);
     let hz = w.match_setup().unwrap().tick_hz as u64;
     for k in 0..RUN_S * hz {
-        if k == MG_FIRE_S * hz {
-            // The fire lifts: the MGs leave (to their own corner) and the
-            // medics come up to the squad (auto-tend from there).
-            park_others(&mut w, fp, SquadId(u32::MAX));
-            if let Some(q) = team {
-                step_with(
-                    &mut w,
-                    tp,
-                    vec![CommandKind::Move {
-                        squad: q,
-                        target: at(tx - 4, y),
-                    }],
-                );
-                continue;
-            }
-        }
-        w.step(&[]);
+        mg_step(&mut w, k, tp, team);
     }
     let s1 = s12_of(&w, tp);
     Ok([
@@ -843,6 +856,40 @@ mod tests {
             assert_eq!(hashes(n, 1).0, one, "{n} threads");
         }
         assert_ne!(hashes(1, 2).0, one, "control: another seed");
+    }
+
+    /// Build B: the R2 scene (medics tend, wounds on) plays the same at 1,
+    /// 2, 3 and 8 threads (state hashes every 30 ticks for 90 s, the fire
+    /// lifting at 30 s). Control: medics tended (stabilised or tending).
+    #[test]
+    fn s12_medic_scene_hash_is_thread_count_free() {
+        let hashes = |threads: usize| {
+            let args = FortifyArgs {
+                threads,
+                ..FortifyArgs::default()
+            };
+            let (mut w, _, team) = mg_scene(&args, 1, 0, true).unwrap();
+            let mut v = Vec::new();
+            let mut tended = 0;
+            for k in 0..90 * 30 {
+                mg_step(&mut w, k, 0, team);
+                tended += w
+                    .snapshot()
+                    .casualties
+                    .iter()
+                    .filter(|c| c.tend != u32::MAX)
+                    .count();
+                if k % 30 == 29 {
+                    v.push(w.state_hash());
+                }
+            }
+            (v, tended + s12_of(&w, 0).stabilised as usize)
+        };
+        let (one, tended) = hashes(1);
+        assert!(tended > 0, "medics came into play");
+        for n in [2, 3, 8] {
+            assert_eq!(hashes(n).0, one, "{n} threads");
+        }
     }
 
     /// One-off: the S12 rows on seeds 1..=`S12_SEEDS` (default 1; prints

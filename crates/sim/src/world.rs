@@ -2589,6 +2589,29 @@ impl World {
         true
     }
 
+    /// S12 Build B staged saves and tests: edits downed man `id`'s
+    /// casualty (tend, carriers, destination, evacuation). The caller keeps
+    /// it consistent (own medics and carriers). False if he has none.
+    pub fn edit_casualty(
+        &mut self,
+        id: SimId,
+        f: impl FnOnce(&mut crate::wounds::Casualty),
+    ) -> bool {
+        let Some(c) = self
+            .state
+            .game
+            .as_mut()
+            .and_then(|g| g.casualties.get_mut(&id))
+        else {
+            return false;
+        };
+        f(c);
+        self.hash.mark_entity_chunk(id.chunk());
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
     /// Starts a field repair of vehicle `id` (staged tests; `RepairUnits`
     /// and the AI call `MatchState::start_repair` the same way). False if
     /// nothing is repairable.
