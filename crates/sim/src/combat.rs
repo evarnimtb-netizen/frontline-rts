@@ -2565,7 +2565,9 @@ fn hurt(
 ) -> bool {
     let c = &mut ents.combat[id.index()];
     if c.hp == 0 {
-        if wounds.is_some() && !dead.iter().any(|f| f.0 == id && (f.1, f.2) == by) {
+        // Checker F4: one more entry (the any-later-hit kill, W3) whoever
+        // hit him; resolve_falls reads at most two per man.
+        if wounds.is_some() && dead.iter().filter(|f| f.0 == id).count() < 2 {
             dead.push((id, by.0, by.1, crate::wounds::Hit::default()));
         }
         return false;

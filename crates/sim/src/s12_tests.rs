@@ -575,6 +575,34 @@ fn w3_mine_downs_count_as_mine_losses() {
     assert_eq!(lost, sc.killed_outright + sc.downed, "{sc:?}");
 }
 
+/// Checker F4: two hits in one tick from the same player first down a man,
+/// then kill him (any later hit kills, W3). Control: one hit only downs.
+#[test]
+fn w3_second_same_tick_hit_from_the_same_player_kills() {
+    for two in [false, true] {
+        let mut w = wounds_world(1);
+        let m = lone(&mut w, 0, 500, 500);
+        set_hp(&mut w, m, 20);
+        let ev = BallisticEvent {
+            weapon: weapon(&w, "ww2:m1_garand"),
+            player: 1,
+            ammo: NO_AMMO,
+            slot: 0,
+            shooter: SimId(u32::MAX),
+            blow: Blow::Hit(m, ZONE_TORSO),
+            mission: 0,
+        };
+        let evs = if two { vec![ev, ev] } else { vec![ev] };
+        blows_now(&mut w, &evs, |_, _| {});
+        let want = if two {
+            EntityKind::Corpse
+        } else {
+            EntityKind::Downed
+        };
+        assert_eq!(kind(&w, m), want, "two hits: {two}");
+    }
+}
+
 /// W3 (own fire, S11a2 F4): an own mission burst's fragment that downs an
 /// own man credits no down to his own player, and his bleed-out is an
 /// own-fire kill, not a kill. Control: an enemy's down is credited.
