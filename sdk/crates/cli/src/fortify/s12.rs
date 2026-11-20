@@ -317,13 +317,17 @@ mod tests {
         assert_ne!(hashes(1, 2).0, one, "control: another seed");
     }
 
-    /// One-off: the S12 rows on seed 1 (prints the values); run by hand in
-    /// release.
+    /// One-off: the S12 rows on seeds 1..=`S12_SEEDS` (default 1; prints
+    /// the values); run by hand in release.
     #[test]
     #[ignore]
     fn s12_rows_one_off() {
         let t = std::time::Instant::now();
-        let r = s12_rows(&FortifyArgs::default(), 1..2).unwrap();
+        let n: u64 = std::env::var("S12_SEEDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
+        let r = s12_rows(&FortifyArgs::default(), 1..n + 1).unwrap();
         eprintln!("{}", serde_json::to_string(&r).unwrap());
         eprintln!("s12 rows wall s: {:.1}", t.elapsed().as_secs_f64());
     }
