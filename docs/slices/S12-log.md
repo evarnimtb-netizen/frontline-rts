@@ -45,5 +45,5 @@ G9 c251fcd (also: a man in two beds). Plan text 90ab739. Neutral same 40/40; che
 
 ## S12b C (Build C)
 78e8f0b medic AI + 16 tests. Chunk 2 commit: `s12_derived`, T8 over casualties, T170-T173, switches on, `ai_weight` 10, the two save
-fixes, `s12_off()` for old tests, pool.py and neutral.py. 40 sets in `target/s12-C-40`, `target/s12-C-off40`. check.sh quick: see the
-hand-over above.
+fixes, `s12_off()` for old tests, pool.py and neutral.py. 40 sets in `target/s12-C-40`, `target/s12-C-off40`. `check.sh quick 1209c99`
+green (1215 passed; only `udp::ipv6_loopback_handshake`, no IPv6 on this machine).
