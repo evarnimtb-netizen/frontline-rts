@@ -51,6 +51,8 @@ var vehicle_fx: VehicleFx
 var supply_view: Node3D
 ## S10a: pieces, wire, sites and charges (`match/fort_view.gd`).
 var fort_view: Node3D
+## S12: wound pips, groundsheets, stretchers, armbands, cots (`match/wound_view.gd`).
+var wound_view: Node3D
 ## Screenshot staging: [seconds before the capture, Callable] still to run.
 var _capture_hooks: Array = []
 
@@ -68,6 +70,9 @@ func _ready() -> void:
 	fort_view = preload("res://match/fort_view.gd").new()
 	fort_view.name = "Fort"
 	add_child(fort_view)
+	wound_view = preload("res://match/wound_view.gd").new()
+	wound_view.name = "Wounds"
+	add_child(wound_view)
 	var h: Callable = source.height_at
 	camera.height_fn = h
 	view.height_fn = h
@@ -183,6 +188,7 @@ func _process(_delta: float) -> void:
 	vehicle_fx.update_state(s)
 	supply_view.update_state(s)
 	fort_view.update_state(s)
+	wound_view.update_state(s)
 	if mock_world != null:
 		mock_world.update_state(s)
 	if world_fx != null:
@@ -313,6 +319,26 @@ func _stage(what: String) -> void:
 			source.force_end(0, "tickets")
 		"s3_vehicles", "s3_card", "s3_fit", "s3_locked", "s3_escort":
 			_stage_s3(what)
+		"s12_wounds":
+			# S12: the "hud" firefight; a wounded man bleeding, one
+			# bandaged with a leg wound, a downed man, a medic squad and
+			# an aid post with a man in a bed; the first rifle squad
+			# selected on the aid menu.
+			_stage("hud")
+			var rifles2 := _own_ids("rifle")
+			var at: Vector3 = _centroid(rifles2.slice(0, 1))
+			var men: PackedInt32Array = source.unit_ids(rifles2[0])
+			source.stage_wound(men[1])
+			source.stage_wound(men[2], {"bandaged": true, "legs": true, "treated": false, "bandaging": false}, 48.0)
+			source.stage_downed(men[3])
+			source.stage_aid_post(at + Vector3(-14, 0, 10))
+			var med: int = source.place_medics(Vector2(at.x + 9, at.z + 6))
+			source.prewarm(0.1)
+			camera.height = 34.0
+			camera.jump_to(at)
+			view.update_state(source.get_state())
+			view.selection.select_squads(PackedInt32Array([rifles2[0], med]))
+			view.selection.aid_menu = true
 		"s5a_ammo":
 			# S5a: the "hud" firefight; the first rifle squad low on rounds
 			# and selected (its card rows show each man's rounds), an MG

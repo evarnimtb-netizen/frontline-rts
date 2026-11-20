@@ -9,6 +9,8 @@ extends Node3D
 const STOCK := Color(0.36, 0.38, 0.24)
 const RADIO := Color(0.22, 0.23, 0.22)
 const CRATE := Color(0.42, 0.36, 0.24)
+## S12: an aid post's tent (canvas).
+const TENT := Color(0.66, 0.64, 0.52)
 const CRATE_SIZE := Vector3(0.7, 0.35, 0.4)
 
 var _pool: Array[MeshInstance3D] = []
@@ -38,7 +40,7 @@ func update_state(s: Dictionary) -> void:
 			# pit centre.
 			var ground: Vector3 = b.get("pos", pos + Vector3(at.x, 0.0, -at.y))
 			var p := ground + Vector3(0, size.y * 0.5, 0)
-			var col := RADIO if b.part == "radio" else STOCK
+			var col := RADIO if b.part == "radio" else (TENT if b.part == "tent" else STOCK)
 			var alpha := 1.0 if built else 0.3
 			_box(n, p, size, yaw, _tint(col, int(st.owner), local), alpha)
 			n += 1

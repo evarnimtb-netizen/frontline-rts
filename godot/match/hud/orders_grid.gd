@@ -59,6 +59,24 @@ const ROW_FORT_S10B := [&"lay_ap_mines", &"lay_at_mines", &"build_hedgehog", &"b
 ## S10a: the build-menu buttons' labels.
 const FORT_LABELS := {&"build_sandbags": "Sandbags", &"build_wire": "Wire", &"build_mg_nest": "MG nest", &"build_dugout": "Dugout", &"roof_hq": "Roof HQ", &"lay_ap_mines": "AP mines", &"lay_at_mines": "AT mines", &"build_hedgehog": "Hedgehog", &"build_log_barrier": "Logs", &"build_bunker": "Bunker", &"clear_mines": "Clear mines", &"demolish": "Demolish"}
 
+## S12: wounds and medics. The Aid button (the Mission slot of squads that
+## cannot fire a mission or build; the build menu's third row otherwise)
+## opens the aid menu: Tend, Carry, Evacuate, Reinforce and (medic squads)
+## the aid post. No red cross anywhere: medics wear a white armband and
+## carry a stretcher.
+const AID := [&"aid_menu", "Aid", &"", "Wounds: tend and carry the wounded and downed, evacuate them, call replacements, build the aid post. Opens the aid menu."]
+const ROW_AID := [
+	[&"tend", "Tend", &"", "Click a wounded man or a downed one: the nearest selected man goes to him. A medic stabilises a downed man (15 s) so he stops bleeding out; anyone bandages a wounded man (10 s), who then loses no more HP."],
+	[&"carry", "Carry", &"", "Click a downed man, then the ground: one or two selected men (medics first, on a stretcher) carry him there, slowly. Toward an aid post or the base, where Evacuate takes him off the map."],
+	[&"evacuate", "Evacuate", &"", "Selected wounded men: at a staffed aid post with a free bed they are treated and return; in the base they leave the map (a paid man refunds part of his price). With none selected, click a downed man."],
+	[&"reinforce", "Reinforce", &"", "Selected infantry squads fill their gaps from the base: the men are paid per head (at the card's price), walk to the squad and join. One order per card cooldown; not at the pop cap, not without manpower."],
+	[&"build_aid", "Aid post", &"", "Click the spot (medic squads): a tent on a scrape with two beds. It works while two own medics stand within its ring: a stabilised downed man in the ring is evacuated, a wounded man is treated and returns to the fight. Shell fire that breaks the tent destroys it."],
+]
+const ROW_AID_ORDERS := [&"move", &"attack_move", &"stop", &"retreat"]
+const AID_BACK := [&"aid_menu", "Back", &"", "Back to the orders."]
+## S12: the build menu's last entries (Aid post for medic squads, then the Aid button).
+const ROW_FORT_S12 := [&"build_aid", &"aid_menu"]
+
 ## S3b: area fire without a spotted target (both grids).
 const SUPPRESS := [&"suppress", "Suppress", &"order_suppress", "Fire at an area without a spotted target to keep the enemy's heads down: click a point or drag a line (up to 40 m). Rifles and MGs hold and fire; vehicles fire their MGs and now and then HE. Mortars keep Fire mission. Lasts until another order."]
 const ROW_ABILITY := [
@@ -145,7 +163,7 @@ const ROW_SUPPLY := [
 ]
 const PLACE := [&"place_crate", "Place", &"", "Click the ground: the squad carries its crates there and sets them down. Inside an own HQ or dump ring they go into its stock; within 5 m of a mortar or tank they feed it."]
 const PICK_UP := [&"pick_up", "Pick up", &"", "Click an own crate on the ground: the squad walks to it and a free man takes it."]
-const TOOLS := [&"emplace", &"hitch", &"push_gun", &"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up", &"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq", &"cut_wire", &"bangalore", &"lay_ap_mines", &"lay_at_mines", &"build_hedgehog", &"build_log_barrier", &"build_bunker", &"clear_mines", &"demolish"]
+const TOOLS := [&"tend", &"carry", &"evacuate", &"build_aid", &"emplace", &"hitch", &"push_gun", &"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up", &"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq", &"cut_wire", &"bangalore", &"lay_ap_mines", &"lay_at_mines", &"build_hedgehog", &"build_log_barrier", &"build_bunker", &"clear_mines", &"demolish"]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 ## S4: item buttons with a count badge (the Panzerfaust is a tool, not a
@@ -171,6 +189,8 @@ var _truck := false
 ## S10a: the Build button shows in the Mission slot.
 var _build := false
 var _s10b := ""
+## S12: the Aid button shows in the Mission slot.
+var _aid_slot := false
 
 
 func bind(v: MatchView) -> void:
@@ -192,6 +212,13 @@ func update_state(_s: Dictionary) -> void:
 		sel.fort_menu = false
 	if want == "soldier" and sel.fort_menu:
 		want = "fort"
+	# S12: the aid menu while the selection can use it.
+	var aid: bool = want == "soldier" and sel.can(&"aid_menu")
+	if sel.aid_menu and not (aid or (want == "fort" and sel.can(&"aid_menu"))):
+		sel.aid_menu = false
+	if want == "soldier" and sel.aid_menu:
+		want = "aid"
+	var aid_slot: bool = aid and not build and not sel.can(&"barrage")
 	var pzf: bool = sel.item_count("panzerfaust") > 0 and sel.item_count("satchel") == 0
 	var mounted: bool = not sel.unload_vehicles().is_empty()
 	var truck: bool = not sel.truck_vehicles().is_empty()
@@ -202,10 +229,11 @@ func update_state(_s: Dictionary) -> void:
 	# S10b: the able third-row entries (Demolish follows the satchels).
 	var s10b := ""
 	if want == "fort":
-		for id in ROW_FORT_S10B:
+		for id in ROW_FORT_S10B + ROW_FORT_S12:
 			if sel.can(id):
 				s10b += String(id) + ","
-	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or truck != _truck or mounted != _mounted or gun != _gun or build != _build or s10b != _s10b:
+	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or truck != _truck or mounted != _mounted or gun != _gun or build != _build or s10b != _s10b or aid_slot != _aid_slot:
+		_aid_slot = aid_slot
 		_size = size
 		_build = build
 		_s10b = s10b
@@ -266,7 +294,7 @@ func _layout() -> void:
 		for i in ROW_FORT_ORDERS.size():
 			_add(_fort_order_def(ROW_FORT_ORDERS[i]), Rect2(i * (bw + g), bh + g, bw, bh), "order")
 		# S10b: the able entries take the stance strip's row.
-		var able: Array = ROW_FORT_S10B.filter(func(id: StringName) -> bool: return view.selection.can(id))
+		var able: Array = (ROW_FORT_S10B + ROW_FORT_S12).filter(func(id: StringName) -> bool: return view.selection.can(id))
 		if not able.is_empty():
 			var rw := 5.0 * bw + 4.0 * g
 			var n := maxi(able.size(), 5)
@@ -278,16 +306,22 @@ func _layout() -> void:
 				_add(ROW_FIRE[i], Rect2(i * fseg0, 3.0 * (bh + g), fseg0, fh), "fire")
 			return
 	else:
-		var top: Array = ROW_SUPPLY if grid_mode == "supply" else ROW_ABILITY
+		var top: Array = ROW_SUPPLY if grid_mode == "supply" else (ROW_AID if grid_mode == "aid" else ROW_ABILITY)
 		for i in top.size():
 			var def: Array = top[i]
-			if i == 2 and _pzf_slot and grid_mode != "supply":
-				def = PANZERFAUST
-			elif i == 3 and _build and grid_mode != "supply":
-				def = BUILD
+			if grid_mode == "soldier":
+				if i == 2 and _pzf_slot:
+					def = PANZERFAUST
+				elif i == 3 and _build:
+					def = BUILD
+				elif i == 3 and _aid_slot:
+					def = AID
 			_add(def, Rect2(i * (abw + g), 0, abw, bh), "ability")
 		for i in ROW_ORDERS.size():
-			_add(ROW_ORDERS[i], Rect2(i * (bw + g), bh + g, bw, bh), "order")
+			var odef: Array = ROW_ORDERS[i]
+			if grid_mode == "aid":
+				odef = AID_BACK if i == 4 else ROW_ORDERS[i]
+			_add(odef, Rect2(i * (bw + g), bh + g, bw, bh), "order")
 	# S3c: the stance strip spans three columns; Crew takes the fourth.
 	var sw := 3.0 * bw + 2.0 * g
 	var seg := sw / 4.0
@@ -312,6 +346,10 @@ func _layout() -> void:
 ## S10a: a blueprint button with its kg, time, men and capability from
 ## `rules.fortify.blueprints`.
 func _fort_def(id: StringName) -> Array:
+	if id == &"aid_menu":
+		return AID
+	if id == &"build_aid":
+		return ROW_AID[4]
 	if id == &"clear_mines" or id == &"demolish":
 		return [id, FORT_LABELS.get(id, String(id)), &"", _s10b_order_tip(id)]
 	var bp: Dictionary = view.selection.fort_blueprint(id)
@@ -415,6 +453,8 @@ func active(id: StringName) -> bool:
 		return sel.bail_armed()
 	if id == &"build_menu":
 		return sel.fort_menu
+	if id == &"aid_menu":
+		return sel.aid_menu
 	return false
 
 

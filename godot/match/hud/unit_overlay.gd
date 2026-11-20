@@ -58,7 +58,7 @@ func _draw() -> void:
 		elif id == hover_squad:
 			draw_rect(r.grow(3), Color(col, 0.7), false, 1.5)
 		draw_rect(r, Color(UiPalette.BG, 0.75), true)
-		UiPalette.draw_glyph(self, sq.type, r, col.lightened(0.15 if selected else 0.0), 2.0)
+		UiPalette.draw_glyph(self, "medic" if view.squad_is_medic(id) else sq.type, r, col.lightened(0.15 if selected else 0.0), 2.0)
 		# Strength bar under the marker.
 		var men_max := maxi(int(sq.get("men_max", 1)), 1)
 		var frac := float(sq.get("men", men_max)) / men_max
@@ -77,6 +77,7 @@ func _draw() -> void:
 			var dp: float = sq.get("dig_progress", 0.0)
 			draw_rect(Rect2(bar.position + Vector2(0, 5), Vector2(bar.size.x * dp, 2)), UiPalette.ACCENT)
 	_draw_vehicle_markers(font, sel)
+	_draw_casualties(font)
 	_draw_hit_markers()
 	# Selection box.
 	if sel.dragging:
@@ -87,6 +88,51 @@ func _draw() -> void:
 		_draw_tooltip(font, sel)
 	else:
 		_draw_tool_hint(font, sel)
+
+
+## S12: a tag above each downed man the player sees. Own ones read their
+## state: the seconds left to bleed out (red, ticking), "Tending" with the
+## stabilising progress, "Stable" once stabilised, "Carried", the
+## evacuation countdown. An enemy casualty is a plain dim box. A white
+## bar stands for the armband of a medic at work; no cross.
+func _draw_casualties(font: Font) -> void:
+	if not view.s12_on():
+		return
+	var bold := HudStyle.bold()
+	var picked: int = view.selection.carry_man
+	for id in view.casualty_screen:
+		var c: Dictionary = view.casualties_by_id[id]
+		var sp: Vector2 = view.casualty_screen[id]
+		if not Rect2(Vector2.ZERO, size).grow(30.0).has_point(sp):
+			continue
+		var own := int(c.owner) == view.local_player
+		var text := ""
+		var col := HudStyle.DANGER
+		if not own:
+			col = Color(HudStyle.TEXT, 0.5)
+		elif float(c.get("evac_s", 0.0)) > 0.0:
+			text = "Evac %ds" % ceili(float(c.evac_s))
+			col = HudStyle.ACCENT
+		elif not (c.get("carriers", PackedInt32Array()) as PackedInt32Array).is_empty():
+			text = "Carried"
+			col = HudStyle.ACCENT
+		elif bool(c.get("stabilised", false)):
+			text = "Stable"
+			col = UiPalette.OK
+		elif int(c.get("tend", -1)) != -1:
+			text = "Tending %ds" % ceili(float(c.get("tend_s", 0.0)))
+			col = HudStyle.ACCENT
+		else:
+			var left := ceili(float(c.get("bleed_s", 0.0)))
+			text = "%d:%02d" % [left / 60, left % 60]
+		var w := HudStyle.text_w(bold, text, HudStyle.FONT_SMALL) + 10.0 if text != "" else 12.0
+		var r := Rect2(sp + Vector2(-w * 0.5, -22.0), Vector2(w, 16.0))
+		HudStyle.box(self, r, Color(UiPalette.BG, 0.8), 3, col if id != picked else HudStyle.TEXT, 2 if id == picked else 1)
+		if text != "":
+			HudStyle.text(self, bold, Vector2(r.get_center().x, r.position.y + 12.0), text, HudStyle.FONT_SMALL, col, 0)
+		if own and int(c.get("tend", -1)) != -1 and not bool(c.get("stabilised", false)):
+			# The armband: a short white bar under the tag.
+			draw_rect(Rect2(sp.x - 6.0, r.end.y + 2.0, 12.0, 3.0), Color(1, 1, 1, 0.9))
 
 
 ## Vehicle markers (S3), above every live vehicle in the state: the tank

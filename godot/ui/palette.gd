@@ -97,6 +97,17 @@ static func draw_glyph(ci: CanvasItem, type: String, rect: Rect2, color: Color, 
 				pts.append(Vector2(c.x + hw - rad, c.y) + Vector2(cos(a), sin(a)) * rad)
 			pts.append(pts[0])
 			ci.draw_polyline(pts, color, width)
+		"medic":
+			# S12: a stretcher (no red cross: white armband and stretcher
+			# only): the bed with a handle at each end and two cross bars.
+			var sy0 := r.position.y + r.size.y * 0.36
+			var sy1 := r.position.y + r.size.y * 0.64
+			var sx0 := r.position.x + r.size.x * 0.3
+			var sx1 := r.end.x - r.size.x * 0.3
+			ci.draw_rect(Rect2(sx0, sy0, sx1 - sx0, sy1 - sy0), color, false, width)
+			ci.draw_line(Vector2(r.position.x + r.size.x * 0.14, c.y), Vector2(sx0, c.y), color, width)
+			ci.draw_line(Vector2(sx1, c.y), Vector2(r.end.x - r.size.x * 0.14, c.y), color, width)
+			ci.draw_line(Vector2(c.x, sy0), Vector2(c.x, sy1), color, width * 0.6)
 		"at":
 			# Anti-armour: a chevron from the bottom corners to the top.
 			ci.draw_polyline(PackedVector2Array([Vector2(r.position.x, r.end.y), Vector2(c.x, r.position.y + r.size.y * 0.12), Vector2(r.end.x, r.end.y)]), color, width)

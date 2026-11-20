@@ -143,7 +143,7 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 ## (5 m) round set-down own crates while a mortar is selected, and the
 ## placement ghost (the def's radius) under the cursor of a build tool.
 func _draw_supply(view: MatchView, sel: Node, state: Dictionary) -> void:
-	var show: bool = sel.tool in [&"build_hq", &"build_dump", &"place_crate", &"pick_up"]
+	var show: bool = sel.tool in [&"build_hq", &"build_dump", &"build_aid", &"place_crate", &"pick_up", &"evacuate", &"carry"]
 	# S8b: the selected trucks' reach: vehicles (solid), men (dashed).
 	for id in sel.truck_vehicles():
 		var tv: Dictionary = view.vehicles_by_id.get(id, {})
@@ -168,7 +168,7 @@ func _draw_supply(view: MatchView, sel: Node, state: Dictionary) -> void:
 	for sid in sel.selected_squads():
 		var sq: Dictionary = view.squads_by_id.get(sid, {})
 		var tags: PackedStringArray = sq.get("tags", PackedStringArray())
-		if tags.has("hq") or tags.has("bearers"):
+		if tags.has("hq") or tags.has("bearers") or tags.has("medic"):
 			show = true
 		if sq.get("type", "") in MatchView.MORTARS:
 			show = true
@@ -193,10 +193,10 @@ func _draw_supply(view: MatchView, sel: Node, state: Dictionary) -> void:
 		for c in state.get("crates", []):
 			if int(c.owner) == local and int(c.get("carrier", -1)) == -1 and c.kind == "shells":
 				_ring(c.pos, feed, 0.15, Color(UiPalette.OK, 0.75), 32)
-	if sel.tool == &"build_hq" or sel.tool == &"build_dump":
+	if sel.tool == &"build_hq" or sel.tool == &"build_dump" or sel.tool == &"build_aid":
 		var g: Variant = view.ground_pick(sel.cursor())
 		if g != null:
-			var r := 25.0 if sel.tool == &"build_hq" else 15.0
+			var r := 25.0 if sel.tool == &"build_hq" else (12.0 if sel.tool == &"build_aid" else 15.0)
 			_ring(g, r, 0.4, Color(UiPalette.TEXT, 0.5), 96)
 			_ring(g, 1.5, 0.3, Color(UiPalette.TEXT, 0.8), 24)
 

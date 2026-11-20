@@ -1614,5 +1614,31 @@ it yet. The AI uses none of it yet (S12a Build C).
 
 ### Presenter
 
-Not built yet (S12b): a downed man draws as a body; wound bits, beds and
-the four intents have no HUD.
+Built (S12 Presenter P); it shows wounds only when the state does
+(`MatchView.s12_on()`: `rules.wounds.enabled` when the bridge sends it,
+else a wound, a casualty, an aid post or an own `medic` squad in the
+state).
+
+- `soldiers[].wound` draws a pip above the man (red bleeding, amber being
+  bandaged, white bandaged, green treated; a tan low pip for a leg wound);
+  the detail card says the word; the roster pip reads wounded.
+- `casualties[]` draws a groundsheet and a pip (red bleeding out, white
+  stabilised), a stretcher (two poles) while carried, and an overlay tag
+  (own: seconds to bleed-out, Tending, Stable, Carried, Evac). A man
+  with a `medic` squad tag wears a white armband. No red cross anywhere.
+- Aid posts (`kind: "aid"`) draw the tent box and a cot per bed.
+- Medic cards (tag `medic`) show a stretcher glyph and are hidden while the
+  wound layer is off.
+- Orders grid: an Aid button (Mission slot, or the build menu's third row)
+  opens the aid menu: Tend (click a wounded or downed man: `tend_units`),
+  Carry (click a downed man, then the ground: `carry_units`), Evacuate
+  (selected wounded men go at once, else click a downed man:
+  `evacuate_units`), Reinforce (`reinforce`, squads below `men_max`), Aid
+  post (medic squads; `build {what: "aid"}`). Medic squads get the Build
+  button; the build menu's third row holds Aid post and Aid.
+- The mock stages it: `stage_wound`, `stage_downed`, `stage_aid_post`,
+  `place_medics`; screenshot stage `s12_wounds`.
+
+The bridge does not yet send `rules.wounds {enabled, reinforce}`; until it
+does the medic card stays hidden and the Aid button appears once the first
+wound, casualty or medic squad is in the state.
