@@ -132,9 +132,15 @@ fn load_rejects_bad_s12_keys() {
     assert!(!s.validate().is_empty());
     let mut s = defs.resolve(&req).unwrap();
     s.rules.wounds.evac_refund_pct = s.rules.wounds.reinforce_cost_pct + 1;
-    assert!(!s.validate().is_empty(), "checker G7: refund over the price");
+    assert!(
+        !s.validate().is_empty(),
+        "checker G7: refund over the price"
+    );
     s.rules.wounds.evac_refund_pct = s.rules.wounds.reinforce_cost_pct;
-    assert!(s.validate().is_empty(), "checker G7: refund equal to the price");
+    assert!(
+        s.validate().is_empty(),
+        "checker G7: refund equal to the price"
+    );
     let mut s = defs.resolve(&req).unwrap();
     s.rules.ai.medic.post = 2;
     assert!(!s.validate().is_empty());
