@@ -1730,9 +1730,9 @@ assault = { build_pct = 0, cut_pct = 200 }
 construction = { build_pct = 150, cut_pct = 50 }
 
 # S12 wounds and medics (docs/slices/S12-wounds-medics.md 2, rules W1-W11; IS = infantry-structures.md).
-# Every switch 0 in S12a: a man at 0 HP dies as before and no S12 RNG draw happens.
+# Every switch 0 in S12a; on since S12b Build C (0: a man at 0 HP dies as before, no S12 RNG draw).
 [wounds]
-enabled = 0                  # switch W1-W9: wound states (0: a man at 0 HP dies)
+enabled = 1                  # switch W1-W9: wound states (0: a man at 0 HP dies)
 head_top_pct = 12            # W1: top share of a standing / crouched capsule that is the head (IS 5.3)
 legs_bottom_pct = 45         # W1: bottom share that is the legs (IS 5.3)
 head_damage_pct = 100        # W2: % of weapon damage on a head hit (IS 5.3 asked 300: risk 1, S12-3; head_300 ablation)
@@ -1757,15 +1757,15 @@ return_hp_pct = 75           # W8: he returns with this share of his HP (IS 5.3)
 evac_s = 30                  # W9: an evacuation (s; IS 5.3)
 evac_refund_pct = 40         # W9: refund of a paid man's price (%; IS 5.3)
 auto_tend_m = 25             # W6: a medic with no move order tends own downed men this close (m)
-reinforce = 0                # switch W11: Reinforce fills a squad from base
+reinforce = 1                # switch W11: Reinforce fills a squad from base
 reinforce_cost_pct = 100     # W11: % of the card's per-man price per replacement
 
-# S12b AI medics (docs/slices/S12-wounds-medics.md 5, A1-A5); every switch 0 in S12a.
+# S12b AI medics (docs/slices/S12-wounds-medics.md 5, A1-A5); every switch 0 in S12a, on since Build C.
 [ai.medic]
-buy = 0                      # switch A1: buy medic teams
-field = 0                    # switch A3: field medics tend and carry
-post = 0                     # switch A2, A4: build and staff an aid post
-reinforce = 0                # switch A5: reinforce squads
+buy = 1                      # switch A1: buy medic teams
+field = 1                    # switch A3: field medics tend and carry
+post = 1                     # switch A2, A4: build and staff an aid post
+reinforce = 1                # switch A5: reinforce squads
 max_teams = 2                # A1: medic teams at most
 min_inf_squads = 4           # A1: only while this many infantry squads live
 front_m = 60                 # A3: a field team follows this far behind the lead squad (m; IS 7.3)

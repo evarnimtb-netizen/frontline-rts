@@ -38,6 +38,7 @@ pub(super) fn flat_world_with(
     // switch off (shipped on since Build C); the S11b tests turn on what
     // they test.
     setup.s11b_off();
+    setup.s12_off();
     edit(&mut setup);
     World::new_match(setup, threads).unwrap()
 }

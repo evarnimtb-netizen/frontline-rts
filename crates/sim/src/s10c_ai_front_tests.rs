@@ -1044,6 +1044,7 @@ fn skirmish(threads: usize) -> World {
     s.players.iter_mut().for_each(|p| p.is_ai = true);
     // S11b Build C: written with every S11b switch off (shipped on).
     s.s11b_off();
+    s.s12_off();
     assert_eq!(s.rules.ai.obstacles.front, 1, "front on by default");
     World::new_match(s, threads).unwrap()
 }

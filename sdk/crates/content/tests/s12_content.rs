@@ -27,14 +27,31 @@ fn load_rejects_bad_s12_keys() {
     let mut defs = defs0.clone();
     let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
     let s = defs.resolve(&req).unwrap();
-    // The ww2 rules state the defaults, every switch 0.
-    assert_eq!(s.rules.wounds, WoundsTuning::default());
-    assert_eq!(s.rules.ai.medic, AiMedicTuning::default());
+    // The ww2 rules state the defaults, every switch on since S12b Build C
+    // (the code defaults keep them 0).
+    assert_eq!(
+        s.rules.wounds,
+        WoundsTuning {
+            enabled: 1,
+            reinforce: 1,
+            ..WoundsTuning::default()
+        }
+    );
+    assert_eq!(
+        s.rules.ai.medic,
+        AiMedicTuning {
+            buy: 1,
+            field: 1,
+            post: 1,
+            reinforce: 1,
+            ..AiMedicTuning::default()
+        }
+    );
     assert_eq!(s.rules.supply.as_ref().unwrap().aid_max, 2);
     let w = &s.rules.wounds;
     assert_eq!(
         (w.enabled, w.reinforce, w.head_damage_pct, w.legs_damage_pct),
-        (0, 0, 100, 60)
+        (1, 1, 100, 60)
     );
     assert_eq!(
         (
@@ -46,7 +63,7 @@ fn load_rejects_bad_s12_keys() {
         (60, 180, 50, 60)
     );
     let m = &s.rules.ai.medic;
-    assert_eq!((m.buy, m.field, m.post, m.reinforce), (0, 0, 0, 0));
+    assert_eq!((m.buy, m.field, m.post, m.reinforce), (1, 1, 1, 1));
     assert_eq!(WoundsTuning::KEYS.len(), 27);
     assert_eq!(AiMedicTuning::KEYS.len(), 9);
     // The ablation files apply (their keys exist and are in range).
@@ -150,7 +167,7 @@ fn load_rejects_bad_s12_keys() {
 }
 
 /// Build B step 1: the medic cards resolve with the `medic` trait on every
-/// man, `ai_weight` 0, the plan's prices and cooldowns, appended last in
+/// man, `ai_weight` 10 (Build C), the plan's prices and cooldowns, appended last in
 /// each roster; the trait name is known to content validation and an
 /// unknown bit is refused. Control: drop `medic` from `member_trait::ALL`
 /// and the setup check fails.
@@ -170,7 +187,8 @@ fn s12_medic_cards_resolve() {
     ] {
         let k = s.squad_type_index(id).unwrap_or_else(|| panic!("{id}"));
         let t = &s.squad_types[k as usize];
-        assert_eq!((t.men, t.cost, t.ai_weight), (2, cost, 0), "{id}");
+        // S12b Build C: weight 10 (only the medic AI's A1 buys it).
+        assert_eq!((t.men, t.cost, t.ai_weight), (2, cost, 10), "{id}");
         assert_eq!(t.recall_cooldown_ticks, 30 * s.tick_hz, "{id}");
         assert!(t.tags.contains(&s.tag("medic").unwrap()), "{id}");
         for m in &t.members {

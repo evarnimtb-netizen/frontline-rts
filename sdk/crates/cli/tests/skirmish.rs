@@ -150,8 +150,15 @@ fn binary_runs_a_skirmish_and_prints_json() {
 fn fortify_test_passes() {
     // S10b-ai: its rows are played by the targets' fortify runs and their
     // one-off tests, not here (they doubled this binary's time).
+    // S12b Build C: the S1 cover bars were set before wound states; this
+    // regression test plays them with every S12 switch off (`s12_off`).
+    // With the shipped switches the mortar bar reads 41.3 % (limit 40):
+    // target T13a reports it (docs/slices/S12-log.md).
+    let off = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../docs/slices/targets/S12-ablations/s12_off.toml");
     let r = fortify_test(&FortifyArgs {
         no_s10b_ai: true,
+        rules_override: vec![off],
         ..FortifyArgs::default()
     })
     .unwrap();

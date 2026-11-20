@@ -4,34 +4,35 @@ ablations `targets/S12-ablations/`. Branch `claude/project-thread-aj1tww`, base 
 Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never `target/`, `.claude/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S12a Build B + Fix F done** (d611c16..HEAD on 0493f07): W6-W11, cards, aid post, commands, snapshot, R1-R6, checker F1-F8,
-G1-G9. Switches 0 play as `1209c99`: `neutral.py target/s12-base40 target/s12-F-40` same 40/40 (after G1-G9). Not done: S12b (AI, presenter, gate).
-**LAYOUT commit 84e95fd** (the one saved-setup change): `StockSetup::beds`, `staff_min`, `DigProfile::AidPit` 9, `RulesSetup::aid_pit`;
-SAVE 30 / PROTOCOL 16 kept (not shipped); BASELINE in `resolved_defs.rs` updated. Fix F changed no layout.
-**Code map.** `crates/sim/src/medics.rs`: `medics_tick` (end of `wounds_tick`) = `carry_tick` (W7 fetch/wait/carry/arrive; a walk to
-`dest` that ended short counts as arrived: set down there, `carried` only within 2 m), `stabilise_tick` (W6), `auto_tend`, `posts_tick`
-(W8; a treat bed drops a man no longer a wounded soldier), `base_evac`, `evacuate`. Orders `order_tend`, `order_carry`, `order_evacuate`,
-`order_reinforce`. Helpers `is_medic`, `carriers()`, `staffs`, `post_staff`, `release`, `other_job` (G3), `release_helpers` (G4: called
-from `combat.rs kill`/`down` and the dressing's end in `wounds.rs`). Load checks `wounds.rs validate_s12` (+G9, G1 bed state).
-**What the AI (Build C) calls.** Commands `Tend{units,target}`, `Carry{units,target,to}`, `Evacuate{units}`, `Reinforce{squad}`
-(refusals as `FortEvent`: NotAllowed/Cap/Manpower; NotAllowed also in the card's cooldown); `Build` with the faction's Aid def
-(`stock_of(f, Aid, None)`, `built_by` medic); read `MatchState::casualties` (bleed_out_at 0 = stabilised), `Structure::beds`,
-`is_medic`, `post_staff`. Cards `ger_sanitaetstrupp` (P 38, 16 rounds each), `usa_aid_men` (0 rounds); ai_weight 0. `[ai.medic]` no code.
-**What the AI must do itself** (the sim leaves these men detached on purpose): (1) **reinforcements** walk detached to the squad's
-first man and stand there: `Regroup` (or any squad order) once they are within a few metres folds them into the formation; (2) a
-**carry set down** (a carrier hit, re-ordered or dropped out) halts the other carrier detached where he stands: Regroup him or re-issue
-`Carry`; (3) a **wounded man sent to a post** (`MoveUnits` detached) stays detached until treated (he then rejoins); an untreated one
-the AI walked off must be regrouped; (4) **post staff**: medics must stand in the radius with no move order (detached halted or a held
-squad); the sim never releases them, but auto-tend may send one to a downed man within `auto_tend_m`; (5) a **Tend** buddy or medic whose job ended rejoins by himself
-(G4), but a man the AI halted (`StopUnits`) within 3 m of an undressed wounded friend counts as his buddy and rejoins when the dressing ends.
-**Tests.** `s12b_tests.rs` (27: W6-W11, saves mid-job, snapshot, G1-G6, G9), `s12_tests.rs` (+F1-F8), bridge intents, `s12_content.rs`
-(cards, aid def, ablations, G7, G8), fuzz `staged_s12`, 1/2/3/8-thread hash of the medic scene.
-**Rows, fortify10 seeds 1-10** (`S12_SEEDS=10`, after G1-G9): R1 downed 180/220, outright 0.0 % (report), bled out 80.6 %; R2 bled out
-16.9 %, stabilised 66.7 %, drop 63.7 pts (pass); R3 treated 100 %, 75 HP, stops unstaffed 100 %; R4 0 %; R5 100 %, 0, 0; R6 filled
-100 %, rifle kit 100 %; R7 100 % (pass), R8 66.7 %.
-**Deviations** (plan W6/W9/W11 amended): buddy = own detached halted man within 3 m on no other job (no saved field marks a `Tend`);
-Evacuate of a wounded man in base at once; a reinforcement is a member at once, walks detached; Reinforce refused in the cooldown;
-basic kit = first slot with no crew weapon, no trait. Earlier: R1/R2 at 100 m, R3 "medics die" = moved out, F1-F8 accepted items.
+**State: S12b Build C done** (78e8f0b..HEAD on aff69f3): medic AI A1-A5 and liveness, `s12_derived`, T8 over casualties, T170-T173,
+switches on (`[wounds] enabled` 1, `reinforce` 1, `[ai.medic]` 1, 1, 1, 1; medic cards `ai_weight` 10). Next: orchestrator 480 + ablations.
+**No layout change.** SAVE/PROTOCOL as S12a; `s12_off` 40 = `target/s12-base40` under `neutral.py` (same 40/40, final binary).
+**Code map.** `crates/sim/src/ai/medic.rs` `Planner::medics` (called after `supply`, before the buys): takes medic teams (tag `medic`) out
+of `mine`; `patients` (A4 retreat sends untreated wounded by `MoveUnits`; squads with patients stay out of `mine`); team liveness
+(`man_job`: Busy/Free/Stale from casualties, orders, `UnitNav::phase_ticks`; stale or `STALL_S` 120 s -> `Regroup`); `build_post` /
+`post_site` (A2), `staff_post` / `post_needed` (A4), `buy_medics` (A1), `field` / `assault_lead` (A3), `reinforce` (A5 + fold-in Regroup
+of a halted reinforcement in base); `medic_pot` (pending Reinforce price held from `buy`, whose `bought` counts its card). No saved state:
+plans draw no RNG. `ai.rs` wiring: `units_of` Tend/Carry, `squad_of` Reinforce, validate unit counts. `MatchState::downed_by_player`.
+**Stateless readings (deviations).** A1 "3 downs in 120 s" = 3+ own downed men lying now (each went down within `down_bleed_max_s`);
+"second team when the first staffs" = a team in the built post's radius while men wait. A3 reach 100 m (`FIELD_REACH_M`), carry clear
+30 m. "120 s without progress" = 120 s in one nav phase (a carry's Moving phase 600 s). A5 "in base or retreated" = leader in base or
+`Retreat` order. Fold-in only for squads in base, Idle or retreating (any squad order folds them in anyway).
+**Report.** `s12_derived` per faction (plan 8 names + `team_matches_pct`, `matches`; `medic_matches_pct` = matches with an own man
+stabilised or treated); set-level `s12_derived.he_share_casualties_pct` {mean,max} (T8a-c read it, T8d kills only). `pool.py` S12 line.
+`neutral.py` skips `s12_derived*` keys BASE lacks (as `s11b`).
+**40 sets** (seeds 1-20 both bases): default Germany 20/40 (50 %), no winner 0, length median 21.1 (min 11.3, max 31.1, 10 over 25);
+medic buys G 88 / U 80, tends 165/129, carries 41/36, posts 51/58, reinforce orders 134/87; medic_matches_pct G 87.5 / U 77.5;
+stabilised 3.3 / 3.0 % of downs, bled out 49.7 / 45.0 %; HE share of kills 39.9 (base 25.5), **he_share_casualties_pct 31.2 > T8 26.3**.
+s12_off: Germany 20/40, median 20.1, 11.9-31.8, medic 0, he_cas 25.5 (= base kills share).
+**Misses to read (not tuned, owner rule).** (1) T8 over casualties 31.2 (hard 26.3): wounds turn bullet kills into downs while blast still
+kills (plan risk 7); the gate already had kills-only 37-38 %. (2) T13a fortify10.pass: the S1 mortar bar reads 41.3 % (limit 40) with
+wounds on, 38.6 % with `s12_off` (downed men are not losses inside the 10-round window). The cli test `fortify_test_passes` now plays
+`s12_off`. (3) Stabilised only ~3 % of downs: two teams at most, `enemy_clear_m` 40 holds most tends; features, not tuned.
+**Fixes found by the shipped-switch save round trips** (sim, outside the owned list): `wounds::wound_ok` checks `kill_class::base` of
+`wound.by.1` (a hull MG's class carries the vehicle type); a knock-out and an abandonment clear `supply_due` (a wreck kept a due rearm
+step with `base_ticks` 0 and failed the load). Old tests that assume S12 off call `MatchSetup::s12_off()` (beside `s11b_off()`, combat
+rig, s10a fight); `tests/ai.rs` allows the medic team's Dig; ww2 canonical snapshot blessed; s12_content asserts the switches on.
+**Tests.** `s12_ai_tests.rs` (17: A1 x2, A2, A3 x3, A4 x2, A5 x2, liveness x4, switches off, save/load mid AI carry, the wound.by fix).
 
 ## S12a F (checker G1-G9 on Build B)
 G1 bed drops a downed/dead man (+load check) 4d45f4f, c251fcd. G2 treatment marks the chunk 905c31f. G3+G4 one commit e491a75 (shared
@@ -41,3 +42,8 @@ man; the new man walks detached (the smaller change: not in the column, so no st
 G6 872c19b: arrival short of `dest` (nav goal = dest, order Idle) ends the carry; no retry counter (none fits the layout). G7 5ec6558.
 G8 2f392c3: finding was wrong: the P 38 card counts rounds (weapon `load` 16, no `rounds` key needed); test asserts it; comment fixed.
 G9 c251fcd (also: a man in two beds). Plan text 90ab739. Neutral same 40/40; check.sh quick green (but IPv6).
+
+## S12b C (Build C)
+78e8f0b medic AI + 16 tests. Chunk 2 commit: `s12_derived`, T8 over casualties, T170-T173, switches on, `ai_weight` 10, the two save
+fixes, `s12_off()` for old tests, pool.py and neutral.py. 40 sets in `target/s12-C-40`, `target/s12-C-off40`. check.sh quick: see the
+hand-over above.

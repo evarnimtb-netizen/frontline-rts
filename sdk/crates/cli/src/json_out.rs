@@ -264,6 +264,10 @@ pub fn skirmish(r: &ManyReport) -> Value {
             "over_25": s.over_25_min,
         },
         "he_share_pct": { "mean": s.he_share_mean_pct, "max": s.he_share_max_pct },
+        // S12 Build C (S12-15): T8 over kills plus downs.
+        "s12_derived": {
+            "he_share_casualties_pct": { "mean": s.he_cas_mean_pct, "max": s.he_cas_max_pct },
+        },
         "tick_p99_ms": { "peak": s.peak_p99_max_ms, "all": s.all_p99_max_ms },
         "tank_losses": {
             "total": ko_total,
@@ -667,9 +671,10 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
         o.insert("s11b".into(), raw);
         o.insert("s11b_derived".into(), derived);
     }
-    // S12 (docs/slices/S12-wounds-medics.md 3): counters by name (no
-    // `s12_derived` before Build C).
+    // S12 (docs/slices/S12-wounds-medics.md 3, 8): counters by name and
+    // the derived measures (Build C).
     o.insert("s12".into(), s12_blocks(&f.s12));
+    o.insert("s12_derived".into(), s12_derived(&f.s12));
     o.insert(
         "s6_derived".into(),
         json!({
@@ -1301,6 +1306,63 @@ pub fn s12_blocks(c: &crate::skirmish::S12Faction) -> Value {
         raw.insert((*k).into(), json!(v));
     }
     Value::Object(raw)
+}
+
+/// S12 Build C (docs/slices/S12-wounds-medics.md 8): a faction's
+/// `s12_derived`. Per match: `downed_per_match`, `treated_per_match`,
+/// `evac_per_match`, `refund_mp_per_match`, `reinforced_men_per_match`,
+/// `losses_per_match`, `length_min` (mean); shares of the faction's downs
+/// (men of this faction): `outright_kill_pct` (killed outright over killed
+/// outright plus downed), `bled_out_pct`, `stabilised_pct`,
+/// `downed_killed_pct`; `head_hit_pct` (trench / open: head over all zone
+/// hits on its men); `pop_downed_peak` (mean and most of the per-match
+/// peaks of own downed men lying at once); `medic_matches_pct` (matches
+/// in which a medic stabilised or a post treated an own man);
+/// `team_matches_pct` (matches with a medic team bought);
+/// `he_share_casualties_pct` (S12-15: HE kills plus downs the faction
+/// inflicted over all its kills plus downs). Null where a denominator is
+/// 0.
+pub fn s12_derived(c: &crate::skirmish::S12Faction) -> Value {
+    let n = c.matches.max(1) as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let k = |name: &str| {
+        crate::skirmish::S12_COUNTERS
+            .iter()
+            .position(|x| *x == name)
+            .map_or(0, |i| c.counters[i])
+    };
+    let downed = k("downed");
+    let of_downs = |v: u64| pct_or_null(v as f64, downed as f64);
+    let head = |z: usize| {
+        let all = c.head_hits[z] + c.torso_hits[z] + c.leg_hits[z];
+        pct_or_null(c.head_hits[z] as f64, all as f64)
+    };
+    let downs: Vec<u64> = c.downed_by_class.to_vec();
+    json!({
+        "matches": c.matches,
+        "downed_per_match": per(downed),
+        "outright_kill_pct": pct_or_null(
+            k("killed_outright") as f64,
+            (k("killed_outright") + downed) as f64
+        ),
+        "bled_out_pct": of_downs(k("bled_out")),
+        "stabilised_pct": of_downs(k("stabilised")),
+        "downed_killed_pct": of_downs(k("downed_killed")),
+        "treated_per_match": per(k("treated")),
+        "evac_per_match": per(k("evacuated")),
+        "refund_mp_per_match": per(k("refund_mp")),
+        "reinforced_men_per_match": per(k("reinforced_men")),
+        "head_hit_pct": { "trench": head(0), "open": head(1) },
+        "pop_downed_peak": {
+            "mean": per(c.downed_peak_sum),
+            "max": c.downed_peak_max,
+        },
+        "medic_matches_pct": pct_or_null(c.medic_matches as f64, c.matches as f64),
+        "team_matches_pct": pct_or_null(c.team_matches as f64, c.matches as f64),
+        "he_share_casualties_pct": crate::skirmish::he_cas_pct(&c.kills_by, &downs),
+        "length_min": round3(c.seconds / 60.0 / n),
+        "losses_per_match": per(c.losses),
+    })
 }
 
 pub fn s11b_blocks(c: &crate::skirmish::S11bFaction) -> (Value, Value) {

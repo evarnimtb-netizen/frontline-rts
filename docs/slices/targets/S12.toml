@@ -9,9 +9,12 @@
 #     exist after Build A as reports (no s12_derived before Build C);
 #   - Build B: T164-T169, rows R1-R6 (fortify10.s12 mg300, medics, post,
 #     refund, reinforce).
+#   - Build C: T8a-T8c over kills plus downs (S12-15 (A)); T170-T173 from
+#     `s12_derived` (plan 8): medic_matches_pct (hard, >= 60), the rest
+#     reports.
 #   tools/measure.sh OUTDIR docs/slices/targets/S12.toml
 # Seeds, ROW HONESTY and three_parts_from as in S11b.toml.
-name = "S12a: wound states and medics (S11b targets plus T159-T169)"
+name = "S12: wound states and medics (S11b targets plus T159-T173)"
 three_parts_from = "T109"
 
 [runs.skirmish40]
@@ -227,19 +230,21 @@ min = 15
 max = 30
 
 # --- T8: HE share of kills 20-25 % (S5b-17), hard cap 26.3 % -----------------
+# S12b Build C (S12-15 (A)): T8a-T8c read the HE share over kills plus downs
+# (`s12_derived.he_share_casualties_pct`); T8d stays on kills (report).
 [[target]]
 id = "T8a"
-metric = "skirmish160.he_share_pct.mean"
+metric = "skirmish160.s12_derived.he_share_casualties_pct.mean"
 min = 20
 max = 26.3
 [[target]]
 id = "T8b"
-metric = "skirmish160_oos.he_share_pct.mean"
+metric = "skirmish160_oos.s12_derived.he_share_casualties_pct.mean"
 min = 20
 max = 26.3
 [[target]]
 id = "T8c"
-metric = "skirmish40.he_share_pct.mean"
+metric = "skirmish40.s12_derived.he_share_casualties_pct.mean"
 max = 26.3
 [[target]]
 id = "T8d"
@@ -4647,3 +4652,220 @@ exposure = "fortify10.s12.reinforce.runs"
 exposure_min = 20
 control = "fortify10.s12.reinforce.control_filled_pct"
 note = "R6: runs in which every new man carries the card's plain rifle kit (%); exposure: runs; control: filled runs with the reinforce switch 0 (%)"
+
+# --- T170-T173: S12b Build C, `s12_derived` per faction (docs/slices/S12-wounds-medics.md 8, 9) ---------
+# Source: plan 9 S12b ("medic_matches_pct >= 60", RE "6 of 10"): matches in which a medic stabilised or a post
+# treated an own man. Hard. Exposure: matches; control: s12_off (no medics: 0).
+[[target]]
+id = "T170a"
+metric = "skirmish160.factions.germany.s12_derived.medic_matches_pct"
+min = 60
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 20
+control = "skirmish40_s12_off.factions.germany.s12_derived.medic_matches_pct"
+note = "plan 9: share of matches in which a germany medic stabilised or a post treated an own man (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T170b"
+metric = "skirmish160.factions.usa.s12_derived.medic_matches_pct"
+min = 60
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 20
+control = "skirmish40_s12_off.factions.usa.s12_derived.medic_matches_pct"
+note = "plan 9: share of matches in which a usa medic stabilised or a post treated an own man (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T170c"
+metric = "skirmish160_oos.factions.germany.s12_derived.medic_matches_pct"
+min = 60
+exposure = "skirmish160_oos.factions.germany.s12_derived.matches"
+exposure_min = 20
+control = "skirmish40_s12_off.factions.germany.s12_derived.medic_matches_pct"
+note = "plan 9: share of matches in which a germany medic stabilised or a post treated an own man (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T170d"
+metric = "skirmish160_oos.factions.usa.s12_derived.medic_matches_pct"
+min = 60
+exposure = "skirmish160_oos.factions.usa.s12_derived.matches"
+exposure_min = 20
+control = "skirmish40_s12_off.factions.usa.s12_derived.medic_matches_pct"
+note = "plan 9: share of matches in which a usa medic stabilised or a post treated an own man (%); exposure: matches; control: s12_off"
+# Reports (plan 8; no design figure): per faction on skirmish160, control s12_off.
+[[target]]
+id = "T171a"
+metric = "skirmish160.factions.germany.s12_derived.downed_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.downed_per_match"
+note = "report: germany, own men downed per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171b"
+metric = "skirmish160.factions.usa.s12_derived.downed_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.downed_per_match"
+note = "report: usa, own men downed per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T172a"
+metric = "skirmish160.factions.germany.s12_derived.stabilised_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.stabilised_pct"
+note = "report: germany, share of own downs stabilised (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T172b"
+metric = "skirmish160.factions.usa.s12_derived.stabilised_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.stabilised_pct"
+note = "report: usa, share of own downs stabilised (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T173a"
+metric = "skirmish160.factions.germany.s12_derived.bled_out_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.bled_out_pct"
+note = "report: germany, share of own downs that bled out (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T173b"
+metric = "skirmish160.factions.usa.s12_derived.bled_out_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.bled_out_pct"
+note = "report: usa, share of own downs that bled out (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T171c"
+metric = "skirmish160.factions.germany.s12_derived.treated_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.treated_per_match"
+note = "report: germany, own wounded treated at a post per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171d"
+metric = "skirmish160.factions.usa.s12_derived.treated_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.treated_per_match"
+note = "report: usa, own wounded treated at a post per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171e"
+metric = "skirmish160.factions.germany.s12_derived.evac_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.evac_per_match"
+note = "report: germany, own men evacuated per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171f"
+metric = "skirmish160.factions.usa.s12_derived.evac_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.evac_per_match"
+note = "report: usa, own men evacuated per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171g"
+metric = "skirmish160.factions.germany.s12_derived.reinforced_men_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.reinforced_men_per_match"
+note = "report: germany, replacements per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171h"
+metric = "skirmish160.factions.usa.s12_derived.reinforced_men_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.reinforced_men_per_match"
+note = "report: usa, replacements per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171i"
+metric = "skirmish160.factions.germany.s12_derived.pop_downed_peak.mean"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.pop_downed_peak.mean"
+note = "report: germany, mean per-match peak of own downed men lying at once; exposure: matches; control: s12_off"
+[[target]]
+id = "T171j"
+metric = "skirmish160.factions.usa.s12_derived.pop_downed_peak.mean"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.pop_downed_peak.mean"
+note = "report: usa, mean per-match peak of own downed men lying at once; exposure: matches; control: s12_off"
+[[target]]
+id = "T171k"
+metric = "skirmish160.factions.germany.s12_derived.outright_kill_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.outright_kill_pct"
+note = "report: germany, killed outright over killed outright plus downed (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T171l"
+metric = "skirmish160.factions.usa.s12_derived.outright_kill_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.outright_kill_pct"
+note = "report: usa, killed outright over killed outright plus downed (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T171m"
+metric = "skirmish160.factions.germany.s12_derived.losses_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.losses_per_match"
+note = "report: germany, own losses per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171n"
+metric = "skirmish160.factions.usa.s12_derived.losses_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.losses_per_match"
+note = "report: usa, own losses per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171o"
+metric = "skirmish160.factions.germany.s12_derived.team_matches_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.team_matches_pct"
+note = "report: germany, matches with a medic team bought (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T171p"
+metric = "skirmish160.factions.usa.s12_derived.team_matches_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.team_matches_pct"
+note = "report: usa, matches with a medic team bought (%); exposure: matches; control: s12_off"

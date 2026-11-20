@@ -844,3 +844,17 @@ impl Planner<'_> {
         }
     }
 }
+
+impl crate::game::MatchState {
+    /// S12 Build C (report): own downed men lying now, per player (the
+    /// skirmish report's `pop_downed_peak`).
+    pub fn downed_by_player(&self, ents: &crate::ecs::Entities) -> Vec<u32> {
+        let mut n = vec![0u32; self.players.len()];
+        for id in self.casualties.keys() {
+            if let Some(c) = n.get_mut(ents.owner()[id.index()].0 as usize) {
+                *c += 1;
+            }
+        }
+        n
+    }
+}

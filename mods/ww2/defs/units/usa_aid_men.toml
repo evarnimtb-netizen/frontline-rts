@@ -2,9 +2,8 @@
 # downed men near them on their own (W6), carry them on a stretcher
 # together (W7) and build and staff the aid post
 # (defs/supply/usa_aid_station.toml, W8). Unarmed: the sim needs a weapon
-# slot, so each holds a pistol with no rounds and never fires. No mix tag
-# and ai_weight 0: the AI buys none until S12b
-# (docs/slices/S12-wounds-medics.md 5).
+# slot, so each holds a pistol with no rounds and never fires. No mix tag:
+# only the medic AI buys it (S12b A1, docs/slices/S12-wounds-medics.md 5).
 id = "ww2:usa_aid_men"
 name = "Aid Men"
 short_name = "Aid Men"
@@ -19,7 +18,7 @@ sources = [
 cost = 80
 cooldown_s = 30
 unlock_s = 0
-ai_weight = 0
+ai_weight = 10
 speed_cm_s = 290
 sight_m = 150
 spacing_dm = 30

@@ -376,6 +376,17 @@ impl MatchSetup {
         self.rifle_grenades_off();
     }
 
+    /// S12b Build C: every S12 switch 0 on a resolved setup (`[wounds]
+    /// enabled`, `reinforce`, `[ai.medic]` A1-A5): the S12a defaults the
+    /// tests written before Build C assume (the tests of S12 turn on what
+    /// they test).
+    pub fn s12_off(&mut self) {
+        let w = &mut self.rules.wounds;
+        (w.enabled, w.reinforce) = (0, 0);
+        let m = &mut self.rules.ai.medic;
+        (m.buy, m.field, m.post, m.reinforce) = (0, 0, 0, 0);
+    }
+
     /// S11b G1: `[items] rifle_grenades` 0 on a resolved setup (the kind
     /// dropped from every squad type: `items[kind]` None, member counts 0).
     pub fn rifle_grenades_off(&mut self) {

@@ -2080,14 +2080,14 @@
           "trench_probe_step_m": 4
         },
         "medic": {
-          "buy": 0,
+          "buy": 1,
           "enemy_clear_m": 40,
-          "field": 0,
+          "field": 1,
           "front_m": 60,
           "max_teams": 2,
           "min_inf_squads": 4,
-          "post": 0,
-          "reinforce": 0,
+          "post": 1,
+          "reinforce": 1,
           "reinforce_below_pct": 60
         },
         "mix": {
@@ -2792,7 +2792,7 @@
         "down_bleed_max_s": 180,
         "down_bleed_min_s": 60,
         "drag_speed_pct": 30,
-        "enabled": 0,
+        "enabled": 1,
         "evac_refund_pct": 40,
         "evac_s": 30,
         "head_damage_pct": 100,
@@ -2802,7 +2802,7 @@
         "legs_damage_pct": 60,
         "legs_speed_pct": 60,
         "overkill_kill": 60,
-        "reinforce": 0,
+        "reinforce": 1,
         "reinforce_cost_pct": 100,
         "return_hp_pct": 75,
         "stabilise_s": 15,
@@ -3785,7 +3785,7 @@
       "weapon": ""
     },
     "ww2:ger_sanitaetstrupp": {
-      "ai_weight": 0,
+      "ai_weight": 10,
       "capabilities": [
         "dig_basic"
       ],
@@ -4702,7 +4702,7 @@
       "weapon": ""
     },
     "ww2:usa_aid_men": {
-      "ai_weight": 0,
+      "ai_weight": 10,
       "capabilities": [
         "dig_basic"
       ],

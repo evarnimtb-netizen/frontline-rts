@@ -278,7 +278,9 @@ fn load_rejects_bad_s12_state() {
         ),
         (
             "hitter class unknown",
-            Box::new(move |s| wd(s, band).by.1 = 99),
+            // S12b Build C: the class's low nibble (a vehicle type may sit
+            // above it, as in every kill class).
+            Box::new(move |s| wd(s, band).by.1 = crate::game::kill_class::COUNT as u16),
         ),
         (
             "a wound on a corpse",

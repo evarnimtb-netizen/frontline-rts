@@ -728,3 +728,24 @@ fn save_load_mid_ai_carry_keeps_the_hash() {
     assert_eq!(x.full_state_hash(), w.full_state_hash(), "loaded");
     assert_eq!(y.full_state_hash(), w.full_state_hash(), "3 threads");
 }
+
+/// Build C fix (found by the shipped-switch save round trips): a downed
+/// man's `wound.by` keeps the hitter's full kill class, with the shooting
+/// vehicle's type above its low nibble (a hull MG's `VEHICLE_MG | (type +
+/// 1) << 4`), and the load check accepts it. Control: a class whose low
+/// nibble is past `kill_class::COUNT` is still refused.
+#[test]
+fn wound_by_with_a_vehicle_class_loads() {
+    use crate::game::kill_class;
+    let w = crate::wounds::Wound {
+        state: crate::wounds::DOWNED,
+        by: (1, kill_class::VEHICLE_MG | (17 + 1) << 4),
+        ..Default::default()
+    };
+    assert!(crate::wounds::wound_ok(EntityKind::Downed, &w, 2, 300));
+    let bad = crate::wounds::Wound {
+        by: (1, kill_class::COUNT as u16 | (17 + 1) << 4),
+        ..w
+    };
+    assert!(!crate::wounds::wound_ok(EntityKind::Downed, &bad, 2, 300));
+}

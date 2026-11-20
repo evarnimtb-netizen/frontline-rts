@@ -214,8 +214,11 @@ pub(crate) fn wound_ok(kind: EntityKind, w: &Wound, players: usize, bandage_tick
         && fit_clean
         && (w.bandaging as u64) <= bandage_ticks
         && !(w.bandaged && w.bandaging > 0)
+        // S12b Build C: `by.1` may carry the hitting vehicle's type above
+        // its class (`kill_class::vehicle`), as every kill class does.
         && (w.by == (0, 0)
-            || ((w.by.0 as usize) < players && (w.by.1 as usize) < kill_class::COUNT))
+            || ((w.by.0 as usize) < players
+                && (kill_class::base(w.by.1) as usize) < kill_class::COUNT))
 }
 
 impl MatchState {
