@@ -375,9 +375,7 @@ impl MatchState {
                             if let Some(p) = self.players.get_mut(owner as usize) {
                                 p.s12.bandaged = p.s12.bandaged.saturating_add(1);
                             }
-                            if let Some(b) = buddy {
-                                done_buddies.push(b);
-                            }
+                            done_buddies.push(id);
                         }
                     }
                 } else if calm {
@@ -411,9 +409,13 @@ impl MatchState {
                 self.down(ctx.ents, ctx.hash, Some(ctx.terrain), id, by, tick, seed);
             }
         }
-        // W6: a buddy whose dressing is done rejoins his squad.
-        for b in done_buddies {
-            Self::release(ctx, b);
+        // W6: the buddies of a man whose dressing is done (his own or
+        // theirs; checker G4: also a buddy still walking to him) rejoin
+        // their squads.
+        for id in done_buddies {
+            let at = ctx.ents.transform[id.index()].pos.xy();
+            let reach = crate::medics::BUDDY_REACH_M;
+            self.release_helpers(ctx.ents, ctx.hash, id, at, reach, &[]);
         }
         // W6, W7 (`crate::medics`).
         self.medics_tick(ctx);

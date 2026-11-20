@@ -198,7 +198,8 @@ impl MatchState {
     }
 
     /// W6 buddy bandage: the lowest-id own tender of wounded man `i` (not
-    /// himself, not carrying), from the detached men `idle`.
+    /// himself, not carrying, on no other job: checker G3), from the
+    /// detached men `idle`.
     pub(crate) fn buddy_of(
         &self,
         ents: &crate::ecs::Entities,
@@ -211,7 +212,109 @@ impl MatchState {
             b.index() != i
                 && carrying.binary_search_by_key(&b, |x| x.0).is_err()
                 && Self::tender_at(ents, b.index(), ents.owner[i], at)
+                && !self.other_job(ents, b.index(), false)
         })
+    }
+
+    /// Checker G3, G4: whether detached man `j` is on a job a buddy
+    /// bandage must not take him from (nor its end release him from): he
+    /// rides or serves, throws or places a charge, tends or carries a
+    /// casualty; a medic heading for or standing by an own unstabilised,
+    /// uncarried downed man (he tends him), or standing in an own built
+    /// aid post's radius (staff). With `buddy`, also a man standing by (or
+    /// heading for) another own undressed wounded soldier (his buddy).
+    pub(crate) fn other_job(&self, ents: &crate::ecs::Entities, j: usize, buddy: bool) -> bool {
+        let m = SimId(j as u32);
+        let u = &ents.unit[j];
+        if u.riding.is_some() || u.serving.is_some() || ents.kit[j].windup.is_some() {
+            return true;
+        }
+        if self
+            .casualties
+            .values()
+            .any(|c| c.tend.is_some_and(|t| t.0 == m) || c.carriers.contains(&Some(m)))
+        {
+            return true;
+        }
+        let owner = ents.owner[j];
+        let pos = ents.transform[j].pos.xy();
+        let spot = match u.order {
+            UnitOrder::Move { target } => target,
+            _ => pos,
+        };
+        if buddy {
+            let r_sq = Fx::from_int(BUDDY_REACH_M * BUDDY_REACH_M);
+            let by_one = (0..ents.len()).any(|k| {
+                k != j
+                    && ents.kind[k] == EntityKind::Soldier
+                    && ents.owner[k] == owner
+                    && ents.combat[k].wound.state == WOUNDED
+                    && !ents.combat[k].wound.bandaged
+                    && (ents.transform[k].pos.xy() - spot).length_sq() <= r_sq
+            });
+            if by_one {
+                return true;
+            }
+        }
+        if !self.is_medic(ents, j) {
+            return false;
+        }
+        let by_downed = self.casualties.iter().any(|(&id, c)| {
+            ents.owner[id.index()] == owner
+                && c.bleed_out_at != 0
+                && c.carriers[0].is_none()
+                && (ents.transform[id.index()].pos.xy() - spot).length_sq() <= reach_sq()
+        });
+        by_downed
+            || self.supply6.structures.values().any(|st| {
+                let d = &self.setup.stocks[st.def as usize];
+                let r: Fx = d.radius.into();
+                st.built
+                    && st.owner == owner
+                    && d.kind == frontline_content::setup::StockKind::Aid
+                    && (st.pos - pos).length_sq() <= r.mul(r)
+            })
+    }
+
+    /// Checker G4: own man `gone` (a downed man, or an undressed wounded
+    /// soldier) died, was evacuated, went down or was dressed at `at`: the
+    /// men on his job rejoin their squads: `jobs` (his tender and
+    /// carriers) and every own detached man standing within `reach_m` of
+    /// `at` or walking to a spot there, unless on another job
+    /// ([`Self::other_job`]).
+    pub(crate) fn release_helpers(
+        &self,
+        ents: &mut crate::ecs::Entities,
+        hash: &mut crate::hash::HashCache,
+        gone: SimId,
+        at: FxVec2,
+        reach_m: i32,
+        jobs: &[SimId],
+    ) {
+        if self.setup.rules.wounds.enabled == 0 {
+            return;
+        }
+        let owner = ents.owner[gone.index()];
+        let r_sq = Fx::from_int(reach_m * reach_m);
+        for j in 0..ents.len() {
+            let m = SimId(j as u32);
+            if j == gone.index()
+                || ents.kind[j] != EntityKind::Soldier
+                || ents.owner[j] != owner
+                || !ents.unit[j].detached
+            {
+                continue;
+            }
+            let near = match ents.unit[j].order {
+                UnitOrder::Idle => (ents.transform[j].pos.xy() - at).length_sq() <= r_sq,
+                UnitOrder::Move { target } => (target - at).length_sq() <= r_sq,
+                _ => false,
+            };
+            if (near || jobs.contains(&m)) && !self.other_job(ents, j, true) {
+                ents.unit[j].rejoin();
+                hash.mark_entity_chunk(m.chunk());
+            }
+        }
     }
 
     /// Detached soldiers with no move order (the possible tenders),

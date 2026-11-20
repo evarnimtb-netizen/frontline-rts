@@ -3836,6 +3836,11 @@ impl MatchState {
     ) {
         let i = id.index();
         let owner = ents.owner[i].0 as usize;
+        // S12 checker G4: an undressed wounded soldier (his buddies stand
+        // down at his death).
+        let undressed = ents.kind[i] == EntityKind::Soldier
+            && ents.combat[i].wound.state == crate::wounds::WOUNDED
+            && !ents.combat[i].wound.bandaged;
         // S4: what he carried (a crew weapon is dropped where he fell);
         // S5a: with the rounds left in it.
         let carried = ents.kit[i].weapon;
@@ -3909,9 +3914,23 @@ impl MatchState {
         if let Some(p) = self.players.get_mut(owner) {
             p.losses += 1;
         }
-        // S12: a downed man's casualty ends with him (none without wounds).
-        if !self.casualties.is_empty() {
-            self.casualties.remove(&id);
+        // S12: a downed man's casualty ends with him (none without wounds);
+        // checker G4: his tender and carriers (and medics walking to him),
+        // or an undressed wounded man's buddies, rejoin their squads.
+        if !self.casualties.is_empty()
+            && let Some(c) = self.casualties.remove(&id)
+        {
+            let jobs: Vec<SimId> = c
+                .tend
+                .map(|t| t.0)
+                .into_iter()
+                .chain(c.carriers.iter().flatten().copied())
+                .collect();
+            let reach = crate::medics::REACH_M;
+            self.release_helpers(ents, hash, id, fell_at, reach, &jobs);
+        } else if undressed {
+            let reach = crate::medics::BUDDY_REACH_M;
+            self.release_helpers(ents, hash, id, fell_at, reach, &[]);
         }
         self.leave_squad(ents, id, carried, left_in, fell_at);
     }
@@ -4182,6 +4201,9 @@ impl MatchState {
             }
         }
         let fell_at = ents.transform[i].pos.xy();
+        // Checker G4: an undressed wounded man's buddies stand down.
+        let undressed =
+            ents.combat[i].wound.state == crate::wounds::WOUNDED && !ents.combat[i].wound.bandaged;
         let sq = ents.squad[i];
         let card = sq
             .and_then(|s| self.squads.get(&s))
@@ -4232,6 +4254,10 @@ impl MatchState {
             {
                 *n = n.saturating_add(1);
             }
+        }
+        if undressed {
+            let reach = crate::medics::BUDDY_REACH_M;
+            self.release_helpers(ents, hash, id, fell_at, reach, &[]);
         }
         self.leave_squad(ents, id, carried, left_in, fell_at);
     }

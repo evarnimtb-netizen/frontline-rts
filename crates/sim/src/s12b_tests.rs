@@ -203,11 +203,14 @@ fn w6_medic_dies_or_casualty_killed_mid_tend() {
         }
     ));
     until(&mut w, 30 * 30, |w| cas(w, d).tend.is_some()).expect("a tend starts");
+    let (m, _) = cas(&w, d).tend.unwrap();
     // A stray round kills him.
     super::s12_tests::bullet(&mut w, 1, "ww2:kar98k", d, crate::wounds::ZONE_TORSO);
     assert_eq!(kind(&w, d), EntityKind::Corpse);
     steps(&mut w, 20 * 30);
     assert_eq!(s12(&w, 0).stabilised, 0);
+    // Checker G4: his medic rejoined his squad.
+    assert!(!w.state.entities.unit[m.index()].detached);
 }
 
 /// W6 auto-tend: a medic team holding within `auto_tend_m` goes to the
@@ -417,7 +420,7 @@ fn w7_he_bleeds_out_in_transit() {
         &mut w,
         1,
         CommandKind::Carry {
-            units: med,
+            units: med.clone(),
             target: d,
             to: c(500, 300)
         }
@@ -426,6 +429,10 @@ fn w7_he_bleeds_out_in_transit() {
     assert_eq!(kind(&w, d), EntityKind::Corpse);
     assert_eq!(s12(&w, 0).carried, 0);
     assert_eq!(s12(&w, 0).bled_out, 1);
+    // Checker G4: his carriers rejoined their squad.
+    for &m in &med {
+        assert!(!w.state.entities.unit[m.index()].detached);
+    }
 }
 
 /// W7: carriers do not fire. With an enemy squad in range the carriers
@@ -970,5 +977,140 @@ fn g2_treatment_marks_the_mans_chunk() {
     })
     .expect("treated");
     assert_eq!(w.state_hash(), w.full_state_hash());
+}
+
+/// Checker G3: a medic mid-stabilise is no buddy: a suppressed wounded
+/// man by him stays undressed and the tend goes on to stabilise. Control:
+/// a plain detached rifleman by him dresses him (`w6_buddy_...`).
+#[test]
+fn g3_a_tending_medic_is_no_buddy() {
+    let (mut w, d, sq, med) = scene(0, 503);
+    assert!(cmd(
+        &mut w,
+        1,
+        CommandKind::Tend {
+            units: med,
+            target: d
+        }
+    ));
+    until(&mut w, 30 * 30, |w| cas(w, d).tend.is_some()).expect("a tend starts");
+    let (m, _) = cas(&w, d).tend.unwrap();
+    let hurt = members(&w, sq)[0];
+    w.edit_soldier(hurt, |_, c| {
+        c.hp = 60;
+        c.wound.state = WOUNDED;
+    });
+    let at = pos(&w, m) + c(1, 0);
+    assert!(cmd(
+        &mut w,
+        2,
+        CommandKind::MoveUnits {
+            units: vec![hurt],
+            target: at
+        }
+    ));
+    let crouch = w.match_setup().unwrap().rules.combat.crouch_suppression;
+    let mut stabilised = false;
+    for _ in 0..30 * 30 {
+        w.state.entities.combat[hurt.index()].suppression = (crouch + 5) * 1000;
+        w.step(&[]);
+        stabilised |= cas(&w, d).bleed_out_at == 0;
+        if !stabilised {
+            assert!(w.state.entities.unit[m.index()].detached, "kept tending");
+        }
+    }
+    assert!(stabilised);
+    assert!(!w.state.entities.combat[hurt.index()].wound.bandaged);
+}
+
+/// Checker G4: the men on a job rejoin when it ends early: a casualty
+/// killed mid-tend frees his medic; one dying mid-carry frees his
+/// carriers; a wounded man who dies, or dresses himself, before his buddy
+/// arrives frees the buddy. Control: the tender of a living casualty
+/// stays detached.
+#[test]
+fn g4_job_men_rejoin_when_the_job_ends() {
+    // Killed mid-tend.
+    let (mut w, d, _, med) = scene(0, 503);
+    assert!(cmd(
+        &mut w,
+        1,
+        CommandKind::Tend {
+            units: med,
+            target: d
+        }
+    ));
+    until(&mut w, 30 * 30, |w| cas(w, d).tend.is_some()).expect("a tend starts");
+    let (m, _) = cas(&w, d).tend.unwrap();
+    assert!(w.state.entities.unit[m.index()].detached, "control");
+    super::s12_tests::bullet(&mut w, 1, "ww2:kar98k", d, crate::wounds::ZONE_TORSO);
+    steps(&mut w, 2);
+    assert!(!w.state.entities.unit[m.index()].detached, "medic rejoined");
+    // Dies mid-carry.
+    let (mut w, d, _, med) = scene(0, 503);
+    let t = w.tick();
+    w.state
+        .game
+        .as_mut()
+        .unwrap()
+        .casualties
+        .get_mut(&d)
+        .unwrap()
+        .bleed_out_at = t + 20 * 30;
+    w.refresh_hashes();
+    assert!(cmd(
+        &mut w,
+        1,
+        CommandKind::Carry {
+            units: med.clone(),
+            target: d,
+            to: c(500, 300)
+        }
+    ));
+    steps(&mut w, 25 * 30);
+    assert_eq!(kind(&w, d), EntityKind::Corpse);
+    for &m in &med {
+        assert!(
+            !w.state.entities.unit[m.index()].detached,
+            "carrier rejoined"
+        );
+    }
+    // A buddy on his way: the man dies, or dresses himself.
+    for dies in [true, false] {
+        let mut w = world(0);
+        let sq = spawn(&mut w, 0, RIFLES, 500, 500);
+        let far = spawn(&mut w, 0, RIFLES, 500, 560);
+        steps(&mut w, 3);
+        let hurt = members(&w, sq)[2];
+        let b = members(&w, far)[0];
+        w.edit_soldier(hurt, |_, c| {
+            c.hp = 40;
+            c.wound.state = WOUNDED;
+        });
+        assert!(cmd(
+            &mut w,
+            1,
+            CommandKind::Tend {
+                units: vec![b],
+                target: hurt
+            }
+        ));
+        steps(&mut w, 30);
+        assert!(w.state.entities.unit[b.index()].detached, "on his way");
+        if dies {
+            assert!(w.kill_soldier(hurt));
+        } else {
+            until(&mut w, 20 * 30, |w| {
+                w.state.entities.combat[hurt.index()].wound.bandaged
+            })
+            .expect("dressed himself");
+            assert!(
+                (pos(&w, b) - pos(&w, hurt)).length_sq() > Fx::from_int(9),
+                "before the buddy came"
+            );
+        }
+        steps(&mut w, 2);
+        assert!(!w.state.entities.unit[b.index()].detached, "buddy rejoined");
+    }
 }
 
