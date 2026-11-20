@@ -500,6 +500,16 @@ impl MatchFrame {
         }
         // The sim spots corpses like prone men.
         self.corpses.clone_from(&snap.corpses);
+        // S12 F2 (review R5): a man who lay downed already fell; his body
+        // keeps lying (`ticks_left` 0, the fall's end) instead of falling
+        // again.
+        if !ctx.downed.is_empty() {
+            for c in &mut self.corpses {
+                if ctx.downed.contains(&c.id.0) {
+                    c.ticks_left = 0;
+                }
+            }
+        }
         // S12: a downed man lies as a body (ascending id kept).
         self.casualties.clone_from(&snap.casualties);
         self.corpses
@@ -511,6 +521,20 @@ impl MatchFrame {
                 seen_by: c.seen_by,
             }));
         self.corpses.sort_by_key(|c| c.id);
+        // Downed now, or a body that was (kept while the body lies).
+        ctx.downed = self
+            .corpses
+            .iter()
+            .filter(|c| {
+                c.ticks_left == 0
+                    && (ctx.downed.contains(&c.id.0)
+                        || self
+                            .casualties
+                            .binary_search_by_key(&c.id, |k| k.id)
+                            .is_ok())
+            })
+            .map(|c| c.id.0)
+            .collect();
         self.corpse_visible.clear();
         for c in &self.corpses {
             self.corpse_visible
@@ -990,6 +1014,9 @@ pub struct FrameCtx {
     /// (armour-event fog).
     seen_vehicles: BTreeSet<u32>,
     seen_vehicles_prev: BTreeSet<u32>,
+    /// S12 F2 (review R5): downed men at the last frame and the bodies of
+    /// those who died since (their fall is over).
+    downed: BTreeSet<u32>,
     /// A staged scene's name (`frontline_sim::scenarios::SCENES`): frames
     /// carry whether its condition holds.
     pub scene: Option<String>,

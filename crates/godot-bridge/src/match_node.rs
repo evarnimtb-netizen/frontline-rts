@@ -840,7 +840,9 @@ impl FrontlineMatch {
             "sim_late_ticks" => c.late_ticks.load(Relaxed) as i64,
             "commands_sent" => c.commands_sent.load(Relaxed) as i64,
             "soldiers" => f.soldiers.len() as i64,
-            "corpses" => f.corpses.len() as i64,
+            // S12 F2 (review R5): bodies only, not the downed men drawn
+            // as bodies.
+            "corpses" => (f.corpses.len() - f.casualties.len()) as i64,
             "rounds" => f.rounds.len() as i64,
             "soldiers_drawn" => rt.soldier_layers.iter().map(|l| l.count as i64).sum::<i64>(),
             "tracers_drawn" => rt.tracer_layer.count as i64,
@@ -1927,6 +1929,22 @@ impl MatchRuntime {
             "name" => setup.map.name.as_str(),
             "size_m" => setup.map.size_m as f32,
         };
+        // S12 F2 (review R3): the local player's base ring (Evacuate takes
+        // a wounded man off the map there).
+        if let Some(b) = setup
+            .players
+            .get(local)
+            .and_then(|p| setup.map.bases.get(p.base as usize))
+        {
+            let c = frontline_sim::FxVec2::from(b.center).to_f32();
+            map.set(
+                "own_base",
+                &vdict! {
+                    "pos" => self.ground(c),
+                    "radius" => Fx::from(b.radius).to_f32(),
+                },
+            );
+        }
         if let Some(t) = &self.minimap {
             map.set("minimap", &t.to_variant());
         }
@@ -1991,6 +2009,12 @@ impl MatchRuntime {
             "vehicle_types" => &self.vehicle_types,
             // S10a: blueprints and materials for the build menu.
             "fortify" => &fort_rules(setup, hz),
+            // S12 F2 (bridge gap B1): the wound layer's switches
+            // (`MatchView.s12_on`).
+            "wounds" => &vdict! {
+                "enabled" => rules.wounds.enabled != 0,
+                "reinforce" => rules.wounds.reinforce != 0,
+            },
         };
 
         let mut players = VarArray::new();
@@ -2089,6 +2113,10 @@ impl MatchRuntime {
                         "evac" => b.evac,
                     }.to_variant()).collect::<VarArray>(),
                     "staff" => st.staff as i64,
+                    // S12 F2 (bridge gap B3): the def's beds and the
+                    // medics it needs to work.
+                    "beds_max" => d.beds as i64,
+                    "staff_min" => d.staff_min as i64,
                 }
                 .to_variant(),
             );
@@ -2363,6 +2391,10 @@ impl MatchRuntime {
         };
         let mut catalog = VarArray::new();
         for &t in &fac.roster {
+            // S12 F2 (bridge gap B2): no medic cards with wounds off.
+            if rules.wounds.enabled == 0 && setup.type_has_tag(t, "medic") {
+                continue;
+            }
             let ty = &setup.squad_types[t as usize];
             let mut d = entry(t);
             d.set("cost", ty.cost as i64);
