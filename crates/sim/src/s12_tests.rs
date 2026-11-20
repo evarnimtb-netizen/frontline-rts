@@ -1131,3 +1131,112 @@ fn s12_save_load_mid_bandage_and_downed_keeps_the_hash() {
     assert_eq!(b.full_state_hash(), w.full_state_hash());
     assert!(wound(&w, band).bandaged || kind(&w, band) != EntityKind::Soldier);
 }
+
+// ------------------------------------------------- checker F8 tests --
+
+/// Checker F8 (W3 `head_kill_dmg`): with it above 0 a head hit dealing at
+/// least that much kills a man who falls to it outright (counted).
+/// Control: at 0 (and `overkill_kill` out of reach) the same hit downs.
+#[test]
+fn w3_head_kill_dmg_kills_outright() {
+    for head_kill in [0, 1] {
+        let mut w = flat_world_with(1, |s| {
+            s.rules.wounds.enabled = 1;
+            s.rules.wounds.overkill_kill = 1000;
+            s.rules.wounds.head_kill_dmg = head_kill;
+        });
+        let m = lone(&mut w, 0, 500, 500);
+        // He falls to the hit (W3 decides only then).
+        set_hp(&mut w, m, 20);
+        bullet(&mut w, 1, "ww2:kar98k", m, ZONE_HEAD);
+        assert_ne!(kind(&w, m), EntityKind::Soldier);
+        let dead = kind(&w, m) == EntityKind::Corpse;
+        assert_eq!(dead, head_kill > 0, "head_kill_dmg {head_kill}");
+        assert_eq!(s12(&w, 0).killed_outright, dead as u32);
+        assert_eq!(s12(&w, 0).head_hits[1], 1, "in the open");
+    }
+}
+
+/// Checker F8 (W5): a crew weapon's carrier going down leaves it to the
+/// squad's drops where he fell, as a death does. Control: a rifleman's
+/// down adds no drop.
+#[test]
+fn w5_crew_weapon_to_the_squad_drops_on_down() {
+    let mut w = wounds_world(1);
+    let sq = spawn(&mut w, 0, RIFLES, 500, 500);
+    steps(&mut w, 2);
+    let crew = |w: &World, m: SimId| {
+        let k = w.state.entities.kit[m.index()].weapon;
+        w.match_setup().unwrap().weapons[k as usize].crew
+    };
+    let ms = members(&w, sq);
+    let gunner = *ms.iter().find(|&&m| crew(&w, m)).expect("an MG gunner");
+    let rifle = *ms.iter().rev().find(|&&m| !crew(&w, m)).unwrap();
+    let drops = |w: &World| w.game().unwrap().squads[&sq].drops.len();
+    set_hp(&mut w, rifle, 20);
+    bullet(&mut w, 1, "ww2:kar98k", rifle, ZONE_TORSO);
+    assert_eq!(kind(&w, rifle), EntityKind::Downed);
+    assert_eq!(drops(&w), 0, "control: a rifle is not dropped");
+    let at = w.state.entities.transform[gunner.index()].pos.xy();
+    set_hp(&mut w, gunner, 20);
+    bullet(&mut w, 1, "ww2:kar98k", gunner, ZONE_TORSO);
+    assert_eq!(kind(&w, gunner), EntityKind::Downed);
+    let d = &w.game().unwrap().squads[&sq].drops;
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].at, at);
+    World::load(&w.save(), 1).expect("loads with the drop");
+}
+
+/// Checker F8 (W5): a downed man leaves his squad's fire focus and its
+/// formation slots (one slot per member). Control: before the down the
+/// focus is his.
+#[test]
+fn w5_downed_man_leaves_focus_and_slots() {
+    let mut w = wounds_world(1);
+    let sq = spawn(&mut w, 0, RIFLES, 500, 500);
+    steps(&mut w, 2);
+    let m = members(&w, sq)[3];
+    w.state
+        .game
+        .as_mut()
+        .unwrap()
+        .squads
+        .get_mut(&sq)
+        .unwrap()
+        .focus = Some(m);
+    w.refresh_hashes();
+    let q = &w.game().unwrap().squads[&sq];
+    assert_eq!(q.focus, Some(m), "control");
+    let n = q.members.len();
+    assert_eq!(q.nav.slots.len(), n);
+    set_hp(&mut w, m, 20);
+    bullet(&mut w, 1, "ww2:kar98k", m, ZONE_TORSO);
+    assert_eq!(kind(&w, m), EntityKind::Downed);
+    let q = &w.game().unwrap().squads[&sq];
+    assert_eq!(q.focus, None);
+    assert_eq!(q.members.len(), n - 1);
+    assert_eq!(q.nav.slots.len(), n - 1);
+    steps(&mut w, 30);
+    World::load(&w.save(), 1).expect("loads");
+}
+
+/// Checker F8 (W4): suppression alone (no hit, no firing) above
+/// `crouch_suppression` breaks a dressing in progress. Control: just
+/// under it the dressing goes on.
+#[test]
+fn w4_suppression_alone_breaks_the_bandage() {
+    for over in [false, true] {
+        let mut w = wounds_world(1);
+        let crouch = w.match_setup().unwrap().rules.combat.crouch_suppression;
+        let m = lone(&mut w, 0, 500, 500);
+        bullet(&mut w, 1, "ww2:kar98k", m, ZONE_TORSO);
+        suppress(&mut w, m, 0);
+        steps(&mut w, 30);
+        assert!(wound(&w, m).bandaging > 0, "a dressing started");
+        for _ in 0..5 {
+            suppress(&mut w, m, if over { crouch + 5 } else { crouch - 1 });
+            w.step(&[]);
+        }
+        assert_eq!(wound(&w, m).bandaging == 0, over, "over {over}");
+    }
+}
