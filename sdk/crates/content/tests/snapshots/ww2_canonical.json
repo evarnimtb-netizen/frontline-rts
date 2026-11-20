@@ -2077,6 +2077,17 @@
           "trench_probe_m": 60,
           "trench_probe_step_m": 4
         },
+        "medic": {
+          "buy": 0,
+          "enemy_clear_m": 40,
+          "field": 0,
+          "front_m": 60,
+          "max_teams": 2,
+          "min_inf_squads": 4,
+          "post": 0,
+          "reinforce": 0,
+          "reinforce_below_pct": 60
+        },
         "mix": {
           "at": 20,
           "engineer": 15,
@@ -2582,6 +2593,7 @@
       "pop_cap": 150,
       "projectile_cap": 2048,
       "supply": {
+        "aid_max": 2,
         "arty_base_rearm": 1,
         "base_bomb_after_fire_s": 0,
         "base_bomb_s": 0,
@@ -2758,6 +2770,35 @@
         "unlock_s": 240,
         "wounded_hp": 50,
         "wreck_cap": 32
+      },
+      "wounds": {
+        "auto_tend_m": 25,
+        "bandage_s": 10,
+        "bleed_ms_per_hp": 4000,
+        "down_bleed_max_s": 180,
+        "down_bleed_min_s": 60,
+        "drag_speed_pct": 30,
+        "enabled": 0,
+        "evac_refund_pct": 40,
+        "evac_s": 30,
+        "head_damage_pct": 100,
+        "head_kill_dmg": 0,
+        "head_top_pct": 12,
+        "legs_bottom_pct": 45,
+        "legs_damage_pct": 60,
+        "legs_speed_pct": 60,
+        "overkill_kill": 60,
+        "reinforce": 0,
+        "reinforce_cost_pct": 100,
+        "return_hp_pct": 75,
+        "stabilise_s": 15,
+        "stretcher_speed_pct": 60,
+        "torso_damage_pct": 100,
+        "treat_s": 60,
+        "wounded_hp": 50,
+        "wounded_reload_pct": 125,
+        "wounded_speed_pct": 85,
+        "wounded_spread_pct": 130
       }
     }
   },

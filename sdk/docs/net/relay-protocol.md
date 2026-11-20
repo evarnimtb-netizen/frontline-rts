@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **15** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **16** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -143,6 +143,13 @@ kind the relay may not send. Clients cannot send relay messages.
   `ThrowEach` may carry; the sim refuses a throw of it: the grenade is fired
   from the rifle, never thrown). No new command. The save version is
   `-s29`. The one bump for the S11b slice.
+- Version 16 (S12) adds four commands at the end of `CommandKind`:
+  `Tend { units, target }` (1 to 150 ids, a `u32` man id), `Carry { units,
+  target, to }` (1 to 150 ids, a man id, a point), `Evacuate { units }` (1
+  to 150 ids) and `Reinforce { squad }` (a `u32` squad id). Until S12a
+  Build B the sim refuses each (`FortRefusal::NotAllowed`). The setup gains
+  `StockKind` 3 `Aid`. The save version is `-s30`. The one bump for the S12
+  slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -171,6 +178,7 @@ Checked on every decode. A datagram that breaks any limit is dropped whole.
 | Points per `Fortify` line (version 13) | 1–16 (`MAX_DIG_POINTS`) |
 | Men per `PlaceBangalore` (version 13) | 1–150 (`MAX_UNITS`) |
 | `ClearMines` lane length (version 14) | 0–200 m (`MAX_LANE_M`) |
+| Men per `Tend`, `Carry`, `Evacuate` (version 16) | 1–150 (`MAX_UNITS`) |
 | Turns per `Input` | 64 |
 | Turns per `Bundle` datagram | 300 |
 | Commands per bundled turn | 34 (2 × (16 + 1 relay-injected `Surrender`)) |
@@ -458,7 +466,8 @@ stays far below the 1,024-byte single-command limit. Version 10 adds
 commands, and version 13 (S10a) `Fortify { squad, fort, line }`,
 `LoadMaterials { squad, kg }`, `CutWire { squad, at }` and
 `PlaceBangalore { units, target }`, and version 14 (S10b)
-`ClearMines { squad, a, b }` and `Demolish { squad, at }`; `IssueCrate` may
+`ClearMines { squad, a, b }` and `Demolish { squad, at }`, and version 16
+(S12) `Tend`, `Carry`, `Evacuate` and `Reinforce`; `IssueCrate` may
 carry `SupplyKind` 3 (construction) from version 13. `Dig` and `DigUnits`
 end with `profile` (`DigProfile`: 0 trench, 1 AT ditch, from version 9
 2 mortar pit, 3 HQ pit, 4 dump pit, from version 12 5 gun pit, from version 13 6 MG nest pit,

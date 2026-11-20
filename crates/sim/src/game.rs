@@ -494,6 +494,8 @@ pub struct PlayerState {
     pub cb: Vec<crate::counter_battery::CbSpot>,
     /// S11b: artillery and rifle-grenade counters (report).
     pub s11b: crate::fire_mission::S11bCounters,
+    /// S12: wound, medic and reinforcement counters (report).
+    pub s12: crate::wounds::S12Counters,
 }
 
 /// S8a per-player counters (saved and hashed, read only by reports;
@@ -781,6 +783,9 @@ pub struct MatchState {
     /// Never saved or hashed; false in play.
     #[serde(skip)]
     pub(crate) fort_off: bool,
+    /// S12 W5: the downed men, by id (at most `wounds::MAX_CASUALTIES`;
+    /// saved, hashed, validated).
+    pub(crate) casualties: BTreeMap<SimId, crate::wounds::Casualty>,
 }
 
 /// S4: a man picked up a fallen man's crew weapon (presentation only).
@@ -841,6 +846,7 @@ impl MatchState {
                 s11a2: crate::fire_mission::S11a2Counters::default(),
                 cb: Vec::new(),
                 s11b: crate::fire_mission::S11bCounters::default(),
+                s12: crate::wounds::S12Counters::default(),
             })
             .collect();
         let np = setup.players.len();
@@ -899,6 +905,7 @@ impl MatchState {
             fort: crate::fort::FortState::new(setup.players.len()),
             fort_events: Vec::new(),
             fort_off: false,
+            casualties: BTreeMap::new(),
             setup,
         }
     }
@@ -1262,6 +1269,13 @@ impl MatchState {
             &CommandKind::CutWire { squad, at } => self.order_cut_wire(ctx, p, squad, at),
             &CommandKind::ClearMines { squad, a, b } => self.order_clear_mines(ctx, p, squad, a, b),
             &CommandKind::Demolish { squad, at } => self.order_demolish(ctx, p, squad, at),
+            // S12: declared, not built yet (Build B).
+            CommandKind::Tend { .. } | CommandKind::Carry { .. } | CommandKind::Evacuate { .. } => {
+                self.refuse_fort(p, None, crate::fort::FortRefusal::NotAllowed)
+            }
+            &CommandKind::Reinforce { squad } => {
+                self.refuse_fort(p, Some(squad), crate::fort::FortRefusal::NotAllowed)
+            }
             CommandKind::PlaceBangalore { units, target } => {
                 self.place_bangalore(ctx, p, units, *target)
             }
@@ -2431,6 +2445,8 @@ impl MatchState {
         self.supply6.validate(s, ents, &self.squads)?;
         // S10a.
         self.fort.validate(s, ents, &self.squads, tick)?;
+        // S12.
+        self.validate_s12(ents, tick)?;
         if self.players.len() != np
             || self.path_queue.queues.len() != np
             || self.path_queue.cursor as usize >= np
@@ -2493,7 +2509,8 @@ impl MatchState {
                 && counters_ok(&pl.s9)
                 && counters_ok(&pl.s11)
                 && counters_ok(&pl.s11a2)
-                && counters_ok(&pl.s11b))
+                && counters_ok(&pl.s11b)
+                && counters_ok(&pl.s12))
             {
                 return Err("a player counter is out of range");
             }
@@ -2763,6 +2780,7 @@ impl MatchState {
         if self.spot_cursor.iter().any(|&c| c as usize > ents.len()) {
             return Err("spotting cursor out of range");
         }
+        let bandage_ticks = s.rules.wounds.bandage_s as u64 * s.tick_hz as u64;
         for (i, c) in ents.combat.iter().enumerate() {
             let kind = ents.kind[i];
             let vehicle = matches!(
@@ -2775,6 +2793,10 @@ impl MatchState {
                 || (c.ducked && (kind != EntityKind::Soldier || !c.in_trench || c.pinned))
                 || (kind == EntityKind::Soldier && (c.hp == 0 || c.corpse != 0))
                 || (kind == EntityKind::Corpse && (c.corpse == 0 || ents.squad[i].is_some()))
+                // S12: a downed man keeps 1 HP (a hit kills him), no squad.
+                || (kind == EntityKind::Downed
+                    && (c.hp == 0 || c.corpse != 0 || ents.squad[i].is_some()))
+                || !crate::wounds::wound_ok(kind, &c.wound, np, bandage_ticks)
                 || (vehicle
                     && *c
                         != crate::ecs::Combat {

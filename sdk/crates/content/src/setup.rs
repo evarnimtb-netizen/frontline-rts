@@ -38,6 +38,7 @@ use crate::tuning::{
     SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
     VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
+use crate::tuning::{AiMedicTuning, WoundsTuning};
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
 };
@@ -473,6 +474,8 @@ pub struct RulesSetup {
     pub fire_mission: Option<FireMissionTuning>,
     /// S10a: `[fortify]`; `None`: nothing can be built.
     pub fortify: Option<crate::tuning::FortTuning>,
+    /// S12: `[wounds]` (or the S12a values, every switch off).
+    pub wounds: WoundsTuning,
 }
 
 impl RulesSetup {
@@ -661,6 +664,8 @@ pub struct AiSetup {
     pub obstacles: AiObstacleTuning,
     /// S11a1: `[ai.arty]` (or the S11a1 starting values, switches off).
     pub arty: AiArtyTuning,
+    /// S12: `[ai.medic]` (or the S12a values, switches off).
+    pub medic: AiMedicTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2133,6 +2138,7 @@ impl ModDefs {
                         fort: a.fort.clone().unwrap_or_default(),
                         obstacles: a.obstacles.clone().unwrap_or_default(),
                         arty: a.arty.clone().unwrap_or_default(),
+                        medic: a.medic.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2148,6 +2154,7 @@ impl ModDefs {
                 supply: rules.supply.clone(),
                 fire_mission: rules.fire_mission.clone(),
                 fortify: rules.fortify.clone(),
+                wounds: rules.wounds.clone().unwrap_or_default(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -2992,6 +2999,8 @@ impl MatchSetup {
                 ai_fort: &a.fort,
                 ai_obstacles: &a.obstacles,
                 ai_arty: &a.arty,
+                wounds: &r.wounds,
+                ai_medic: &a.medic,
             },
         );
         r.at_ditch

@@ -1298,6 +1298,7 @@ crate_cap = 12               # live crates per player (carried or set down) ...
 shell_crate_cap = 8          # ... of which shells crates
 hq_max = 1                   # HQs per player (built or digging)
 dump_max = 3                 # dumps per player
+aid_max = 2                  # S12 W8: aid posts per player (RE loop guard; Build B builds them)
 structure_bomb_s = 2         # s per bomb into a mortar squad inside an HQ or dump radius
 crate_bomb_s = 4             # s per bomb from a shells crate within crate_feed_m of the gunner
 fwd_rearm_s = 4              # s per standard main-gun round forward (D3)
@@ -1712,3 +1713,46 @@ mine_band_vehicle_cm = 400   # a vehicle step this close to a known enemy AT min
 field = { build_pct = 100, cut_pct = 100 }
 assault = { build_pct = 0, cut_pct = 200 }
 construction = { build_pct = 150, cut_pct = 50 }
+
+# S12 wounds and medics (docs/slices/S12-wounds-medics.md 2, rules W1-W11; IS = infantry-structures.md).
+# Every switch 0 in S12a: a man at 0 HP dies as before and no S12 RNG draw happens.
+[wounds]
+enabled = 0                  # switch W1-W9: wound states (0: a man at 0 HP dies)
+head_top_pct = 12            # W1: top share of a standing / crouched capsule that is the head (IS 5.3)
+legs_bottom_pct = 45         # W1: bottom share that is the legs (IS 5.3)
+head_damage_pct = 100        # W2: % of weapon damage on a head hit (IS 5.3 asked 300: risk 1, S12-3; head_300 ablation)
+torso_damage_pct = 100       # W2: % on a torso hit
+legs_damage_pct = 60         # W2: % on a leg hit (IS 5.3)
+wounded_hp = 50              # W3: a hit leaving at most this many HP wounds (IS 5.3, = crew wounded_hp)
+overkill_kill = 60           # W3: a hit leaving -this or less kills outright (IS 5.3)
+head_kill_dmg = 0            # W3: a head hit of this damage kills outright (0: off; IS 5.3 asked 100, S12-3)
+bleed_ms_per_hp = 4000       # W4: an unbandaged wounded man loses 1 HP this often (ms; IS 5.3)
+down_bleed_min_s = 60        # W5: a downed man bleeds out after a seeded time from ... (s; IS 5.3)
+down_bleed_max_s = 180       # ... to (s)
+wounded_spread_pct = 130     # W4: a wounded man's spread (%; IS 5.2)
+wounded_reload_pct = 125     # W4: his reload and aim time (%; IS 5.2)
+wounded_speed_pct = 85       # W4: his walking speed (%; IS 5.2 said 70, S12-10)
+legs_speed_pct = 60          # W4: with a leg wound (%; IS 5.2 said 40, S12-10)
+bandage_s = 10               # W4: a field dressing (s; IS 5.3)
+stabilise_s = 15             # W6: a medic stabilises a downed man (s; IS 5.3)
+drag_speed_pct = 30          # W7: one man drags a casualty (% speed; IS 5.3)
+stretcher_speed_pct = 60     # W7: two medics with a stretcher (% speed; IS 5.3)
+treat_s = 60                 # W8: an aid post treats a wounded man (s; IS 5.3)
+return_hp_pct = 75           # W8: he returns with this share of his HP (IS 5.3)
+evac_s = 30                  # W9: an evacuation (s; IS 5.3)
+evac_refund_pct = 40         # W9: refund of a paid man's price (%; IS 5.3)
+auto_tend_m = 25             # W6: a medic with no move order tends own downed men this close (m)
+reinforce = 0                # switch W11: Reinforce fills a squad from base
+reinforce_cost_pct = 100     # W11: % of the card's per-man price per replacement
+
+# S12b AI medics (docs/slices/S12-wounds-medics.md 5, A1-A5); every switch 0 in S12a.
+[ai.medic]
+buy = 0                      # switch A1: buy medic teams
+field = 0                    # switch A3: field medics tend and carry
+post = 0                     # switch A2, A4: build and staff an aid post
+reinforce = 0                # switch A5: reinforce squads
+max_teams = 2                # A1: medic teams at most
+min_inf_squads = 4           # A1: only while this many infantry squads live
+front_m = 60                 # A3: a field team follows this far behind the lead squad (m; IS 7.3)
+enemy_clear_m = 40           # A3: no spotted enemy this close to the downed man (m; IS 7.3)
+reinforce_below_pct = 60     # A5: reinforce a squad under this share of its card size

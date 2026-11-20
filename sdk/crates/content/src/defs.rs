@@ -24,6 +24,7 @@ use crate::tuning::{
     SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
     VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
+use crate::tuning::{AiMedicTuning, WoundsTuning};
 
 /// Map side limits (the sim's 64 m tiling).
 pub const MAP_SIZE_STEP_M: u32 = 64;
@@ -1266,6 +1267,8 @@ pub enum StockKind {
     Dump = 1,
     /// A crate one man carries.
     Crate = 2,
+    /// S12 W8: an aid post (up to the rules' `aid_max`; Build B).
+    Aid = 3,
 }
 
 /// S6: one oriented box of a supply def (`boxes = [...]`): what stops
@@ -1410,6 +1413,12 @@ impl StockDef {
                     );
                 }
             }
+            // S12 W8: the layout has the kind; the aid post's rules and
+            // its `[[...]] beds` keys arrive in S12a Build B.
+            StockKind::Aid => out.push(Issue::new(
+                "kind",
+                "aid posts are not built yet (S12a Build B)",
+            )),
         }
         out
     }
@@ -1643,6 +1652,10 @@ pub struct RulesDef {
     /// (S5b-1 (A)).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fire_mission: Option<FireMissionTuning>,
+    /// S12: wounds, medics, aid posts and reinforcements (`[wounds]`).
+    /// Without it: the S12a values, every switch off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wounds: Option<WoundsTuning>,
     /// S10a: fortification rules (`[fortify]`). Without it no blueprint
     /// can be built.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2081,6 +2094,9 @@ pub struct AiDef {
     /// S11a1: `[ai.arty]` (default: the S11a1 starting values, switches off).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arty: Option<AiArtyTuning>,
+    /// S12: `[ai.medic]` (default: the S12a values, switches off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medic: Option<AiMedicTuning>,
 }
 
 impl AiDef {
@@ -3283,6 +3299,8 @@ impl RulesDef {
                 ai_fort: &a.fort.clone().unwrap_or_default(),
                 ai_obstacles: &a.obstacles.clone().unwrap_or_default(),
                 ai_arty: &a.arty.clone().unwrap_or_default(),
+                wounds: &self.wounds.clone().unwrap_or_default(),
+                ai_medic: &a.medic.clone().unwrap_or_default(),
             },
         );
         match (a.barrage_rounds, &a.mortar) {

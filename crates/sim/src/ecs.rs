@@ -149,6 +149,11 @@ pub enum EntityKind {
     /// counts toward nobody's pop or vehicle limit, seen by everyone, struck
     /// like any vehicle, and can be re-crewed.
     Abandoned = 5,
+    /// S12 W5: a downed soldier (`MatchState::casualties` holds his
+    /// casualty): no squad, no fire, capture or spotting; in the downed
+    /// spatial hash, not in `soldiers()` or the soldier hash. Counts toward
+    /// his owner's pop until he dies or is evacuated.
+    Downed = 6,
 }
 
 /// Position (z is terrain height for ground units) and heading.
@@ -231,6 +236,9 @@ pub struct Combat {
     pub seen_by: u16,
     /// Corpses: ticks left before the body is removed.
     pub corpse: u16,
+    /// S12: the wound state (`crate::wounds`; default for everything but
+    /// soldiers and downed men).
+    pub wound: crate::wounds::Wound,
 }
 
 /// SoA entity store. Columns are public for reading; mutate through

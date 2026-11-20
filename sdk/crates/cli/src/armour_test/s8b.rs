@@ -629,6 +629,7 @@ pub(super) fn case29(env: &Env) -> Result<CaseReport> {
                     box_hp: boxes,
                     radio: true,
                     stock_g: [0, 0, 600_000],
+                    beds: Vec::new(),
                 },
             );
         });

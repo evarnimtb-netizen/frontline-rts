@@ -75,6 +75,7 @@ pub mod transport;
 pub mod unit;
 pub mod vehicle;
 pub mod world;
+pub mod wounds;
 
 pub use ai::{AiCommand, AiCounters, AiEscort, AiOverwatch, AiState, AiTrench, Task, TaskKind};
 pub use armour::{ArmourTables, PenResult};

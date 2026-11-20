@@ -97,6 +97,8 @@ pub struct Structure {
     pub radio: bool,
     /// Stock in grams, by `SupplyKind::index`.
     pub stock_g: [u32; 3],
+    /// S12 W8: an aid post's beds (empty on every other kind).
+    pub beds: Vec<crate::wounds::Bed>,
 }
 
 /// A crate: carried by a man, or set down.
@@ -672,6 +674,7 @@ impl MatchState {
                 box_hp: [hp(0), hp(1), hp(2), hp(3)],
                 radio: d.boxes.iter().any(|b| b.part == 1),
                 stock_g: [0; 3],
+                beds: Vec::new(),
             },
         );
         true

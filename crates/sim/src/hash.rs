@@ -129,6 +129,17 @@ impl StableHash for Combat {
         self.retarget.put(out);
         self.seen_by.put(out);
         self.corpse.put(out);
+        // S12.
+        let w = &self.wound;
+        w.state.put(out);
+        w.bandaged.put(out);
+        w.legs.put(out);
+        w.treated.put(out);
+        w.paid.put(out);
+        w.bleed_acc_ms.put(out);
+        w.bandaging.put(out);
+        w.by.0.put(out);
+        w.by.1.put(out);
     }
 }
 
@@ -413,6 +424,8 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         put_postcard(&p.cb, out);
         // S11b.
         put_postcard(&p.s11b, out);
+        // S12.
+        put_postcard(&p.s12, out);
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);
@@ -606,6 +619,8 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
     put_postcard(&g.supply6, out);
     // S10a: works, pieces, wire, charges, carried kg and accounts.
     put_postcard(&g.fort, out);
+    // S12: the casualties (beds are in `supply6`).
+    put_postcard(&g.casualties, out);
     // AI commander state: postcard's encoding is explicit and stable (varint
     // integers, fields in declaration order, maps in key order).
     for ai in &g.ai {

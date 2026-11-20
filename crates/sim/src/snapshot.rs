@@ -852,7 +852,9 @@ impl RenderSnapshot {
                         }
                     }
                 }
-                EntityKind::Corpse => self.corpses.push(CorpseSnapshot {
+                // S12: a downed man lies as a body until Build B's
+                // snapshot fields (`ticks_left` 0: not fading).
+                EntityKind::Corpse | EntityKind::Downed => self.corpses.push(CorpseSnapshot {
                     id: SimId(i as u32),
                     pos: [x, y, z, t.yaw.to_f32()],
                     owner,

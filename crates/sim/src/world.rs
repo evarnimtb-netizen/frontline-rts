@@ -472,7 +472,11 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// setup `ItemKind::RifleGrenade` (`ITEM_KINDS` 7), `ItemSetup::stow_ticks`,
 /// `[items] rifle_grenades, rifle_grenade_gap_s` and the S11b `[ai.arty]`
 /// keys). One bump for the whole slice.
-const SAVE_VERSION: u32 = 29;
+/// 30: S12 (`EntityKind::Downed`, `Combat::wound`, `MatchState::casualties`,
+/// `Structure::beds`, `PlayerState::s12`, six `AiCounters`; in the setup
+/// `[wounds]`, `[ai.medic]`, `[supply] aid_max` and `StockKind::Aid`). One
+/// bump for the whole slice.
+const SAVE_VERSION: u32 = 30;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -858,6 +862,7 @@ impl World {
                     matches!(
                         k,
                         EntityKind::Corpse
+                            | EntityKind::Downed
                             | EntityKind::Vehicle
                             | EntityKind::Wreck
                             | EntityKind::Abandoned
@@ -2627,6 +2632,7 @@ impl World {
                 box_hp: [hp(0), hp(1), hp(2), hp(3)],
                 radio: d.boxes.iter().any(|b| b.part == 1),
                 stock_g: [0, 1, 2].map(|k| (stock_kg[k] * 1000).min(d.cap_g[k])),
+                beds: Vec::new(),
             },
         );
         st.accounts[p.0 as usize].structures_built += 1;
@@ -2959,6 +2965,9 @@ mod s11b_ai_tests;
 #[cfg(test)]
 #[path = "s11b_tests.rs"]
 mod s11b_tests;
+#[cfg(test)]
+#[path = "s12_tests.rs"]
+mod s12_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;

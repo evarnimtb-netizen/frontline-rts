@@ -740,6 +740,14 @@ pub struct AiCounters {
     pub how_buys: u32,
     pub how_pct_holds: u32,
     pub how_mp_holds: u32,
+    /// S12b A1-A5 (Build C): medic teams bought, tends and carries
+    /// started, aid posts built, reinforce orders, medic jobs held.
+    pub medic_buys: u32,
+    pub medic_tends: u32,
+    pub medic_carries: u32,
+    pub post_builds: u32,
+    pub reinforce_orders: u32,
+    pub medic_holds: u32,
 }
 
 impl AiState {

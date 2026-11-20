@@ -3945,10 +3945,12 @@ pub(crate) fn status(
                 continue;
             }
             EntityKind::Soldier => {}
+            // S12: a downed man's timers run in `crate::wounds`.
             EntityKind::Vacant
             | EntityKind::Vehicle
             | EntityKind::Wreck
-            | EntityKind::Abandoned => continue,
+            | EntityKind::Abandoned
+            | EntityKind::Downed => continue,
         }
         changed = true;
         let sq = ctx.squad[i].and_then(|s| ctx.game.squad(s));
