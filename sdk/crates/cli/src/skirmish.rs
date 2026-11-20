@@ -421,6 +421,8 @@ pub struct PlayerReport {
     pub s11a2: S11a2Player,
     /// S11b: the player's `S11bCounters`, the AI's S11b counters, buys.
     pub s11b: S11bPlayer,
+    /// S12: the player's `S12Counters` and the AI's medic counters.
+    pub s12: S12Player,
     /// B1-5 `--side-detail`: at [`SQUAD_MINUTES`], own foot squads with a
     /// man alive (no vehicle, not a crew) and own squads on a running
     /// (not parked) AI fort job (`None`: over sooner, or no side detail).
@@ -988,6 +990,104 @@ impl S11bPlayer {
     /// The S11b counters of `a` in [`S11B_AI`] order.
     pub fn ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 4] {
         [a.cb_alt_holds, a.how_buys, a.how_pct_holds, a.how_mp_holds]
+    }
+}
+
+/// S12: the AI's medic counters in report order (names of
+/// [`S12Player::ai`]).
+pub const S12_AI: [&str; 6] = [
+    "medic_buys",
+    "medic_tends",
+    "medic_carries",
+    "post_builds",
+    "reinforce_orders",
+    "medic_holds",
+];
+
+/// S12 numbers of one player in one match (docs/slices/S12-wounds-medics.md 3).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S12Player {
+    /// The player's S12 counters (saved).
+    pub s: frontline_sim::wounds::S12Counters,
+    /// [`S12_AI`] order (zero for a human).
+    pub ai: [u32; 6],
+}
+
+impl S12Player {
+    pub fn ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 6] {
+        [
+            a.medic_buys,
+            a.medic_tends,
+            a.medic_carries,
+            a.post_builds,
+            a.reinforce_orders,
+            a.medic_holds,
+        ]
+    }
+}
+
+/// S12 sums of one faction over a `--seeds` run (the JSON block `s12`,
+/// [`crate::json_out::s12_blocks`]; no derived shares before Build C).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S12Faction {
+    /// [`S12_COUNTERS`] order.
+    pub counters: [u64; 12],
+    pub downed_by_class: [u64; frontline_sim::kill_class::COUNT],
+    /// `[trench, open]`.
+    pub head_hits: [u64; 2],
+    pub torso_hits: [u64; 2],
+    pub leg_hits: [u64; 2],
+    /// [`S12_AI`] order.
+    pub ai: [u64; 6],
+}
+
+/// S12: the scalar `S12Counters` in report order.
+pub const S12_COUNTERS: [&str; 12] = [
+    "downed",
+    "killed_outright",
+    "bled_out",
+    "downed_killed",
+    "stabilised",
+    "bandaged",
+    "carried",
+    "treated",
+    "evacuated",
+    "refund_mp",
+    "reinforced_men",
+    "reinforce_mp",
+];
+
+impl S12Faction {
+    pub fn add(&mut self, p: &S12Player) {
+        let c = &p.s;
+        let v = [
+            c.downed,
+            c.killed_outright,
+            c.bled_out,
+            c.downed_killed,
+            c.stabilised,
+            c.bandaged,
+            c.carried,
+            c.treated,
+            c.evacuated,
+            c.refund_mp,
+            c.reinforced_men,
+            c.reinforce_mp,
+        ];
+        for (a, b) in self.counters.iter_mut().zip(v) {
+            *a += b as u64;
+        }
+        for (a, b) in self.downed_by_class.iter_mut().zip(c.downed_by_class) {
+            *a += b as u64;
+        }
+        for k in 0..2 {
+            self.head_hits[k] += c.head_hits[k] as u64;
+            self.torso_hits[k] += c.torso_hits[k] as u64;
+            self.leg_hits[k] += c.leg_hits[k] as u64;
+        }
+        for (a, b) in self.ai.iter_mut().zip(p.ai) {
+            *a += b as u64;
+        }
     }
 }
 
@@ -2414,6 +2514,10 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     s: pl.s11a2,
                     ai: ai.map_or([0; 6], |a| S11a2Player::ai_counters(&a.counters)),
                 },
+                s12: S12Player {
+                    s: pl.s12,
+                    ai: ai.map_or([0; 6], |a| S12Player::ai_counters(&a.counters)),
+                },
                 s11b: {
                     let bought_tagged = |tag: &str| -> u32 {
                         ai.map_or(0, |a| {
@@ -3081,6 +3185,8 @@ pub struct FactionSummary {
     pub s11a2: S11a2Faction,
     /// S11b sums (the JSON blocks `s11b` and `s11b_derived`).
     pub s11b: S11bFaction,
+    /// S12 sums (the JSON block `s12`).
+    pub s12: S12Faction,
 }
 
 /// S10b: the twelve `FortAccount` counters in report order.
@@ -3955,6 +4061,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             f.s11a1.add(&p.s11a1, p.kills, p.s10.income_mp);
             f.s11a2.add(&p.s11a2, p.losses, p.s11a1.s11.gun_rounds);
             f.s11b.add(&p.s11b, p.kills, r.game_seconds, p.s11a2.ai[2]);
+            f.s12.add(&p.s12);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;

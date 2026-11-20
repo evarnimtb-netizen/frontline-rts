@@ -174,6 +174,9 @@ pub fn add_sides(doc: &mut Value, r: &ManyReport) {
                     o.insert("s11a1".into(), s11a1_blocks(&s11).0);
                     o.insert("s11a2".into(), s11a2_blocks(&s11a2).0);
                     o.insert("s11b".into(), s11b_blocks(&s11b).0);
+                    let mut s12 = crate::skirmish::S12Faction::default();
+                    s12.add(&p.s12);
+                    o.insert("s12".into(), s12_blocks(&s12));
                 }
                 side
             })
@@ -664,6 +667,9 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
         o.insert("s11b".into(), raw);
         o.insert("s11b_derived".into(), derived);
     }
+    // S12 (docs/slices/S12-wounds-medics.md 3): counters by name (no
+    // `s12_derived` before Build C).
+    o.insert("s12".into(), s12_blocks(&f.s12));
     o.insert(
         "s6_derived".into(),
         json!({
@@ -1266,6 +1272,37 @@ pub fn s11a2_blocks(c: &crate::skirmish::S11a2Faction) -> (Value, Value) {
 /// passes that held, not markers (review A-4): `cb_alt_hold_passes_per_match`
 /// says so by name; `cb_fired_matches_any_pct` is the share of all
 /// matches in which the faction's AI still ordered counter-fire.
+/// The `s12` block of one faction (or one side of one match): the
+/// `S12Counters` and the AI's medic counters by name. Every value is 0
+/// with the S12 switches off (`tools/neutral.py` reads a new block so).
+pub fn s12_blocks(c: &crate::skirmish::S12Faction) -> Value {
+    let mut raw = Map::new();
+    for (k, v) in crate::skirmish::S12_COUNTERS.iter().zip(c.counters) {
+        raw.insert((*k).into(), json!(v));
+    }
+    raw.insert(
+        "downed_by".into(),
+        Value::Object(
+            kill_class::NAMES
+                .iter()
+                .zip(c.downed_by_class)
+                .map(|(k, v)| ((*k).to_string(), json!(v)))
+                .collect(),
+        ),
+    );
+    for (k, v) in [
+        ("head_hits", c.head_hits),
+        ("torso_hits", c.torso_hits),
+        ("leg_hits", c.leg_hits),
+    ] {
+        raw.insert(k.into(), json!({ "trench": v[0], "open": v[1] }));
+    }
+    for (k, v) in crate::skirmish::S12_AI.iter().zip(c.ai) {
+        raw.insert((*k).into(), json!(v));
+    }
+    Value::Object(raw)
+}
+
 pub fn s11b_blocks(c: &crate::skirmish::S11bFaction) -> (Value, Value) {
     use frontline_sim::fire_mission::mode;
     let n = c.matches.max(1) as f64;
