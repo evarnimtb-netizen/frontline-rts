@@ -1195,3 +1195,32 @@ fn g6_carriers_stopped_short_end_the_job() {
     assert_eq!(pos(&w, d), at, "he stays there");
 }
 
+/// Checker G9: load refuses a second carrier with no first, and one man
+/// tending two casualties. Control: the staged save loads.
+#[test]
+fn g9_load_rejects_bad_carriers_and_double_tends() {
+    let (mut w, d, sq, med) = scene(0, 540);
+    let d2 = members(&w, sq)[4];
+    let t = w.tick();
+    stage_downed(&mut w, d2, t + 170 * 30);
+    assert!(World::load(&w.save(), 1).is_ok(), "control");
+    let mut a = World::load(&w.save(), 1).unwrap();
+    a.state
+        .game
+        .as_mut()
+        .unwrap()
+        .casualties
+        .get_mut(&d)
+        .unwrap()
+        .carriers = [None, Some(med[0])];
+    assert!(World::load(&a.save(), 1).is_err(), "second carrier alone");
+    let mut b = World::load(&w.save(), 1).unwrap();
+    let g = b.state.game.as_mut().unwrap();
+    for id in [d, d2] {
+        g.casualties.get_mut(&id).unwrap().tend = Some((med[0], t + 100));
+    }
+    assert!(
+        World::load(&b.save(), 1).is_err(),
+        "one medic, two casualties"
+    );
+}

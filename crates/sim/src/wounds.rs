@@ -259,8 +259,10 @@ impl MatchState {
             {
                 return Err("a casualty's medic is bad");
             }
+            // Checker G9: the second carrier only with a first.
             if c.carriers.iter().flatten().any(|m| !own_man(*m))
                 || (c.carriers[0].is_some() && c.carriers[0] == c.carriers[1])
+                || (c.carriers[0].is_none() && c.carriers[1].is_some())
             {
                 return Err("a casualty's carriers are bad");
             }
@@ -277,6 +279,22 @@ impl MatchState {
                 return Err("a casualty's evacuation tick is out of range");
             }
         }
+        // Checker G9: a man tends or carries one casualty at most.
+        let mut jobs: Vec<SimId> = self
+            .casualties
+            .values()
+            .flat_map(|c| {
+                c.tend
+                    .map(|t| t.0)
+                    .into_iter()
+                    .chain(c.carriers.iter().flatten().copied())
+            })
+            .collect();
+        jobs.sort_unstable();
+        if jobs.windows(2).any(|w| w[0] == w[1]) {
+            return Err("a man tends or carries two casualties");
+        }
+        let mut in_bed: Vec<SimId> = Vec::new();
         for st in self.supply6.structures.values() {
             if st.beds.len() > MAX_BEDS {
                 return Err("an aid post has too many beds");
@@ -296,7 +314,17 @@ impl MatchState {
                 {
                     return Err("a bed's man is bad");
                 }
+                // Checker G1: a treatment bed holds a wounded soldier.
+                let c = &ents.combat()[b.man.index()];
+                if !b.evac && (k != Some(&EntityKind::Soldier) || c.wound.state != WOUNDED) {
+                    return Err("a treatment bed's man is not wounded");
+                }
+                in_bed.push(b.man);
             }
+        }
+        in_bed.sort_unstable();
+        if in_bed.windows(2).any(|w| w[0] == w[1]) {
+            return Err("a man in two beds");
         }
         Ok(())
     }
