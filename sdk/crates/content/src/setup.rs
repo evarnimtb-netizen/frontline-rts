@@ -1083,17 +1083,22 @@ pub mod member_trait {
     pub const OBSERVER: u8 = 16;
     /// S11a1: carries a radio (the fire-mission radio link, G5).
     pub const RADIO: u8 = 32;
+    /// S12 W6-W8: a medic stabilises downed men, carries them on a
+    /// stretcher with another medic, builds and staffs aid posts.
+    pub const MEDIC: u8 = 64;
     /// Trait names in bit order.
-    pub const NAMES: [(&str, u8); 6] = [
+    pub const NAMES: [(&str, u8); 7] = [
         ("leader", LEADER),
         ("crew_gunner", CREW_GUNNER),
         ("crew_assistant", CREW_ASSISTANT),
         ("ammo_bearer", AMMO_BEARER),
         ("observer", OBSERVER),
         ("radio", RADIO),
+        ("medic", MEDIC),
     ];
     /// Every trait bit.
-    pub const ALL: u8 = LEADER | CREW_GUNNER | CREW_ASSISTANT | AMMO_BEARER | OBSERVER | RADIO;
+    pub const ALL: u8 =
+        LEADER | CREW_GUNNER | CREW_ASSISTANT | AMMO_BEARER | OBSERVER | RADIO | MEDIC;
 }
 
 /// S4 capabilities: what a unit can do; orders and sim rules follow them

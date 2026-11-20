@@ -128,3 +128,41 @@ fn load_rejects_bad_s12_keys() {
     s.rules.supply.as_mut().unwrap().aid_max = 9;
     assert!(!s.validate().is_empty());
 }
+
+/// Build B step 1: the medic cards resolve with the `medic` trait on every
+/// man, `ai_weight` 0, the plan's prices and cooldowns, appended last in
+/// each roster; the trait name is known to content validation and an
+/// unknown bit is refused. Control: drop `medic` from `member_trait::ALL`
+/// and the setup check fails.
+#[test]
+fn s12_medic_cards_resolve() {
+    use frontline_content::setup::member_trait;
+    let defs = ModDefs::load(&root().join("mods/ww2")).unwrap_or_else(|e| panic!("{e}"));
+    let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let s = defs.resolve(&req).unwrap();
+    assert!(s.validate().is_empty());
+    assert!(member_trait::NAMES.contains(&("medic", member_trait::MEDIC)));
+    assert_eq!(member_trait::MEDIC, 64);
+    assert!(frontline_content::variant::TRAITS.contains(&"medic"));
+    for (id, cost, w, armed) in [
+        ("ww2:ger_sanitaetstrupp", 66, "ww2:p38", true),
+        ("ww2:usa_aid_men", 80, "ww2:m1911a1", false),
+    ] {
+        let k = s.squad_type_index(id).unwrap_or_else(|| panic!("{id}"));
+        let t = &s.squad_types[k as usize];
+        assert_eq!((t.men, t.cost, t.ai_weight), (2, cost, 0), "{id}");
+        assert_eq!(t.recall_cooldown_ticks, 30 * s.tick_hz, "{id}");
+        assert!(t.tags.contains(&s.tag("medic").unwrap()), "{id}");
+        for m in &t.members {
+            assert!(m.traits & member_trait::MEDIC != 0, "{id}");
+            assert_eq!(s.weapons[m.weapon as usize].id, w, "{id}");
+            assert_eq!(m.rounds.iter().any(|&r| r > 0), armed, "{id}");
+        }
+        let f = &s.factions[t.faction as usize];
+        assert_eq!(*f.roster.last().unwrap(), k, "{id} is appended last");
+    }
+    let mut bad = s.clone();
+    let k = bad.squad_type_index("ww2:usa_aid_men").unwrap() as usize;
+    bad.squad_types[k].members[0].traits |= 128;
+    assert!(!bad.validate().is_empty());
+}

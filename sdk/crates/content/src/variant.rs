@@ -69,7 +69,7 @@ fn one() -> u8 {
 }
 
 /// Traits a member may have in S4.
-pub const TRAITS: [&str; 6] = [
+pub const TRAITS: [&str; 7] = [
     "leader",
     "crew_gunner",
     "crew_assistant",
@@ -77,9 +77,11 @@ pub const TRAITS: [&str; 6] = [
     "observer",
     // S11a1 G5: the fire-mission radio link.
     "radio",
+    // S12 W6-W8: stabilises, stretchers, builds and staffs aid posts.
+    "medic",
 ];
 /// Traits reserved for later slices (refused until then).
-pub const RESERVED_TRAITS: [&str; 3] = ["officer", "medic", "sniper"];
+pub const RESERVED_TRAITS: [&str; 2] = ["officer", "sniper"];
 
 /// Capabilities in S4, in canonical order.
 pub const CAPABILITIES: [&str; 15] = [

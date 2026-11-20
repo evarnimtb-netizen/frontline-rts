@@ -1,0 +1,38 @@
+# Aid Men (S12 Build B): two unarmed company aid men. Medics stabilise
+# downed men near them on their own (W6), carry them on a stretcher
+# together (W7) and build and staff the aid post
+# (defs/supply/usa_aid_station.toml, W8). Unarmed: the sim needs a weapon
+# slot, so each holds a pistol with no rounds and never fires. No mix tag
+# and ai_weight 0: the AI buys none until S12b
+# (docs/slices/S12-wounds-medics.md 5).
+id = "ww2:usa_aid_men"
+name = "Aid Men"
+short_name = "Aid Men"
+faction = "ww2:usa"
+tags = ["medic"]
+capabilities = ["dig_basic"]
+sources = [
+    "US War Department FM 8-10, Medical Service of Field Units (1942): company aid men of the battalion medical section, unarmed",
+    "infantry-structures.md 5, 7.3; roster-expansion.md S12 (Aid Men, 2 men, unarmed)",
+]
+# docs/slices/S12-wounds-medics.md S12-11 (A): 80 MP.
+cost = 80
+cooldown_s = 30
+unlock_s = 0
+ai_weight = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:m1911a1"
+rounds = { "ww2:45acp" = 0 }
+traits = ["leader", "medic"]
+
+[[members]]
+slot = "aid_man"
+weapon = "ww2:m1911a1"
+rounds = { "ww2:45acp" = 0 }
+traits = ["medic"]
