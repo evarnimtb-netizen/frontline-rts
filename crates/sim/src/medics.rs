@@ -547,7 +547,11 @@ impl MatchState {
                 } else if *o == (UnitOrder::Move { target: at }) {
                     Some(0)
                 } else if *o == UnitOrder::Idle && (p - at).length_sq() <= reach_sq() {
-                    Some(if (p - dest).length_sq() <= reach_sq() {
+                    // Checker G6: a carrier whose walk to `dest` ended
+                    // short of it (no way there, or the arrival timed out)
+                    // has arrived as far as he can: no new walk.
+                    let ended = ctx.ents.unit[j].nav.goal == dest;
+                    Some(if ended || (p - dest).length_sq() <= reach_sq() {
                         3
                     } else {
                         1
@@ -583,7 +587,10 @@ impl MatchState {
                     ctx.hash.mark_entity_chunk(id.chunk());
                 }
                 if ph.iter().all(|&p| p == Some(3)) {
-                    self.bump_s12(owner.0, |s| &mut s.carried);
+                    // Stopped short (G6): set down there, not counted.
+                    if (p.xy() - dest).length_sq() <= reach_sq() {
+                        self.bump_s12(owner.0, |s| &mut s.carried);
+                    }
                     let cm = self.casualties.get_mut(&id).expect("casualty");
                     cm.carriers = [None, None];
                     cm.dest = None;

@@ -1143,3 +1143,55 @@ fn g5_reinforce_keeps_the_squads_slots() {
     assert!(World::load(&w.save(), 1).is_ok(), "loadable");
 }
 
+/// Checker G6: carriers whose walk to `dest` ends short of it set him
+/// down where they stand and rejoin: no new walk every tick. Control: a
+/// carry that arrives counts `carried` (`w7_stretcher_...`).
+#[test]
+fn g6_carriers_stopped_short_end_the_job() {
+    let (mut w, d, _, med) = scene(0, 503);
+    w.state
+        .game
+        .as_mut()
+        .unwrap()
+        .casualties
+        .get_mut(&d)
+        .unwrap()
+        .bleed_out_at = 0;
+    w.refresh_hashes();
+    let dest = c(500, 300);
+    assert!(cmd(
+        &mut w,
+        1,
+        CommandKind::Carry {
+            units: med.clone(),
+            target: d,
+            to: dest
+        }
+    ));
+    until(&mut w, 30 * 30, |w| {
+        med.iter().all(|&m| {
+            w.state.entities.unit[m.index()].order == crate::unit::UnitOrder::Move { target: dest }
+        })
+    })
+    .expect("lifted");
+    steps(&mut w, 60);
+    // Their walk ends here (as on an arrival timeout short of `dest`).
+    for &m in &med {
+        assert!(w.edit_unit(m, |u| {
+            u.order = crate::unit::UnitOrder::Idle;
+            u.nav.phase = crate::game::NavPhase::Holding;
+            u.nav.path.clear();
+            u.nav.next = 0;
+        }));
+    }
+    steps(&mut w, 2);
+    let at = pos(&w, d);
+    assert!(cas(&w, d).carriers[0].is_none(), "set down");
+    assert_eq!(s12(&w, 0).carried, 0, "not at dest: not counted");
+    for &m in &med {
+        assert!(!w.state.entities.unit[m.index()].detached, "rejoined");
+    }
+    steps(&mut w, 30);
+    assert_eq!(pos(&w, d), at, "he stays there");
+}
+
