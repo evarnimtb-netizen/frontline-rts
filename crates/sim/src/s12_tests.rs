@@ -873,10 +873,13 @@ fn w5_bleed_out_seeded_and_w12_strays_kill() {
     assert_eq!(kind(&w, a), EntityKind::Corpse);
     assert_eq!(s12(&w, 0).downed_killed, 1);
     let kills = w.game().unwrap().players[1].kills;
+    let deaths = w.state.stats.deaths;
     while w.tick() <= at {
         w.step(&[]);
     }
     assert_eq!(kind(&w, b), EntityKind::Corpse);
+    // Checker F2: a bleed-out counts in `deaths`.
+    assert_eq!(w.state.stats.deaths, deaths + 1);
     assert_eq!(s12(&w, 0).bled_out, 1);
     assert_eq!(w.game().unwrap().players[1].kills, kills + 1);
     assert!(w.game().unwrap().casualties.is_empty());

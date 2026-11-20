@@ -310,7 +310,12 @@ impl MatchState {
     /// suppression or a new hit breaks it) and bleed 1 HP per
     /// `bleed_ms_per_hp` until bandaged (counted once a second, on the
     /// tick `(tick + id) % hz == 0`); at 0 HP a wounded man goes down.
-    pub(crate) fn wounds_tick(&mut self, ctx: &mut crate::game::Ctx, seed: u64) {
+    pub(crate) fn wounds_tick(
+        &mut self,
+        ctx: &mut crate::game::Ctx,
+        stats: &mut crate::world::Stats,
+        seed: u64,
+    ) {
         let w = &self.setup.rules.wounds;
         if w.enabled == 0 {
             return;
@@ -332,6 +337,8 @@ impl MatchState {
                 let (owner, by) = (ctx.ents.owner()[i].0, ctx.ents.combat()[i].wound.by);
                 self.bump_s12(owner, |c| &mut c.bled_out);
                 self.kill(ctx.ents, ctx.hash, id, corpse_ticks);
+                // Checker F2: every death counts in `deaths`.
+                stats.deaths += 1;
                 self.credit_kill(by, by.0 == owner);
             }
         }
@@ -383,6 +390,8 @@ impl MatchState {
             if self.casualties.len() >= MAX_CASUALTIES {
                 self.bump_s12(owner, |c| &mut c.bled_out);
                 self.kill(ctx.ents, ctx.hash, id, corpse_ticks);
+                // Checker F2: every death counts in `deaths`.
+                stats.deaths += 1;
                 self.credit_kill(by, by.0 == owner);
             } else {
                 ctx.ents.combat[i].hp = 1;
