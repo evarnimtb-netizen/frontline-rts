@@ -603,6 +603,25 @@ fn w3_second_same_tick_hit_from_the_same_player_kills() {
     }
 }
 
+/// Checker F6: a player whose only enemy is a downed man still refreshes
+/// that man's marker (spotting no longer returns early). Control: a downed
+/// man counts as an enemy the same as a corpse.
+#[test]
+fn spotting_refreshes_a_lone_downed_enemy() {
+    let mut w = wounds_world(1);
+    let _eye = lone(&mut w, 0, 500, 500);
+    let m = lone(&mut w, 1, 510, 500);
+    assert!(w.down_soldier(m, (0, kill_class::RIFLE)));
+    w.state.entities.combat[m.index()].seen_by = 0;
+    steps(&mut w, 60);
+    assert_eq!(kind(&w, m), EntityKind::Downed);
+    assert_ne!(
+        w.state.entities.combat[m.index()].seen_by & 1,
+        0,
+        "the downed man's marker refreshed"
+    );
+}
+
 /// W3 (own fire, S11a2 F4): an own mission burst's fragment that downs an
 /// own man credits no down to his own player, and his bleed-out is an
 /// own-fire kill, not a kill. Control: an enemy's down is credited.

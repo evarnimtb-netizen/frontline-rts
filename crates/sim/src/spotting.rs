@@ -101,7 +101,7 @@ pub(crate) fn spot(
         if ents.owner[i] != p {
             enemies += matches!(
                 kind,
-                EntityKind::Soldier | EntityKind::Corpse | EntityKind::Vehicle
+                EntityKind::Soldier | EntityKind::Corpse | EntityKind::Vehicle | EntityKind::Downed
             ) as u32;
             continue;
         }
