@@ -789,6 +789,50 @@ fn w4_the_squad_paces_to_its_wounded_man() {
     );
 }
 
+/// W4 (checker F5): a detached wounded man walks at his own wounded pace
+/// (legs 60 %). Control: the same man unhurt walks farther.
+#[test]
+fn w4_a_detached_wounded_man_walks_slower() {
+    let walk = |legs: bool| {
+        let mut w = wounds_world(1);
+        let sq = spawn(&mut w, 0, RIFLES, 300, 300);
+        steps(&mut w, 2);
+        let ms = members(&w, sq);
+        let m = ms[2];
+        // Only the leader stays: nobody in his way.
+        for &o in &ms[1..] {
+            if o != m {
+                assert!(w.kill_soldier(o));
+            }
+        }
+        if legs {
+            w.edit_soldier(m, |_, c| {
+                c.hp = 40;
+                c.wound.state = WOUNDED;
+                c.wound.legs = true;
+                c.wound.bandaged = true;
+            });
+        }
+        let y0 = w.state.entities.transform[m.index()].pos.y;
+        super::s6_tests::run(
+            &mut w,
+            0,
+            0,
+            CommandKind::MoveUnits {
+                units: vec![m],
+                target: c(300, 600),
+            },
+        );
+        steps(&mut w, 20 * 30);
+        w.state.entities.transform[m.index()].pos.y - y0
+    };
+    let (slow, fast) = (walk(true), walk(false));
+    assert!(
+        slow.mul_int(100) < fast.mul_int(75),
+        "slow {slow:?} fast {fast:?}"
+    );
+}
+
 /// W5: a downed man bleeds out at the seeded tick (one `WOUND_BLEED`
 /// draw, in [60, 180] s) and dies there, credited to his hitter as a kill
 /// and counted his player's loss. W12: nobody aims at him meanwhile, but a

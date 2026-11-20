@@ -666,6 +666,18 @@ impl MatchState {
             if u.order == UnitOrder::Retreat {
                 speed = speed.mul_int(mv.retreat_speed_pct as i32).div_int(100);
             }
+            // S12 W4 (checker F5): a detached wounded man walks at his own
+            // wounded pace (the squad pace covers men in formation).
+            let wd = ctx.ents.combat[i].wound;
+            if self.setup.rules.wounds.enabled != 0 && wd.state == crate::wounds::WOUNDED {
+                let wt = &self.setup.rules.wounds;
+                let pct = if wd.legs {
+                    wt.legs_speed_pct
+                } else {
+                    wt.wounded_speed_pct
+                };
+                speed = speed.mul_int(pct as i32).div_int(100);
+            }
             let speed = squad::stance_speed(speed, u.stance, mv.prone_speed_pct);
             let pos = ctx.ents.transform[i].pos.xy();
             // S10a: inside a wire band at `wire_speed_pct`.
