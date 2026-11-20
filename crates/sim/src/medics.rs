@@ -237,6 +237,7 @@ impl MatchState {
         self.carry_tick(ctx);
         self.stabilise_tick(ctx);
         self.auto_tend(ctx);
+        self.posts_tick(ctx);
     }
 
     /// W6: a medic tender within reach stabilises a casualty (lower id
@@ -635,6 +636,498 @@ impl MatchState {
         ctx.hash.mark_entity_chunk(target.chunk());
         for m in pick.into_iter().take(2) {
             self.send_man(ctx, m, at);
+        }
+        true
+    }
+
+    // ------------------------------------------------- W8 posts, W9 evac --
+
+    /// Whether medic `j` (of `owner`) staffs a post at `at` with radius
+    /// `r_sq` (squared): in its radius with no move order.
+    fn staffs(
+        &self,
+        ents: &crate::ecs::Entities,
+        j: usize,
+        owner: PlayerId,
+        at: FxVec2,
+        r_sq: Fx,
+    ) -> bool {
+        let u = &ents.unit[j];
+        ents.owner[j] == owner
+            && u.riding.is_none()
+            && u.serving.is_none()
+            && (ents.transform[j].pos.xy() - at).length_sq() <= r_sq
+            && if u.detached {
+                u.order == UnitOrder::Idle
+            } else {
+                ents.squad[j]
+                    .and_then(|s| self.squads.get(&s))
+                    .is_some_and(|sq| sq.nav.phase == NavPhase::Holding)
+            }
+    }
+
+    /// W8: every built aid post, ascending id. Beds whose man is gone or
+    /// left the radius empty; a post short of `staff_min` own medics pauses
+    /// its beds (each finish tick moves on); a staffed post fills free
+    /// beds by ascending id with stabilised, uncarried downed men (to be
+    /// evacuated in `evac_s`) and detached, halted wounded men not yet
+    /// treated (treated in `treat_s`: back to Fit at `return_hp_pct` of
+    /// his card's HP, `treated`, rejoins his squad). A lower-id post takes
+    /// a man first.
+    pub(crate) fn posts_tick(&mut self, ctx: &mut Ctx) {
+        let s = &self.setup;
+        let posts: Vec<u32> = self
+            .supply6
+            .structures
+            .iter()
+            .filter(|(_, st)| {
+                st.built
+                    && s.stocks[st.def as usize].kind == frontline_content::setup::StockKind::Aid
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        let tick = ctx.tick;
+        let hz = s.tick_hz.max(1) as u64;
+        let (treat, evac) = (
+            s.rules.wounds.treat_s as u64 * hz,
+            s.rules.wounds.evac_s as u64 * hz,
+        );
+        let ret_pct = s.rules.wounds.return_hp_pct;
+        if !posts.is_empty() {
+            let medics: Vec<usize> = (0..ctx.ents.len())
+                .filter(|&j| self.is_medic(ctx.ents, j))
+                .collect();
+            let mut taken: Vec<SimId> = self
+                .supply6
+                .structures
+                .values()
+                .flat_map(|st| st.beds.iter().map(|b| b.man))
+                .collect();
+            taken.sort_unstable();
+            for pid in posts {
+                let st = &self.supply6.structures[&pid];
+                let d = &self.setup.stocks[st.def as usize];
+                let (owner, at) = (st.owner, st.pos);
+                let r: Fx = d.radius.into();
+                let r_sq = r.mul(r);
+                let (beds, staff_min) = (d.beds as usize, d.staff_min as usize);
+                let staff = medics
+                    .iter()
+                    .filter(|&&j| self.staffs(ctx.ents, j, owner, at, r_sq))
+                    .count();
+                let staffed = staff >= staff_min;
+                let inside = |ents: &crate::ecs::Entities, m: SimId| {
+                    let k = ents.kind[m.index()];
+                    matches!(k, EntityKind::Soldier | EntityKind::Downed)
+                        && ents.owner[m.index()] == owner
+                        && (ents.transform[m.index()].pos.xy() - at).length_sq() <= r_sq
+                };
+                // Progress, pause or empty the beds.
+                let mut done: Vec<crate::wounds::Bed> = Vec::new();
+                let st = self.supply6.structures.get_mut(&pid).expect("post");
+                st.beds.retain_mut(|b| {
+                    if !inside(ctx.ents, b.man) {
+                        return false;
+                    }
+                    if !staffed {
+                        b.done_at += 1;
+                    } else if b.done_at <= tick {
+                        done.push(*b);
+                        return false;
+                    }
+                    true
+                });
+                for b in done {
+                    taken.retain(|&x| x != b.man);
+                    if b.evac {
+                        self.evacuate(ctx, b.man);
+                    } else {
+                        let i = b.man.index();
+                        let card_hp = ctx.ents.squad[i]
+                            .and_then(|q| self.squads.get(&q))
+                            .map_or(100, |q| self.setup.squad_types[q.type_idx as usize].hp);
+                        let back = (card_hp as u64 * ret_pct as u64 / 100).clamp(1, u16::MAX as u64)
+                            as u16;
+                        let c = &mut ctx.ents.combat[i];
+                        c.hp = c.hp.max(back);
+                        c.wound = crate::wounds::Wound {
+                            treated: true,
+                            paid: c.wound.paid,
+                            by: c.wound.by,
+                            ..crate::wounds::Wound::default()
+                        };
+                        let o = ctx.ents.owner[i].0;
+                        self.bump_s12(o, |x| &mut x.treated);
+                        Self::release(ctx, b.man);
+                    }
+                }
+                if !staffed {
+                    continue;
+                }
+                // Fill free beds, ascending id.
+                let free = beds.saturating_sub(self.supply6.structures[&pid].beds.len());
+                if free == 0 {
+                    continue;
+                }
+                let mut add: Vec<crate::wounds::Bed> = Vec::new();
+                for i in 0..ctx.ents.len() {
+                    if add.len() >= free {
+                        break;
+                    }
+                    let m = SimId(i as u32);
+                    if taken.binary_search(&m).is_ok() || !inside(ctx.ents, m) {
+                        continue;
+                    }
+                    match ctx.ents.kind[i] {
+                        EntityKind::Downed => {
+                            let ok = self
+                                .casualties
+                                .get(&m)
+                                .is_some_and(|c| c.bleed_out_at == 0 && c.carriers[0].is_none());
+                            if ok {
+                                add.push(crate::wounds::Bed {
+                                    man: m,
+                                    done_at: tick + evac,
+                                    evac: true,
+                                });
+                            }
+                        }
+                        EntityKind::Soldier => {
+                            let w = ctx.ents.combat[i].wound;
+                            let u = &ctx.ents.unit[i];
+                            if w.state == WOUNDED
+                                && !w.treated
+                                && u.detached
+                                && u.order == UnitOrder::Idle
+                            {
+                                add.push(crate::wounds::Bed {
+                                    man: m,
+                                    done_at: tick + treat,
+                                    evac: false,
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for b in add {
+                    let k = taken.binary_search(&b.man).unwrap_or_else(|k| k);
+                    taken.insert(k, b.man);
+                    // A man in a bed is no longer evacuated in base.
+                    if let Some(c) = self.casualties.get_mut(&b.man) {
+                        c.evac_at = 0;
+                    }
+                    self.supply6
+                        .structures
+                        .get_mut(&pid)
+                        .expect("post")
+                        .beds
+                        .push(b);
+                }
+            }
+        }
+        self.base_evac(ctx, evac);
+    }
+
+    /// W9 in base: a stabilised, uncarried downed man inside his own base
+    /// (and in no bed) is evacuated `evac_s` after he lies there
+    /// (`Casualty::evac_at`); carried or out of the base the wait starts
+    /// over.
+    fn base_evac(&mut self, ctx: &mut Ctx, evac: u64) {
+        if self.casualties.is_empty() {
+            return;
+        }
+        let tick = ctx.tick;
+        let in_bed: Vec<SimId> = {
+            let mut v: Vec<SimId> = self
+                .supply6
+                .structures
+                .values()
+                .flat_map(|st| st.beds.iter().map(|b| b.man))
+                .collect();
+            v.sort_unstable();
+            v
+        };
+        let mut due: Vec<SimId> = Vec::new();
+        let ids: Vec<SimId> = self.casualties.keys().copied().collect();
+        for id in ids {
+            let i = id.index();
+            let owner = ctx.ents.owner[i];
+            let home =
+                crate::supply::in_own_base(&self.setup, owner, ctx.ents.transform[i].pos.xy());
+            let c = self.casualties.get_mut(&id).expect("casualty");
+            let ready = home
+                && c.bleed_out_at == 0
+                && c.carriers[0].is_none()
+                && in_bed.binary_search(&id).is_err();
+            if !ready {
+                if c.evac_at != 0 {
+                    c.evac_at = 0;
+                    ctx.hash.mark_entity_chunk(id.chunk());
+                }
+            } else if c.evac_at == 0 {
+                c.evac_at = tick + evac;
+                ctx.hash.mark_entity_chunk(id.chunk());
+            } else if c.evac_at <= tick {
+                due.push(id);
+            }
+        }
+        for id in due {
+            self.evacuate(ctx, id);
+        }
+    }
+
+    /// W9: man `id` (a soldier or a downed man) leaves the match: no
+    /// corpse, pop freed, a loss for his player (`evacuated`), and, when
+    /// he was `paid`, a refund of his card's per-man price times
+    /// `evac_refund_pct` (once: he is gone). Every job that names him ends.
+    pub(crate) fn evacuate(&mut self, ctx: &mut Ctx, id: SimId) {
+        let i = id.index();
+        if !matches!(ctx.ents.kind[i], EntityKind::Soldier | EntityKind::Downed) {
+            return;
+        }
+        let owner = ctx.ents.owner[i];
+        let card = match self.casualties.get(&id) {
+            Some(c) => Some(c.card),
+            None => ctx.ents.squad[i]
+                .and_then(|q| self.squads.get(&q))
+                .map(|q| q.type_idx),
+        };
+        let refund = if ctx.ents.combat[i].wound.paid {
+            card.and_then(|t| self.setup.squad_types.get(t as usize))
+                .map_or(0, |ty| {
+                    (ty.cost as u64 / (ty.men.max(1) as u64)
+                        * self.setup.rules.wounds.evac_refund_pct as u64
+                        / 100)
+                        .min(u32::MAX as u64) as u32
+                })
+        } else {
+            0
+        };
+        for c in self.casualties.values_mut() {
+            if c.tend.is_some_and(|t| t.0 == id) {
+                c.tend = None;
+            }
+            if c.carriers.contains(&Some(id)) {
+                c.carriers = [None, None];
+                c.dest = None;
+            }
+        }
+        for st in self.supply6.structures.values_mut() {
+            st.beds.retain(|b| b.man != id);
+        }
+        let corpse = self.setup.rules.combat.corpse_ticks;
+        self.kill(ctx.ents, ctx.hash, id, corpse);
+        ctx.ents.despawn(id);
+        ctx.hash.mark_entity_chunk(id.chunk());
+        if let Some(p) = self.players.get_mut(owner.0 as usize) {
+            p.manpower = p.manpower.saturating_add(refund);
+            p.s12.evacuated = p.s12.evacuated.saturating_add(1);
+            p.s12.refund_mp = p.s12.refund_mp.saturating_add(refund);
+        }
+    }
+
+    /// `Evacuate { units }` (W9): each named wounded man of the player
+    /// inside his own base leaves at once; at a staffed own aid post he
+    /// takes a free bed (`evac_s`; a treated man leaves only this way).
+    /// Refused with `[wounds] enabled` 0 or when no man qualifies.
+    pub(crate) fn order_evacuate(&mut self, ctx: &mut Ctx, p: PlayerId, units: &[SimId]) -> bool {
+        if self.setup.rules.wounds.enabled == 0 {
+            return false;
+        }
+        let Some(men) = self.unit_set(ctx, p, units) else {
+            return false;
+        };
+        let tick = ctx.tick;
+        let evac = self.setup.rules.wounds.evac_s as u64 * self.setup.tick_hz.max(1) as u64;
+        let medics: Vec<usize> = (0..ctx.ents.len())
+            .filter(|&j| self.is_medic(ctx.ents, j))
+            .collect();
+        let mut any = false;
+        for m in men {
+            let i = m.index();
+            if ctx.ents.combat[i].wound.state != WOUNDED {
+                continue;
+            }
+            let at = ctx.ents.transform[i].pos.xy();
+            if crate::supply::in_own_base(&self.setup, p, at) {
+                self.evacuate(ctx, m);
+                any = true;
+                continue;
+            }
+            if self
+                .supply6
+                .structures
+                .values()
+                .any(|st| st.beds.iter().any(|b| b.man == m))
+            {
+                continue;
+            }
+            let post = self.supply6.structures.iter().find(|(_, st)| {
+                let d = &self.setup.stocks[st.def as usize];
+                let r: Fx = d.radius.into();
+                let r_sq = r.mul(r);
+                st.owner == p
+                    && st.built
+                    && d.kind == frontline_content::setup::StockKind::Aid
+                    && st.beds.len() < d.beds as usize
+                    && (at - st.pos).length_sq() <= r_sq
+                    && medics
+                        .iter()
+                        .filter(|&&j| self.staffs(ctx.ents, j, p, st.pos, r_sq))
+                        .count()
+                        >= d.staff_min as usize
+            });
+            if let Some((&pid, _)) = post {
+                self.supply6
+                    .structures
+                    .get_mut(&pid)
+                    .expect("post")
+                    .beds
+                    .push(crate::wounds::Bed {
+                        man: m,
+                        done_at: tick + evac,
+                        evac: true,
+                    });
+                ctx.hash.mark_entity_chunk(m.chunk());
+                any = true;
+            }
+        }
+        any
+    }
+
+    // ------------------------------------------------------ W11 Reinforce --
+
+    /// `Reinforce { squad }` (W11, `[wounds] reinforce`): infantry squad
+    /// `squad` (not a vehicle or a free crew card) below its card size
+    /// (members plus its own living casualties) gets one man per gap, as
+    /// many as manpower (`reinforce_cost_pct` of the card's per-man price
+    /// each) and the pop cap allow, when the card's cooldown is over; it
+    /// starts the card's cooldown (S12-12). Each man spawns at the base with
+    /// the card's basic member kit (the first slot with no crew weapon and
+    /// no trait: a rifleman),
+    /// joins the squad at once and walks to his place in its line.
+    /// Refused (a `FortEvent`, as before Build B) otherwise.
+    pub(crate) fn order_reinforce(
+        &mut self,
+        ctx: &mut Ctx,
+        p: PlayerId,
+        squad: crate::game::SquadId,
+    ) -> bool {
+        use crate::fort::FortRefusal;
+        let w = &self.setup.rules.wounds;
+        if w.enabled == 0 || w.reinforce == 0 || !self.owned(p, squad) {
+            return self.refuse_fort(p, Some(squad), FortRefusal::NotAllowed);
+        }
+        let t = self.squads[&squad].type_idx;
+        let ty = &self.setup.squad_types[t as usize];
+        let crew = ["crew", "gun_crew"]
+            .iter()
+            .any(|n| ty.has_tag(self.setup.tag(n)));
+        if ty.vehicle.is_some() || ty.cost == 0 || crew {
+            return self.refuse_fort(p, Some(squad), FortRefusal::NotAllowed);
+        }
+        // The basic member: the first slot with no crew weapon and no trait
+        // (a rifleman), else the first with no crew weapon who does not
+        // lead, else the first with no crew weapon.
+        let plain =
+            |m: &frontline_content::setup::MemberSetup| !self.setup.weapons[m.weapon as usize].crew;
+        let Some(slot) = ty
+            .members
+            .iter()
+            .position(|m| plain(m) && m.traits == 0)
+            .or_else(|| {
+                ty.members
+                    .iter()
+                    .position(|m| plain(m) && m.traits & member_trait::LEADER == 0)
+            })
+            .or_else(|| ty.members.iter().position(plain))
+        else {
+            return self.refuse_fort(p, Some(squad), FortRefusal::NotAllowed);
+        };
+        let down = self
+            .casualties
+            .values()
+            .filter(|c| c.from_squad == squad)
+            .count();
+        let have = self.squads[&squad].members.len() + down;
+        let gaps = (ty.men as usize).saturating_sub(have);
+        if gaps == 0 || self.cooldown_left(p, t, ctx.tick) > 0 {
+            return self.refuse_fort(p, Some(squad), FortRefusal::NotAllowed);
+        }
+        let price = (ty.cost as u64 / ty.men.max(1) as u64 * w.reinforce_cost_pct as u64 / 100)
+            .min(u32::MAX as u64) as u32;
+        let pl = &self.players[p.0 as usize];
+        let room = self
+            .setup
+            .rules
+            .pop_cap
+            .saturating_sub(self.population(ctx.ents, p)) as usize;
+        let afford = pl.manpower.checked_div(price).map_or(gaps, |n| n as usize);
+        let n = gaps.min(room).min(afford);
+        if n == 0 {
+            let short = price.saturating_sub(pl.manpower);
+            let why = if room == 0 || short == 0 {
+                FortRefusal::Cap
+            } else {
+                FortRefusal::Manpower { short }
+            };
+            return self.refuse_fort(p, Some(squad), why);
+        }
+        let paid = price * n as u32;
+        let (ready, group) = (
+            ctx.tick + ty.recall_cooldown_ticks as u64,
+            ty.cooldown_group,
+        );
+        let wk = ty.members[slot].weapon;
+        let (hp, speed, items) = (ty.hp, ty.speed, ty.full_kit(slot as u8));
+        let pl = &mut self.players[p.0 as usize];
+        pl.manpower -= paid;
+        pl.s12.reinforced_men = pl.s12.reinforced_men.saturating_add(n as u32);
+        pl.s12.reinforce_mp = pl.s12.reinforce_mp.saturating_add(paid);
+        for (k, other) in self.setup.squad_types.iter().enumerate() {
+            if k == t as usize || (group.is_some() && other.cooldown_group == group) {
+                pl.ready_at[k] = pl.ready_at[k].max(ready);
+            }
+        }
+        let spot = self.spawn_spot(ctx.ents, ctx.terrain, p, squad);
+        for _ in 0..n {
+            let sid = ctx.ents.spawn(EntityKind::Soldier, p);
+            let i = sid.index();
+            ctx.ents.transform[i].pos = spot.extend(ctx.terrain.height_at(spot));
+            ctx.ents.mover[i].waypoint = spot;
+            ctx.ents.mover[i].speed = speed.into();
+            ctx.ents.squad[i] = Some(squad);
+            ctx.ents.combat[i] = crate::combat::spawn_combat(
+                hp,
+                &self.setup.weapons[wk as usize],
+                &self.setup.rules.combat.body,
+            );
+            ctx.ents.combat[i].wound.paid = true;
+            ctx.ents.kit[i] = crate::items::Kit {
+                items,
+                slot: slot as u8,
+                weapon: wk,
+                ..crate::items::Kit::default()
+            };
+            let ty = &self.setup.squad_types[t as usize];
+            crate::supply::spawn_load(
+                &self.setup,
+                ty,
+                &mut ctx.ents.kit[i],
+                &mut ctx.ents.combat[i],
+            );
+            ctx.hash.mark_entity_chunk(sid.chunk());
+            self.squads
+                .get_mut(&squad)
+                .expect("squad")
+                .members
+                .push(sid);
+        }
+        let sq = &self.squads[&squad];
+        if matches!(sq.nav.phase, NavPhase::Holding | NavPhase::Arriving) {
+            let facing = sq.nav.facing;
+            self.regroup_here(ctx, squad, facing);
         }
         true
     }

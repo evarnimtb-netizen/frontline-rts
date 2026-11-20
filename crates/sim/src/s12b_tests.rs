@@ -496,3 +496,395 @@ fn w7_save_load_mid_carry_keeps_the_hash() {
     assert_eq!(x.full_state_hash(), w.full_state_hash());
     assert_eq!(s12(&x, 0).carried, 1);
 }
+
+// ------------------------------------------------------- W8, W9, W11 --
+
+use frontline_content::setup::StockKind;
+
+/// A built aid post of player 0 at (`x`, `y`) with a medic team standing
+/// in it (held formation). Returns `(post id, medics)`.
+fn post(w: &mut World, x: i32, y: i32) -> (u32, Vec<SimId>) {
+    let d = super::s6_tests::def(w, 0, StockKind::Aid, None);
+    let id = super::s6_tests::add_built(w, 0, d, c(x, y), [0; 3]);
+    let mt = spawn(w, 0, MEDICS, x, y);
+    steps(w, 3);
+    (id, members(w, mt))
+}
+
+fn beds(w: &World, id: u32) -> Vec<crate::wounds::Bed> {
+    w.game()
+        .unwrap()
+        .supply6
+        .structures
+        .get(&id)
+        .map_or(Vec::new(), |s| s.beds.clone())
+}
+
+/// A man of a new rifle squad at (`x`, `y`) made wounded (40 HP) and sent
+/// (detached) to stand at `to`.
+fn wounded_to(w: &mut World, x: i32, y: i32, to: FxVec2, seq: u32) -> SimId {
+    let sq = spawn(w, 0, RIFLES, x, y);
+    steps(w, 2);
+    let m = members(w, sq)[5];
+    w.edit_soldier(m, |_, c| {
+        c.hp = 40;
+        c.wound.state = WOUNDED;
+        c.wound.bandaged = true;
+    });
+    assert!(cmd(
+        w,
+        seq,
+        CommandKind::MoveUnits {
+            units: vec![m],
+            target: to
+        }
+    ));
+    m
+}
+
+/// W8 (R3, R4): a staffed post treats a detached wounded man in
+/// `treat_s`: back to Fit at 75 HP, `treated`, he rejoins his squad. Hit
+/// again he is never treated twice; only `Evacuate` takes him (a bed,
+/// `evac_s`; unpaid: no refund). Control: the first treatment happens.
+#[test]
+fn w8_post_treats_once_then_evacuates_on_order() {
+    let mut w = world(0);
+    let (pid, _) = post(&mut w, 400, 400);
+    let m = wounded_to(&mut w, 430, 400, c(404, 404), 1);
+    until(&mut w, 40 * 30, |w| !beds(w, pid).is_empty()).expect("a bed");
+    let k = until(&mut w, 70 * 30, |w| {
+        w.state.entities.combat[m.index()].wound.treated
+    })
+    .expect("treated");
+    assert!(k >= 55 * 30, "treat_s: {k}");
+    let c0 = w.state.entities.combat[m.index()];
+    assert_eq!((c0.hp, c0.wound.state), (75, crate::wounds::FIT));
+    assert_eq!(s12(&w, 0).treated, 1);
+    steps(&mut w, 2);
+    assert!(!w.state.entities.unit[m.index()].detached, "he regrouped");
+    // Hit again, back at the post: no second treatment.
+    w.edit_soldier(m, |_, c| {
+        c.hp = 40;
+        c.wound.state = WOUNDED;
+        c.wound.bandaged = true;
+    });
+    assert!(cmd(
+        &mut w,
+        2,
+        CommandKind::MoveUnits {
+            units: vec![m],
+            target: c(404, 404)
+        }
+    ));
+    steps(&mut w, 90 * 30);
+    assert!(beds(&w, pid).is_empty(), "R4: never treated twice");
+    assert_eq!(s12(&w, 0).treated, 1);
+    assert!(cmd(&mut w, 3, CommandKind::Evacuate { units: vec![m] }));
+    assert!(beds(&w, pid).iter().any(|b| b.man == m && b.evac));
+    until(&mut w, 40 * 30, |w| kind(w, m) == EntityKind::Vacant).expect("evacuated");
+    assert_eq!(s12(&w, 0).evacuated, 1);
+    assert_eq!(s12(&w, 0).refund_mp, 0, "unpaid: no refund");
+}
+
+/// W8 (row Bed, "staff short: pause"): with one medic dead the post
+/// pauses its bed (the finish tick moves on). Control: staffed it does
+/// not move.
+#[test]
+fn w8_staff_short_pauses_the_beds() {
+    for short in [false, true] {
+        let mut w = world(0);
+        let (pid, med) = post(&mut w, 400, 400);
+        wounded_to(&mut w, 430, 400, c(404, 404), 1);
+        until(&mut w, 40 * 30, |w| !beds(w, pid).is_empty()).expect("a bed");
+        let done = beds(&w, pid)[0].done_at;
+        if short {
+            assert!(w.kill_soldier(med[1]));
+        }
+        steps(&mut w, 60);
+        let done2 = beds(&w, pid)[0].done_at;
+        if short {
+            assert!(done2 >= done + 55, "paused {done} -> {done2}");
+        } else {
+            assert_eq!(done2, done);
+        }
+    }
+}
+
+/// W8 (row Bed, "tent broken: post gone"; "killed by HE in bed"): HE that
+/// breaks the tent destroys the post. A downed man in a bed killed by a
+/// stray round leaves the bed and nothing is evacuated. Control: an
+/// untouched downed man in a bed is evacuated (W9 test).
+#[test]
+fn w8_tent_broken_and_killed_in_bed() {
+    let mut w = world(0);
+    let (pid, _) = post(&mut w, 400, 400);
+    let sq = spawn(&mut w, 0, RIFLES, 405, 395);
+    steps(&mut w, 2);
+    let d = members(&w, sq)[4];
+    let t = w.tick();
+    stage_downed(&mut w, d, t + 170 * 30);
+    w.state
+        .game
+        .as_mut()
+        .unwrap()
+        .casualties
+        .get_mut(&d)
+        .unwrap()
+        .bleed_out_at = 0;
+    w.refresh_hashes();
+    until(&mut w, 5 * 30, |w| {
+        beds(w, pid).iter().any(|b| b.man == d && b.evac)
+    })
+    .expect("a bed");
+    super::s12_tests::bullet(&mut w, 1, "ww2:kar98k", d, crate::wounds::ZONE_TORSO);
+    steps(&mut w, 2);
+    assert!(beds(&w, pid).is_empty(), "the bed emptied");
+    assert_eq!(s12(&w, 0).evacuated, 0);
+    // HE on the tent.
+    let he = super::s11a2_tests::weapon(&w, "ww2:grw34");
+    let t = w.tick();
+    super::s11a2_tests::burst_now(&mut w, 1, he, 0, c(400, 400), t);
+    steps(&mut w, 2);
+    assert!(
+        !w.game().unwrap().supply6.structures.contains_key(&pid),
+        "the post is gone"
+    );
+}
+
+/// W8 (row Bed, "two posts: lower id"): a stabilised downed man inside two
+/// staffed posts takes a bed in the lower id's. Control: the other post
+/// stays empty.
+#[test]
+fn w8_two_posts_lower_id_takes_him() {
+    let mut w = world(0);
+    let (a, _) = post(&mut w, 400, 400);
+    let (b, _) = post(&mut w, 412, 400);
+    let sq = spawn(&mut w, 0, RIFLES, 406, 380);
+    steps(&mut w, 2);
+    let d = members(&w, sq)[0];
+    assert!(w.place_soldier(d, c(406, 400)));
+    let t = w.tick();
+    stage_downed(&mut w, d, t + 170 * 30);
+    w.state
+        .game
+        .as_mut()
+        .unwrap()
+        .casualties
+        .get_mut(&d)
+        .unwrap()
+        .bleed_out_at = 0;
+    w.refresh_hashes();
+    until(&mut w, 5 * 30, |w| {
+        !beds(w, a).is_empty() || !beds(w, b).is_empty()
+    })
+    .expect("a bed");
+    assert!(a < b);
+    assert_eq!(beds(&w, a).len(), 1);
+    assert!(beds(&w, b).is_empty());
+}
+
+/// W9: a stabilised downed man in his own base is evacuated after
+/// `evac_s`: no corpse, pop freed, `evacuated`, a refund of his card's
+/// per-man price x 40 % when he was paid, once. Control: unpaid, no refund.
+#[test]
+fn w9_evacuation_in_base_refunds_paid_men_once() {
+    for paid in [true, false] {
+        let mut w = world(0);
+        let base = w.game().unwrap().base_of(PlayerId(0));
+        let sq = spawn(&mut w, 0, RIFLES, base.x.floor_int(), base.y.floor_int());
+        steps(&mut w, 2);
+        let d = members(&w, sq)[3];
+        let t = w.tick();
+        stage_downed(&mut w, d, t + 170 * 30);
+        w.state.entities.combat[d.index()].wound.paid = paid;
+        w.state
+            .game
+            .as_mut()
+            .unwrap()
+            .casualties
+            .get_mut(&d)
+            .unwrap()
+            .bleed_out_at = 0;
+        w.refresh_hashes();
+        let (mp, pop) = (
+            w.game().unwrap().players[0].manpower,
+            w.game().unwrap().population(&w.state.entities, PlayerId(0)),
+        );
+        let k = until(&mut w, 40 * 30, |w| kind(w, d) == EntityKind::Vacant).expect("evacuated");
+        assert!(k >= 29 * 30, "evac_s: {k}");
+        let ty =
+            &w.match_setup().unwrap().squad_types[w.game().unwrap().squads[&sq].type_idx as usize];
+        let refund = if paid {
+            ty.cost / ty.men as u32 * 40 / 100
+        } else {
+            0
+        };
+        let g = w.game().unwrap();
+        let _ = mp;
+        assert_eq!(g.players[0].s12.refund_mp, refund);
+        assert_eq!(g.players[0].s12.evacuated, 1);
+        assert_eq!(g.population(&w.state.entities, PlayerId(0)), pop - 1);
+        assert!(g.casualties.is_empty());
+        steps(&mut w, 60);
+        assert_eq!(w.game().unwrap().players[0].s12.refund_mp, refund, "once");
+    }
+}
+
+/// W9 at a post (row Bed, save/load mid-job): a stabilised downed man in
+/// a staffed post's bed is evacuated after `evac_s`; a save taken with him
+/// in the bed plays on to the same hash. Control: the unsaved run.
+#[test]
+fn w9_post_evacuates_a_stabilised_man_and_save_load_keeps_the_hash() {
+    let mut w = world(0);
+    let (pid, _) = post(&mut w, 400, 400);
+    let sq = spawn(&mut w, 0, RIFLES, 405, 395);
+    steps(&mut w, 2);
+    let d = members(&w, sq)[4];
+    let t = w.tick();
+    stage_downed(&mut w, d, t + 170 * 30);
+    w.state
+        .game
+        .as_mut()
+        .unwrap()
+        .casualties
+        .get_mut(&d)
+        .unwrap()
+        .bleed_out_at = 0;
+    w.refresh_hashes();
+    until(&mut w, 5 * 30, |w| !beds(w, pid).is_empty()).expect("a bed");
+    steps(&mut w, 10 * 30);
+    let mut x = World::load(&w.save(), 1).unwrap();
+    for _ in 0..25 * 30 {
+        w.step(&[]);
+        x.step(&[]);
+    }
+    assert_eq!(x.full_state_hash(), w.full_state_hash());
+    assert_eq!(kind(&x, d), EntityKind::Vacant);
+    assert_eq!(s12(&x, 0).evacuated, 1);
+}
+
+/// W11 (R6): `Reinforce` fills a squad to its card size from base with
+/// rifle kit (the first plain slot), per-man price, the card's cooldown
+/// started; the men walk to the squad. Refused with the switch 0, during
+/// the cooldown, for a full squad, at the pop cap. Control: before the
+/// losses the squad is full and refused.
+#[test]
+fn w11_reinforce_fills_the_squad_from_base() {
+    let mut w = flat_world_with(1, |s| {
+        s.rules.wounds.enabled = 1;
+        s.rules.wounds.reinforce = 1;
+    });
+    let sq = spawn(&mut w, 0, RIFLES, 500, 500);
+    steps(&mut w, 3);
+    assert!(
+        !cmd(&mut w, 1, CommandKind::Reinforce { squad: sq }),
+        "full"
+    );
+    let ms = members(&w, sq);
+    for &m in &ms[6..9] {
+        assert!(w.kill_soldier(m));
+    }
+    steps(&mut w, 1);
+    let (t, mp0) = (
+        w.game().unwrap().squads[&sq].type_idx,
+        w.game().unwrap().players[0].manpower,
+    );
+    let ty = w.match_setup().unwrap().squad_types[t as usize].clone();
+    assert!(cmd(&mut w, 2, CommandKind::Reinforce { squad: sq }));
+    let now = members(&w, sq);
+    assert_eq!(now.len(), ty.men as usize);
+    let price = ty.cost / ty.men as u32;
+    let g = w.game().unwrap();
+    assert_eq!(mp0 - g.players[0].manpower, 3 * price);
+    assert_eq!(
+        (
+            g.players[0].s12.reinforced_men,
+            g.players[0].s12.reinforce_mp
+        ),
+        (3, 3 * price)
+    );
+    assert!(
+        g.cooldown_left(PlayerId(0), t, w.tick()) > 0,
+        "cooldown started"
+    );
+    let kar = super::s11a2_tests::weapon(&w, "ww2:kar98k");
+    let base = g.base_of(PlayerId(0));
+    let new: Vec<SimId> = now.iter().copied().filter(|m| !ms.contains(m)).collect();
+    for &m in &new {
+        assert_eq!(w.state.entities.kit[m.index()].weapon, kar, "rifle kit");
+        assert!(w.state.entities.combat[m.index()].wound.paid);
+        assert!(
+            (pos(&w, m) - base).length_sq() < Fx::from_int(150 * 150),
+            "at the base"
+        );
+    }
+    let lead = now[0];
+    until(&mut w, 400 * 30, |w| {
+        new.iter()
+            .all(|&m| (pos(w, m) - pos(w, lead)).length_sq() < Fx::from_int(30 * 30))
+    })
+    .expect("they walked to the squad");
+    // Refusals: a gap again, but in the cooldown; then the switch off.
+    assert!(w.kill_soldier(new[0]));
+    steps(&mut w, 1);
+    let cd = w.game().unwrap().cooldown_left(PlayerId(0), t, w.tick());
+    if cd > 0 {
+        assert!(
+            !cmd(&mut w, 3, CommandKind::Reinforce { squad: sq }),
+            "cooldown"
+        );
+    }
+    let mut off = wounds_on_reinforce_off();
+    let q = spawn(&mut off, 0, RIFLES, 500, 500);
+    steps(&mut off, 2);
+    assert!(off.kill_soldier(members(&off, q)[7]));
+    steps(&mut off, 1);
+    assert!(
+        !cmd(&mut off, 1, CommandKind::Reinforce { squad: q }),
+        "switch 0"
+    );
+    // Pop cap.
+    let mut cap = flat_world_with(1, |s| {
+        s.rules.wounds.enabled = 1;
+        s.rules.wounds.reinforce = 1;
+    });
+    let q = spawn(&mut cap, 0, RIFLES, 500, 500);
+    steps(&mut cap, 2);
+    assert!(cap.kill_soldier(members(&cap, q)[7]));
+    steps(&mut cap, 1);
+    let pop = cap
+        .game()
+        .unwrap()
+        .population(&cap.state.entities, PlayerId(0));
+    cap.state.game.as_mut().unwrap().setup.rules.pop_cap = pop;
+    assert!(
+        !cmd(&mut cap, 1, CommandKind::Reinforce { squad: q }),
+        "pop cap"
+    );
+}
+
+fn wounds_on_reinforce_off() -> World {
+    flat_world_with(1, |s| s.rules.wounds.enabled = 1)
+}
+
+/// W11 (row Reinforce, save/load mid-job): a save taken while the new men
+/// walk from base plays on to the same hash. Control: the unsaved run.
+#[test]
+fn w11_save_load_while_replacements_walk() {
+    let mut w = flat_world_with(1, |s| {
+        s.rules.wounds.enabled = 1;
+        s.rules.wounds.reinforce = 1;
+    });
+    let sq = spawn(&mut w, 0, RIFLES, 500, 500);
+    steps(&mut w, 3);
+    assert!(w.kill_soldier(members(&w, sq)[8]));
+    steps(&mut w, 1);
+    assert!(cmd(&mut w, 1, CommandKind::Reinforce { squad: sq }));
+    steps(&mut w, 10 * 30);
+    let mut x = World::load(&w.save(), 1).unwrap();
+    for _ in 0..20 * 30 {
+        w.step(&[]);
+        x.step(&[]);
+    }
+    assert_eq!(x.full_state_hash(), w.full_state_hash());
+}

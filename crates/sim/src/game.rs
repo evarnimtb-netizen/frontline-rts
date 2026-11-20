@@ -1281,12 +1281,8 @@ impl MatchState {
             CommandKind::Carry { units, target, to } => {
                 self.order_carry(ctx, p, units, *target, *to)
             }
-            CommandKind::Evacuate { .. } => {
-                self.refuse_fort(p, None, crate::fort::FortRefusal::NotAllowed)
-            }
-            &CommandKind::Reinforce { squad } => {
-                self.refuse_fort(p, Some(squad), crate::fort::FortRefusal::NotAllowed)
-            }
+            CommandKind::Evacuate { units } => self.order_evacuate(ctx, p, units),
+            &CommandKind::Reinforce { squad } => self.order_reinforce(ctx, p, squad),
             CommandKind::PlaceBangalore { units, target } => {
                 self.place_bangalore(ctx, p, units, *target)
             }
@@ -1922,6 +1918,19 @@ impl MatchState {
                     }
                 }
                 let q = self.spawn_squad(ctx, p, squad_type);
+                // S12 W9: bought men are refunded when evacuated (start
+                // squads and free crew cards are not).
+                if self.setup.rules.wounds.enabled != 0
+                    && cost > 0
+                    && self.setup.squad_types[squad_type as usize]
+                        .vehicle
+                        .is_none()
+                {
+                    for &m in self.squads.get(&q).map_or(&[][..], |s| &s.members[..]) {
+                        ctx.ents.combat[m.index()].wound.paid = true;
+                        ctx.hash.mark_entity_chunk(m.chunk());
+                    }
+                }
                 self.gun_arrives(ctx, p, squad_type, q);
                 Ok(q)
             }
@@ -1980,7 +1989,7 @@ impl MatchState {
     /// `spawn_vehicle_weight`) within `call_in.spawn_clear_m`, so squads
     /// bought in quick succession, or onto a spot a squad still stands
     /// on, spread out. Every spot is inside the base.
-    fn spawn_spot(
+    pub(crate) fn spawn_spot(
         &self,
         ents: &Entities,
         terrain: &Heightfield,

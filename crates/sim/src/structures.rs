@@ -317,14 +317,15 @@ impl SupplyState {
             .count() as u32
     }
 
-    /// The structure `pos` stands inside the radius of: `p`'s, built,
-    /// ascending id.
+    /// The structure `pos` stands inside the radius of: `p`'s, built, not
+    /// an aid post (S12: it holds no stock), ascending id.
     pub fn serving(&self, setup: &MatchSetup, p: PlayerId, pos: FxVec2) -> Option<u32> {
         self.structures
             .iter()
             .find(|(_, s)| {
                 s.owner == p
                     && s.built
+                    && setup.stocks[s.def as usize].kind != StockKind::Aid
                     && within(s.pos, pos, setup.stocks[s.def as usize].radius.into())
             })
             .map(|(&id, _)| id)
@@ -455,8 +456,9 @@ impl SupplyState {
                 let pl = PlayerId(p as u8);
                 if self.count_of(setup, pl, StockKind::Hq) > sp.hq_max
                     || self.count_of(setup, pl, StockKind::Dump) > sp.dump_max
+                    || self.count_of(setup, pl, StockKind::Aid) > sp.aid_max
                 {
-                    return Err("more structures than hq_max / dump_max");
+                    return Err("more structures than hq_max / dump_max / aid_max");
                 }
                 let (n, shells) = self.crates_of(setup, pl);
                 if n > sp.crate_cap || shells > sp.shell_crate_cap {
@@ -622,10 +624,11 @@ impl MatchState {
         if !d.built_by.iter().any(|&t| ty.has_tag(Some(t))) || !self.digs_profile(ty, d.pit) {
             return self.refuse6(p, squad, SupplyRefusal::CannotBuild);
         }
-        let max = if d.kind == StockKind::Hq {
-            sp.hq_max
-        } else {
-            sp.dump_max
+        let max = match d.kind {
+            StockKind::Hq => sp.hq_max,
+            // S12 W8.
+            StockKind::Aid => sp.aid_max,
+            _ => sp.dump_max,
         };
         if self.supply6.count_of(&self.setup, p, d.kind) >= max {
             return self.refuse6(p, squad, SupplyRefusal::Cap);
@@ -1274,7 +1277,8 @@ impl MatchState {
         // Sources in order: structures, trucks, then crates.
         let mut sources: Vec<(Source, PlayerId, FxVec2, Fx)> = Vec::new();
         for (&id, s) in &self.supply6.structures {
-            if s.built {
+            // S12: an aid post holds no stock and serves nobody.
+            if s.built && self.setup.stocks[s.def as usize].kind != StockKind::Aid {
                 let r = self.setup.stocks[s.def as usize].radius;
                 sources.push((Source::Structure(id), s.owner, s.pos, r.into()));
             }
@@ -1978,7 +1982,9 @@ impl MatchState {
                     }
                     _ => {
                         // The stock box: the stock is lost and the
-                        // structure with it (S6-10 (A)).
+                        // structure with it (S6-10 (A)). S12 W8: the
+                        // aid post's tent likewise (no stock: no
+                        // cook-off); men in its beds stay where they lie.
                         let kg = (s.stock_g[SupplyKind::Shells.index()]
                             + s.stock_g[SupplyKind::Explosives.index()])
                             / 1000;
