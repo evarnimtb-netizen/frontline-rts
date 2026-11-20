@@ -1,8 +1,8 @@
 # US Rifle Squad (S4): twelve men after T/O&E 7-17 (26 Feb 1944): the squad
 # leader and his assistant, the BAR team (automatic rifleman with the
 # M1918A2, his assistant and an ammo bearer), two scouts and five riflemen,
-# all with M1 rifles (two of the riflemen are rifle grenadiers: their M7
-# launchers come in S11).
+# all with M1 rifles (two of the riflemen are rifle grenadiers with M7
+# launchers, S11b C5).
 # Sources: battleorder.org "U.S. Army Rifle Company 1944" (T/O&E 7-17, 26 Feb
 # 1944, changes 30 Jun 1944; FM 7-10, 18 Mar 1944): 11 M1 + 1 BAR.
 id = "ww2:usa_rifle_squad"
@@ -65,8 +65,20 @@ count = 2
 weapon = "ww2:m1_garand"
 items = { "ww2:mk2_grenade" = 1 }
 
+# S11b C5: two of the five riflemen are rifle grenadiers (header): the same
+# gear plus three M17 rifle grenades on the M7 launcher (owner to confirm,
+# S11b-7; S11b-6 (A)). Placed first of the five: the men's order is
+# unchanged. Issued only with [items] rifle_grenades = 1; with 0 the setup
+# drops the grenades and they are riflemen. The variants (understrength,
+# two BARs) list their own members and have none.
+[[members]]
+slot = "rifle_grenadier"
+count = 2
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1, "ww2:m7_rifle_grenade" = 3 }
+
 [[members]]
 slot = "rifleman"
-count = 5
+count = 3
 weapon = "ww2:m1_garand"
 items = { "ww2:mk2_grenade" = 1 }

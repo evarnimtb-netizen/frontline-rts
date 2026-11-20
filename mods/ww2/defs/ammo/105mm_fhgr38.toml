@@ -1,0 +1,49 @@
+# 10.5 cm FH Gr 38 HE for the leFH 18 (S11b C3; docs/design/roster/
+# artillery-on-map.md 2.1, D 143: "FH Gr 38 HE (14.8 kg, about 2 kg filler)").
+# Blast, fragments, suppression and crater are the 75 mm Sprgr 34 values
+# scaled by the cube root of the filler ratio 2.0 / 0.7 (= 1.42; the rule of
+# 105mm_m1_he.toml's header, spec S11b.md 4 C3); 160 fragment rays (D 1051);
+# frag_damage, frag_far_pct and pen_mm unchanged.
+id = "ww2:105mm_fhgr38"
+name = "10.5 cm FH Gr 38"
+mechanism = "he"
+# S5a: priced refill: the complete round, 19 kg, the same basis and value as
+# 105mm_m1_he.toml (D 509 gives one 15-19 kg bracket for both rounds).
+# verify: plan value, S11b-13 (copied from 105mm_m1_he.toml).
+supply = { kind = "shells", g = 19000 }
+caliber_mm = 105
+# The leFH 18's top charge (weapons/lefh18.toml; verify: plan value, S11b-13).
+muzzle_velocity_m_s = 325
+drag_coeff = 0
+# Flat: beats no plate of either S3 tank (as the Sprgr 34).
+penetration = [[0, 10]]
+ricochet_angle_deg = 80
+track_damage = 40
+sources = ["artillery-on-map.md 2.1, 6.5 (public tables, verify)", "75mm_sprgr34 [he] block scaled by 1.42"]
+
+[he]
+damage = 150
+suppression = 40
+# S3b physical-contact rule: no radial damage. Overpressure to a man within
+# blast_radius_cm with a clear line: 120 x 1.42 = 170 cm (spec C3).
+blast_radius_cm = 170
+# Fragments: 160 rays (D 1051), reach 1200 x 1.42 = 1700 cm (spec C3);
+# damage and fall-off as the 75 mm.
+frag_count = 160
+frag_reach_cm = 1700
+frag_damage = 70
+frag_far_pct = 30
+frag_elev_deg = [2, 45]
+frag_track_damage = 1
+# 12 x 1.42 = 17 m (spec C3).
+suppression_radius_m = 17
+# Crater: 60 x 1.42 = 85 cm, depth 30 x 1.42 = 43 cm (spec C3).
+crater_radius_cm = 85
+crater_depth_cm = 43
+pen_mm = 10
+# S8a thin-plate rule: as the 75 mm and the M1 HE (verify: starting value).
+frag_pen_mm = 12
+inside_damage = 150
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 40

@@ -52,6 +52,11 @@ const BARRAGE_FO_M: i32 = 350;
 const BARRAGE_TARGET: (i32, i32) = (400, 500);
 /// `mask`: the leIG's round lands within this many metres of its aim point.
 const MASK_LAND_M: i32 = 10;
+/// `mask`: the gun's x (m), the S11a1 range (m), the point's distance
+/// behind the crest's middle (m).
+const MASK_GUN_X: i32 = 50;
+const MASK_DIST_M: i32 = 530;
+const MASK_BEHIND_M: i32 = 80;
 /// The longest mission (s) before a run fails.
 const MISSION_MAX_S: u64 = 600;
 
@@ -225,21 +230,21 @@ fn mean(v: &[f64]) -> Option<f64> {
     (!v.is_empty()).then(|| (v.iter().sum::<f64>() / v.len() as f64 * 10.0).round() / 10.0)
 }
 
-fn ratio(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+pub(super) fn ratio(a: Option<f64>, b: Option<f64>) -> Option<f64> {
     match (a, b) {
         (Some(a), Some(b)) if b > 0.0 => Some((a * 1000.0 / b).round() / 10.0),
         _ => None,
     }
 }
 
-fn mission(w: &World, sq: SquadId) -> Option<Mission> {
+pub(super) fn mission(w: &World, sq: SquadId) -> Option<Mission> {
     match &w.game()?.squad(sq)?.order {
         Order::FireMission { m, .. } => Some(*m),
         _ => None,
     }
 }
 
-fn flat(s: &mut MatchSetup) {
+pub(super) fn flat(s: &mut MatchSetup) {
     s.map.terrain.octaves.clear();
     s.map.terrain.bands.clear();
     s.map.woods.clear();
@@ -247,7 +252,13 @@ fn flat(s: &mut MatchSetup) {
     s.rules.ticket_drain_per_min_per_point = 0;
 }
 
-fn spawn(w: &mut World, p: u8, card: &str, xy: FxVec2, facing: FxVec2) -> Result<SquadId> {
+pub(super) fn spawn(
+    w: &mut World,
+    p: u8,
+    card: &str,
+    xy: FxVec2,
+    facing: FxVec2,
+) -> Result<SquadId> {
     let t = w
         .match_setup()
         .unwrap()
@@ -258,7 +269,13 @@ fn spawn(w: &mut World, p: u8, card: &str, xy: FxVec2, facing: FxVec2) -> Result
 }
 
 /// Orders the mission; the refusal of this tick, if any.
-fn order(w: &mut World, p: u8, sq: SquadId, target: FxVec2, rounds: u16) -> Option<String> {
+pub(super) fn order(
+    w: &mut World,
+    p: u8,
+    sq: SquadId,
+    target: FxVec2,
+    rounds: u16,
+) -> Option<String> {
     let seq = w.tick() as u32;
     w.step(&[Command {
         player: PlayerId(p),
@@ -278,7 +295,7 @@ fn order(w: &mut World, p: u8, sq: SquadId, target: FxVec2, rounds: u16) -> Opti
 
 /// Runs the mission of `sq` out (and 30 s for the last bursts); the
 /// bursts of mission `id`.
-fn run_out(
+pub(super) fn run_out(
     w: &mut World,
     sq: SquadId,
     id: u32,
@@ -372,7 +389,7 @@ fn gun_fm_once(args: &FortifyArgs, seed: u64, p: u8, kind: u8) -> Result<(f64, u
 /// Runs `f` for each seed on its own thread (each world is separate and
 /// deterministic, so the results do not depend on it) and returns the
 /// results in seed order; the first error wins.
-fn par_seeds<T: Send>(
+pub(super) fn par_seeds<T: Send>(
     seeds: std::ops::Range<u64>,
     f: impl Fn(u64) -> Result<T> + Sync,
 ) -> Result<Vec<T>> {
@@ -432,22 +449,33 @@ pub fn gun_fm_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Gun
     })
 }
 
-/// One `mask` order of gun `p` (crest or flat): (refused masked, fired over).
-fn mask_once(args: &FortifyArgs, seed: u64, p: u8, crest: bool) -> Result<(bool, bool)> {
+/// One `mask` order of player `p`'s gun `card` (crest or flat), the gun
+/// at (50, 500), the point `dist` m east of it and 80 m behind the crest
+/// (S11a1: 530 m, the crest at x = 500; S11b reuses it at 600 m): (refused
+/// masked, fired over).
+pub(super) fn mask_once(
+    args: &FortifyArgs,
+    seed: u64,
+    p: u8,
+    card: &str,
+    dist: i32,
+    crest: bool,
+) -> Result<(bool, bool)> {
+    let crest_x = (MASK_GUN_X + dist - MASK_BEHIND_M).max(0) as u32;
     let mut w = world_with(args, seed, |s| {
         flat(s);
         if crest {
             s.map.terrain.bands.push(BandSetup {
-                from: FixedVec2::from_m([500, 0]),
-                to: FixedVec2::from_m([500, 1024]),
+                from: FixedVec2::from_m([crest_x, 0]),
+                to: FixedVec2::from_m([crest_x, 1024]),
                 height: frontline_content::Fixed::from_int(25),
                 half_width: frontline_content::Fixed::from_int(40),
             });
         }
     })?;
-    let what = format!("s11a1.mask seed {seed} {}", GUNS[p as usize]);
-    let target = at(580, 500);
-    let sq = spawn(&mut w, p, GUNS[p as usize], at(50, 500), EAST)?;
+    let what = format!("mask seed {seed} {card} {dist} m");
+    let target = at(MASK_GUN_X + dist, 500);
+    let sq = spawn(&mut w, p, card, at(MASK_GUN_X, 500), EAST)?;
     if !w.mark_intel(PlayerId(p), target) {
         bail!("{what}: could not mark the target");
     }
@@ -486,8 +514,8 @@ pub fn mask_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<MaskR
         let mut r = [[false; 2]; 2];
         for (k, crest) in [true, false].into_iter().enumerate() {
             r[k] = [
-                mask_once(args, seed, 1, crest)?.0,
-                mask_once(args, seed, 0, crest)?.1,
+                mask_once(args, seed, 1, GUNS[1], MASK_DIST_M, crest)?.0,
+                mask_once(args, seed, 0, GUNS[0], MASK_DIST_M, crest)?.1,
             ];
         }
         Ok(r)
@@ -510,40 +538,73 @@ pub fn mask_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<MaskR
     })
 }
 
-/// One `barrage` run: `kind` 0 open, 1 trench, 2 control (dug, squad 8 m
-/// in front of it). (men lost, men, men ducked or pinned at the end, bursts).
-fn barrage_once(args: &FortifyArgs, seed: u64, kind: u8) -> Result<(u32, u32, u32, u32)> {
+/// One `barrage` run of player `gp`'s gun `card` (`rounds` rounds,
+/// observed by `gp`'s observer team) on the other player's first line
+/// squad: `kind` 0 open, 1 trench, 2 control (dug, squad 8 m in front of
+/// it). (men lost, men, men ducked or pinned at the end, bursts). S11a1:
+/// the USA's M3 (`gp` 1) on the German squad at (400, 500) from the east;
+/// a German gun (`gp` 0) fires the mirror image from the west.
+pub(super) fn barrage_once(
+    args: &FortifyArgs,
+    seed: u64,
+    gp: u8,
+    card: &str,
+    rounds: u16,
+    kind: u8,
+) -> Result<(u32, u32, u32, u32)> {
     let mut w = world_with(args, seed, flat)?;
-    let what = format!("s11a1.barrage seed {seed} kind {kind}");
-    let (tx, ty) = BARRAGE_TARGET;
+    let what = format!("barrage seed {seed} {card} kind {kind}");
+    let tp = 1 - gp;
+    // `d` points from the target to the gun.
+    let (d, toward, away) = if gp == 1 {
+        (1, WEST, EAST)
+    } else {
+        (-1, EAST, WEST)
+    };
+    let (tx, ty) = if gp == 1 {
+        BARRAGE_TARGET
+    } else {
+        (1024 - BARRAGE_TARGET.0, BARRAGE_TARGET.1)
+    };
     let target = at(tx, ty);
-    // Player 0's first line squad; the other start squads go far away.
-    let rifle = super::squad(&w, 0, "line")?;
+    // The target player's first line squad; its other start squads go far away.
+    let rifle = super::squad(&w, tp, "line")?;
+    let park = if gp == 1 { at(60, 950) } else { at(964, 950) };
     for (id, q) in w.game().unwrap().squads().clone() {
-        if id != rifle && q.owner == PlayerId(0) {
-            w.place_squad(id, at(60, 950), EAST);
+        if id != rifle && q.owner == PlayerId(tp) {
+            w.place_squad(id, park, away);
         }
     }
     if kind != 0 {
-        w.dig_trench_now(&[at(tx, ty - 16), at(tx, ty + 16)], -1);
+        w.dig_trench_now(&[at(tx, ty - 16 * d), at(tx, ty + 16 * d)], -1);
     }
-    let spot = if kind == 2 { at(tx + 8, ty) } else { target };
-    w.place_squad(rifle, spot, EAST);
+    let spot = if kind == 2 {
+        at(tx + 8 * d, ty)
+    } else {
+        target
+    };
+    w.place_squad(rifle, spot, away);
     let men = members(&w, rifle).len() as u32;
-    let gun = spawn(&mut w, 1, GUNS[1], at(tx + BARRAGE_RANGE_M, ty), WEST)?;
-    spawn(&mut w, 1, FOS[1], at(tx + BARRAGE_FO_M, ty + 30), WEST)?;
+    let gun = spawn(&mut w, gp, card, at(tx + d * BARRAGE_RANGE_M, ty), toward)?;
+    spawn(
+        &mut w,
+        gp,
+        FOS[gp as usize],
+        at(tx + d * BARRAGE_FO_M, ty + 30),
+        toward,
+    )?;
     let g = w.game().unwrap().squad(gun).unwrap().members[0];
     w.edit_vehicle(g, |vs| {
         for n in vs.ammo.iter_mut() {
-            *n = (*n).max(BARRAGE_ROUNDS);
+            *n = (*n).max(rounds);
         }
     });
     for _ in 0..2 * w.match_setup().unwrap().tick_hz {
         w.step(&[]);
     }
-    let before = w.game().unwrap().players()[0].losses;
+    let before = w.game().unwrap().players()[tp as usize].losses;
     w.enable_burst_log();
-    if let Some(r) = order(&mut w, 1, gun, target, BARRAGE_ROUNDS) {
+    if let Some(r) = order(&mut w, gp, gun, target, rounds) {
         bail!("{what}: refused {r}");
     }
     let id = mission(&w, gun)
@@ -582,7 +643,7 @@ fn barrage_once(args: &FortifyArgs, seed: u64, kind: u8) -> Result<(u32, u32, u3
                 .count() as u32;
         }
     }
-    let lost = w.game().unwrap().players()[0].losses - before;
+    let lost = w.game().unwrap().players()[tp as usize].losses - before;
     Ok((lost, men, down, bursts))
 }
 
@@ -591,7 +652,7 @@ pub fn barrage_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<Ba
     let mut t = [[0u32; 4]; 3];
     let all = par_seeds(seeds, |seed| {
         (0..3u8)
-            .map(|kind| barrage_once(args, seed, kind))
+            .map(|kind| barrage_once(args, seed, 1, GUNS[1], BARRAGE_ROUNDS, kind))
             .collect::<Result<Vec<_>>>()
     })?;
     for runs in all {

@@ -31,6 +31,8 @@ fn setup(seed: u64) -> MatchSetup {
         ))
         .unwrap_or_else(|e| panic!("{e}"));
     s.players.iter_mut().for_each(|p| p.is_ai = false);
+    // S11b Build C: written with every S11b switch off (shipped on).
+    s.s11b_off();
     s
 }
 

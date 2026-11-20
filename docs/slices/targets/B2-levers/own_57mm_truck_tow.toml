@@ -1,0 +1,10 @@
+# B2 lever P3, OWNER CLASS (S9-3 (A): the 57 mm arrives behind an armed
+# M3A1): screened and reported only, never applied by the pass. The 57 mm
+# card is towed by the unarmed CCKW (S9-3 option B; its [tow] max_kg 3000
+# carries the gun's 1,230 kg), as the Pak 40 comes behind the unarmed
+# Sd.Kfz. 11. Tests hypothesis H3: about 1.8 guns a match bring about 2
+# M3A1 hulls with a .50, which make 5.7 of the USA's 12.8 vehicle-MG kills.
+# Run 1's check must show the tow change; if the AI then treats the tow as
+# a supply truck (role "truck"), log what it does: that is part of the result.
+[defs.units."ww2:usa_57mm_m1_squad"]
+tow = "ww2:usa_cckw_squad"

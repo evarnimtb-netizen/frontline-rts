@@ -544,6 +544,9 @@ pub fn item_kind(name: &str) -> Option<ItemKind> {
         "bangalore" => ItemKind::Bangalore,
         // S10b: never in a kit, so a throw intent naming it is refused.
         "mine" => ItemKind::Mine,
+        // S11b: never thrown (`thrown()` false), so the sim refuses a
+        // throw intent naming it.
+        "rifle_grenade" => ItemKind::RifleGrenade,
         _ => return None,
     })
 }
@@ -556,6 +559,7 @@ pub fn item_name(k: ItemKind) -> &'static str {
         ItemKind::SingleShotAt => "panzerfaust",
         ItemKind::Bangalore => "bangalore",
         ItemKind::Mine => "mine",
+        ItemKind::RifleGrenade => "rifle_grenade",
     }
 }
 

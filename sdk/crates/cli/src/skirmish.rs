@@ -419,6 +419,8 @@ pub struct PlayerReport {
     pub s11a1: S11a1Player,
     /// S11a2: the player's `S11a2Counters` and the AI's S11a2 counters.
     pub s11a2: S11a2Player,
+    /// S11b: the player's `S11bCounters`, the AI's S11b counters, buys.
+    pub s11b: S11bPlayer,
     /// B1-5 `--side-detail`: at [`SQUAD_MINUTES`], own foot squads with a
     /// man alive (no vehicle, not a crew) and own squads on a running
     /// (not parked) AI fort job (`None`: over sooner, or no side detail).
@@ -947,6 +949,125 @@ impl S11a2Faction {
         self.matches_with_marker += u32::from(marked);
         self.matches_marker_fired += u32::from(marked && fired);
         self.matches_with_counter_fire += u32::from(fired);
+    }
+}
+
+/// S11b (docs/slices/S11b.md 3, 7): the AI's S11b counters in report
+/// order (names of [`S11bPlayer::ai`]). `cb_alt_holds` counts planner
+/// passes that held (review A-4), not markers.
+pub const S11B_AI: [&str; 4] = ["cb_alt_holds", "how_buys", "how_pct_holds", "how_mp_holds"];
+
+/// S11b: a match this long (s) or longer is a howitzer window match
+/// (spec 7: the buy at minute 11-12 and the 90 s emplacement fit).
+pub const S11B_WINDOW_S: f64 = 14.0 * 60.0;
+
+/// S11b numbers of one player in one match.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S11bPlayer {
+    /// The player's S11b counters (saved).
+    pub s: frontline_sim::fire_mission::S11bCounters,
+    /// [`S11B_AI`] order (zero for a human).
+    pub ai: [u32; 4],
+    /// AI buys of cards tagged `field_howitzer`, `light_mortar`, and
+    /// `mortar` (light ones included).
+    pub how_bought: u32,
+    pub light_bought: u32,
+    pub mortar_bought: u32,
+    /// Kills by the player's field howitzer vehicles (`s7.kills_by_vehicle`)
+    /// and by rifle grenades (`kill_class::RIFLE_GRENADE`).
+    pub how_kills: u32,
+    pub rg_kills: u32,
+    /// Match second a howitzer squad of the player was first on the map.
+    pub how_first_s: Option<u32>,
+    /// Bombs the player's light mortar weapons fired (fix C-5; CLI
+    /// observer, not saved).
+    pub light_bombs: u32,
+}
+
+impl S11bPlayer {
+    /// The S11b counters of `a` in [`S11B_AI`] order.
+    pub fn ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 4] {
+        [a.cb_alt_holds, a.how_buys, a.how_pct_holds, a.how_mp_holds]
+    }
+}
+
+/// S11b numbers of one faction over a `--seeds` run (sums and per-match
+/// tallies of `s11b_derived`, spec 7). The JSON blocks are
+/// [`crate::json_out::s11b_blocks`].
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S11bFaction {
+    pub matches: u32,
+    pub arty_emplaced: u64,
+    pub arty_crew_lost: u64,
+    pub rg_fired: u64,
+    pub how_rounds: [u64; 3],
+    /// [`S11B_AI`] order.
+    pub ai: [u64; 4],
+    pub how_bought: u64,
+    pub light_bought: u64,
+    pub mortar_bought: u64,
+    /// [`S11bPlayer::light_bombs`] summed.
+    pub light_bombs: u64,
+    pub how_kills: u64,
+    pub rg_kills: u64,
+    /// The faction's kills (denominator).
+    pub kills: u64,
+    pub matches_with_how: u32,
+    pub matches_with_how_fired: u32,
+    pub matches_how_window: u32,
+    pub matches_how_in_window: u32,
+    pub matches_with_light: u32,
+    /// Matches with any counter-fire mission of the faction's AI.
+    pub matches_counter_fired: u32,
+    /// Sum and count of [`S11bPlayer::how_first_s`].
+    pub how_first_s_sum: u64,
+    pub how_first_n: u32,
+    pub how_first_s_min: Option<u32>,
+}
+
+impl S11bFaction {
+    /// The sum of AI counter `name` ([`S11B_AI`]).
+    pub fn get(&self, name: &str) -> u64 {
+        S11B_AI
+            .iter()
+            .position(|k| *k == name)
+            .map_or(0, |k| self.ai[k])
+    }
+
+    /// Adds one match of one player: its kills, the match length (s) and
+    /// its AI's counter-fire missions (`s11a2` `ai_cb_missions`).
+    pub fn add(&mut self, c: &S11bPlayer, kills: u32, game_s: f64, cb_missions: u32) {
+        let s = &c.s;
+        self.matches += 1;
+        self.arty_emplaced += s.arty_emplaced as u64;
+        self.arty_crew_lost += s.arty_crew_lost as u64;
+        self.rg_fired += s.rg_fired as u64;
+        for (k, v) in s.how_rounds.iter().enumerate() {
+            self.how_rounds[k] += *v as u64;
+        }
+        for (k, v) in c.ai.iter().enumerate() {
+            self.ai[k] += *v as u64;
+        }
+        self.how_bought += c.how_bought as u64;
+        self.light_bought += c.light_bought as u64;
+        self.mortar_bought += c.mortar_bought as u64;
+        self.light_bombs += c.light_bombs as u64;
+        self.how_kills += c.how_kills as u64;
+        self.rg_kills += c.rg_kills as u64;
+        self.kills += kills as u64;
+        let how = c.how_bought > 0;
+        let window = game_s >= S11B_WINDOW_S;
+        self.matches_with_how += u32::from(how);
+        self.matches_with_how_fired += u32::from(how && s.how_rounds.iter().sum::<u32>() > 0);
+        self.matches_how_window += u32::from(window);
+        self.matches_how_in_window += u32::from(window && how);
+        self.matches_with_light += u32::from(c.light_bought > 0);
+        self.matches_counter_fired += u32::from(cb_missions > 0);
+        if let Some(t) = c.how_first_s {
+            self.how_first_s_sum += t as u64;
+            self.how_first_n += 1;
+            self.how_first_s_min = Some(self.how_first_s_min.map_or(t, |m| m.min(t)));
+        }
     }
 }
 
@@ -1938,9 +2059,39 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     let mut fielded: BTreeMap<SquadId, (PlayerId, u16)> = BTreeMap::new();
     let (mut overruns, mut peak_proj) = (0u64, 0usize);
     let (mut peak, mut peak_tick) = (0usize, 0u64);
-    let note_squads = |w: &World, fielded: &mut BTreeMap<SquadId, (PlayerId, u16)>| {
+    // S11b: the match second each player's first field howitzer squad was
+    // on the map (read-only).
+    let how_tag = world.match_setup().and_then(|m| m.tag("field_howitzer"));
+    let mut how_first: Vec<Option<u32>> =
+        vec![None; world.match_setup().map_or(0, |s| s.players.len())];
+    // S11b fix C-5: bombs fired by light mortar weapons (the main weapon of
+    // a card tagged `light_mortar`), by player (read-only: this tick's
+    // shots, the shooter's owner from the snapshot).
+    let light_weapons: BTreeSet<u16> = world.match_setup().map_or_else(BTreeSet::new, |m| {
+        (0..m.squad_types.len())
+            .filter(|&t| m.type_has_tag(t as u16, "light_mortar"))
+            .map(|t| m.squad_types[t].weapon)
+            .collect()
+    });
+    let mut light_bombs: Vec<u32> = vec![0; how_first.len()];
+    let note_squads = |w: &World,
+                       fielded: &mut BTreeMap<SquadId, (PlayerId, u16)>,
+                       how_first: &mut Vec<Option<u32>>| {
+        let ms = w.match_setup().expect("match world");
         for (&id, sq) in w.game().expect("match world").squads() {
-            fielded.entry(id).or_insert((sq.owner, sq.type_idx));
+            if let std::collections::btree_map::Entry::Vacant(e) = fielded.entry(id) {
+                e.insert((sq.owner, sq.type_idx));
+                if how_tag.is_some()
+                    && ms
+                        .squad_types
+                        .get(sq.type_idx as usize)
+                        .is_some_and(|t| t.has_tag(how_tag))
+                    && let Some(f) = how_first.get_mut(sq.owner.0 as usize)
+                    && f.is_none()
+                {
+                    *f = Some((w.tick() / ms.tick_hz.max(1) as u64) as u32);
+                }
+            }
         }
     };
     let mut tally = ArmourTally::new(world.match_setup().expect("match world"));
@@ -1950,7 +2101,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     let mut death_places = DeathPlaces::default();
     let mut s10c_seen = S10cSeen::default();
     let stats_at_start = world.stats().clone();
-    note_squads(&world, &mut fielded);
+    note_squads(&world, &mut fielded, &mut how_first);
 
     let start = Instant::now();
     let running = |w: &World| w.game().is_some_and(|g| g.outcome() == Outcome::Running);
@@ -1999,7 +2150,23 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         for c in &world.snapshot().smoke {
             smoke_seen = smoke_seen.max(c.id as u64 + 1);
         }
-        note_squads(&world, &mut fielded);
+        note_squads(&world, &mut fielded, &mut how_first);
+        if !light_weapons.is_empty() {
+            let snap = world.snapshot();
+            for shot in &snap.shots {
+                if !light_weapons.contains(&shot.weapon) {
+                    continue;
+                }
+                let owner = snap
+                    .soldier_ids
+                    .iter()
+                    .position(|id| *id == shot.shooter)
+                    .map(|i| snap.soldier_owner[i] as usize);
+                if let Some(n) = owner.and_then(|p| light_bombs.get_mut(p)) {
+                    *n += 1;
+                }
+            }
+        }
         if let (Some(g), Some(ms)) = (world.game(), world.match_setup()) {
             for e in &world.snapshot().fire_mission_refusals {
                 let gun = g.squads().get(&e.squad).is_some_and(|q| {
@@ -2247,6 +2414,45 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     s: pl.s11a2,
                     ai: ai.map_or([0; 6], |a| S11a2Player::ai_counters(&a.counters)),
                 },
+                s11b: {
+                    let bought_tagged = |tag: &str| -> u32 {
+                        ai.map_or(0, |a| {
+                            a.counters
+                                .bought
+                                .iter()
+                                .enumerate()
+                                .filter(|(t, _)| s.type_has_tag(*t as u16, tag))
+                                .map(|(_, &n)| n)
+                                .sum()
+                        })
+                    };
+                    // The howitzer cards' vehicle types.
+                    let how_kills: u32 = s
+                        .squad_types
+                        .iter()
+                        .enumerate()
+                        .filter(|(t, _)| s.type_has_tag(*t as u16, "field_howitzer"))
+                        .filter_map(|(_, ty)| ty.vehicle)
+                        .collect::<BTreeSet<_>>()
+                        .into_iter()
+                        .map(|v| pl.s7.kills_by_vehicle.get(v as usize).copied().unwrap_or(0))
+                        .sum();
+                    S11bPlayer {
+                        s: pl.s11b,
+                        ai: ai.map_or([0; 4], |a| S11bPlayer::ai_counters(&a.counters)),
+                        how_bought: bought_tagged("field_howitzer"),
+                        light_bought: bought_tagged("light_mortar"),
+                        mortar_bought: bought_tagged("mortar"),
+                        how_kills,
+                        rg_kills: pl
+                            .kills_by
+                            .get(kill_class::RIFLE_GRENADE as usize)
+                            .copied()
+                            .unwrap_or(0),
+                        how_first_s: how_first.get(p).copied().flatten(),
+                        light_bombs: light_bombs.get(p).copied().unwrap_or(0),
+                    }
+                },
                 s5b_ai: ai.map_or_else(S5bAi::default, |a| S5bAi::of(&a.counters)),
                 s6: g.supply6().accounts.get(p).copied().unwrap_or_default(),
                 s6_stock_held_g: g
@@ -2481,7 +2687,11 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         }
     }
     let all: u32 = kills.iter().sum();
-    let he = kills[kill_class::MORTAR as usize] + kills[kill_class::TANK_HE as usize];
+    // S11b G4 (D 1161-1163): rifle-grenade kills are HE (0 with the
+    // switch off).
+    let he = kills[kill_class::MORTAR as usize]
+        + kills[kill_class::TANK_HE as usize]
+        + kills[kill_class::RIFLE_GRENADE as usize];
     let he_share_pct = if all == 0 {
         0.0
     } else {
@@ -2869,6 +3079,8 @@ pub struct FactionSummary {
     pub s11a1: S11a1Faction,
     /// S11a2 sums (the JSON blocks `s11a2` and `s11a2_derived`).
     pub s11a2: S11a2Faction,
+    /// S11b sums (the JSON blocks `s11b` and `s11b_derived`).
+    pub s11b: S11bFaction,
 }
 
 /// S10b: the twelve `FortAccount` counters in report order.
@@ -3742,6 +3954,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             f.s10c.add(&p.s10c, &p.s10);
             f.s11a1.add(&p.s11a1, p.kills, p.s10.income_mp);
             f.s11a2.add(&p.s11a2, p.losses, p.s11a1.s11.gun_rounds);
+            f.s11b.add(&p.s11b, p.kills, r.game_seconds, p.s11a2.ai[2]);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;
@@ -4633,6 +4846,55 @@ mod tests {
         }
         for k in ["matches_with_marker", "matches_with_counter_fire"] {
             assert!(raw.get(k).is_some(), "{k}");
+        }
+    }
+
+    /// S11b Build C (M1): every `s11b` / `s11b_derived` name the S11b
+    /// targets file reads is written by `json_out::s11b_blocks`, and every
+    /// `S11bCounters` and S11b `AiCounters` field is in the raw block.
+    /// Control: renaming `how_bought_matches_pct` in `s11b_blocks` fails it.
+    #[test]
+    fn s11b_json_names_match_the_targets_file() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../docs/slices/targets/S11b.toml");
+        let f = crate::targets::parse(&fs::read_to_string(path).unwrap()).unwrap();
+        let mut one = S11bFaction::default();
+        one.add(&S11bPlayer::default(), 0, 0.0, 0);
+        let (raw, derived) = crate::json_out::s11b_blocks(&one);
+        let mut n = 0;
+        for t in &f.targets {
+            for m in [Some(&t.metric), t.exposure.as_ref(), t.control.as_ref()]
+                .into_iter()
+                .flatten()
+            {
+                let parts: Vec<&str> = m.split('.').collect();
+                if parts[0].starts_with("fortify") {
+                    continue;
+                }
+                let Some(k) = parts.iter().position(|p| p.starts_with("s11b")) else {
+                    continue;
+                };
+                let block = match parts[k] {
+                    "s11b" => &raw,
+                    "s11b_derived" => &derived,
+                    other => panic!("{}: unknown block {other}", t.id),
+                };
+                let rest = parts[k + 1..].join(".");
+                assert!(
+                    crate::json_out::lookup(block, &rest).is_some(),
+                    "{}: {m} is not written",
+                    t.id
+                );
+                n += 1;
+            }
+        }
+        assert!(n >= 40, "only {n} s11b paths in the targets file");
+        let s = serde_json::to_value(frontline_sim::fire_mission::S11bCounters::default()).unwrap();
+        for k in s.as_object().unwrap().keys() {
+            assert!(raw.get(k).is_some(), "S11bCounters::{k} is not in `s11b`");
+        }
+        for k in S11B_AI {
+            assert!(raw.get(k).is_some(), "AiCounters::{k} is not in `s11b`");
         }
     }
 

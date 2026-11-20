@@ -1,0 +1,5 @@
+HE share 26.19 -> 25.73; median length 18.8 -> 19.9
+germany line/m 3.54->3.12; mg/m 3.31->3.12; veh/m 3.09->4.28; g7/m 0.83->0.71; stug% 35.00->63.12; vehMGk/m 6.02->5.96; m3a1k/m 0.08->0.06; cckw/m 0.00->0.00; 57/m 0.00->0.00; truck_drops/m 3.04->4.10; truck_serves/m 0.05->0.06; rg_fired/m 6.38->6.11; rg_kill% 3.95->3.83; kills/m 64.44->61.41; mortar_k% 9.22->7.32
+   buys moved >=0.15/m: ger_grenadiergruppe 2.28->2.09; ger_mortar_team 3.76->3.34; ger_pz4_h_squad 0.81->1.18; ger_sdkfz251_1_squad 0.23->0.57; ger_smg_gruppe 3.31->3.12; ger_stug3_g_squad 0.37->0.75
+usa line/m 1.80->1.24; mg/m 1.79->1.40; veh/m 2.36->3.59; g7/m 0.00->0.00; stug% 0.00->0.00; vehMGk/m 12.20->14.74; m3a1k/m 5.74->6.27; cckw/m 0.76->1.04; 57/m 1.76->1.83; truck_drops/m 1.88->4.63; truck_serves/m 0.06->0.03; rg_fired/m 7.86->7.47; rg_kill% 7.38->6.60; kills/m 80.40->80.16; mortar_k% 6.53->5.06
+   buys moved >=0.15/m: usa_bazooka_team 4.01->3.69; usa_cckw_squad 0.76->1.04; usa_engineer_squad 2.69->2.51; usa_lmg_squad 1.79->1.40; usa_m10_squad 0.19->0.57; usa_m3a1_squad 0.09->0.39; usa_m4a3_75_squad 0.62->1.08; usa_mortar_team 2.54->2.03; usa_rifle_squad 1.33->0.97

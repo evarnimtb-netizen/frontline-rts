@@ -322,6 +322,22 @@ pub struct S11a2Counters {
     pub cb_near_bursts: u32,
 }
 
+/// S11b per-player counters (saved, hashed; the `s11b` JSON block of
+/// Build C).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct S11bCounters {
+    /// X1: infantry guns emplaced (they left `s9.guns_emplaced`) ...
+    pub arty_emplaced: u32,
+    /// ... and their crewmen lost at the gun (they left
+    /// `s9.gun_crew_lost`).
+    pub arty_crew_lost: u32,
+    /// G3: rifle grenades fired.
+    pub rg_fired: u32,
+    /// Mission rounds of guns whose card carries the tag
+    /// `field_howitzer`, by the round's mode.
+    pub how_rounds: [u32; mode::COUNT],
+}
+
 /// One burst of a mission round (Damage stage), for the observation pass.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) struct MissionBurst {

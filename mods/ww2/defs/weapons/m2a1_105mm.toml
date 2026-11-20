@@ -1,0 +1,39 @@
+# 105 mm Howitzer M2A1 (S11b C2; docs/design/roster/artillery-on-map.md 2.2,
+# 4.4, 4.5): the US divisional field howitzer. Rounds are on the vehicle
+# mount (the M1 HE of the M3). The direct fire line is the S9 guns' (600 m,
+# 2500 urad); the [indirect] table is the fire-mission solver (S11a1 G2).
+# Its high angle starts at about 3.3 km (D 750): on a 1 km map it fires low.
+id = "ww2:m2a1_105mm"
+name = "105 mm Howitzer M2A1"
+class = "cannon"
+# Direct engagement range, m (as the S9 guns and the M3).
+range_m = 600
+# A direct hit on a man, HP (as the S9 guns).
+damage = 300
+# 3 rounds/min sustained (D 156 "2-3 / 4 for the first minutes").
+rounds_per_min = 3
+magazine = 1
+# Reload, ms: 60 s / 3 (D 156).
+reload_ms = 20000
+# 2.5 mrad, urad (as the S9 guns; verify).
+spread_urad = 2500
+# Top charge, m/s (the [indirect] top charge; verify: plan value, S11b-13).
+muzzle_velocity_m_s = 333
+suppression = 25
+# Muzzle blast and dust: as the S9 guns (verify).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+
+[indirect]
+# Charges, m/s: the M3 def's [205, 220, 240, 270, 311] (m3_105mm.toml: the
+# same M1 round; charge 1 about 205 m/s, D 750, verify) plus 333, the
+# drag-free speed for 11,300 m at 45 deg (verify: plan value, S11b-13).
+charges_m_s = [205, 220, 240, 270, 311, 333]
+# Laying band, deg (D 156 "-5 to +65"; the solver band 0..65).
+elevation_deg = [0, 65]
+# Low and high roots (S11a1 G2).
+low_angle = true
+# Maximum range, m (D 156 "about 11,300 m").
+range_m = 11300
+# Round scatter, mrad (as the 105 mm M3, m3_105mm.toml; verify: plan value, S11b-13).
+spread_mrad = 6

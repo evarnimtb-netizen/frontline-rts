@@ -8,7 +8,7 @@ use super::*;
 use crate::game::Order;
 
 const MORTAR: &str = "ww2:ger_mortar_team";
-const LEIG: &str = "ww2:ger_leig18_squad";
+pub(super) const LEIG: &str = "ww2:ger_leig18_squad";
 /// An own squad the AI never orders (observer teams leave the lists
 /// before `assign`; `[ai.arty] fo` 0): the test walks it.
 const WALKER: &str = "ww2:ger_vb_trupp";
@@ -104,13 +104,13 @@ fn walk(w: &mut World, q: SquadId, to: FxVec2) {
 
 /// Every AI command of player 0 seen in `pending` (each seq once).
 #[derive(Default)]
-struct Sent {
+pub(super) struct Sent {
     seen: std::collections::BTreeSet<u32>,
     cmds: Vec<CommandKind>,
 }
 
 impl Sent {
-    fn look(&mut self, w: &World) {
+    pub(super) fn look(&mut self, w: &World) {
         self.look_of(w, 0);
     }
 
@@ -129,7 +129,7 @@ impl Sent {
             .count()
     }
 
-    fn missions_near(&self, q: SquadId, at: FxVec2, m: i32) -> usize {
+    pub(super) fn missions_near(&self, q: SquadId, at: FxVec2, m: i32) -> usize {
         self.cmds
             .iter()
             .filter(|k| {
@@ -141,7 +141,7 @@ impl Sent {
 }
 
 /// Steps until `n` more plans ran, recording the AI's commands.
-fn plans(w: &mut World, n: u32, sent: &mut Sent) {
+pub(super) fn plans(w: &mut World, n: u32, sent: &mut Sent) {
     plans_of(w, 0, n, sent);
 }
 
@@ -381,7 +381,7 @@ fn own_near_sees_a_pending_move_onto_the_target() {
 
 /// Gives player `p` one marker of player `1 - p`'s gun at `at` with
 /// error `err_m` and `shots` rounds of evidence.
-fn give_marker(w: &mut World, p: u8, at: FxVec2, err_m: u32, shots: u32) {
+pub(super) fn give_marker(w: &mut World, p: u8, at: FxVec2, err_m: u32, shots: u32) {
     let hz = 30;
     let sec = w.tick().div_ceil(hz) * hz;
     assert!(w.edit_player(PlayerId(p), |pl| {
@@ -400,17 +400,17 @@ fn give_marker(w: &mut World, p: u8, at: FxVec2, err_m: u32, shots: u32) {
     }));
 }
 
-fn add_shot(w: &mut World, p: u8) {
+pub(super) fn add_shot(w: &mut World, p: u8) {
     assert!(w.edit_player(PlayerId(p), |pl| pl.cb[0].shots += 1));
 }
 
-const MARK: (i32, i32) = (500, 200);
+pub(super) const MARK: (i32, i32) = (500, 200);
 
 /// The R scene: AI player `p`'s gun (`card`, with a record) at
 /// (`gun_x`, 500), a marker of the enemy's gun at `mark` (40 m wide), and
 /// with `observed` the S11a1 A4 scene too (an own VB-Trupp at (600, 500),
 /// an unarmed US rifle squad it sees at (700, 500)). `counter_fire` 1.
-fn cf_scene(
+pub(super) fn cf_scene(
     threads: usize,
     p: u8,
     card: &str,

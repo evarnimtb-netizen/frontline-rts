@@ -1,0 +1,7 @@
+# 60 mm M49A2 HE bomb for the M2 mortar (S11b C4): 1.33 kg (GA 730; RE 179).
+# Kind "shells" (see 8cm_wgr34.toml).
+id = "ww2:60mm_m49a2"
+name = "60 mm M49A2"
+caliber_mm = 60
+supply = { kind = "shells", g = 1330 }
+sources = ["guns-artillery.md GA 730 (1.33 kg M49A2 HE)"]

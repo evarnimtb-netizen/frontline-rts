@@ -1,0 +1,5 @@
+# B2 lever A2 (tier 1, symmetric). [ai.mix] vehicle 20 -> 30 (range 20-30).
+# Why: the gun and observer cards displaced vehicles (S11b-10); Germany gets
+# 11.3 tank-HE kills a match against 5.7. Also the lever for T30 / T40 / T54.
+[ai.mix]
+vehicle = 30

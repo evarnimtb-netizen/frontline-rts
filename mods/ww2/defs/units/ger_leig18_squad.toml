@@ -11,3 +11,5 @@ vehicle = "ww2:ger_leig18"
 ai_weight = 5
 # artillery-on-map.md 4.7: at most 2 alive.
 max_alive = 2
+# S11b C7 (D 848): one of the gun cards of the artillery group (2 alive).
+limit_group = "ww2:artillery"

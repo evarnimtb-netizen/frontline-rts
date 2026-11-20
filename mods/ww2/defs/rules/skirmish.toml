@@ -484,6 +484,14 @@ single_shot_gap_s = 3
 # detached assistant across the map) do not get it instantly. 30 m is a
 # squad's spread in open order (about 10 men at 3 m).
 crew_pickup_reach_m = 30
+# S11b G1 switch (docs/slices/S11b.md 2): squads are issued their rifle
+# grenades (0: the setup drops the rifle_grenade kind from every squad type;
+# 0..1). Build C turns it on (ablation rg_off); the S11b fix stage keeps it
+# (40 set with the shipped switches: HE share mean 25.7 %, cap 26.3).
+rifle_grenades = 1
+# S11b G3: a squad fires at most one rifle grenade this often (s; plan value,
+# S11b-13; 0..600).
+rifle_grenade_gap_s = 15
 
 # Thrown items. S3b: moved from the sim's Rust constants unchanged (same values);
 # docs/modding/tuning.md lists every table.
@@ -1231,8 +1239,13 @@ default = "ww2:training_regular"
 
 # S4: named limits on alive units per player, "<group id>" = most alive; a
 # unit card joins one with limit_group (all its cards' alive units count).
-# None in ww2 yet: vehicles keep the [vehicles] limit.
+# Vehicles keep the [vehicles] limit.
 [limit_groups]
+# S11b C7 (artillery-on-map.md 4.7, D 848; S11b-12 (A)): at most 2 gun cards
+# alive a player: the leIG 18, 105 mm M3, leFH 18 and 105 mm M2A1 cards
+# (mortars have their own caps). The AI holds at most [ai.arty] max_guns 1
+# + how_max 1, so no AI buy changes.
+"ww2:artillery" = 2
 
 [supply]
 # S5a (owner decision D1, 2026-11-01): no free ammunition anywhere, the base
@@ -1549,6 +1562,16 @@ ff_safe = 1                  # S1-S3 switch: one own-men predicate for the order
 counter_fire = 1             # R1-R3 switch: an AI gun answers an own counter-battery marker with map fire
 lift_m = 100                 # m (S1): an own squad walking to the target counts once its lead is this close (D 6.4)
 cb_max_error_m = 60          # m (R2): no counter-fire on a marker wider than this (D 8 ai.cb_max_error_m)
+# S11b (docs/slices/S11b.md 2): Build C turns the switches on (ablations a0_off, how_off, light_off, s11b_off);
+# the fix stage turns `light` off again (owner question S11b-14).
+cb_alternate = 1             # X3 switch: an AI gun does not order counter-fire twice in a row (0..1)
+buy_pending = 1              # H1 switch: gun buys count the manpower of call-ins still pending (0..1)
+how = 1                      # H1 switch: the AI buys a field howitzer (0..1)
+how_after_s = 480            # s (H1): no howitzer before this match time (D 837-838: unlock 8:00; 0..3600)
+how_max = 1                  # H1: howitzers alive or called in at once (D 789, D 837-838; 0..8)
+how_income_pct = 15          # % (H1): howitzer cards cost at most this share of the income so far, apart from income_max_pct (S11b-3; 0..100)
+how_reserve_mp = 300         # H1: manpower that stays after the howitzer buy (plan value, S11b-13; 0..100000)
+light = 0                    # L1 switch: cards tagged light_mortar join the mortar slot of the buy mix (0..1); 0: the AI buys none, a human can (S11b-14: Germany 11/40 with it on)
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired

@@ -1,0 +1,11 @@
+# S11b fix set (c): the howitzer switches on, rifle grenades off (as
+# measured), AI light mortars on, but Germany's AI buys no kz. GrW 42
+# team (card ai_weight 0; a human player can still buy it).
+[ai.arty]
+light = 1
+
+[defs.units."ww2:ger_kz_grw42_team"]
+ai_weight = 0
+
+[items]
+rifle_grenades = 0

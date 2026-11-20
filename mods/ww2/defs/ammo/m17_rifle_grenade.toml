@@ -1,0 +1,40 @@
+# M17 HE rifle grenade (S11b G1, docs/slices/S11b.md 4): fired by
+# `ww2:m7_launcher` (the item `ww2:m7_rifle_grenade`). The body of the Mk 2
+# hand grenade on a fin tail: about 0.68 kg, about 57 g TNT (owner to
+# confirm, S11b-7). The [he] block is mk2_grenade.toml's (the same body).
+id = "ww2:m17_rifle_grenade"
+name = "M17 rifle grenade"
+mechanism = "he"
+# Refilled as shells (crate-only by design: the base does not refill it,
+# D 954, D 1161-1163). 680 g: owner to confirm, S11b-7.
+supply = { kind = "shells", g = 680 }
+caliber_mm = 51
+# verify: plan value, S11b-13.
+muzzle_velocity_m_s = 50
+drag_coeff = 0
+# A thin grenade body: beats no plate.
+penetration = [[0, 2]]
+ricochet_angle_deg = 80
+track_damage = 0
+sources = ["owner to confirm, S11b-7 (Mk 2 body, about 0.68 kg, about 57 g TNT, 180-200 m)", "mk2_grenade.toml [he] block (the same body)"]
+
+# mk2_grenade.toml's block (see the comments there).
+[he]
+damage = 150
+suppression = 50
+blast_radius_cm = 200
+frag_count = 96
+frag_reach_cm = 1000
+frag_damage = 60
+frag_far_pct = 25
+frag_elev_deg = [2, 50]
+frag_track_damage = 0
+suppression_radius_m = 10
+crater_radius_cm = 50
+crater_depth_cm = 20
+pen_mm = 2
+frag_pen_mm = 3
+inside_damage = 100
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 10

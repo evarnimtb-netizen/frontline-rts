@@ -1,0 +1,5 @@
+# S11b ablation (docs/slices/S11b.md 4 X3): an AI gun may order counter-fire
+# twice in a row, as in S11a2. X1 is a counter fix and has no switch; X2 has
+# no fix (owner question S11b-10).
+[ai.arty]
+cb_alternate = 0

@@ -166,10 +166,14 @@ pub fn add_sides(doc: &mut Value, r: &ManyReport) {
                 // S11a2: the raw friendly-fire and counter-battery counters.
                 let mut s11a2 = crate::skirmish::S11a2Faction::default();
                 s11a2.add(&p.s11a2, p.losses, p.s11a1.s11.gun_rounds);
+                // S11b: the raw counters of this side.
+                let mut s11b = crate::skirmish::S11bFaction::default();
+                s11b.add(&p.s11b, p.kills, m.report.game_seconds, p.s11a2.ai[2]);
                 if let Some(o) = side.as_object_mut() {
                     o.insert("s10c".into(), s10c_blocks(&one).0);
                     o.insert("s11a1".into(), s11a1_blocks(&s11).0);
                     o.insert("s11a2".into(), s11a2_blocks(&s11a2).0);
+                    o.insert("s11b".into(), s11b_blocks(&s11b).0);
                 }
                 side
             })
@@ -654,6 +658,12 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
         o.insert("s11a2".into(), raw);
         o.insert("s11a2_derived".into(), derived);
     }
+    // S11b (docs/slices/S11b.md 7): counters by name, derived shares.
+    {
+        let (raw, derived) = s11b_blocks(&f.s11b);
+        o.insert("s11b".into(), raw);
+        o.insert("s11b_derived".into(), derived);
+    }
     o.insert(
         "s6_derived".into(),
         json!({
@@ -924,6 +934,8 @@ pub fn fortify(r: &FortifyReport) -> Value {
         "s11a1": serde_json::to_value(&r.s11a1).unwrap_or_default(),
         // S11a2 Build B (M2, M3): `fortify10.s11a2.{ff,cb,ff_lift}.*`.
         "s11a2": serde_json::to_value(&r.s11a2).unwrap_or_default(),
+        // S11b Build C (M2): `fortify10.s11b.{how_mask,how_barrage}.*`.
+        "s11b": serde_json::to_value(&r.s11b).unwrap_or_default(),
         "hard_failed": checks.iter().filter(|c| c["pass"] == json!(false)).count(),
         "checks": checks,
         "rows": rows,
@@ -1243,6 +1255,87 @@ pub fn s11a2_blocks(c: &crate::skirmish::S11a2Faction) -> (Value, Value) {
         "cb_stale_holds_per_match": per(c.get("cb_stale_holds")),
         "cb_shell_share_pct": pct_or_null(cb as f64, gun as f64),
         "gun_observed_or_cb_pct": pct_or_null(seen as f64, gun as f64),
+    });
+    (Value::Object(raw), derived)
+}
+
+/// S11b: a faction's `s11b` (raw: every `S11bCounters` field by name,
+/// `how_rounds` by mode name; every S11b `AiCounters` field; the buy and
+/// kill sums and the match tallies of spec 7) and `s11b_derived` (spec 7
+/// names; null where the denominator is 0). `cb_alt_holds` counts planner
+/// passes that held, not markers (review A-4): `cb_alt_hold_passes_per_match`
+/// says so by name; `cb_fired_matches_any_pct` is the share of all
+/// matches in which the faction's AI still ordered counter-fire.
+pub fn s11b_blocks(c: &crate::skirmish::S11bFaction) -> (Value, Value) {
+    use frontline_sim::fire_mission::mode;
+    let n = c.matches.max(1) as f64;
+    let m = c.matches as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let mut raw = Map::new();
+    raw.insert("matches".into(), json!(c.matches));
+    raw.insert(
+        "how_rounds".into(),
+        Value::Object(
+            mode::NAMES
+                .iter()
+                .zip(c.how_rounds.iter())
+                .map(|(k, v)| ((*k).to_string(), json!(v)))
+                .collect(),
+        ),
+    );
+    for (k, v) in [
+        ("arty_emplaced", c.arty_emplaced),
+        ("arty_crew_lost", c.arty_crew_lost),
+        ("rg_fired", c.rg_fired),
+        ("how_bought", c.how_bought),
+        ("light_bought", c.light_bought),
+        ("mortar_bought", c.mortar_bought),
+        ("light_bombs", c.light_bombs),
+        ("how_kills", c.how_kills),
+        ("rg_kills", c.rg_kills),
+        ("kills", c.kills),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    for (k, name) in crate::skirmish::S11B_AI.iter().enumerate() {
+        raw.insert((*name).into(), json!(c.ai[k]));
+    }
+    for (k, v) in [
+        ("matches_with_how", c.matches_with_how),
+        ("matches_with_how_fired", c.matches_with_how_fired),
+        ("matches_how_window", c.matches_how_window),
+        ("matches_with_light", c.matches_with_light),
+        ("matches_counter_fired", c.matches_counter_fired),
+    ] {
+        raw.insert(k.into(), json!(v));
+    }
+    let how_rounds: u64 = c.how_rounds.iter().sum();
+    let first = if c.how_first_n == 0 {
+        Value::Null
+    } else {
+        json!(round3(c.how_first_s_sum as f64 / c.how_first_n as f64))
+    };
+    let derived = json!({
+        "rg_fired_per_match": per(c.rg_fired),
+        "rg_kill_share_pct": pct_or_null(c.rg_kills as f64, c.kills as f64),
+        "how_window_matches_pct": pct_or_null(c.matches_how_window as f64, m),
+        "how_bought_matches_pct": pct_or_null(c.matches_with_how as f64, m),
+        "how_bought_window_pct": pct_or_null(c.matches_how_in_window as f64, c.matches_how_window as f64),
+        "how_fired_matches_pct": pct_or_null(c.matches_with_how_fired as f64, c.matches_with_how as f64),
+        "how_rounds_per_match": per(how_rounds),
+        "how_kill_share_pct": pct_or_null(c.how_kills as f64, c.kills as f64),
+        "how_first_on_map_s_mean": first,
+        "how_first_on_map_s_min": c.how_first_s_min.map_or(Value::Null, |v| json!(v)),
+        "how_pct_holds_per_match": per(c.get("how_pct_holds")),
+        "how_mp_holds_per_match": per(c.get("how_mp_holds")),
+        "light_bought_matches_pct": pct_or_null(c.matches_with_light as f64, m),
+        "light_buy_share_pct": pct_or_null(c.light_bought as f64, c.mortar_bought as f64),
+        "light_bombs_per_match": per(c.light_bombs),
+        "cb_alt_holds_per_match": per(c.get("cb_alt_holds")),
+        "cb_alt_hold_passes_per_match": per(c.get("cb_alt_holds")),
+        "cb_fired_matches_any_pct": pct_or_null(c.matches_counter_fired as f64, m),
+        "arty_emplaced_per_match": per(c.arty_emplaced),
+        "arty_crew_lost_per_match": per(c.arty_crew_lost),
     });
     (Value::Object(raw), derived)
 }

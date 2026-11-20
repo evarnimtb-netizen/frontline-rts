@@ -1,0 +1,39 @@
+# 10.5 cm leFH 18 (S11b C1; docs/design/roster/artillery-on-map.md 2.1, 4.4,
+# 4.5): the German divisional field howitzer. Rounds are on the vehicle
+# mount. The direct fire line is the S9 guns' (600 m, 2500 urad); the
+# [indirect] table is the fire-mission solver (S11a1 G2). Max +42 deg: no
+# high angle (D 769-774).
+id = "ww2:lefh18"
+name = "10.5 cm leFH 18"
+class = "cannon"
+# Direct engagement range, m (as the S9 guns and the leIG 18).
+range_m = 600
+# A direct hit on a man, HP (as the S9 guns).
+damage = 300
+# 4 rounds/min sustained (D 143 "4 / 6-8").
+rounds_per_min = 4
+magazine = 1
+# Reload, ms: 60 s / 4 (D 143).
+reload_ms = 15000
+# 2.5 mrad, urad (as the S9 guns; verify).
+spread_urad = 2500
+# Top charge, m/s (the [indirect] top charge; verify: plan value, S11b-13).
+muzzle_velocity_m_s = 325
+suppression = 25
+# Muzzle blast and dust: as the S9 guns (verify).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+
+[indirect]
+# Charges, m/s: charge 1 about 200 m/s (D 757, verify); the top one is the
+# drag-free speed for 10,700 m at 42 deg (verify: plan value, S11b-13).
+# Only charge 1 is used inside 4 km.
+charges_m_s = [200, 325]
+# Laying band, deg (D 143 "-5 to +42"; the solver band 0..42).
+elevation_deg = [0, 42]
+# Low and high roots (S11a1 G2); the band keeps it low-angle only.
+low_angle = true
+# Maximum range, m (D 143 "about 10,700 m").
+range_m = 10700
+# Round scatter, mrad (as the 105 mm M3, m3_105mm.toml; verify: plan value, S11b-13).
+spread_mrad = 6

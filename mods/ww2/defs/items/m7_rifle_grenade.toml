@@ -1,0 +1,24 @@
+# M17 HE rifle grenade on the M7 launcher (S11b G1, docs/slices/S11b.md 4):
+# not thrown. The man fits the launcher and aims (`windup_ms`), fires it as
+# `ww2:m7_launcher` on the low arc at a seen enemy man between min_range_m
+# and range_m, then takes the launcher off (`stow_ms`; his rifle is silent
+# meanwhile). One a squad per [items] rifle_grenade_gap_s. Issued only with
+# [items] rifle_grenades = 1; the base does not refill it (crate-only by
+# design, D 954, D 1161-1163). No card carries it until Build B.
+id = "ww2:m7_rifle_grenade"
+name = "M17 rifle grenade"
+kind = "rifle_grenade"
+# 680 g: owner to confirm, S11b-7.
+supply = { kind = "shells", g = 680 }
+sources = ["owner to confirm, S11b-7"]
+weapon = "ww2:m7_launcher"
+# Farthest shot (m): owner to confirm, S11b-7 (about 180-200 m).
+range_m = 180
+# Closest shot (m). verify: plan value, S11b-13.
+min_range_m = 30
+# Fit the launcher and aim (ms). verify: plan value, S11b-13.
+windup_ms = 3000
+# Take it off again (ms). verify: plan value, S11b-13.
+stow_ms = 3000
+fuse_ms = 0
+scatter_pct = 0

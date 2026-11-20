@@ -1,0 +1,60 @@
+# 60 mm Mortar M2 (S11b C4; docs/design/roster/guns-artillery.md GA 730-731,
+# roster-expansion.md RE 179): the US company mortar, a light tube firing the
+# 1.33 kg M49A2 HE bomb (cartridges/60mm_m49a2.toml).
+id = "ww2:m2_60mm"
+name = "60 mm M2"
+class = "mortar"
+sources = ["guns-artillery.md GA 730-731 (about 90-1,800 m, 1.33 kg M49A2)", "roster-expansion.md RE 179 (5 men, 240 MP, 45 s)"]
+# S5a: what each shot takes from the man's rounds.
+feed = "ww2:60mm_m49a2"
+# Bombs the gunner carries (as m1_mortar.toml).
+load = 3
+# 90 m (GA 730); the lowest charge (70 m/s) at 85 deg reaches 87 m drag-free.
+min_range_m = 90
+# Game range, m (S11b-5 (A)): the 81 mm plays at 600 m for its 2,900 m real
+# range, so 600 x 1,800 / 2,900 = 370 m (verify: plan value, S11b-13).
+range_m = 370
+damage = 150
+# 18 rounds/min sustained (GA 730; RE 179 "about 18 / 30-35").
+rounds_per_min = 18
+magazine = 1
+reload_ms = 0
+# The precision spread only (mrad; as m1_mortar.toml; a game value).
+spread_mrad = 50
+# Top charge, m/s (the [indirect] table).
+muzzle_velocity_m_s = 133
+setup_ms = 3000
+suppression = 30
+
+[indirect]
+# m1_mortar.toml's first three charges plus 133 m/s, which reaches 1,800 m
+# drag-free (spec C4; verify: plan value, S11b-13).
+charges_m_s = [70, 95, 117, 133]
+# Laying limits: the band of m1_mortar.toml (verify).
+elevation_deg = [45, 85]
+
+[he]
+# m1_mortar.toml's block scaled by the cube root of the bomb mass ratio
+# 1.33 / 3.1 = 0.75 (GA 730-731; the filler is not in the design; spec C4;
+# verify: plan value, S11b-13). frag_damage, frag_far_pct, pen_mm and the
+# rest unchanged.
+# Overpressure: 150 x 0.75 = 113 cm.
+blast_radius_cm = 113
+# Fragments: 120 x 0.75 = 90 rays, reach 1500 x 0.75 = 1130 cm.
+frag_count = 90
+frag_reach_cm = 1130
+frag_damage = 70
+frag_far_pct = 30
+frag_elev_deg = [2, 50]
+frag_track_damage = 1
+# 15 x 0.75 = 11 m.
+suppression_radius_m = 11
+# Crater: 200 x 0.75 = 150 cm, depth 70 x 0.75 = 53 cm.
+crater_radius_cm = 150
+crater_depth_cm = 53
+pen_mm = 8
+frag_pen_mm = 9
+inside_damage = 150
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 40

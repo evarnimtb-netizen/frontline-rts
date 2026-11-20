@@ -63,15 +63,20 @@ fn load_rejects_bad_s11a1_keys() {
             // The S11a2 switches (Build B turns them on): s11a2_content.
             ff_safe: s.rules.ai.arty.ff_safe,
             counter_fire: s.rules.ai.arty.counter_fire,
+            // The S11b switches (Build C turns them on): s11b_content.
+            cb_alternate: s.rules.ai.arty.cb_alternate,
+            buy_pending: s.rules.ai.arty.buy_pending,
+            how: s.rules.ai.arty.how,
+            light: s.rules.ai.arty.light,
             ..AiArtyTuning::default()
         }
     );
     assert_eq!(FireMissionTuning::KEYS.len(), 45); // S11a2: + 10
-    assert_eq!(AiArtyTuning::KEYS.len(), 25); // S11a2: + 4
+    assert_eq!(AiArtyTuning::KEYS.len(), 33); // S11a2: + 4; S11b: + 8
     assert!(
         frontline_content::tuning::TABLES
             .iter()
-            .any(|(t, k)| *t == "ai.arty" && k.len() == 25)
+            .any(|(t, k)| *t == "ai.arty" && k.len() == 33)
     );
     // The control file applies; the switches go off.
     let a_off = root().join("docs/slices/targets/S11a1-ablations/a_off.toml");
@@ -88,6 +93,11 @@ fn load_rejects_bad_s11a1_keys() {
         AiArtyTuning {
             ff_safe: s.rules.ai.arty.ff_safe,
             counter_fire: s.rules.ai.arty.counter_fire,
+            // The S11b switches (Build C turns them on): s11b_content.
+            cb_alternate: s.rules.ai.arty.cb_alternate,
+            buy_pending: s.rules.ai.arty.buy_pending,
+            how: s.rules.ai.arty.how,
+            light: s.rules.ai.arty.light,
             ..AiArtyTuning::default()
         }
     );
@@ -291,10 +301,11 @@ fn s11a1_cards_load_at_the_spec_figures() {
             1
         );
     }
-    // The four cards come last in each roster (after every older card).
+    // The four cards come last in each roster (after every older card;
+    // S11b appends two cards a side after them).
     for f in &s.factions {
-        let n = f.roster.len();
-        let last: Vec<&str> = f.roster[n - 2..]
+        let n = f.roster.len() - 2;
+        let last: Vec<&str> = f.roster[n - 2..n]
             .iter()
             .map(|&r| s.squad_types[r as usize].id.as_str())
             .collect();

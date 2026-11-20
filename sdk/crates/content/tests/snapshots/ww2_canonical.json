@@ -1,5 +1,55 @@
 {
   "ammo": {
+    "ww2:105mm_fhgr38": {
+      "caliber_mm": 105,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 170,
+        "crater_depth_cm": 43,
+        "crater_radius_cm": 85,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 160,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_pen_mm": 12,
+        "frag_reach_cm": 1700,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 10,
+        "suppression": 40,
+        "suppression_radius_m": 17,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:105mm_fhgr38",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 325,
+      "name": "10.5 cm FH Gr 38",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          10
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "artillery-on-map.md 2.1, 6.5 (public tables, verify)",
+        "75mm_sprgr34 [he] block scaled by 1.42"
+      ],
+      "supply": {
+        "g": 19000,
+        "kind": "shells"
+      },
+      "track_damage": 40
+    },
     "ww2:105mm_m1_he": {
       "caliber_mm": 105,
       "drag_coeff": 0.0,
@@ -893,6 +943,106 @@
       },
       "track_damage": 40
     },
+    "ww2:gsprgr30": {
+      "caliber_mm": 30,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 160,
+        "crater_depth_cm": 20,
+        "crater_radius_cm": 50,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 48,
+        "frag_damage": 60,
+        "frag_elev_deg": [
+          2,
+          50
+        ],
+        "frag_far_pct": 25,
+        "frag_pen_mm": 3,
+        "frag_reach_cm": 800,
+        "frag_track_damage": 0,
+        "inside_damage": 100,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 2,
+        "suppression": 50,
+        "suppression_radius_m": 10,
+        "vs_vehicle_pct": 10
+      },
+      "id": "ww2:gsprgr30",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 60,
+      "name": "Gewehr-Sprenggranate",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          2
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "owner to confirm, S11b-7 (about 250 g, about 30 g filler, about 250 m, about 60 m/s)",
+        "mk2_grenade.toml [he] block at about half (spec S11b.md 4 C5)"
+      ],
+      "supply": {
+        "g": 250,
+        "kind": "shells"
+      },
+      "track_damage": 0
+    },
+    "ww2:m17_rifle_grenade": {
+      "caliber_mm": 51,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 200,
+        "crater_depth_cm": 20,
+        "crater_radius_cm": 50,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 96,
+        "frag_damage": 60,
+        "frag_elev_deg": [
+          2,
+          50
+        ],
+        "frag_far_pct": 25,
+        "frag_pen_mm": 3,
+        "frag_reach_cm": 1000,
+        "frag_track_damage": 0,
+        "inside_damage": 100,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 2,
+        "suppression": 50,
+        "suppression_radius_m": 10,
+        "vs_vehicle_pct": 10
+      },
+      "id": "ww2:m17_rifle_grenade",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 50,
+      "name": "M17 rifle grenade",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          2
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "owner to confirm, S11b-7 (Mk 2 body, about 0.68 kg, about 57 g TNT, 180-200 m)",
+        "mk2_grenade.toml [he] block (the same body)"
+      ],
+      "supply": {
+        "g": 680,
+        "kind": "shells"
+      },
+      "track_damage": 0
+    },
     "ww2:m6a3_heat": {
       "caliber_mm": 60,
       "core": {
@@ -1097,7 +1247,9 @@
         "ww2:ger_sturmpioniergruppe",
         "ww2:ger_baupioniergruppe",
         "ww2:ger_leig18_squad",
-        "ww2:ger_vb_trupp"
+        "ww2:ger_vb_trupp",
+        "ww2:ger_lefh18_squad",
+        "ww2:ger_kz_grw42_team"
       ],
       "start_squads": [
         "ww2:ger_grenadiergruppe",
@@ -1127,7 +1279,9 @@
         "ww2:usa_57mm_m1_squad",
         "ww2:usa_assault_section",
         "ww2:usa_105mm_m3_squad",
-        "ww2:usa_fo_party"
+        "ww2:usa_fo_party",
+        "ww2:usa_105mm_m2a1_squad",
+        "ww2:usa_60mm_mortar_squad"
       ],
       "start_squads": [
         "ww2:usa_rifle_squad",
@@ -1403,6 +1557,25 @@
       },
       "windup_ms": 1000
     },
+    "ww2:m7_rifle_grenade": {
+      "fuse_ms": 0,
+      "id": "ww2:m7_rifle_grenade",
+      "kind": "rifle_grenade",
+      "min_range_m": 30,
+      "name": "M17 rifle grenade",
+      "range_m": 180,
+      "scatter_pct": 0,
+      "sources": [
+        "owner to confirm, S11b-7"
+      ],
+      "stow_ms": 3000,
+      "supply": {
+        "g": 680,
+        "kind": "shells"
+      },
+      "weapon": "ww2:m7_launcher",
+      "windup_ms": 3000
+    },
     "ww2:mk2_grenade": {
       "fuse_ms": 4000,
       "he": {
@@ -1479,6 +1652,25 @@
       },
       "weapon": "ww2:pzf60",
       "windup_ms": 1500
+    },
+    "ww2:schiessbecher_sprgr": {
+      "fuse_ms": 0,
+      "id": "ww2:schiessbecher_sprgr",
+      "kind": "rifle_grenade",
+      "min_range_m": 30,
+      "name": "Gewehr-Sprenggranate",
+      "range_m": 250,
+      "scatter_pct": 0,
+      "sources": [
+        "owner to confirm, S11b-7"
+      ],
+      "stow_ms": 3000,
+      "supply": {
+        "g": 250,
+        "kind": "shells"
+      },
+      "weapon": "ww2:schiessbecher",
+      "windup_ms": 3000
     },
     "ww2:stielhandgranate": {
       "fuse_ms": 4000,
@@ -1727,6 +1919,8 @@
         "arty": {
           "after_s": 240,
           "buy": 1,
+          "buy_pending": 1,
+          "cb_alternate": 1,
           "cb_max_error_m": 60,
           "counter_fire": 1,
           "danger_close_m": 50,
@@ -1734,8 +1928,14 @@
           "fo": 1,
           "fo_max": 1,
           "fo_rebuy_s": 180,
+          "how": 1,
+          "how_after_s": 480,
+          "how_income_pct": 15,
+          "how_max": 1,
+          "how_reserve_mp": 300,
           "income_max_pct": 15,
           "lift_m": 100,
+          "light": 0,
           "max_guns": 1,
           "mission_rounds": 4,
           "post_clear_m": 150,
@@ -2342,6 +2542,8 @@
       "items": {
         "crew_pickup_reach_m": 30,
         "resupply_s": 20,
+        "rifle_grenade_gap_s": 15,
+        "rifle_grenades": 1,
         "single_shot_gap_s": 3,
         "throw": {
           "lob_tan_milli": 1000,
@@ -2349,6 +2551,9 @@
           "release_drop_mm": 150,
           "smoke_below_mm": 2000
         }
+      },
+      "limit_groups": {
+        "ww2:artillery": 2
       },
       "movement": {
         "arrive_cm": 40,
@@ -2797,7 +3002,16 @@
           "weapon": "ww2:kar98k"
         },
         {
-          "count": 4,
+          "count": 1,
+          "items": {
+            "ww2:schiessbecher_sprgr": 3,
+            "ww2:stielhandgranate": 1
+          },
+          "slot": "rifle_grenadier",
+          "weapon": "ww2:kar98k"
+        },
+        {
+          "count": 3,
           "items": {
             "ww2:stielhandgranate": 1
           },
@@ -2922,6 +3136,160 @@
       "unlock_s": 0,
       "weapon": ""
     },
+    "ww2:ger_kz_grw42_team": {
+      "ai_weight": 50,
+      "capabilities": [
+        "fire_mission",
+        "recrew"
+      ],
+      "cooldown_s": 45,
+      "cost": 181,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_kz_grw42_team",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "slot": "leader",
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:mp40"
+        },
+        {
+          "count": 1,
+          "rounds": {
+            "ww2:8cm_wgr34": 4
+          },
+          "sidearm": "ww2:p38",
+          "slot": "mortar_gunner",
+          "traits": [
+            "crew_gunner"
+          ],
+          "weapon": "ww2:kz_grw42"
+        },
+        {
+          "count": 1,
+          "rounds": {
+            "ww2:8cm_wgr34": 7
+          },
+          "slot": "mortar_assistant",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:kar98k"
+        },
+        {
+          "count": 1,
+          "rounds": {
+            "ww2:8cm_wgr34": 7
+          },
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:kar98k"
+        }
+      ],
+      "men": 0,
+      "name": "Granatwerfergruppe (kz.)",
+      "recall_cooldown_s": 0,
+      "role": "mortar",
+      "short_name": "kz. GrW 42",
+      "sight_m": 150,
+      "sources": [
+        "roster-expansion.md RE 135 (4 men, 220 MP, 45 s)",
+        "guns-artillery.md GA 592 (18 bombs), GA 726"
+      ],
+      "spacing_dm": 25,
+      "speed_cm_s": 240,
+      "steadiness_pct": 100,
+      "tags": [
+        "mortar",
+        "light_mortar"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:ger_lefh18_crew": {
+      "capabilities": [
+        "recrew",
+        "gun_crew"
+      ],
+      "cooldown_s": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_lefh18_crew",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "slot": "gunner",
+          "weapon": "ww2:p38"
+        },
+        {
+          "count": 1,
+          "slot": "loader",
+          "weapon": "ww2:kar98k"
+        },
+        {
+          "count": 1,
+          "slot": "commander",
+          "traits": [
+            "radio"
+          ],
+          "weapon": "ww2:mp40"
+        },
+        {
+          "count": 3,
+          "slot": "ammo",
+          "weapon": "ww2:kar98k"
+        }
+      ],
+      "men": 0,
+      "name": "Geschützbedienung (10,5 cm)",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "sight_m": 150,
+      "spacing_dm": 25,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "tags": [
+        "gun_crew"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:ger_lefh18_squad": {
+      "ai_weight": 5,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_lefh18_squad",
+      "initial_cooldown_s": 0,
+      "limit_group": "ww2:artillery",
+      "max_alive": 1,
+      "men": 0,
+      "name": "10.5 cm leFH 18",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "leFH 18",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle",
+        "field_howitzer"
+      ],
+      "vehicle": "ww2:ger_lefh18",
+      "weapon": ""
+    },
     "ww2:ger_leig18_crew": {
       "capabilities": [
         "recrew",
@@ -2981,6 +3349,7 @@
       "hp": 100,
       "id": "ww2:ger_leig18_squad",
       "initial_cooldown_s": 0,
+      "limit_group": "ww2:artillery",
       "max_alive": 2,
       "men": 0,
       "name": "7.5 cm leIG 18",
@@ -3825,6 +4194,83 @@
       "unlock_s": 0,
       "weapon": ""
     },
+    "ww2:usa_105mm_m2a1_crew": {
+      "capabilities": [
+        "recrew",
+        "gun_crew"
+      ],
+      "cooldown_s": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_105mm_m2a1_crew",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "slot": "gunner",
+          "weapon": "ww2:m1911a1"
+        },
+        {
+          "count": 1,
+          "slot": "loader",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "slot": "commander",
+          "traits": [
+            "radio"
+          ],
+          "weapon": "ww2:m1_carbine"
+        },
+        {
+          "count": 5,
+          "slot": "ammo",
+          "weapon": "ww2:m1_garand"
+        }
+      ],
+      "men": 0,
+      "name": "Field Artillery Section (105 mm)",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "sight_m": 150,
+      "spacing_dm": 25,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "tags": [
+        "gun_crew"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:usa_105mm_m2a1_squad": {
+      "ai_weight": 5,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_105mm_m2a1_squad",
+      "initial_cooldown_s": 0,
+      "limit_group": "ww2:artillery",
+      "max_alive": 1,
+      "men": 0,
+      "name": "105 mm Howitzer M2A1",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "105 mm M2A1",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle",
+        "field_howitzer"
+      ],
+      "vehicle": "ww2:usa_105mm_m2a1",
+      "weapon": ""
+    },
     "ww2:usa_105mm_m3_crew": {
       "capabilities": [
         "recrew",
@@ -3884,6 +4330,7 @@
       "hp": 100,
       "id": "ww2:usa_105mm_m3_squad",
       "initial_cooldown_s": 0,
+      "limit_group": "ww2:artillery",
       "max_alive": 2,
       "men": 0,
       "name": "105 mm Howitzer M3",
@@ -4019,6 +4466,134 @@
       ],
       "tow": "ww2:usa_m3a1_squad",
       "vehicle": "ww2:usa_57mm_m1",
+      "weapon": ""
+    },
+    "ww2:usa_60mm_mortar_squad": {
+      "ai_weight": 50,
+      "capabilities": [
+        "fire_mission",
+        "recrew"
+      ],
+      "cooldown_s": 45,
+      "cost": 240,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_60mm_mortar_squad",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "slot": "leader",
+          "traits": [
+            "leader"
+          ],
+          "weapon": "ww2:m1_carbine"
+        },
+        {
+          "count": 1,
+          "rounds": {
+            "ww2:60mm_m49a2": 6
+          },
+          "sidearm": "ww2:m1911a1",
+          "slot": "mortar_gunner",
+          "traits": [
+            "crew_gunner"
+          ],
+          "weapon": "ww2:m2_60mm"
+        },
+        {
+          "count": 1,
+          "rounds": {
+            "ww2:60mm_m49a2": 8
+          },
+          "slot": "mortar_assistant",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:m1_carbine"
+        },
+        {
+          "count": 2,
+          "rounds": {
+            "ww2:60mm_m49a2": 8
+          },
+          "slot": "ammo_bearer",
+          "traits": [
+            "ammo_bearer"
+          ],
+          "weapon": "ww2:m1_carbine"
+        }
+      ],
+      "men": 0,
+      "name": "60mm Mortar Squad",
+      "recall_cooldown_s": 0,
+      "role": "mortar",
+      "short_name": "60mm Mortar",
+      "sight_m": 150,
+      "sources": [
+        "roster-expansion.md RE 179 (5 men, 240 MP, 45 s)",
+        "guns-artillery.md GA 591 (30 bombs, 6 a man), GA 730"
+      ],
+      "spacing_dm": 25,
+      "speed_cm_s": 240,
+      "steadiness_pct": 100,
+      "tags": [
+        "mortar",
+        "light_mortar"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:usa_75mm_m1a1_crew": {
+      "capabilities": [
+        "recrew",
+        "gun_crew"
+      ],
+      "cooldown_s": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_75mm_m1a1_crew",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "slot": "gunner",
+          "weapon": "ww2:m1911a1"
+        },
+        {
+          "count": 1,
+          "slot": "loader",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "slot": "commander",
+          "traits": [
+            "radio"
+          ],
+          "weapon": "ww2:m1_carbine"
+        },
+        {
+          "count": 2,
+          "slot": "ammo",
+          "weapon": "ww2:m1_garand"
+        }
+      ],
+      "men": 0,
+      "name": "Pack Howitzer Section (75 mm)",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "sight_m": 150,
+      "spacing_dm": 25,
+      "speed_cm_s": 300,
+      "steadiness_pct": 100,
+      "tags": [
+        "gun_crew"
+      ],
+      "unlock_s": 0,
       "weapon": ""
     },
     "ww2:usa_ammo_bearers": {
@@ -4754,7 +5329,16 @@
           "weapon": "ww2:m1_garand"
         },
         {
-          "count": 5,
+          "count": 2,
+          "items": {
+            "ww2:m7_rifle_grenade": 3,
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "rifle_grenadier",
+          "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 3,
           "items": {
             "ww2:mk2_grenade": 1
           },
@@ -5031,6 +5615,366 @@
     }
   },
   "vehicles": {
+    "ww2:ger_lefh18": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              45
+            ],
+            "half": [
+              15,
+              95,
+              20
+            ]
+          },
+          "frame": "hull",
+          "id": "axle"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 8.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 4.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            }
+          },
+          "box": {
+            "center": [
+              40,
+              0,
+              65
+            ],
+            "half": [
+              4,
+              50,
+              45
+            ]
+          },
+          "frame": "hull",
+          "id": "shield"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              -170,
+              0,
+              25
+            ],
+            "half": [
+              140,
+              20,
+              25
+            ]
+          },
+          "frame": "hull",
+          "id": "trail"
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -30,
+              0,
+              85
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              15,
+              15
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              -60,
+              20
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              25,
+              15
+            ]
+          },
+          "hp": 40,
+          "type": "ammo_rack"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                85,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -85,
+                40
+              ]
+            }
+          ],
+          "hp": 60,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 60
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -15,
+                30,
+                110
+              ]
+            }
+          ],
+          "hp": 30,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 30
+          },
+          "type": "sight"
+        },
+        {
+          "box": {
+            "center": [
+              10,
+              0,
+              75
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              10,
+              10
+            ]
+          },
+          "hp": 50,
+          "repair": {
+            "time_s": 45,
+            "to_hp": 50
+          },
+          "type": "recoil"
+        }
+      ],
+      "cost": 480,
+      "crew_model": "served",
+      "crew_squad": "ww2:ger_lefh18_crew",
+      "eye_height_cm": 110,
+      "faction": "ww2:germany",
+      "hull": {
+        "track_band_pct": 0,
+        "track_mm": 0
+      },
+      "id": "ww2:ger_lefh18",
+      "initial_cooldown_s": 480,
+      "mass_kg": 1985,
+      "mobility": {
+        "accel_cm_s2": 50,
+        "bog_pct": 0,
+        "brake_cm_s2": 200,
+        "ditch_block_dm": 6,
+        "emplace_s": 90,
+        "hitch_s": 25,
+        "max_slope_pct": 15,
+        "moving_spread_pct": 100,
+        "pack_s": 54,
+        "push_men": 7,
+        "relay_trail_s": 25,
+        "reverse_cm_s": 1,
+        "speed_cm_s": 1,
+        "tow_bar_cm": 310,
+        "turn_deg_s": 22,
+        "type": "towed",
+        "unbog_s": [
+          0,
+          0
+        ]
+      },
+      "name": "10.5 cm leFH 18",
+      "optic": {
+        "sight_pct": 250
+      },
+      "pop": 2,
+      "rare_cap": 0,
+      "recall_cooldown_s": 180,
+      "role": "inf_gun",
+      "service": [
+        {
+          "at": [
+            -60,
+            55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "gunner"
+        },
+        {
+          "at": [
+            -60,
+            -55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "loader"
+        },
+        {
+          "at": [
+            -300,
+            80,
+            0
+          ],
+          "pose": "kneel",
+          "role": "commander"
+        },
+        {
+          "at": [
+            -420,
+            75,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -420,
+            -75,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -520,
+            0,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        }
+      ],
+      "short_name": "leFH 18",
+      "sight_m": 175,
+      "sources": [
+        "artillery-on-map.md 2.1, 4.4, 4.6, 4.7 (public tables, verify)",
+        "leIG 18 layout (S11a1)"
+      ],
+      "spot_size_pct": 130,
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 12,
+              "id": "ww2:105mm_fhgr38"
+            }
+          ],
+          "barrel": {
+            "length_cm": 90,
+            "radius_cm": 6
+          },
+          "def": "ww2:lefh18",
+          "elevate_deg_s": 6,
+          "elevation_deg": [
+            -5,
+            42
+          ],
+          "mount": "casemate",
+          "muzzle": [
+            90,
+            0,
+            5
+          ],
+          "pivot": [
+            0,
+            0,
+            70
+          ],
+          "traverse_deg": [
+            -22,
+            22
+          ],
+          "traverse_deg_s": 9
+        }
+      ]
+    },
     "ww2:ger_leig18": {
       "boxes": [
         {
@@ -8929,6 +9873,384 @@
         }
       ]
     },
+    "ww2:usa_105mm_m2a1": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              45
+            ],
+            "half": [
+              15,
+              90,
+              20
+            ]
+          },
+          "frame": "hull",
+          "id": "axle"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 15,
+              "thickness_mm": 6.4
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 3.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 3.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 3.0
+            }
+          },
+          "box": {
+            "center": [
+              40,
+              0,
+              80
+            ],
+            "half": [
+              3,
+              80,
+              50
+            ]
+          },
+          "frame": "hull",
+          "id": "shield"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              -160,
+              0,
+              25
+            ],
+            "half": [
+              130,
+              20,
+              25
+            ]
+          },
+          "frame": "hull",
+          "id": "trail"
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -30,
+              0,
+              80
+            ],
+            "frame": "hull",
+            "half": [
+              28,
+              12,
+              12
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              -55,
+              20
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              25,
+              15
+            ]
+          },
+          "hp": 40,
+          "type": "ammo_rack"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                80,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -80,
+                40
+              ]
+            }
+          ],
+          "hp": 60,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 60
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -15,
+                28,
+                105
+              ]
+            }
+          ],
+          "hp": 30,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 30
+          },
+          "type": "sight"
+        },
+        {
+          "box": {
+            "center": [
+              10,
+              0,
+              70
+            ],
+            "frame": "hull",
+            "half": [
+              22,
+              8,
+              8
+            ]
+          },
+          "hp": 50,
+          "repair": {
+            "time_s": 40,
+            "to_hp": 50
+          },
+          "type": "recoil"
+        }
+      ],
+      "cost": 500,
+      "crew_model": "served",
+      "crew_squad": "ww2:usa_105mm_m2a1_crew",
+      "eye_height_cm": 110,
+      "faction": "ww2:usa",
+      "hull": {
+        "track_band_pct": 0,
+        "track_mm": 0
+      },
+      "id": "ww2:usa_105mm_m2a1",
+      "initial_cooldown_s": 480,
+      "mass_kg": 2260,
+      "mobility": {
+        "accel_cm_s2": 50,
+        "bog_pct": 0,
+        "brake_cm_s2": 200,
+        "ditch_block_dm": 6,
+        "emplace_s": 90,
+        "hitch_s": 25,
+        "max_slope_pct": 15,
+        "moving_spread_pct": 100,
+        "pack_s": 54,
+        "push_men": 9,
+        "relay_trail_s": 25,
+        "reverse_cm_s": 1,
+        "speed_cm_s": 1,
+        "tow_bar_cm": 290,
+        "turn_deg_s": 22,
+        "type": "towed",
+        "unbog_s": [
+          0,
+          0
+        ]
+      },
+      "name": "105 mm Howitzer M2A1",
+      "optic": {
+        "sight_pct": 250
+      },
+      "pop": 2,
+      "rare_cap": 0,
+      "recall_cooldown_s": 180,
+      "role": "inf_gun",
+      "service": [
+        {
+          "at": [
+            -60,
+            50,
+            0
+          ],
+          "pose": "kneel",
+          "role": "gunner"
+        },
+        {
+          "at": [
+            -60,
+            -50,
+            0
+          ],
+          "pose": "kneel",
+          "role": "loader"
+        },
+        {
+          "at": [
+            -290,
+            70,
+            0
+          ],
+          "pose": "kneel",
+          "role": "commander"
+        },
+        {
+          "at": [
+            -420,
+            85,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -420,
+            0,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -420,
+            -85,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -520,
+            60,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -520,
+            -60,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        }
+      ],
+      "short_name": "105 mm M2A1",
+      "sight_m": 175,
+      "sources": [
+        "artillery-on-map.md 2.2, 4.4, 4.6, 4.7 (public tables, verify)",
+        "105 mm M3 layout (S11a1)"
+      ],
+      "spot_size_pct": 130,
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 12,
+              "id": "ww2:105mm_m1_he"
+            }
+          ],
+          "barrel": {
+            "length_cm": 190,
+            "radius_cm": 6
+          },
+          "def": "ww2:m2a1_105mm",
+          "elevate_deg_s": 6,
+          "elevation_deg": [
+            -5,
+            65
+          ],
+          "mount": "casemate",
+          "muzzle": [
+            190,
+            0,
+            10
+          ],
+          "pivot": [
+            0,
+            0,
+            80
+          ],
+          "traverse_deg": [
+            -22,
+            22
+          ],
+          "traverse_deg_s": 9
+        }
+      ]
+    },
     "ww2:usa_105mm_m3": {
       "boxes": [
         {
@@ -10026,6 +11348,357 @@
           "traverse_deg": [
             -45,
             45
+          ],
+          "traverse_deg_s": 9
+        }
+      ]
+    },
+    "ww2:usa_75mm_m1a1": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              45
+            ],
+            "half": [
+              15,
+              90,
+              20
+            ]
+          },
+          "frame": "hull",
+          "id": "axle"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 15,
+              "thickness_mm": 6.4
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 3.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 3.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 3.0
+            }
+          },
+          "box": {
+            "center": [
+              40,
+              0,
+              80
+            ],
+            "half": [
+              3,
+              80,
+              50
+            ]
+          },
+          "frame": "hull",
+          "id": "shield"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              -160,
+              0,
+              25
+            ],
+            "half": [
+              130,
+              20,
+              25
+            ]
+          },
+          "frame": "hull",
+          "id": "trail"
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -30,
+              0,
+              80
+            ],
+            "frame": "hull",
+            "half": [
+              28,
+              12,
+              12
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              -55,
+              20
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              25,
+              15
+            ]
+          },
+          "hp": 40,
+          "type": "ammo_rack"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                80,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -80,
+                40
+              ]
+            }
+          ],
+          "hp": 60,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 60
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -15,
+                28,
+                105
+              ]
+            }
+          ],
+          "hp": 30,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 30
+          },
+          "type": "sight"
+        },
+        {
+          "box": {
+            "center": [
+              10,
+              0,
+              70
+            ],
+            "frame": "hull",
+            "half": [
+              22,
+              8,
+              8
+            ]
+          },
+          "hp": 50,
+          "repair": {
+            "time_s": 40,
+            "to_hp": 50
+          },
+          "type": "recoil"
+        }
+      ],
+      "cost": 380,
+      "crew_model": "served",
+      "crew_squad": "ww2:usa_75mm_m1a1_crew",
+      "eye_height_cm": 110,
+      "faction": "ww2:usa",
+      "hull": {
+        "track_band_pct": 0,
+        "track_mm": 0
+      },
+      "id": "ww2:usa_75mm_m1a1",
+      "initial_cooldown_s": 240,
+      "mass_kg": 653,
+      "mobility": {
+        "accel_cm_s2": 50,
+        "bog_pct": 0,
+        "brake_cm_s2": 200,
+        "ditch_block_dm": 6,
+        "emplace_s": 30,
+        "hitch_s": 15,
+        "max_slope_pct": 15,
+        "moving_spread_pct": 100,
+        "pack_s": 18,
+        "push_men": 5,
+        "relay_trail_s": 10,
+        "reverse_cm_s": 90,
+        "speed_cm_s": 90,
+        "tow_bar_cm": 290,
+        "turn_deg_s": 22,
+        "type": "towed",
+        "unbog_s": [
+          0,
+          0
+        ]
+      },
+      "name": "75 mm Pack Howitzer M1A1",
+      "optic": {
+        "sight_pct": 250
+      },
+      "pop": 2,
+      "rare_cap": 0,
+      "recall_cooldown_s": 120,
+      "role": "inf_gun",
+      "service": [
+        {
+          "at": [
+            -60,
+            50,
+            0
+          ],
+          "pose": "kneel",
+          "role": "gunner"
+        },
+        {
+          "at": [
+            -60,
+            -50,
+            0
+          ],
+          "pose": "kneel",
+          "role": "loader"
+        },
+        {
+          "at": [
+            -290,
+            70,
+            0
+          ],
+          "pose": "kneel",
+          "role": "commander"
+        },
+        {
+          "at": [
+            -420,
+            85,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -420,
+            -85,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        }
+      ],
+      "short_name": "75 mm Pack How.",
+      "sight_m": 175,
+      "sources": [
+        "artillery-on-map.md 2.2, 4.4, 4.5 (public tables, verify)",
+        "105 mm M3 layout (S11a1)"
+      ],
+      "spot_size_pct": 85,
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 10,
+              "id": "ww2:75mm_m48"
+            }
+          ],
+          "barrel": {
+            "length_cm": 190,
+            "radius_cm": 5
+          },
+          "def": "ww2:m1a1_75mm",
+          "elevate_deg_s": 6,
+          "elevation_deg": [
+            -5,
+            45
+          ],
+          "mount": "casemate",
+          "muzzle": [
+            190,
+            0,
+            10
+          ],
+          "pivot": [
+            0,
+            0,
+            80
+          ],
+          "traverse_deg": [
+            -22,
+            22
           ],
           "traverse_deg_s": 9
         }
@@ -12631,6 +14304,94 @@
       "spread_urad": 2500,
       "suppression": 30
     },
+    "ww2:kz_grw42": {
+      "class": "mortar",
+      "damage": 150,
+      "feed": "ww2:8cm_wgr34",
+      "handover_ms": 0,
+      "he": {
+        "blast_radius_cm": 150,
+        "crater_depth_cm": 70,
+        "crater_radius_cm": 200,
+        "frag_count": 120,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          50
+        ],
+        "frag_far_pct": 30,
+        "frag_pen_mm": 9,
+        "frag_reach_cm": 1500,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 8,
+        "suppression_radius_m": 15,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:kz_grw42",
+      "indirect": {
+        "charges_m_s": [
+          75,
+          105
+        ],
+        "elevation_deg": [
+          45,
+          87
+        ]
+      },
+      "load": 3,
+      "magazine": 1,
+      "min_range_m": 60,
+      "muzzle_velocity_m_s": 105,
+      "name": "8 cm kz. GrW 42",
+      "range_m": 275,
+      "reload_ms": 0,
+      "rounds_carried": 0,
+      "rounds_per_min": 15,
+      "setup_ms": 3000,
+      "sources": [
+        "guns-artillery.md GA 726 (about 50-1,100 m, 3.5 kg Wgr 34)",
+        "roster-expansion.md RE 135 (4 men, 220 MP, 45 s)"
+      ],
+      "spread_mrad": 50,
+      "spread_urad": 0,
+      "suppression": 30
+    },
+    "ww2:lefh18": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:lefh18",
+      "indirect": {
+        "charges_m_s": [
+          200,
+          325
+        ],
+        "elevation_deg": [
+          0,
+          42
+        ],
+        "low_angle": true,
+        "range_m": 10700,
+        "spread_mrad": 6
+      },
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 325,
+      "name": "10.5 cm leFH 18",
+      "range_m": 600,
+      "reload_ms": 15000,
+      "rounds_carried": 0,
+      "rounds_per_min": 4,
+      "setup_ms": 0,
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 25
+    },
     "ww2:leig18": {
       "class": "cannon",
       "damage": 300,
@@ -12924,6 +14685,132 @@
       "spread_urad": 0,
       "suppression": 30
     },
+    "ww2:m1a1_75mm": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:m1a1_75mm",
+      "indirect": {
+        "charges_m_s": [
+          294
+        ],
+        "elevation_deg": [
+          0,
+          45
+        ],
+        "low_angle": true,
+        "range_m": 8800,
+        "spread_mrad": 6
+      },
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 294,
+      "name": "75 mm Pack Howitzer M1A1",
+      "range_m": 600,
+      "reload_ms": 20000,
+      "rounds_carried": 0,
+      "rounds_per_min": 3,
+      "setup_ms": 0,
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 25
+    },
+    "ww2:m2_60mm": {
+      "class": "mortar",
+      "damage": 150,
+      "feed": "ww2:60mm_m49a2",
+      "handover_ms": 0,
+      "he": {
+        "blast_radius_cm": 113,
+        "crater_depth_cm": 53,
+        "crater_radius_cm": 150,
+        "frag_count": 90,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          50
+        ],
+        "frag_far_pct": 30,
+        "frag_pen_mm": 9,
+        "frag_reach_cm": 1130,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 8,
+        "suppression_radius_m": 11,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:m2_60mm",
+      "indirect": {
+        "charges_m_s": [
+          70,
+          95,
+          117,
+          133
+        ],
+        "elevation_deg": [
+          45,
+          85
+        ]
+      },
+      "load": 3,
+      "magazine": 1,
+      "min_range_m": 90,
+      "muzzle_velocity_m_s": 133,
+      "name": "60 mm M2",
+      "range_m": 370,
+      "reload_ms": 0,
+      "rounds_carried": 0,
+      "rounds_per_min": 18,
+      "setup_ms": 3000,
+      "sources": [
+        "guns-artillery.md GA 730-731 (about 90-1,800 m, 1.33 kg M49A2)",
+        "roster-expansion.md RE 179 (5 men, 240 MP, 45 s)"
+      ],
+      "spread_mrad": 50,
+      "spread_urad": 0,
+      "suppression": 30
+    },
+    "ww2:m2a1_105mm": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:m2a1_105mm",
+      "indirect": {
+        "charges_m_s": [
+          205,
+          220,
+          240,
+          270,
+          311,
+          333
+        ],
+        "elevation_deg": [
+          0,
+          65
+        ],
+        "low_angle": true,
+        "range_m": 11300,
+        "spread_mrad": 6
+      },
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 333,
+      "name": "105 mm Howitzer M2A1",
+      "range_m": 600,
+      "reload_ms": 20000,
+      "rounds_carried": 0,
+      "rounds_per_min": 3,
+      "setup_ms": 0,
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 25
+    },
     "ww2:m2hb": {
       "burst_pause_ms": 1200,
       "burst_rounds": 5,
@@ -13104,6 +14991,33 @@
       "spread_mrad": 0,
       "spread_urad": 2500,
       "suppression": 30
+    },
+    "ww2:m7_launcher": {
+      "ammo": "ww2:m17_rifle_grenade",
+      "class": "launcher",
+      "damage": 150,
+      "engage_moving_m": 180,
+      "engage_still_m": 180,
+      "fire_reveal_ms": 2000,
+      "fire_reveal_pct": 150,
+      "handover_ms": 0,
+      "id": "ww2:m7_launcher",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 50,
+      "name": "M7 grenade launcher",
+      "range_m": 180,
+      "reload_ms": 0,
+      "rounds_carried": 1,
+      "rounds_per_min": 4,
+      "setup_ms": 0,
+      "short_name": "M7",
+      "sources": [
+        "owner to confirm, S11b-7 (M17 rifle grenade: about 180-200 m maximum)"
+      ],
+      "spread_mrad": 15,
+      "spread_urad": 0,
+      "suppression": 20
     },
     "ww2:m9_bazooka": {
       "ammo": "ww2:m6a3_heat",
@@ -13397,6 +15311,33 @@
       "rounds_per_min": 6,
       "setup_ms": 0,
       "spread_mrad": 12,
+      "spread_urad": 0,
+      "suppression": 20
+    },
+    "ww2:schiessbecher": {
+      "ammo": "ww2:gsprgr30",
+      "class": "launcher",
+      "damage": 150,
+      "engage_moving_m": 250,
+      "engage_still_m": 250,
+      "fire_reveal_ms": 2000,
+      "fire_reveal_pct": 150,
+      "handover_ms": 0,
+      "id": "ww2:schiessbecher",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 60,
+      "name": "Schiessbecher",
+      "range_m": 250,
+      "reload_ms": 0,
+      "rounds_carried": 1,
+      "rounds_per_min": 4,
+      "setup_ms": 0,
+      "short_name": "Schiessbecher",
+      "sources": [
+        "owner to confirm, S11b-7 (Gewehr-Sprenggranate: about 250 m maximum at about 60 m/s)"
+      ],
+      "spread_mrad": 15,
       "spread_urad": 0,
       "suppression": 20
     },

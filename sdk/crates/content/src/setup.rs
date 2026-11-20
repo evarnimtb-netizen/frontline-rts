@@ -359,6 +359,30 @@ pub struct CartridgeSetup {
 }
 
 impl MatchSetup {
+    /// S11b (Build C): every S11b switch at its Off value (spec 2): the
+    /// `[ai.arty]` switches `cb_alternate`, `buy_pending`, `how`, `light`
+    /// 0, and `[items] rifle_grenades` 0 with the `rifle_grenade` kind
+    /// dropped from every squad type, as the setup build does at resolve.
+    /// For tests and rows written before the switches shipped on.
+    pub fn s11b_off(&mut self) {
+        let a = &mut self.rules.ai.arty;
+        (a.cb_alternate, a.buy_pending, a.how, a.light) = (0, 0, 0, 0);
+        self.rifle_grenades_off();
+    }
+
+    /// S11b G1: `[items] rifle_grenades` 0 on a resolved setup (the kind
+    /// dropped from every squad type: `items[kind]` None, member counts 0).
+    pub fn rifle_grenades_off(&mut self) {
+        let k = ItemKind::RifleGrenade.index();
+        self.rules.items.rifle_grenades = 0;
+        for t in self.squad_types.iter_mut() {
+            t.items[k] = None;
+            for m in t.members.iter_mut() {
+                m.items[k] = 0;
+            }
+        }
+    }
+
     /// Index of tag `name` in [`Self::tags`].
     pub fn tag(&self, name: &str) -> Option<u16> {
         self.tags.iter().position(|t| t == name).map(|i| i as u16)
@@ -581,6 +605,11 @@ pub struct ItemRulesSetup {
     pub single_shot_gap_ticks: u32,
     /// S4: crew-weapon pickup reach (m; `items.crew_pickup_reach_m`).
     pub crew_pickup_reach_m: u32,
+    /// S11b G1 switch (`items.rifle_grenades`; 0: no squad type carries
+    /// the `rifle_grenade` kind).
+    pub rifle_grenades: u32,
+    /// S11b G3: one rifle grenade a squad per this many ticks.
+    pub rifle_grenade_gap_ticks: u32,
     /// S3b tuning table (TOML units).
     pub throw: ThrowTuning,
 }
@@ -1002,6 +1031,9 @@ pub struct ItemSetup {
     pub bangalore: Option<BangaloreSetup>,
     /// S10b: mine items' trigger.
     pub mine: Option<MineSetup>,
+    /// S11b G1: rifle grenades: the launcher comes off this long after the
+    /// shot (the man's rifle is silent meanwhile); 0 for other kinds.
+    pub stow_ticks: u32,
 }
 
 /// An item's blast: a weapon-style [`HeSetup`] plus its own damage and
@@ -1542,6 +1574,7 @@ impl ModDefs {
                         .unwrap_or(0) as u8,
                     trigger_cm: m.trigger_cm,
                 }),
+                stow_ticks: ms_to_ticks(it.stow_ms, hz),
             })
             .collect();
         // S4: what the sim cannot run (unknown limit groups, mixed items
@@ -1744,6 +1777,13 @@ impl ModDefs {
                             if let (Some(i), Some(d)) =
                                 (index_of(self.items.keys(), id), self.items.get(id))
                             {
+                                // S11b G1: with `[items] rifle_grenades` 0
+                                // no squad type carries the kind.
+                                if d.kind == ItemKind::RifleGrenade
+                                    && rules.items.rifle_grenades == 0
+                                {
+                                    continue;
+                                }
                                 items[d.kind.index()] = n;
                                 kit_items[d.kind.index()].get_or_insert(i);
                             }
@@ -1998,6 +2038,8 @@ impl ModDefs {
                     resupply_ticks: rules.items.resupply_s * hz,
                     single_shot_gap_ticks: rules.items.single_shot_gap_s * hz,
                     crew_pickup_reach_m: rules.items.crew_pickup_reach_m,
+                    rifle_grenades: rules.items.rifle_grenades,
+                    rifle_grenade_gap_ticks: rules.items.rifle_grenade_gap_s * hz,
                     throw: rules.items.throw.clone(),
                 },
                 vehicles: {
@@ -2859,6 +2901,11 @@ impl MatchSetup {
             "out of range",
         );
         check(
+            r.items.rifle_grenades <= 1 && r.items.rifle_grenade_gap_ticks <= 600 * 30,
+            "rules.items.rifle_grenades",
+            "out of range",
+        );
+        check(
             r.limit_groups.len() <= u16::MAX as usize
                 && r.limit_groups.iter().all(|g| g.limit <= 1000)
                 && r.limit_groups.windows(2).all(|w| w[0].id < w[1].id),
@@ -2954,15 +3001,20 @@ impl MatchSetup {
             check(false, &i.path, &i.message);
         }
         for it in &self.items {
+            // S11b G1: a rifle grenade reaches 300 m and stows in 60 s.
+            let rg = it.kind == ItemKind::RifleGrenade;
             check(
                 it.range_min >= Fixed::ZERO
                     && it.range_min < it.range_max
-                    && fx_in(it.range_max, 1, 100),
+                    && fx_in(it.range_max, 1, if rg { 300 } else { 100 }),
                 "items.range",
                 "out of range",
             );
             check(
-                it.windup_ticks <= 10 * 30 && it.fuse_ticks <= 30 * 30 && it.scatter_pct <= 100,
+                it.windup_ticks <= 10 * 30
+                    && it.fuse_ticks <= 30 * 30
+                    && it.scatter_pct <= 100
+                    && it.stow_ticks <= if rg { 60 * 30 } else { 0 },
                 "items.values",
                 "out of range",
             );
@@ -2990,15 +3042,27 @@ impl MatchSetup {
                 "frag and satchel items need a blast, smoke items a cloud",
             );
             check(
-                (it.kind == ItemKind::SingleShotAt)
+                matches!(it.kind, ItemKind::SingleShotAt | ItemKind::RifleGrenade)
                     == it.weapon.is_some_and(|w| {
                         self.weapons
                             .get(w as usize)
                             .is_some_and(|w| w.class == WeaponClass::Launcher && w.ammo.is_some())
                     }),
                 "items.weapon",
-                "a single-shot AT item fires as a launcher weapon; other items name none",
+                "a single-shot AT item or a rifle grenade fires as a launcher weapon; other items name none",
             );
+            // S11b G1: the rifle grenade's round bursts (HE).
+            if rg {
+                check(
+                    it.weapon
+                        .and_then(|w| self.weapons.get(w as usize))
+                        .and_then(|w| w.ammo)
+                        .and_then(|a| self.ammo.get(a as usize))
+                        .is_some_and(|a| a.blast.is_some()),
+                    "items.weapon",
+                    "a rifle grenade's round has a blast",
+                );
+            }
             if let Some(h) = &it.he {
                 check(item_he_ok(h), "items.he", "out of range");
             }

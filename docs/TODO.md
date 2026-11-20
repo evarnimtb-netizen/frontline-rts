@@ -416,6 +416,113 @@ branch and measured at `e149258` (item 17).
   Pz IV bought in 89.4 % (T54a, floor 90) with MP share 9.97 (T54c, floor 11). (A) recommended: lower the artillery pot
   in the balance pass. (B) Accept the lower buys and the two misses.
 
+## S11b open owner questions (asked 2026-11-19 by the Plan stage; each runs on (A): "assumed 2026-11-19, owner asked not to be asked")
+
+Spec `docs/slices/S11b.md` 11; log `docs/slices/S11b-log.md`; targets `docs/slices/targets/S11b.toml`. Planned, not built.
+Revised the same day with the measured diagnosis of S11a2-10..12 and a plan review.
+
+- S11b-1 Scope of S11b (three Build stages). (A) Field howitzers as base guns, light mortars, HE rifle grenades, and
+  the fixes from the S11a2 measure (S11a2-10, S11a2-11); tows, displacement and crates stay S11a3. **(A) assumed
+  2026-11-19, owner asked not to be asked.** (B) Tows and displacement first, S11b after.
+- S11b-2 Field howitzers without a tow. (A) The leFH 18 and 105 mm M2A1 cards bring no tow: the gun emplaces where it
+  arrives (the base), cannot be pushed, and fires flat from there; often "masked" on Kessel Ridge. **(A) assumed
+  2026-11-19, owner asked not to be asked.** (B) Human-only tow variant cards now (the AI still does not move them).
+- S11b-3 The AI's howitzer. (A) A second gun from 8:00 with its own 15 % income share (beside the infantry gun's 15 %)
+  and 300 MP kept after the buy: bought at about minute 11 (Germany) and 12 (USA); the median match lasts 18-19.4
+  minutes. It displaces vehicles further (S11b-10). **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Inside
+  the infantry gun's share: bought at about minute 20-22, after most matches end.
+- S11b-4 Light mortar prices. (A) kz. GrW 42 181 MP (the roster's 220 with the German cut and the S6 factor, as the
+  heavy team's 300 became 247), 60 mm M2 240 MP. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) 220 and 240.
+- S11b-5 Light mortar range. (A) Scaled as the heavy tubes are (600 m in the game for 2,400 / 2,900 m): kz. GrW 42
+  275 m, 60 mm M2 370 m. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) 600 m like the heavy tubes.
+- S11b-6 Rifle grenadiers. (A) Two riflemen of a full US Rifle Squad and one of a full Grenadiergruppe carry three HE
+  rifle grenades each; card prices unchanged; the base does NOT refill them (crate-only by design; a crate source comes
+  with crates), so three is a man's load. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) One grenadier a
+  squad on both sides.
+- S11b-7 Rifle grenade figures: the design holds none; **owner to confirm.** (A) M17 on the M7 launcher: the Mk 2
+  body, about 0.68 kg, about 57 g TNT, maximum taken as 180 m (about 180-200 m); Gewehr-Sprenggranate from the
+  Schiessbecher: about 250 g, about 30 g filler, maximum about 250 m, about 60 m/s; so the German burst is about half
+  the US one with more reach. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) No rifle grenades until sourced.
+- S11b-8 Rifle grenade kills in the numbers. (A) Their own kill class, counted inside the HE share (design 6.2; T8's
+  top of 26.3 % stays hard). **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Counted with hand grenades,
+  outside the HE share.
+- S11b-9 Counter-fire share (follow-up of S11a2-10 (A); measured). (A) An AI gun never orders counter-fire twice in a
+  row: on a 40 set the US share fell from 62.3 to 47.3 % and counter-fire still happened in 97 % of matches. **(A)
+  assumed 2026-11-19, owner asked not to be asked.** (B) A per-gun round budget as well.
+- S11b-10 Vehicle buys beside the artillery (follow-up of S11a2-12; measured: the gun and observer cards themselves
+  take the manpower, about 500 MP a US match; not the pot's timing, not shells). (A) Accept that a new card displaces
+  vehicles, and re-base T54, T30 and T40 in the balance pass; they stay as they are in `S11b.toml`. **(A) assumed
+  2026-11-19, owner asked not to be asked.** (B) Raise the artillery income share (30 % restored buys but read Germany
+  57.5 % on one 40 set).
+- S11b-11 T81 (AT guns in cover; follow-up of S11a2-11; measured: a counting error). (A) Infantry guns leave the
+  AT-gun emplaced and crew-lost counts; a patched set played identically and read 86.5 / 87.2 %. **(A) assumed
+  2026-11-19, owner asked not to be asked.** (B) Keep the metric and accept the miss.
+- S11b-12 Artillery limit group. (A) At most two gun cards (infantry guns and field howitzers) alive a player
+  (design 4.7). **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Per-card caps only.
+- S11b-13 Other figures with no source in the design (a citation task). (A) Use the plan values until sourced:
+  `how_reserve_mp` 300; `rifle_grenade_gap_s` 15; grenade minimum 30 m, 3 s to fit and 3 s to stow, M17 speed 50 m/s;
+  howitzer top charges 325 / 333 m/s and their traverse (the M3's); the 60 mm bomb's burst (the 81 mm block x 0.75)
+  and its charges; the light mortars' game ranges (S11b-5); the FH Gr 38 complete round at 19 kg (as the M1 HE).
+  **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Hold the affected defs back until sourced.
+- S11b-14 (asked by the S11b fix stage) AI light mortars are off by default because with them Germany wins 27.5 % of a
+  40 set (11/40, HE share 23.1 %; 20/40 without them; both measured before the fix stage's howitzer pot, grenades off;
+  the shipped default with the pot reads 20/40, HE 25.5 %). Germany's own kz. GrW 42 carries the drop:
+  light mortars for Germany only 9/40, for the USA only 17/40. A kz. team fires about 10 of its 18 bombs a match, a 60 mm
+  team about 34 (30 carried, the rest resupplied); Germany's light buys take heavy-mortar buys (190 -> 132 a 40 set) and its bombs fall
+  93 -> 72 a match. The 60 mm burst scaled to the bomb (55 rays, 900 cm) did not help: 13/40. `[ai.arty] light` is
+  AI-only: the cards stay buyable by a human player. (A) Leave off until the balance pass B2 tunes the two cards
+  (levers `docs/slices/targets/B2-levers/s11b_light_*.toml`). **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) On now.
+
+## B2 balance pass open owner questions (asked 2026-11-19 by the Plan stage; each runs on (A): "assumed 2026-11-19, owner asked not to be asked")
+
+Plan `docs/slices/B2-balance.md` 9; stage contracts `B2-run-1.md`, `B2-run-2.md`; log `docs/slices/B2-log.md`; targets
+`docs/slices/targets/B2.toml`. Run 2026-11-19 on the S11b head (branch); results in `docs/slices/B2-log.md`; no default changed. Found without playing a match, from the 480 at
+`e149258`: Germany wins 24.6 % of the 114 matches that end at 14-17 minutes and 47.0 % of the other 366; its manpower
+exchange is not worse than the USA's; US rifles kill 48.3 men a match against 28.9.
+
+- B2-1 What the pass may change alone. (A) Only AI rule keys and card `ai_weight`s of the plan's tier 1 (`[ai.mix]`
+  line, vehicle, mg; `[ai.arty] income_max_pct`; the 7-man Grenadiergruppe's weight). Prices, the pop cap, start squads,
+  squad make-up, a gun's tow, the VG-Sturmgruppe's weight and weapons are screened as override files and reported with
+  numbers, not applied. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Also apply one owner-class lever if it passes the same rule.
+- B2-2 If no AI setting passes (the evidence points at unit content). (A) Change nothing, as B1; the owner picks from the
+  measured list: the 57 mm towed by a truck, a third or cheaper German start squad, more VG-Sturmgruppen, the German
+  price cut, the pop cap, an AI opening-buy rule (code), or accept about 42 %. **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) The pass applies the best owner-class lever itself.
+- B2-3 **16 target floors re-based, in `B2.toml` only; the owner decides** (S11b-10 (A) asked for them). Rule: 0.85 x the
+  lowest measured set, 0.95 for a near miss. T54a Pz IV bought 90 to 80 % of matches; T54b M4 90 to 60; T54c Pz IV manpower
+  11 to 9; T54d M4 manpower 10 to 5.5; T30a, T30c, T54e StuG 60 / 60 / 80 to 40; T30b, T30d, T54f M10 60 / 60 / 75 to 25;
+  T40a, T40c, T72a Sd.Kfz. 251/1 60 to 25; T40b, T40d, T72b M3A1 card 60 to 10 (made again from the S11b measure).
+  (A) As in `B2.toml`. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Keep the design floors as visible hard misses.
+- B2-4 T97, builders' share of the infantry plans (16.5-18.2 %, cap 12 since S10c-ai's builder floor and front jobs). (A) Not
+  re-based: a visible hard miss until the owner chooses a cap or lowers `builder_cards_min`. **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) Re-base the cap to about 20.
+- B2-5 T31 (all vehicles' share of kills; Germany 32.0-33.5 %, cap 30) and T55 (Sd.Kfz. 234/1 at 14.7-15.3 % of Germany's
+  kills, cap 10). (A) Both stay reports: AT and infantry guns are counted inside T31 (a vehicles-only share is a later CLI
+  change), and the armoured car is not touched while Germany is under 45 %. **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) Lower `[ai.recon] income_max_pct` now.
+- B2-6 The aim. (A) 47-53 %: 320 fresh paired matches can prove a gain of about 6 points, not the 3.3 points to the band's
+  edge; a lever worth +3 is reported, not applied. **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Apply any gain that reaches 45 %.
+- B2-7 Seeds. (A) Screen 2001-2080, confirm 2101-2280, judges 1-280 (the measure only), held out 5001-5080 once (B1's
+  301-380 was already played by S6b). **(A) assumed 2026-11-19, owner asked not to be asked.** (B) Reuse B1's blocks 1001-1280.
+- B2-8 The 57 mm's armed tow (S9-3 (A)): every US 57 mm card brings an M3A1 with a .50, which makes 5.7 of the USA's 12.8
+  vehicle-MG kills a match; the Pak 40's Sd.Kfz. 11 is unarmed. (A) Screen the gun towed by the unarmed CCKW (S9-3 option B)
+  as an override and report its number; never applied without the owner. **(A) assumed 2026-11-19, owner asked not to be asked.**
+  (B) Leave S9-3 alone and do not screen it.
+- B2-9 Rifle-grenade gap 15 -> 25 s (`[items] rifle_grenade_gap_s`; tested under its own rules R1-R4 and J1-J4, `B2-log.md`).
+  HE share 25.69 on fresh 320 matches and 25.73 on the 480 judges (cap 26.3; base 26.66 and 26.50); Germany unchanged at
+  44.17 %. The one miss is T121b (USA mines set off a match, floor 0.3, 0.45 -> 0.281), a target the lever does not touch.
+  (A) Apply it as one commit (a revert of `63e4b04`); the HE cap holds on both sets. (B) Leave 15.
+- B2-10 57 mm gun tow. The armed M3A1 (S9-3 (A)) makes 5.7 of the USA's kills a match. A truck tow gives Germany +16.2 points
+  on 160 matches but lifts HE to 29.3, and the AI then runs the tow trucks as supply trucks. (A) Keep the M3A1 and take its
+  gun off or price it, in a later slice. (B) Leave the tow as it is.
+- B2-11 Start content. A third free German squad gives +19.4 on 160 matches (HE 27.2, over the cap). Germany already has more
+  men at 5 minutes (49.9 against the USA's 43.7), so the USA does not win by early numbers; the USA leads at 10 minutes.
+  (A) Leave start content; look at the mid game (10 minutes on) in the next balance pass. (B) Change the German start now.
+- B2-12 HE cap 26.3. It is the floor that stops most levers that help Germany: of the four screened levers that lift Germany
+  by 8 points or more, three go over the cap (26.5, 27.2, 29.3). (A) Keep the cap and retune HE sources first. (B) Move the
+  cap, a design change; not measured.
+
 ## Planned work queue
 
 1. Infra step (done; on main).
@@ -440,6 +547,8 @@ branch and measured at `e149258` (item 17).
 15. **S10c-ai: done on branch `claude/project-thread-e7nsak` (2026-11-16), merged to main 2026-11-19 with the owner's OK.** Verified so far: `check.sh quick 54009f6` ok, 881 tests pass; c_off 40 set = main 40/40; Germany 40.00 % of 480 (sets 40.6 / 37.5 / 41.9); 270 targets pass, 71 miss (41 hard). Full suite, `tools/verify.sh` and CI not run yet. Spec `docs/slices/S10c-ai.md`, log `S10c-ai-log.md`, targets `S10c-ai.toml`. Owner questions S10c-1..6 above. Next: the merge decision after verify, then S11.
 16. **S11a1: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A, B and C, with review fixes C-1..C-7 (B-5 not done). Check at the last fix: `check.sh quick 730e67f` all ok, 961 tests. Measured with S11a2 at `e149258` (item 17). Spec `docs/slices/S11a1.md`, log `S11a1-log.md`, targets `S11a1.toml`. Owner questions S11a1-1..10 above. Open: T131 stays a report (S11a1-10); preparation fire never runs in matches (T138). Waits for the owner's merge decision.
 17. **S11a2: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A and B, with the Fix of Build B (B-1..B-7). Verified: `check.sh quick 730e67f` all ok, 982 tests at the head `e149258`. GitHub CI on `affb26e` (S11a1 complete plus S11a2 stage A): Linux build, release and debug sim tests, simulate, clippy, rustfmt and cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on main (fixed by PR 1); macOS cancelled; cross-platform hash check skipped. CI on `e149258` was still running when written. Measured 480 at `e149258`: Germany 41.67 % (sets 46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0; 318 targets pass, 82 miss (44 hard). New hard misses: T9b, T54a, T54c, T81a, T81b, T119b; gone: T8a, T115d, T121d. `tools/verify.sh` not run. Spec `docs/slices/S11a2.md`, log `S11a2-log.md`, targets `S11a2.toml`. Owner questions S11a2-1..12 above. Next: the merge decisions for S10c-ai, S11a1, S11a2 and PR 1; then the open items in STATE.md; then S11b.
+18. **S11b: done on branch `claude/project-thread-e7nsak` (2026-11-19), waits for the owner's merge OK.** Built in Build A, B and C, with the Fix stage (spec `docs/slices/S11b.md`, stages `S11b-build-A.md`, `-B.md`, `-C.md`, targets `S11b.toml`, log `S11b-log.md`). Measured 480 at `88117de`: Germany 44.17 %, HE share 26.8 / 26.5 / 26.2 (cap 26.3). Owner questions S11b-1..14 above.
+19. **B2 balance pass: done on branch `claude/project-thread-e7nsak` (2026-11-19); NO default changed.** Plan `docs/slices/B2-balance.md` (item 14; stages `B2-run-1.md` and `B2-run-2.md`, targets `B2.toml`, levers `targets/B2-levers/`, log `B2-log.md`). No lever passed the plan's rule. `rg_gap25` was applied (`fc14f52`) and reverted (`63e4b04`) when judge rule J4 failed on T121b. Owner questions B2-1..12 above.
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 

@@ -1,0 +1,52 @@
+# Granatwerfergruppe (kz.) (S11b C4; roster-expansion.md RE 135,
+# guns-artillery.md GA 592, 726): one 8 cm kz. GrW 42 served by four men:
+# the leader observes and adjusts, the gunner lays and fires, the assistant
+# and one ammunition bearer carry the bombs. Member slots and traits as
+# ger_mortar_team.toml with one bearer fewer. 18 bombs (GA 592) on the
+# crew as 4 + 7 + 7 (S11b fix C-6: Build B's 2 + 4 + 6 + 6 gave the leader 6,
+# and the leader is the AI's spotter, out of the crew's 5 m feed reach; the
+# gunner of the light tube takes 2 more than the heavy tube's). AI weight 0
+# (S11b Build B; `[ai.arty] light` is Build C's).
+id = "ww2:ger_kz_grw42_team"
+name = "Granatwerfergruppe (kz.)"
+short_name = "kz. GrW 42"
+faction = "ww2:germany"
+tags = ["mortar", "light_mortar"]
+capabilities = ["recrew"]
+sources = ["roster-expansion.md RE 135 (4 men, 220 MP, 45 s)", "guns-artillery.md GA 592 (18 bombs), GA 726"]
+# RE 135's 220 with the S5a-37 German cut and the S6 factor exactly as
+# ger_mortar_team.toml: 220 x 0.8 x 1.03 = 181 (S11b-4 (A)).
+cost = 181
+# RE 135: 45 s.
+cooldown_s = 45
+unlock_s = 0
+speed_cm_s = 240
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+ai_weight = 50   # S11b L1 (Build C): half the heavy card's effective weight (DEFAULT_AI_WEIGHT 100): about one light team in three mortar buys; bought only with `[ai.arty] light` 1
+
+# Gruppenführer: observes fire missions (every squad leader does).
+[[members]]
+slot = "leader"
+weapon = "ww2:mp40"
+traits = ["leader"]
+
+[[members]]
+slot = "mortar_gunner"
+weapon = "ww2:kz_grw42"
+sidearm = "ww2:p38"
+rounds = { "ww2:8cm_wgr34" = 4 }
+traits = ["crew_gunner"]
+
+[[members]]
+slot = "mortar_assistant"
+weapon = "ww2:kar98k"
+rounds = { "ww2:8cm_wgr34" = 7 }
+traits = ["crew_assistant"]
+
+[[members]]
+slot = "ammo_bearer"
+weapon = "ww2:kar98k"
+rounds = { "ww2:8cm_wgr34" = 7 }
+traits = ["ammo_bearer"]

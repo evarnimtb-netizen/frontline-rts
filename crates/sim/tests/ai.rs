@@ -30,6 +30,9 @@ fn setup(seed: u64, d0: Difficulty, d1: Difficulty, ai0: bool) -> MatchSetup {
             },
         ],
     };
+    // S11b fix C-3: the shipped S11b switches (howitzer buy, pending
+    // call-ins, counter-fire alternation on; AI light mortars and rifle
+    // grenades off), so these rule checks cover the new units.
     defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"))
 }
 

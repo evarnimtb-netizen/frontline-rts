@@ -43,6 +43,9 @@ pub struct AiArty {
     /// S11a2 R2: the marker's `shots` at the last counter-fire order or
     /// refusal (one mission per new evidence).
     pub cb_shots: u32,
+    /// S11b X3: the gun's last ordered mission was counter-fire (set by
+    /// `counter_fire`, cleared by `arty_fire`; read with `cb_alternate`).
+    pub cb_last: bool,
 }
 
 /// One AI observer team, keyed by its squad (saved, hashed).
@@ -136,6 +139,7 @@ pub(super) fn validate_arty(
 use frontline_content::VehicleRole;
 use frontline_content::setup::member_trait;
 
+use super::truck::RoleBuy;
 use super::{Known, Mine, PointEval, Rel, sq_m};
 use crate::command::CommandKind;
 use crate::ecs::{EntityKind, SimId};
@@ -253,8 +257,33 @@ impl super::Planner<'_> {
         mine.retain(|m| !self.is_fo_type(g.squads[&m.id].type_idx));
     }
 
+    /// S11b H1: whether squad type `t` is a field howitzer card (tag
+    /// `field_howitzer`).
+    fn is_how(&self, t: u16) -> bool {
+        self.g.setup.type_has_tag(t, "field_howitzer")
+    }
+
+    /// S11b H1: manpower less the cost of the call-ins still pending (they
+    /// are paid when they apply, as `buy` counts them).
+    fn mp_less_pending(&self) -> u64 {
+        let s = &self.g.setup;
+        let pending: u64 = self
+            .ai
+            .pending
+            .iter()
+            .filter_map(|c| match c.kind {
+                CommandKind::CallIn { squad_type } => {
+                    Some(s.squad_types[squad_type as usize].cost as u64)
+                }
+                _ => None,
+            })
+            .sum();
+        (self.g.players[self.me.0 as usize].manpower as u64).saturating_sub(pending)
+    }
+
     /// S11a1 A1: the infantry guns' pot (as `gun_pot` with `[ai.arty]`
-    /// keys and role `inf_gun`); 0 with `buy` 0.
+    /// keys and role `inf_gun`); 0 with `buy` 0. S11b H1: field howitzer
+    /// cards stay out of the pick, the spent sum and the gun count.
     pub(super) fn arty_pot(&self) -> i64 {
         let g = self.g;
         let s = &g.setup;
@@ -262,14 +291,15 @@ impl super::Planner<'_> {
         let hz = s.tick_hz.max(1) as u64;
         if a.buy == 0
             || self.tick < a.after_s as u64 * hz
-            || self.of_role(VehicleRole::InfGun) >= a.max_guns as usize
+            || self.of_role_where(VehicleRole::InfGun, |t| !self.is_how(t)) >= a.max_guns as usize
         {
             return 0;
         }
         let is_inf = |t: usize| {
-            s.squad_types[t]
-                .vehicle
-                .is_some_and(|v| s.vehicles[v as usize].role == VehicleRole::InfGun)
+            !self.is_how(t as u16)
+                && s.squad_types[t]
+                    .vehicle
+                    .is_some_and(|v| s.vehicles[v as usize].role == VehicleRole::InfGun)
         };
         let faction = &s.factions[s.players[self.me.0 as usize].faction as usize];
         let Some(card) = faction
@@ -295,28 +325,130 @@ impl super::Planner<'_> {
         (income * a.income_max_pct as i64 / 100 - spent).clamp(0, cost)
     }
 
-    /// Manpower the other buys leave alone: the AT guns' pot and the
-    /// infantry guns' pot (one helper for every place that held
-    /// `gun_pot`).
-    pub(super) fn held_pots(&self) -> i64 {
-        self.gun_pot() + self.arty_pot()
+    /// S11b fix: the field howitzer's pot (as `arty_pot`, from its own
+    /// keys): 0 with `how` or `buy` 0, before `how_after_s`, or while
+    /// `how_max` howitzers are alive or pending; else `how_income_pct` of
+    /// the income so far less what howitzer cards cost, clamped to 0 and
+    /// the card's price. Derived each plan, nothing saved.
+    pub(super) fn how_pot(&self) -> i64 {
+        let g = self.g;
+        let s = &g.setup;
+        let a = &s.rules.ai.arty;
+        let hz = s.tick_hz.max(1) as u64;
+        if a.how == 0
+            || a.buy == 0
+            || self.tick < a.how_after_s as u64 * hz
+            || self.of_role_where(VehicleRole::InfGun, |t| self.is_how(t)) >= a.how_max as usize
+        {
+            return 0;
+        }
+        let is_how = |t: usize| {
+            self.is_how(t as u16)
+                && s.squad_types[t]
+                    .vehicle
+                    .is_some_and(|v| s.vehicles[v as usize].role == VehicleRole::InfGun)
+        };
+        let faction = &s.factions[s.players[self.me.0 as usize].faction as usize];
+        let Some(card) = faction
+            .roster
+            .iter()
+            .copied()
+            .find(|&t| s.squad_types[t as usize].ai_weight > 0 && is_how(t as usize))
+        else {
+            return 0;
+        };
+        let cost = s.squad_types[card as usize].cost as i64;
+        let spent: i64 = self
+            .ai
+            .counters
+            .bought
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| is_how(*k))
+            .map(|(k, &n)| n as i64 * s.squad_types[k].cost as i64)
+            .sum();
+        let minutes = (self.tick / (60 * hz)) as i64;
+        let income = s.rules.start_manpower as i64 + s.rules.income_per_min as i64 * minutes;
+        (income * a.how_income_pct as i64 / 100 - spent).clamp(0, cost)
     }
 
-    /// S11a1 A1: the infantry-gun buy.
+    /// Manpower the other buys leave alone: the AT guns' pot, the
+    /// infantry guns' pot and (S11b fix) the howitzer's pot (one helper
+    /// for every place that held `gun_pot`).
+    pub(super) fn held_pots(&self) -> i64 {
+        self.gun_pot() + self.arty_pot() + self.how_pot()
+    }
+
+    /// S11a1 A1: the infantry-gun buy (S11b H1: field howitzer cards
+    /// apart; with `buy_pending` 1 against manpower less the pending
+    /// call-ins), then the S11b howitzer buy.
     pub(super) fn buy_arty(&mut self) {
         let s = &self.g.setup;
         let a = &s.rules.ai.arty;
         let hz = s.tick_hz.max(1) as u64;
-        if a.buy == 0
-            || self.tick < a.after_s as u64 * hz
-            || self.of_role(VehicleRole::InfGun) >= a.max_guns as usize
+        if a.buy != 0
+            && self.tick >= a.after_s as u64 * hz
+            && self.of_role_where(VehicleRole::InfGun, |t| !self.is_how(t)) < a.max_guns as usize
+        {
+            let mp = if a.buy_pending != 0 {
+                self.mp_less_pending()
+            } else {
+                self.g.players[self.me.0 as usize].manpower as u64
+            };
+            let n = self.ai.pending.len();
+            let g = self.g;
+            self.buy_role_where(
+                VehicleRole::InfGun,
+                move |t| !g.setup.type_has_tag(t, "field_howitzer"),
+                a.income_max_pct,
+                a.reserve_mp,
+                mp,
+            );
+            if self.ai.pending.len() > n {
+                self.ai.counters.arty_buys += 1;
+            }
+        }
+        self.buy_how();
+    }
+
+    /// S11b H1: the field howitzer buy (`how` 1, from `how_after_s`, fewer
+    /// than `how_max` own howitzers alive or pending): the first roster
+    /// card with `ai_weight > 0`, role `inf_gun` and the tag, inside its
+    /// own `how_income_pct` share (else `how_pct_holds`), with
+    /// `how_reserve_mp` left of the manpower less pending call-ins and the
+    /// AT and infantry-gun pots (else `how_mp_holds`); its own pot
+    /// (`how_pot`) is what the other buys leave it. None with `buy` 0.
+    fn buy_how(&mut self) {
+        let s = &self.g.setup;
+        let a = &s.rules.ai.arty;
+        let hz = s.tick_hz.max(1) as u64;
+        // S11b fix C-2: with `buy` 0 no gun gets a record (`arty`), so a
+        // bought howitzer would never fire: no howitzer either.
+        if a.how == 0
+            || a.buy == 0
+            || self.tick < a.how_after_s as u64 * hz
+            || self.of_role_where(VehicleRole::InfGun, |t| self.is_how(t)) >= a.how_max as usize
         {
             return;
         }
-        let n = self.ai.pending.len();
-        self.buy_role_within(VehicleRole::InfGun, a.income_max_pct, a.reserve_mp);
-        if self.ai.pending.len() > n {
-            self.ai.counters.arty_buys += 1;
+        // S11b fix C-1: the manpower held for the AT gun and the infantry
+        // gun stays out of reach, as in `buy_fo` and `buy` (not its own
+        // pot, `how_pot`: that is what it spends).
+        let others = (self.gun_pot() + self.arty_pot()).max(0) as u64;
+        let mp = self.mp_less_pending().saturating_sub(others);
+        let (pct, reserve) = (a.how_income_pct, a.how_reserve_mp);
+        let g = self.g;
+        match self.buy_role_where(
+            VehicleRole::InfGun,
+            move |t| g.setup.type_has_tag(t, "field_howitzer"),
+            pct,
+            reserve,
+            mp,
+        ) {
+            RoleBuy::Bought => self.ai.counters.how_buys += 1,
+            RoleBuy::Share => self.ai.counters.how_pct_holds += 1,
+            RoleBuy::Manpower => self.ai.counters.how_mp_holds += 1,
+            RoleBuy::NoCard | RoleBuy::Refused => {}
         }
     }
 
@@ -617,6 +749,8 @@ impl super::Planner<'_> {
             rec.missions = rec.missions.saturating_add(1);
             rec.last_order = tick;
             rec.prep = t.prep;
+            // S11b X3: an ordinary mission ends the counter-fire turn.
+            rec.cb_last = false;
             return true;
         }
         false
@@ -628,7 +762,8 @@ impl super::Planner<'_> {
     /// is no wider than `cb_max_error_m` (else `cb_wide_holds`) and it has
     /// new evidence since the gun's last counter-fire order or refusal
     /// (else `cb_stale_holds`): its `shots` differ from the ones last
-    /// answered and are not 0.
+    /// answered and are not 0. S11b X3: with `cb_alternate` 1, not while
+    /// the gun's last ordered mission was counter-fire (`cb_alt_holds`).
     fn cb_candidate(&mut self, rec: &AiArty) -> Option<(FxVec2, u32, u32)> {
         let g = self.g;
         let a = &g.setup.rules.ai.arty;
@@ -662,6 +797,12 @@ impl super::Planner<'_> {
             best.shots < rec.cb_shots || best.shots as u64 >= rec.cb_shots as u64 + to_mark as u64;
         if best.shots == 0 || !fresh {
             self.ai.counters.cb_stale_holds += 1;
+            return None;
+        }
+        // S11b X3: no counter-fire twice in a row; the evidence waits for
+        // the turn after an ordinary mission.
+        if a.cb_alternate == 1 && rec.cb_last {
+            self.ai.counters.cb_alt_holds += 1;
             return None;
         }
         Some((best.at, best.shots, best.err_mm))
@@ -729,6 +870,8 @@ impl super::Planner<'_> {
         rec.prep = false;
         rec.cb = true;
         rec.cb_shots = shots;
+        // S11b X3: read by `cb_candidate` with `cb_alternate` 1.
+        rec.cb_last = true;
         true
     }
 

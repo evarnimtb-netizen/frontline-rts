@@ -1,0 +1,5 @@
+# B2 lever A3 (tier 1, symmetric; optional, last in the queue).
+# [ai.mix] mg 20 -> 30 (range 20-30). Why: separates "fewer line squads" from
+# "more MG teams" if A1 moves the share (sMG-Gruppe 160 MP, LMG squad 280).
+[ai.mix]
+mg = 30

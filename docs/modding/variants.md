@@ -89,7 +89,7 @@ legacy squad replaces its legacy soldier keys the same way.
 | `count` | men in the slot, 1..=16 (default 1); all slots 1..=16 |
 | `weapon` | weapon id each man carries |
 | `sidearm` | what he fights with after handing a crew weapon on (stored; nobody hands one on in S4) |
-| `items` | `{ "<item id>" = n }` per man; one item of each kind (frag, smoke, satchel, single_shot_at) per man, and one item id per kind in the whole squad (S4-26); n ≤ 10 |
+| `items` | `{ "<item id>" = n }` per man; one item of each kind (frag, smoke, satchel, single_shot_at, S11b rifle_grenade) per man, and one item id per kind in the whole squad (S4-26); n ≤ 10. S11b: a `rifle_grenade` item is issued only with `[items] rifle_grenades` 1 (ww2: the `rifle_grenadier` slot of `usa_rifle_squad` and `ger_grenadiergruppe`; a variant with its own `[[members]]` list has none) |
 | `ammo` | rounds he carries; stored, but rounds stay unlimited until S5 |
 | `traits` | `leader` (first slot, count 1), `crew_gunner`, `crew_assistant`, `ammo_bearer`; S5b `observer` (adjusts fire missions at `[fire_mission] observe_observer_m`; every squad's leader already observes at `observe_leader_m`, `docs/modding/fire-missions.md`) |
 

@@ -56,6 +56,11 @@ fn setup(seed: u64) -> MatchSetup {
         .as_mut()
         .expect("ww2 has [fire_mission]");
     (fm.friendly_fire, fm.counter_battery) = (0, 0);
+    // S11b Build C: likewise every S11b switch off (shipped on); the
+    // rifle grenades leave the squad types as the setup drops them with
+    // `rifle_grenades` 0 (S11b state is fuzzed in the staged save and
+    // played in `save_roundtrip_carries_s11b_state`).
+    s.s11b_off();
     s
 }
 
@@ -339,7 +344,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 28,
+        version: 29,
         state: w.state(),
     });
     assert!(
@@ -494,6 +499,96 @@ fn save_roundtrip_carries_s11a2_state() {
     println!("s11a2 roundtrip: marker and counter-fire held at tick {tick}");
 }
 
+/// S11b Build C: a played save with the S11b switches on (howitzer
+/// buy, light mortars, rifle grenades, counter-fire turns, pending
+/// call-ins) carries real S11b state: the match is saved and loaded every
+/// 600 ticks (hash and bytes as above); once an AI holds a field howitzer
+/// record, it is stepped tick by tick to a moment a squad is mid-aim with
+/// a rifle grenade and saved there: hash, bytes and a continued run on 2
+/// threads equal.
+#[test]
+fn save_roundtrip_carries_s11b_state() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
+    let req = MatchRequest::skirmish(SEED, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let mut s = defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
+    s.players.iter_mut().for_each(|p| p.is_ai = true);
+    let a = &s.rules.ai.arty;
+    assert_eq!(
+        (
+            a.cb_alternate,
+            a.buy_pending,
+            a.how,
+            a.light,
+            s.rules.items.rifle_grenades
+        ),
+        (1, 1, 1, 0, 1),
+        "the shipped switches"
+    );
+    // S11b fix: the AI's light mortars are off by default (S11b-14); this
+    // test of saved S11b state turns them on.
+    s.rules.ai.arty.light = 1;
+    let how = s.tag("field_howitzer");
+    let mut w = World::new_match(s, 1).unwrap();
+    let has_how = |w: &World| {
+        let g = w.game().unwrap();
+        (0..2u8).any(|p| {
+            g.ai(PlayerId(p)).is_some_and(|ai| {
+                ai.arty.keys().any(|id| {
+                    g.squads()
+                        .get(id)
+                        .is_some_and(|q| g.setup().squad_types[q.type_idx as usize].has_tag(how))
+                })
+            })
+        })
+    };
+    let mid_aim = |w: &World| {
+        w.game()
+            .unwrap()
+            .squads()
+            .values()
+            .any(|q| q.rg.is_some_and(|r| r.man.is_some() && r.aim > 0))
+    };
+    let check = |w: &World, what: &str| {
+        let bytes = w.save();
+        let b = World::load(&bytes, 1).unwrap_or_else(|e| panic!("load {what}: {e}"));
+        assert_eq!(w.state_hash(), b.state_hash(), "hash at the load, {what}");
+        assert_eq!(b.save(), bytes, "save of the loaded world, {what}");
+        (bytes, b)
+    };
+    let mut held = None;
+    while w.tick() < 81_000
+        && held.is_none()
+        && w.game().unwrap().outcome() == frontline_sim::Outcome::Running
+    {
+        run_hashes(&mut w, 600);
+        let tick = w.tick();
+        check(&w, &format!("tick {tick}"));
+        if !has_how(&w) {
+            continue;
+        }
+        for _ in 0..600 {
+            if mid_aim(&w) {
+                break;
+            }
+            w.step(&[]);
+        }
+        if mid_aim(&w) && has_how(&w) {
+            let tick = w.tick();
+            let (bytes, mut b) = check(&w, &format!("mid-aim tick {tick}"));
+            let mut a = World::load(&bytes, 2).unwrap();
+            assert_eq!(
+                run_hashes(&mut a, 600),
+                run_hashes(&mut b, 600),
+                "after the load at {tick}"
+            );
+            held = Some(tick);
+        }
+    }
+    let tick = held.expect("no save held a howitzer record and a grenade mid-aim by tick 81000");
+    println!("s11b roundtrip: howitzer record and grenade mid-aim held at tick {tick}");
+}
+
 /// One mutation: replace the encoded value of `field` with `new`.
 #[derive(Clone, Debug)]
 struct Mutation {
@@ -611,6 +706,10 @@ fn s10b_path(path: &str) -> bool {
     path.starts_with("state.game.fort")
         || path.starts_with("state.game.setup.forts")
         || (path.starts_with("state.game.setup.items") && path.contains(".mine"))
+        // S11b: the rifle-grenade state and the counter-fire flag.
+        || path.contains(".rg.")
+        || path.ends_with(".rg")
+        || path.ends_with(".cb_last")
         || path.contains("Order.ClearMines")
         || path.contains("Order.Demolish")
         // Fuzz stage `staged_s10b_ai`.
@@ -901,8 +1000,11 @@ fn staged_s10b() -> World {
         .unwrap() as u16;
     let eng = s.squad_type_index("ww2:ger_engineer_squad").unwrap();
     let leig = s.squad_type_index("ww2:ger_leig18_squad").unwrap();
+    // S11b: the US rifle squad's riflemen carry three rifle grenades.
+    let rifles = arm_rifle_grenades(&mut s, "ww2:usa_rifle_squad", "rifleman", 3);
     let mut w = World::new_match(s, 1).unwrap();
     staged_s11a2_gun(&mut w, leig);
+    staged_s11b(&mut w, rifles);
     let spawn = |w: &mut World, x: i32| {
         w.spawn_squad_at(PlayerId(0), eng, c(x, 300), FxVec2::new(Fx::ONE, Fx::ZERO))
             .unwrap()
@@ -953,6 +1055,64 @@ fn staged_s10b() -> World {
     });
     staged_s10b_ai(&mut w, ap, piece);
     w
+}
+
+/// S11b: issues rifle grenades (`[items] rifle_grenades` 1) and gives the
+/// men of `slot` of card `squad` `n` of them (no card carries them before
+/// Build B). Returns the card's index.
+fn arm_rifle_grenades(s: &mut MatchSetup, squad: &str, slot: &str, n: u8) -> u16 {
+    use frontline_content::ItemKind;
+    s.rules.items.rifle_grenades = 1;
+    let it = s
+        .items
+        .iter()
+        .position(|i| i.kind == ItemKind::RifleGrenade)
+        .unwrap() as u16;
+    let t = s.squad_type_index(squad).unwrap();
+    let ty = &mut s.squad_types[t as usize];
+    ty.items[ItemKind::RifleGrenade.index()] = Some(it);
+    for m in ty.members.iter_mut().filter(|m| m.slot == slot) {
+        m.items[ItemKind::RifleGrenade.index()] = n;
+    }
+    t
+}
+
+/// Fuzz stage S11b (spec 3): player 1's rifle squad with a rifleman
+/// mid-aim (`rg`) and a gap running; a few S11b counters. (The `AiArty`
+/// with `cb_last` is in `staged_s10b_ai`.)
+fn staged_s11b(w: &mut World, rifles: u16) {
+    use frontline_sim::fx::{Fx, FxVec2};
+    use frontline_sim::game::RgState;
+    let c = |x: i32, y: i32| FxVec2::from_int(x, y);
+    let sq = w
+        .spawn_squad_at(
+            PlayerId(1),
+            rifles,
+            c(520, 700),
+            FxVec2::new(Fx::ONE, Fx::ZERO),
+        )
+        .unwrap();
+    let man = *w.game().unwrap().squads()[&sq].members.last().unwrap();
+    assert!(w.edit_squad(sq, |q| {
+        assert!(
+            q.rg.is_some(),
+            "the staged rifle squad has no rifle-grenade state"
+        );
+        q.rg = Some(RgState {
+            man: Some(man),
+            target: Some(man),
+            at: c(520, 820),
+            aim: 40,
+            stow: 0,
+            gap: 100,
+            search: 3,
+        });
+    }));
+    assert!(w.edit_player(PlayerId(1), |p| {
+        p.s11b.rg_fired = 2;
+        p.s11b.arty_emplaced = 1;
+        p.s11b.how_rounds = [1, 2, 3];
+    }));
 }
 
 /// Fuzz stage S11a2 (spec 3), first, while the match may still step:
@@ -1502,6 +1662,8 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
                 // S11a2: a counter-fire record.
                 cb: true,
                 cb_shots: 4,
+                // S11b X3: the last ordered mission was counter-fire.
+                cb_last: true,
             },
         );
         ai.counters.ff_lifts = 1;

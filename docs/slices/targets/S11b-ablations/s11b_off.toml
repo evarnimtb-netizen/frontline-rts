@@ -1,0 +1,12 @@
+# S11b control (docs/slices/S11b.md 2): every S11b switch at its off value.
+# The game must then play exactly as the reference set (target/s11b-A0-40,
+# tools/neutral.py same), and as base 8d2731b but for the X1 counter keys
+# (s9.guns_emplaced, s9.gun_crew_lost and the s9_derived values made of them).
+[ai.arty]
+cb_alternate = 0
+buy_pending = 0
+how = 0
+light = 0
+
+[items]
+rifle_grenades = 0

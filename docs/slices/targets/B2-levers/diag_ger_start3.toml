@@ -1,0 +1,6 @@
+# B2 DIAGNOSTIC, never a candidate (start squads are the owner's: how a
+# faction opens). Germany starts with a third Grenadiergruppe. If H1 holds
+# (the USA wins the first clash and the forts keep the lead), Germany jumps
+# far above 50 % and the 14-17 minute bin fills with German wins.
+[defs.factions."ww2:germany"]
+start_squads = ["ww2:ger_grenadiergruppe", "ww2:ger_grenadiergruppe", "ww2:ger_grenadiergruppe", "ww2:ger_engineer_squad"]

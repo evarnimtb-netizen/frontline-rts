@@ -317,10 +317,15 @@ pub enum ItemKind {
     /// S10b: a mine: laid by a minefield blueprint (`FortDef::mine_item`),
     /// never thrown, never in a kit; `[mine]` says what sets it off.
     Mine = 5,
+    /// S11b G1: an HE rifle grenade: not thrown; the man fits the launcher
+    /// (`windup_ms`) and fires it as `weapon` (a launcher def with HE
+    /// ammunition) on the low arc at a seen enemy man; `stow_ms` to take
+    /// the launcher off again. Issued only with `[items] rifle_grenades` 1.
+    RifleGrenade = 6,
 }
 
 /// Number of [`ItemKind`]s.
-pub const ITEM_KINDS: usize = 6;
+pub const ITEM_KINDS: usize = 7;
 
 impl ItemKind {
     pub const ALL: [ItemKind; ITEM_KINDS] = [
@@ -330,6 +335,7 @@ impl ItemKind {
         ItemKind::SingleShotAt,
         ItemKind::Bangalore,
         ItemKind::Mine,
+        ItemKind::RifleGrenade,
     ];
 
     /// Whether the item is thrown (frag, smoke, satchel).
@@ -337,7 +343,7 @@ impl ItemKind {
     pub const fn thrown(self) -> bool {
         !matches!(
             self,
-            ItemKind::SingleShotAt | ItemKind::Bangalore | ItemKind::Mine
+            ItemKind::SingleShotAt | ItemKind::Bangalore | ItemKind::Mine | ItemKind::RifleGrenade
         )
     }
 
@@ -392,6 +398,10 @@ pub struct ItemDef {
     /// S10b `mine` items: what sets the mine off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mine: Option<MineDef>,
+    /// S11b G1 `rifle_grenade` items: the man takes the launcher off his
+    /// rifle this long after the shot; his rifle is silent meanwhile (ms).
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub stow_ms: u32,
 }
 
 /// S10b: what sets a mine off (`[mine]` of a `mine` item).
@@ -1783,6 +1793,13 @@ pub struct ItemRulesDef {
     /// it; it waits there until one is.
     #[serde(default = "default_crew_pickup_reach_m")]
     pub crew_pickup_reach_m: u32,
+    /// S11b G1 switch: squads are issued their rifle grenades (0: the setup
+    /// drops the `rifle_grenade` kind from every squad type).
+    #[serde(default)]
+    pub rifle_grenades: u32,
+    /// S11b G3: a squad fires at most one rifle grenade this often (s).
+    #[serde(default = "default_rifle_grenade_gap_s")]
+    pub rifle_grenade_gap_s: u32,
     /// Throw flight and smoke reach (S3b tuning table).
     pub throw: ThrowTuning,
 }
@@ -1792,6 +1809,9 @@ fn default_single_shot_gap_s() -> u32 {
 }
 fn default_crew_pickup_reach_m() -> u32 {
     30
+}
+fn default_rifle_grenade_gap_s() -> u32 {
+    15
 }
 fn default_tick_hz() -> u32 {
     30
@@ -2396,7 +2416,22 @@ impl ItemDef {
         let mut out = Vec::new();
         check_id(&mut out, "id", &self.id);
         check_name(&mut out, "name", &self.name);
-        range(&mut out, "range_m", self.range_m, 1, 100);
+        // S11b G1: a rifle grenade reaches farther than a hand throw.
+        let rg = self.kind == ItemKind::RifleGrenade;
+        range(
+            &mut out,
+            "range_m",
+            self.range_m,
+            1,
+            if rg { 300 } else { 100 },
+        );
+        range(
+            &mut out,
+            "stow_ms",
+            self.stow_ms,
+            0,
+            if rg { 60_000 } else { 0 },
+        );
         if self.min_range_m >= self.range_m {
             out.push(Issue::new(
                 "min_range_m",
@@ -2428,11 +2463,13 @@ impl ItemDef {
                     .with_hint("[smoke] radius_m = 8 ..."),
             );
         }
-        if (self.kind == ItemKind::SingleShotAt) != self.weapon.is_some() {
+        if matches!(self.kind, ItemKind::SingleShotAt | ItemKind::RifleGrenade)
+            != self.weapon.is_some()
+        {
             out.push(
                 Issue::new(
                     "weapon",
-                    "single_shot_at items need `weapon` (the launcher def they fire as), others must not",
+                    "single_shot_at and rifle_grenade items need `weapon` (the launcher def they fire as), others must not",
                 )
                 .with_hint("weapon = \"ww2:pzf60\""),
             );
@@ -3099,6 +3136,21 @@ impl RulesDef {
             self.items.crew_pickup_reach_m,
             1,
             1_000,
+        );
+        // S11b G1, G3.
+        range(
+            &mut out,
+            "items.rifle_grenades",
+            self.items.rifle_grenades,
+            0,
+            1,
+        );
+        range(
+            &mut out,
+            "items.rifle_grenade_gap_s",
+            self.items.rifle_grenade_gap_s,
+            0,
+            600,
         );
         if c.spot_rays_per_tick < c.spot_observers {
             out.push(Issue::new(

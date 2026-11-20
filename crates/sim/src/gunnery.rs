@@ -1144,6 +1144,23 @@ impl MatchState {
             c.high_rounds = c.high_rounds.saturating_add(1);
         }
         c.radio_rounds = c.radio_rounds.saturating_add(radio as u32);
+        // S11b (spec 3): a mission round of a gun whose card carries the
+        // tag `field_howitzer`, by mode.
+        let how = self.squads.get(&sid).is_some_and(|q| {
+            self.setup.squad_types[q.type_idx as usize]
+                .tags
+                .iter()
+                .any(|&k| {
+                    self.setup
+                        .tags
+                        .get(k as usize)
+                        .is_some_and(|n| n == "field_howitzer")
+                })
+        });
+        if how {
+            let c = &mut self.players[sq_owner.0 as usize].s11b;
+            c.how_rounds[md] = c.how_rounds[md].saturating_add(1);
+        }
         // S11a2 K4: a counter-fire mission's rounds, by mode.
         if m.cb {
             let c = &mut self.players[sq_owner.0 as usize].s11a2;

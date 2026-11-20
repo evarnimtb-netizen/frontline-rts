@@ -34,8 +34,10 @@ use serde::{Deserialize, Serialize};
 /// `PlaceBangalore`, `SupplyKind::Construction`, `ItemKind::Bangalore`
 /// and the two S10a pit `DigProfile`s (the one bump for the S10a slice).
 /// 14 (S10b): `ClearMines`, `Demolish`, `ItemKind::Mine` and the bunker pit
-/// `DigProfile` (the one bump for the S10b slice).
-pub const PROTOCOL_VERSION: u16 = 14;
+/// `DigProfile` (the one bump for the S10b slice). 15 (S11b):
+/// `ItemKind::RifleGrenade` (6) in `Throw` / `ThrowEach` (never thrown:
+/// the sim refuses it; the one bump for the S11b slice).
+pub const PROTOCOL_VERSION: u16 = 15;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;

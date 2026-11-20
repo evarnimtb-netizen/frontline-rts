@@ -1,0 +1,13 @@
+# S11b fix set (d) (stage C review diagnosis): every S11b switch on (AI light
+# mortars and rifle grenades too) with the 60 mm M2's burst scaled to the
+# bomb weight (1.33 / 3.5 kg of the 81 mm's): 90 -> 55 rays, 1,130 -> 900 cm.
+# A content figure (S11b-13 "verify"), owner class: measured, not shipped.
+[ai.arty]
+light = 1
+
+[items]
+rifle_grenades = 1
+
+[defs.weapons."ww2:m2_60mm".he]
+frag_count = 55
+frag_reach_cm = 900

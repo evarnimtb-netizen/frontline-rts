@@ -154,7 +154,44 @@ The ww2 guns and observers (S11a1; `artillery-on-map.md` 2.1, 2.2, 4.7):
 | `ger_vb_trupp` | observer (leader; Funker `radio`) | 2 | | | | | | 80 / 2 / 60 s / 0:00 |
 | `usa_fo_party` | observer (officer; radio operator `radio`) | 3 | | | | | | 120 / 3 / 60 s / 0:00 |
 
-Both guns are pushed (no tow in S11a1), `max_alive` 2; the AI buys none
+S11b adds (card tags `["vehicle", "field_howitzer"]` and `["mortar",
+"light_mortar"]`; `ai_weight` 5 on the howitzers, the S11a1 gun cards'
+value, and 50 on the light mortars, half the heavy card's default 100):
+
+| Card | Gun | Crew | Elevation | Charges (m/s) | Range | Rate | Rounds | Cost / pop / cooldown / unlock |
+|---|---|---|---|---|---|---|---|---|
+| `ger_lefh18_squad` | 10.5 cm leFH 18, 1,985 kg | 6 | -5..+42 | 200, 325 | 10,700 m | 4/min | 12 FH Gr 38 | 480 / 2 / 180 s / 8:00 |
+| `usa_105mm_m2a1_squad` | 105 mm M2A1, 2,260 kg | 8 | -5..+65 | 205-311, 333 | 11,300 m | 3/min | 12 M1 HE | 500 / 2 / 180 s / 8:00 |
+| `ger_kz_grw42_team` | 8 cm kz. GrW 42 (Wgr 34 bomb) | 4 | 45..87 | 75, 105 | 60-275 m (game) | 15/min | 18 bombs | 181 / 4 / 45 s / 0:00 |
+| `usa_60mm_mortar_squad` | 60 mm M2 (M49A2 bomb) | 5 | 45..85 | 70, 95, 117, 133 | 90-370 m (game) | 18/min | 30 bombs | 240 / 5 / 45 s / 0:00 |
+| (no card) `usa_75mm_m1a1` | 75 mm pack howitzer, 653 kg, data only | 5 | -5..+45 | 294 | 8,800 m | 3/min | 10 M48 HE | - |
+
+The two howitzers are base guns (no tow): 90 s to emplace, re-lay 25 s,
+`max_alive` 1, and "no push" as 1 cm/s with `push_men` above the crew (the
+setup check refuses a card whose speed is 0); a full crew still crawls at
+crew / `push_men` of 1 cm/s (about 0.5 m a minute), and the AI never orders
+one pushed or hitched.
+
+**S11b AI** (`[ai.arty]`, `docs/modding/tuning.md`): with `how` 1 the AI
+buys one field howitzer from `how_after_s` (8:00) inside its own
+`how_income_pct` (15 %) of the income so far, keeping `how_reserve_mp`
+(300) of its manpower less the pending call-ins and the manpower held for
+the AT gun and the infantry gun (none with `buy` 0, which records no gun).
+From 8:00 that share, up to the card's price, is the howitzer's own pot:
+the other buys leave it alone until the howitzer is bought; the infantry-gun buy and
+its pot skip `field_howitzer` cards (the two spent sums are apart), and with
+`buy_pending` 1 it too counts pending call-ins. A bought howitzer gets the
+infantry gun's record (emplace, observed missions, reserve, budget, lift,
+counter-fire). With `light` 1 (0 in ww2 since the S11b fix stage: the AI
+buys no light mortar, a human player still can; owner question S11b-14)
+the light mortar cards join the mortar slot of the buy mix (about one light team in three mortar buys at weight 50
+against 100); the mortar habit drives them like the heavy tubes, their
+`range_m` (275 / 370 m) being the AI's band, not a refusal. The light mortars' game
+ranges scale the heavy tubes' 600 m by their real ranges (1,100 / 2,400 and
+1,800 / 2,900). The four gun cards (leIG 18, M3, leFH 18, M2A1) share
+`limit_group = "ww2:artillery"`, 2 alive a player (`[limit_groups]`).
+
+Both S11a1 guns are pushed (no tow in S11a1), `max_alive` 2; the AI buys none
 until the S11a1 AI stage (`ai_weight` 0). The M1 HE's blast, fragment
 reach, suppression and crater are the 75 mm values times 1.46 (the cube
 root of the filler ratio 2.2 / 0.7), 160 fragment rays.

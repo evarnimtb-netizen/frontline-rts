@@ -1,0 +1,4 @@
+# B2 lever A1 at the middle dose: run 1 only, on the screen block, and only
+# if mix_line35 passes the screen with Germany's level above 53 %.
+[ai.mix]
+line = 42

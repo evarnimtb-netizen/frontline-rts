@@ -1,0 +1,87 @@
+# 8 cm kurzer GrW 42 (S11b C4; docs/design/roster/guns-artillery.md GA 726,
+# roster-expansion.md RE 135): the short, light 8 cm mortar of the
+# Granatwerfergruppe (kz.). It fires the same 3.5 kg Wgr 34 bomb as the
+# s.GrW 34 (GA 726), so the feed and the [he] block are grw34.toml's.
+id = "ww2:kz_grw42"
+name = "8 cm kz. GrW 42"
+class = "mortar"
+sources = ["guns-artillery.md GA 726 (about 50-1,100 m, 3.5 kg Wgr 34)", "roster-expansion.md RE 135 (4 men, 220 MP, 45 s)"]
+# S5a: what each shot takes from the man's rounds (the s.GrW 34's bomb).
+feed = "ww2:8cm_wgr34"
+# Bombs the gunner carries (as grw34.toml).
+load = 3
+# 60 m, not GA 726's 50: charge I (75 m/s) at 87 deg reaches no nearer, as
+# grw34.toml notes (spec C4).
+min_range_m = 60
+# Game range, m (S11b-5 (A)): the heavy tube plays at 600 m for its 2,400 m
+# real range, so 600 x 1,100 / 2,400 = 275 m (verify: plan value, S11b-13).
+range_m = 275
+damage = 150
+# 15 rounds/min sustained (GA 726; RE 135 "about 15 / 20-25").
+rounds_per_min = 15
+magazine = 1
+reload_ms = 0
+# The precision spread only (mrad; as grw34.toml; a game value).
+spread_mrad = 50
+# Top charge (charge II), m/s (the [indirect] table).
+muzzle_velocity_m_s = 105
+setup_ms = 3000
+suppression = 30
+
+[indirect]
+# Charges I and II of the Wgr 34 (grw34.toml): 105 m/s reaches 1,124 m
+# drag-free, the real band's 1,100 m (spec C4; verify: plan value, S11b-13).
+charges_m_s = [75, 105]
+# Laying limits: the elevation band of grw34.toml (verify).
+elevation_deg = [45, 87]
+
+# grw34.toml's block (the same 3.5 kg bomb, GA 726; see the comments there).
+[he]
+# S3b physical-contact rule (docs/slices/S3b-balance.md "Fragments and
+# blasts"): no radial damage. An 81 mm mortar bomb (about 0.6 kg TNT, thin
+# cast casing: many small fragments).
+# Overpressure: full `damage` to a man within blast_radius_cm with a clear
+# line from the burst (about the old lethal radius or less), and the
+# vs_vehicle_pct share to track anchors within it (cm).
+blast_radius_cm = 150
+# Fragments: frag_count rays per burst (azimuth stratified, elevation in
+# frag_elev_deg [min, max] above the ground plane, degrees), each stopping
+# at the first man, vehicle, wreck or earth within frag_reach_cm (cm). One
+# fragment deals frag_damage to a man near the burst, falling linearly to
+# frag_far_pct % of it at full reach, and frag_track_damage to a track whose
+# band it strikes. Starting values from the spec, set to keep the old
+# lethality in the open within about 20 % (the Tune stage measures it).
+# S3b Tune (owner question S3b-23 (A)): frag_count 96 -> 120. With 96 a
+# 10-round barrage killed 58 men in the open in fortify-test (the S1 value
+# before fragments was 74, -22 %); 120 gives 60 (-19 %, inside the spec's
+# +-20 %) and the trench still loses 6 (10 %). A real 81 mm bomb throws
+# hundreds of fragments; the rays are a sample.
+frag_count = 120
+frag_reach_cm = 1500
+frag_damage = 70
+frag_far_pct = 30
+frag_elev_deg = [2, 50]
+# frag_track_damage: 1, not the spec's starting 5 (2 for grenades): a burst
+# 1 m beside a hull sends about 20 fragments into that side's track band,
+# and 5 each broke the track on top of the overpressure (old behaviour:
+# only the overpressure broke tracks). Track links shrug off fragments.
+frag_track_damage = 1
+suppression_radius_m = 15
+crater_radius_cm = 200
+crater_depth_cm = 70
+# Against vehicles (S3): armour it defeats on contact (mm), the inner burst
+# if it does, and damage to track anchors within blast_radius_cm (40 % of
+# its damage). Blasts never reach a closed vehicle's insides.
+pen_mm = 8
+# S8a thin-plate rule (S7-8, owner question S8a-13 (A)): a fragment of the
+# 8 cm Wgr 34 pierces a plate whose effective thickness (thickness x material
+# / cos) is below this many mm at the burst, falling with distance as
+# frag_damage does (verify: starting value).
+frag_pen_mm = 9
+inside_damage = 150
+# S3b: when it beats a plate, inside_rays fragment rays from the contact
+# point into the hull, inside_damage each to the first box within
+# inside_reach_cm (cm), instead of a radius.
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 40

@@ -1,0 +1,34 @@
+# The 75 mm pack howitzer's crew (S11b C6, data only): five soldiers in the
+# gun's service slots (tag `gun_crew`, never bought). Order: gunner, loader,
+# section chief (the radio man of the S11a1 G5 link), two ammo men.
+# artillery-on-map.md 2.2 (D 157): crew 5 (hist. about 7). Weapons as the
+# 105 mm M3 crew.
+id = "ww2:usa_75mm_m1a1_crew"
+name = "Pack Howitzer Section (75 mm)"
+faction = "ww2:usa"
+tags = ["gun_crew"]
+capabilities = ["gun_crew", "recrew"]
+cost = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+
+[[members]]
+slot = "gunner"
+weapon = "ww2:m1911a1"
+
+[[members]]
+slot = "loader"
+weapon = "ww2:m1_garand"
+
+# The section chief carries the radio (S11a1 G5); `leader` is first-slot only.
+[[members]]
+slot = "commander"
+weapon = "ww2:m1_carbine"
+traits = ["radio"]
+
+[[members]]
+slot = "ammo"
+count = 2
+weapon = "ww2:m1_garand"

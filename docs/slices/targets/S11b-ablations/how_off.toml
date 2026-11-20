@@ -1,0 +1,3 @@
+# S11b ablation: the AI buys no field howitzer (H1 off); the cards stay buyable.
+[ai.arty]
+how = 0

@@ -1,0 +1,6 @@
+# B2 lever A6 (tier 1, Germany only: a card weight inside the line slot).
+# Grenadiergruppe (7 men) ai_weight 50 -> 150 (range 50-150).
+# Why: one MG 42 and a Panzerfaust for 165 MP against one for 232; more
+# squads on the ground in the opening for the same manpower (H1).
+[defs.units."ww2:ger_grenadiergruppe_7"]
+ai_weight = 150

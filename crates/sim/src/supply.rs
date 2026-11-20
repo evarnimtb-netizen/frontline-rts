@@ -90,14 +90,25 @@ pub struct AmmoAccount {
     pub refilled: [u32; SUPPLY_KINDS],
 }
 
-/// The report class of one fire request.
+/// The report class of one fire request (`None`: not counted here).
 pub(crate) fn class_of(setup: &MatchSetup, ents: &Entities, r: &FireRequest) -> Option<usize> {
     use fired_class as f;
     let w = setup.weapons.get(r.weapon as usize)?;
     if let Some(a) = setup.ammo.get(r.ammo as usize) {
         if w.class == WeaponClass::Launcher {
-            let item = setup.items.iter().any(|it| it.weapon == Some(r.weapon));
-            return Some(if item { f::PANZERFAUST } else { f::ROCKET });
+            let item = setup.items.iter().find(|it| it.weapon == Some(r.weapon));
+            // S11b (review A-3): a rifle grenade (an item launcher with an
+            // HE round) is no Panzerfaust. It has no class here (a new one
+            // would change the saved `fired` array, SAVE 29 is fixed): it
+            // is counted in `s11b.rg_fired`.
+            if item.is_some_and(|it| it.kind == frontline_content::ItemKind::RifleGrenade) {
+                return None;
+            }
+            return Some(if item.is_some() {
+                f::PANZERFAUST
+            } else {
+                f::ROCKET
+            });
         }
         return Some(if a.rare {
             f::TANK_RARE
@@ -708,7 +719,10 @@ impl MatchState {
             // Items, then bombs (and other non-small-arms feeds).
             let ty = &self.setup.squad_types[ty_idx];
             let full = ty.full_kit(ents.kit[i].slot);
-            let item = (0..ITEM_KINDS).find(|&j| ents.kit[i].items[j] < full[j]);
+            // S11b G4: never a rifle grenade (crate-only by design, D 954,
+            // D 1161-1163).
+            let rg = frontline_content::ItemKind::RifleGrenade.index();
+            let item = (0..ITEM_KINDS).find(|&j| j != rg && ents.kit[i].items[j] < full[j]);
             // S6 (owner Q4): with `base_bomb_s = 0` the base refills no
             // shells feed (mortar bombs): they come only in crates.
             let no_bombs = sp.base_bomb_s == 0;

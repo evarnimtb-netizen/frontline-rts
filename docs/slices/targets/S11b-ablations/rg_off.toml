@@ -1,0 +1,3 @@
+# S11b ablation: no rifle grenades are issued (G1 off): riflemen as on the base.
+[items]
+rifle_grenades = 0

@@ -16,10 +16,14 @@ Compares the CLI JSON files present in both directories:
   BASE lacks must be 0 in every counter (review B-4); only its denominator
   keys (`S11A1_DENOMS`: matches, kills, income) may be non-zero. A list
   under the key `refused` that grew is equal when the new tail is zero
-  (`s5b.refused` 7 -> 9 items; review B-3: no other list). S11a2 (Build B
+  (`s5b.refused` 7 -> 9 items; review B-3; S11b: `s5a.kills_by` 11 -> 12
+  items, the rifle-grenade class; no other list). S11a2 (Build B
   M1): a key starting `s11a2` that BASE lacks is skipped (its derived
   shares read S11a1 gun rounds, so they are not blank with the switches
-  off; the S11a2 counters are 0 by the switch tests). The set header's
+  off; the S11a2 counters are 0 by the switch tests). S11b (Build C M1):
+  a key starting `s11b` that BASE lacks is skipped likewise (its X1
+  counters `arty_emplaced`, `arty_crew_lost` count with the switches
+  off). The set header's
   `overrides` list (the `-o` files a run was given) is not part of the
   verdict: when it differs the line gets a note `(note: overrides N -> M
   items)`.
@@ -47,7 +51,8 @@ HEADER_NOTED = {"overrides"}
 # not counters; every other value there must be blank in an all-off run.
 S11A1_DENOMS = {"matches", "kills", "income_mp", "gun_kills_in_tank_he"}
 # S11a1 (review B-3): the only lists that may grow with a zero tail.
-GROWN_LISTS = {"refused"}
+# S11b (Build B): `s5a.kills_by` grew 11 -> 12 (the rifle-grenade class).
+GROWN_LISTS = {"refused", "kills_by"}
 
 
 def ignored(key):
@@ -88,7 +93,7 @@ def diff(base, new, path, out, strict, skip=frozenset()):
             if k not in new:
                 out.append(f"{p}: only in BASE")
             elif k not in base:
-                if k.startswith("s10c") or k.startswith("s11a2"):
+                if k.startswith(("s10c", "s11a2", "s11b")):
                     continue
                 if k.startswith("s11a1"):
                     if strict and not blank_but_denoms(new[k]):

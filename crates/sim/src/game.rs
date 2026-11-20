@@ -290,6 +290,9 @@ pub struct Squad {
     /// S4: single-shot AT items (Panzerfaust): the squad's aim and gap;
     /// `Some` for squads whose members carry one at spawn.
     pub pzf: Option<SingleShot>,
+    /// S11b G2-G3: the squad's rifle-grenade aim and gap; `Some` for squads
+    /// whose members carry the `rifle_grenade` kind at spawn.
+    pub rg: Option<RgState>,
     /// S5b: mortar squads' ranging memory (target areas it ranged on,
     /// `crate::fire_mission`); empty for other squads.
     pub ranging: Vec<RangingCell>,
@@ -338,6 +341,42 @@ impl SingleShot {
     /// so the load check (`pzf_ok`) holds for any card (S4 review M1).
     pub fn for_type(ty: &SquadTypeSetup) -> Option<Self> {
         (ty.vehicle.is_none() && ty.squad_items(ItemKind::SingleShotAt) > 0).then(Self::default)
+    }
+}
+
+/// S11b G2-G3: a squad's rifle grenades (`crate::combat`
+/// `fire_rifle_grenades`).
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct RgState {
+    /// The man aiming one (`aim` > 0), or stowing the launcher after his
+    /// shot (`aim` 0, `stow` > 0) ...
+    pub man: Option<SimId>,
+    /// ... at this enemy man while aiming (the aim breaks when he dies,
+    /// his entity slot holds no enemy soldier any more, or he or the aim
+    /// point leaves the band; he need not stay seen; `None` while
+    /// stowing) ...
+    pub target: Option<SimId>,
+    /// ... at this ground point (the target's position when he took aim).
+    pub at: FxVec2,
+    /// Ticks of fitting and aiming left before the shot (`windup_ticks`).
+    pub aim: u16,
+    /// Ticks `man` still takes to stow the launcher after the shot; his
+    /// rifle is silent meanwhile (`stow_ticks`).
+    pub stow: u16,
+    /// Ticks until the squad may fire the next one
+    /// (`items.rifle_grenade_gap_ticks`).
+    pub gap: u16,
+    /// Ticks until the next target search.
+    pub search: u16,
+}
+
+impl RgState {
+    /// The fresh state a new squad of type `ty` starts with: `Some` when
+    /// its members carry the `rifle_grenade` kind, else `None` (as
+    /// [`SingleShot::for_type`]; every place that creates an infantry
+    /// squad uses it).
+    pub fn for_type(ty: &SquadTypeSetup) -> Option<Self> {
+        (ty.vehicle.is_none() && ty.squad_items(ItemKind::RifleGrenade) > 0).then(Self::default)
     }
 }
 
@@ -453,6 +492,8 @@ pub struct PlayerState {
     /// S11a2 K1-K3: the enemy guns this player has heard, in creation
     /// order (at most [`crate::counter_battery::MAX_CB_SPOTS`]).
     pub cb: Vec<crate::counter_battery::CbSpot>,
+    /// S11b: artillery and rifle-grenade counters (report).
+    pub s11b: crate::fire_mission::S11bCounters,
 }
 
 /// S8a per-player counters (saved and hashed, read only by reports;
@@ -544,7 +585,9 @@ pub mod kill_class {
     pub const FRAG: u16 = 9;
     /// Crew lost with a vehicle burnt out or knocked out by a setup tool.
     pub const OTHER: u16 = 10;
-    pub const COUNT: usize = 11;
+    /// S11b G4: an HE rifle grenade (a launcher round whose ammo is HE).
+    pub const RIFLE_GRENADE: u16 = 11;
+    pub const COUNT: usize = 12;
 
     /// S7: a class value may carry the shooting vehicle's type above its
     /// low nibble (`class | (type + 1) << 4`) so per-type kills need no new
@@ -592,6 +635,7 @@ pub mod kill_class {
         "satchel",
         "frag",
         "other",
+        "rifle_grenade",
     ];
 }
 
@@ -796,6 +840,7 @@ impl MatchState {
                 s11: crate::fire_mission::S11Counters::default(),
                 s11a2: crate::fire_mission::S11a2Counters::default(),
                 cb: Vec::new(),
+                s11b: crate::fire_mission::S11bCounters::default(),
             })
             .collect();
         let np = setup.players.len();
@@ -2064,6 +2109,7 @@ impl MatchState {
         });
         // S4: squads with a single-shot AT item (Panzerfaust).
         let pzf = SingleShot::for_type(ty);
+        let rg = RgState::for_type(ty);
         self.squads.insert(
             id,
             Squad {
@@ -2084,6 +2130,7 @@ impl MatchState {
                 launcher,
                 drops: Vec::new(),
                 pzf,
+                rg,
             },
         );
     }
@@ -2140,6 +2187,7 @@ impl MatchState {
                 launcher: None,
                 drops: Vec::new(),
                 pzf: None,
+                rg: None,
             },
         );
         if served {
@@ -2444,7 +2492,8 @@ impl MatchState {
                 && counters_ok(&pl.s8a)
                 && counters_ok(&pl.s9)
                 && counters_ok(&pl.s11)
-                && counters_ok(&pl.s11a2))
+                && counters_ok(&pl.s11a2)
+                && counters_ok(&pl.s11b))
             {
                 return Err("a player counter is out of range");
             }
@@ -2643,6 +2692,37 @@ impl MatchState {
             };
             if !pzf_ok {
                 return Err("single-shot AT state is inconsistent");
+            }
+            // S11b: the squad's rifle-grenade state.
+            let size = Fx::from_int(s.map.size_m);
+            let rg_ok = match &sq.rg {
+                None => ty.squad_items(ItemKind::RifleGrenade) == 0 || ty.vehicle.is_some(),
+                Some(r) => {
+                    let (aim_max, stow_max) = ty
+                        .kit(&s.items, ItemKind::RifleGrenade)
+                        .map_or((0, 0), |(_, it)| (it.windup_ticks.max(1), it.stow_ticks));
+                    ty.vehicle.is_none()
+                        && ty.squad_items(ItemKind::RifleGrenade) > 0
+                        && r.man.is_none_or(|m| {
+                            sq.members.contains(&m)
+                                && ents.kind.get(m.index()) == Some(&EntityKind::Soldier)
+                        })
+                        && r.man.is_some() == (r.aim > 0 || r.stow > 0)
+                        && (r.aim == 0 || r.stow == 0)
+                        && r.target.is_some() == (r.aim > 0)
+                        && r.target.is_none_or(|t| t.index() < ents.len())
+                        && r.aim as u32 <= aim_max
+                        && r.stow as u32 <= stow_max
+                        && r.gap as u32 <= s.rules.items.rifle_grenade_gap_ticks
+                        && r.search as u32 <= s.tick_hz.max(1)
+                        && r.at.x >= Fx::ZERO
+                        && r.at.y >= Fx::ZERO
+                        && r.at.x <= size
+                        && r.at.y <= size
+                }
+            };
+            if !rg_ok {
+                return Err("rifle-grenade state is inconsistent");
             }
         }
         for (&id, d) in &self.unit_digs {

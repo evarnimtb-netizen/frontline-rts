@@ -891,12 +891,19 @@ impl super::Planner<'_> {
 
     /// Own live or pending vehicles of `role`.
     pub(super) fn of_role(&self, role: VehicleRole) -> usize {
+        self.of_role_where(role, |_| true)
+    }
+
+    /// S11b H1: own live or pending vehicles of `role` whose card passes
+    /// `keep` (squad type index).
+    pub(super) fn of_role_where(&self, role: VehicleRole, keep: impl Fn(u16) -> bool) -> usize {
         let g = self.g;
         let s = &g.setup;
         let is_role = |t: u16| {
-            s.squad_types[t as usize]
-                .vehicle
-                .is_some_and(|v| s.vehicles[v as usize].role == role)
+            keep(t)
+                && s.squad_types[t as usize]
+                    .vehicle
+                    .is_some_and(|v| s.vehicles[v as usize].role == role)
         };
         g.squads
             .values()
@@ -921,6 +928,22 @@ impl super::Planner<'_> {
     /// within `income_pct` of the income so far; at least `reserve`
     /// manpower stays.
     pub(super) fn buy_role_within(&mut self, role: VehicleRole, income_pct: u32, reserve: u32) {
+        let mp = self.g.players[self.me.0 as usize].manpower as u64;
+        self.buy_role_where(role, |_| true, income_pct, reserve, mp);
+    }
+
+    /// S11b H1: [`Self::buy_role_within`] for the cards of `role` that pass
+    /// `keep` (the card pick and the spent sum), against manpower `mp`
+    /// (the player's, or less the pending call-ins). Says why it did not
+    /// buy.
+    pub(super) fn buy_role_where(
+        &mut self,
+        role: VehicleRole,
+        keep: impl Fn(u16) -> bool,
+        income_pct: u32,
+        reserve: u32,
+        mp: u64,
+    ) -> RoleBuy {
         let g = self.g;
         let s = &g.setup;
         let me = self.me;
@@ -928,16 +951,20 @@ impl super::Planner<'_> {
         let card = faction.roster.iter().copied().find(|&t| {
             let ty = &s.squad_types[t as usize];
             ty.ai_weight > 0
+                && keep(t)
                 && ty
                     .vehicle
                     .is_some_and(|v| s.vehicles[v as usize].role == role)
         });
-        let Some(card) = card else { return };
+        let Some(card) = card else {
+            return RoleBuy::NoCard;
+        };
         let ty = &s.squad_types[card as usize];
         let is_role = |t: usize| {
-            s.squad_types[t]
-                .vehicle
-                .is_some_and(|v| s.vehicles[v as usize].role == role)
+            keep(t as u16)
+                && s.squad_types[t]
+                    .vehicle
+                    .is_some_and(|v| s.vehicles[v as usize].role == role)
         };
         let spent: u64 = self
             .ai
@@ -950,12 +977,14 @@ impl super::Planner<'_> {
             .sum();
         let minutes = self.tick / (60 * s.tick_hz.max(1) as u64);
         let income = s.rules.start_manpower as u64 + s.rules.income_per_min as u64 * minutes;
-        let mp = g.players[me.0 as usize].manpower as u64;
-        if (spent + ty.cost as u64) * 100 > income * income_pct as u64
-            || mp < ty.cost as u64 + reserve as u64
-            || g.call_in_check(self.ents, me, card, self.due).is_err()
-        {
-            return;
+        if (spent + ty.cost as u64) * 100 > income * income_pct as u64 {
+            return RoleBuy::Share;
+        }
+        if mp < ty.cost as u64 + reserve as u64 {
+            return RoleBuy::Manpower;
+        }
+        if g.call_in_check(self.ents, me, card, self.due).is_err() {
+            return RoleBuy::Refused;
         }
         self.ai
             .emit(self.due, CommandKind::CallIn { squad_type: card });
@@ -964,5 +993,20 @@ impl super::Planner<'_> {
             c.bought.resize(s.squad_types.len(), 0);
         }
         c.bought[card as usize] += 1;
+        RoleBuy::Bought
     }
+}
+
+/// S11b H1: what `buy_role_where` did.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(super) enum RoleBuy {
+    Bought,
+    /// No roster card of the role with `ai_weight > 0` passes the filter.
+    NoCard,
+    /// The income share said no.
+    Share,
+    /// The manpower (less the reserve) said no.
+    Manpower,
+    /// `call_in_check` refused it (cooldown, unlock, limits).
+    Refused,
 }

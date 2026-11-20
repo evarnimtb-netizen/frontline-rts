@@ -1321,6 +1321,225 @@ impl MatchState {
         for id in ids {
             self.fire_single_shot(ents, terrain, hash, seed, tick, id, out, rockets);
         }
+        // S11b G2-G3: rifle grenades, serially in ascending squad id (no
+        // squad holds `rg` with `[items] rifle_grenades` 0).
+        let ids: Vec<SquadId> = self
+            .squads
+            .iter()
+            .filter(|(_, sq)| sq.rg.is_some())
+            .map(|(&id, _)| id)
+            .collect();
+        for id in ids {
+            self.fire_rifle_grenades(ents, terrain, hash, seed, tick, id, out);
+        }
+    }
+
+    /// S11b G2-G3 (docs/slices/S11b.md 4): squad `id`'s rifle grenades.
+    /// Every third of a second with no aim and no gap, the nearest (man,
+    /// seen enemy man on foot) pair inside `[min_range, range]` with a
+    /// clear line of fire (at most [`LOS_TRIES`] tried) starts an aim of
+    /// `windup_ticks` at the target's ground point. The aim breaks (no gap)
+    /// when the man may no longer fire (the single-shot rule: pinned,
+    /// ducked, riding, hold fire) or the target dies or leaves the band
+    /// (he need not stay in sight). At its end the grenade flies the low root of the
+    /// drag-free arc to the point (`indirect::low_root`; no root, no shot)
+    /// with two `tri` draws of spread; the man stows the launcher for
+    /// `stow_ticks` (his rifle silent) and the squad waits
+    /// `rifle_grenade_gap_ticks`. An ordinary shell burst (`mission` 0).
+    #[allow(clippy::too_many_arguments)]
+    fn fire_rifle_grenades(
+        &mut self,
+        ents: &mut Entities,
+        terrain: &Heightfield,
+        hash: &mut HashCache,
+        seed: u64,
+        tick: u64,
+        id: SquadId,
+        out: &mut Vec<FireRequest>,
+    ) {
+        let setup = &self.setup;
+        let hz = setup.tick_hz.max(1);
+        let sq = &self.squads[&id];
+        let ty = &setup.squad_types[sq.type_idx as usize];
+        let k = ItemKind::RifleGrenade.index();
+        let Some((_, it)) = ty.kit(&setup.items, ItemKind::RifleGrenade) else {
+            return;
+        };
+        let Some(wi) = it.weapon else { return };
+        let w = &setup.weapons[wi as usize];
+        let Some(ammo) = w.ammo else { return };
+        let speed: Fx = setup
+            .ammo
+            .get(ammo as usize)
+            .map_or(w.muzzle_speed, |a| a.speed)
+            .into();
+        let mut p = sq.rg.expect("rifle-grenade squad");
+        let before = p;
+        p.gap = p.gap.saturating_sub(1);
+        p.search = p.search.saturating_sub(1);
+        let body = &setup.rules.combat.body;
+        let owner = sq.owner;
+        let band = |from: FxVec2, at: FxVec2| {
+            let d = (at - from).length_sq_raw();
+            range_sq(it.range_min.into()) <= d && d <= range_sq(it.range_max.into())
+        };
+        // Whether man `m` may fire one now (the single-shot rule).
+        let able = |ents: &Entities, m: SimId| {
+            let i = m.index();
+            sq.members.contains(&m)
+                && ents.kind[i] == EntityKind::Soldier
+                && ents.kit[i].items[k] > 0
+                && ents.kit[i].windup.is_none()
+                && !ents.combat[i].ducked
+                && !ents.combat[i].pinned
+                && ents.unit[i].riding.is_none()
+                && match engage_of(&sq.order, &ents.unit[i]) {
+                    Engage::Never => false,
+                    Engage::Still => is_still(&ents.velocity[i], body),
+                    Engage::Always => true,
+                }
+        };
+        // An enemy man on foot this owner sees.
+        let foe = |ents: &Entities, t: SimId| {
+            let ti = t.index();
+            ents.kind.get(ti) == Some(&EntityKind::Soldier)
+                && ents.owner[ti] != owner
+                && ents.unit[ti].riding.is_none()
+                && ents.combat[ti].seen_by & (1 << owner.0) != 0
+        };
+        if let Some(m) = p.man {
+            let i = m.index();
+            if p.aim > 0 {
+                let from = ents.transform[i].pos.xy();
+                // The target must live and stay in the band (spec 5); he
+                // need not stay in sight while the launcher is fitted.
+                let ok = able(ents, m)
+                    && p.target.is_some_and(|t| {
+                        // Ids are not generational (review A-2): a slot
+                        // reused by an own man is not the target.
+                        ents.kind.get(t.index()) == Some(&EntityKind::Soldier)
+                            && ents.owner[t.index()] != owner
+                            && band(from, ents.transform[t.index()].pos.xy())
+                    })
+                    && band(from, p.at);
+                if !ok {
+                    // A broken aim: no gap.
+                    (p.man, p.target, p.aim) = (None, None, 0);
+                } else {
+                    // Fitting and aiming: his rifle waits.
+                    let ws = &mut ents.weapon[i];
+                    ws.cooldown = ws.cooldown.max(2);
+                    hash.mark_entity_chunk(m.chunk());
+                    p.aim -= 1;
+                    if p.aim == 0 {
+                        let muzzle = muzzle(ents.transform[i].pos, &ents.combat[i], body);
+                        let to = FxVec3::new(p.at.x, p.at.y, terrain.height_at(p.at));
+                        p.target = None;
+                        p.man = None;
+                        if let Some((vel, flight)) = crate::indirect::low_root(muzzle, to, speed) {
+                            let spread = Fx::from_raw(
+                                (Fx::from(w.spread).raw() as i64
+                                    * training_of(setup, sq).spread_pct as i64
+                                    / 100)
+                                    .clamp(0, i32::MAX as i64)
+                                    as i32,
+                            );
+                            let dir = vel.normalize_or_zero();
+                            let right = FxVec3::new(-dir.y, dir.x, Fx::ZERO).normalize_or_zero();
+                            let up = FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::ONE);
+                            let mut rng = RngStream::new(seed, tick, m, Purpose::RIFLE_GRENADE);
+                            let (a, b) = (tri(&mut rng, spread), tri(&mut rng, spread));
+                            let shot = vel + (right * a + up * b) * speed;
+                            let ttl = (flight.mul_int(5).div_int(4).mul_int(SUBSTEP_HZ).floor_int()
+                                + 2)
+                            .clamp(2, u16::MAX as i32) as u16;
+                            out.push(FireRequest {
+                                shooter: m,
+                                seq: 0,
+                                pos: muzzle,
+                                vel: shot,
+                                weapon: wi,
+                                player: owner.0,
+                                ttl: ttl.max(round_ttl(w)),
+                                he: true,
+                                ammo,
+                                mission: 0,
+                            });
+                            ents.kit[i].items[k] -= 1;
+                            ents.combat[i].since_shot = 0;
+                            if let Some(pl) = self.players.get_mut(owner.0 as usize) {
+                                pl.s11b.rg_fired += 1;
+                            }
+                            p.gap = setup
+                                .rules
+                                .items
+                                .rifle_grenade_gap_ticks
+                                .min(u16::MAX as u32) as u16;
+                            p.stow = it.stow_ticks.min(u16::MAX as u32) as u16;
+                            if p.stow > 0 {
+                                p.man = Some(m);
+                                let ws = &mut ents.weapon[i];
+                                ws.cooldown = ws.cooldown.max(2);
+                            }
+                        }
+                    }
+                }
+            } else if p.stow > 0 {
+                // Stowing the launcher: his rifle stays silent.
+                if sq.members.contains(&m) && ents.kind[i] == EntityKind::Soldier {
+                    p.stow -= 1;
+                    let ws = &mut ents.weapon[i];
+                    ws.cooldown = ws.cooldown.max(2);
+                    hash.mark_entity_chunk(m.chunk());
+                } else {
+                    p.stow = 0;
+                }
+                if p.stow == 0 {
+                    p.man = None;
+                }
+            }
+        }
+        if p.man.is_none() && p.gap == 0 && p.search == 0 {
+            p.search = (hz / 3).max(1) as u16;
+            // (distance², man, target): nearest first, ties by ids.
+            let mut cands: Vec<(u64, SimId, SimId)> = Vec::new();
+            for &m in &sq.members {
+                if !able(ents, m) {
+                    continue;
+                }
+                let at = ents.transform[m.index()].pos.xy();
+                for t in ents.soldiers() {
+                    if !foe(ents, t) {
+                        continue;
+                    }
+                    let tp = ents.transform[t.index()].pos.xy();
+                    if band(at, tp) {
+                        cands.push(((tp - at).length_sq_raw(), m, t));
+                    }
+                }
+            }
+            cands.sort_unstable();
+            for &(_, m, t) in cands.iter().take(LOS_TRIES) {
+                let i = m.index();
+                let from = muzzle(ents.transform[i].pos, &ents.combat[i], body);
+                let ti = t.index();
+                let aim = aim_point(ents.transform[ti].pos, &ents.combat[ti], body);
+                if !terrain.line_of_sight(from, aim) || self.smoke_blocks(from, aim, tick, (t, m)) {
+                    continue;
+                }
+                p.man = Some(m);
+                p.target = Some(t);
+                p.at = ents.transform[ti].pos.xy();
+                p.aim = it.windup_ticks.clamp(1, u16::MAX as u32) as u16;
+                let ws = &mut ents.weapon[i];
+                ws.cooldown = ws.cooldown.max(2);
+                hash.mark_entity_chunk(m.chunk());
+                break;
+            }
+        }
+        if p != before {
+            self.squads.get_mut(&id).expect("live").rg = Some(p);
+        }
     }
 
     /// S4 single-shot AT items (module docs "Panzerfaust"): the squad's
@@ -3059,7 +3278,18 @@ impl MatchState {
     fn base_class(&self, ents: &Entities, weapon: u16, ammo: u16, shooter: SimId) -> u16 {
         let class = self.setup.weapons.get(weapon as usize).map(|w| w.class);
         if class == Some(WeaponClass::Launcher) {
-            return kill_class::ROCKET;
+            // S11b G4: a launcher round whose ammo is HE is a rifle
+            // grenade; HEAT stays a rocket.
+            let he = self
+                .setup
+                .ammo
+                .get(ammo as usize)
+                .is_some_and(|a| a.mechanism == AmmoMechanism::He);
+            return if he {
+                kill_class::RIFLE_GRENADE
+            } else {
+                kill_class::ROCKET
+            };
         }
         if let Some(a) = self.setup.ammo.get(ammo as usize) {
             return match a.mechanism {
@@ -3566,8 +3796,17 @@ impl MatchState {
             && sl.man == Some(id)
         {
             sl.man = None;
+            // S11b X1: an infantry gun's crew counts in `s11b`.
+            let inf_gun = self.vehicles.get(&s.gun).is_some_and(|v| {
+                self.setup.vehicles[v.type_idx as usize].role
+                    == frontline_content::VehicleRole::InfGun
+            });
             if let Some(p) = self.players.get_mut(owner) {
-                p.s9.gun_crew_lost = p.s9.gun_crew_lost.saturating_add(1);
+                if inf_gun {
+                    p.s11b.arty_crew_lost = p.s11b.arty_crew_lost.saturating_add(1);
+                } else {
+                    p.s9.gun_crew_lost = p.s9.gun_crew_lost.saturating_add(1);
+                }
             }
         }
         // S10a-ai: a man killed inside an enemy wire band.
@@ -3620,6 +3859,13 @@ impl MatchState {
             && p.man == Some(id)
         {
             (p.man, p.target, p.aim) = (None, None, 0);
+        }
+        // S11b (review A-1): the rifle grenadier's aim or stow ends with
+        // him (a save in this tick must load).
+        if let Some(r) = &mut sq.rg
+            && r.man == Some(id)
+        {
+            (r.man, r.target, r.aim, r.stow) = (None, None, 0, 0);
         }
         let ty = &self.setup.squad_types[sq.type_idx as usize];
         if ty.vehicle.is_none() {

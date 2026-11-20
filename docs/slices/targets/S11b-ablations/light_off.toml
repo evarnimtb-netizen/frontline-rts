@@ -1,0 +1,3 @@
+# S11b ablation: light mortar cards stay out of the AI's buy mix (L1 off).
+[ai.arty]
+light = 0

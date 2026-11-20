@@ -2815,6 +2815,26 @@ tuning_table! {
         lift_m: 0..=2000 = "d_arty_lift_m",
         /// S11a2 R2: no counter-fire on a marker wider than this (m).
         cb_max_error_m: 0..=2000 = "d_arty_cb_max_error_m",
+        /// S11b X3 switch: an AI gun does not order counter-fire twice in
+        /// a row.
+        cb_alternate: 0..=1 = "d_arty_zero",
+        /// S11b H1 switch: gun buys count the manpower of call-ins still
+        /// pending.
+        buy_pending: 0..=1 = "d_arty_zero",
+        /// S11b H1 switch: the AI buys a field howitzer.
+        how: 0..=1 = "d_arty_zero",
+        /// S11b H1: no howitzer before this match time (s) ...
+        how_after_s: 0..=3600 = "d_arty_how_after_s",
+        /// ... at most this many alive or called in ...
+        how_max: 0..=8 = "d_arty_how_max",
+        /// ... howitzer cards cost at most this share of the income so
+        /// far (%), apart from the infantry gun's `income_max_pct` ...
+        how_income_pct: 0..=100 = "d_arty_how_income_pct",
+        /// ... and this much manpower stays after the buy.
+        how_reserve_mp: 0..=100000 = "d_arty_how_reserve_mp",
+        /// S11b L1 switch: cards tagged `light_mortar` join the mortar slot
+        /// of the buy mix.
+        light: 0..=1 = "d_arty_zero",
     }
 }
 
@@ -2826,6 +2846,18 @@ fn d_arty_lift_m() -> u32 {
 }
 fn d_arty_cb_max_error_m() -> u32 {
     60
+}
+fn d_arty_how_after_s() -> u32 {
+    480
+}
+fn d_arty_how_max() -> u32 {
+    1
+}
+fn d_arty_how_income_pct() -> u32 {
+    15
+}
+fn d_arty_how_reserve_mp() -> u32 {
+    300
 }
 
 impl AiArtyTuning {
@@ -2862,6 +2894,14 @@ impl Default for AiArtyTuning {
             counter_fire: 0,
             lift_m: 100,
             cb_max_error_m: 60,
+            cb_alternate: 0,
+            buy_pending: 0,
+            how: 0,
+            how_after_s: 480,
+            how_max: 1,
+            how_income_pct: 15,
+            how_reserve_mp: 300,
+            light: 0,
         }
     }
 }

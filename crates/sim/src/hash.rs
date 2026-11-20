@@ -411,6 +411,8 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         // S11a2.
         put_postcard(&p.s11a2, out);
         put_postcard(&p.cb, out);
+        // S11b.
+        put_postcard(&p.s11b, out);
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);
@@ -505,6 +507,8 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
                 p.attack.put(out);
             }
         }
+        // S11b: the rifle-grenade state.
+        put_postcard(&sq.rg, out);
         // S5b: the ranging memory.
         put_postcard(&sq.ranging, out);
     }
