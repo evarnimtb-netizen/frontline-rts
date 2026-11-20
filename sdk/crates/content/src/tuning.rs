@@ -3063,6 +3063,14 @@ impl WoundsTuning {
             ("head_top_pct", self.head_top_pct),
             ("100 - legs_bottom_pct", 100 - self.legs_bottom_pct.min(100)),
         );
+        // W9: an evacuation pays back no more than a replacement costs (no
+        // manpower gain loop).
+        check_order(
+            out,
+            table,
+            ("evac_refund_pct", self.evac_refund_pct),
+            ("reinforce_cost_pct", self.reinforce_cost_pct),
+        );
     }
 }
 

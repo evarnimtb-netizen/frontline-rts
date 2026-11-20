@@ -119,6 +119,8 @@ fn load_rejects_bad_s12_keys() {
     for text in [
         "[wounds]\ndown_bleed_min_s = 200\ndown_bleed_max_s = 100\n",
         "[wounds]\nhead_top_pct = 60\nlegs_bottom_pct = 50\n",
+        // Checker G7: a refund above the replacement price is a gain loop.
+        "[wounds]\nevac_refund_pct = 120\nreinforce_cost_pct = 100\n",
     ] {
         let f = write("order", text);
         assert!(defs.apply_override(&f, "ww2:skirmish").is_err(), "{text}");
@@ -128,6 +130,11 @@ fn load_rejects_bad_s12_keys() {
     assert!(s.validate().is_empty());
     s.rules.wounds.bleed_ms_per_hp = 0;
     assert!(!s.validate().is_empty());
+    let mut s = defs.resolve(&req).unwrap();
+    s.rules.wounds.evac_refund_pct = s.rules.wounds.reinforce_cost_pct + 1;
+    assert!(!s.validate().is_empty(), "checker G7: refund over the price");
+    s.rules.wounds.evac_refund_pct = s.rules.wounds.reinforce_cost_pct;
+    assert!(s.validate().is_empty(), "checker G7: refund equal to the price");
     let mut s = defs.resolve(&req).unwrap();
     s.rules.ai.medic.post = 2;
     assert!(!s.validate().is_empty());
