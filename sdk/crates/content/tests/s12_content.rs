@@ -50,7 +50,14 @@ fn load_rejects_bad_s12_keys() {
     assert_eq!(WoundsTuning::KEYS.len(), 27);
     assert_eq!(AiMedicTuning::KEYS.len(), 9);
     // The ablation files apply (their keys exist and are in range).
-    for f in ["s12_off", "wounds_only", "head_300"] {
+    for f in [
+        "s12_off",
+        "wounds_only",
+        "head_300",
+        "no_medics",
+        "no_post",
+        "no_reinforce",
+    ] {
         let mut d = defs0.clone();
         let p = root().join(format!("docs/slices/targets/S12-ablations/{f}.toml"));
         d.apply_override(&p, "ww2:skirmish")

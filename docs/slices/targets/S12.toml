@@ -6,10 +6,12 @@
 #     equal the reference set target/s12-base40, tools/neutral.py);
 #   - new rows T159-T163 in three-part form (value, exposure, control):
 #     R7 (hard) and its head_300 report, R8, and the plan-8 counts that
-#     exist after Build A as reports (no s12_derived before Build C).
+#     exist after Build A as reports (no s12_derived before Build C);
+#   - Build B: T164-T169, rows R1-R6 (fortify10.s12 mg300, medics, post,
+#     refund, reinforce).
 #   tools/measure.sh OUTDIR docs/slices/targets/S12.toml
 # Seeds, ROW HONESTY and three_parts_from as in S11b.toml.
-name = "S12a: wound states (S11b targets plus T159-T163)"
+name = "S12a: wound states and medics (S11b targets plus T159-T169)"
 three_parts_from = "T109"
 
 [runs.skirmish40]
@@ -4551,3 +4553,97 @@ exposure = "skirmish40.factions.usa.s12.downed"
 exposure_min = 0
 control = "skirmish40_s12_off.factions.usa.s12.bled_out"
 note = "report: US downed men who bled out, 40 matches; exposure: downs; control: s12_off (0)"
+
+# --- T164-T169: R1-R6 (Build B), the wounds scene's medic rows (fortify10.s12) -----------------
+# Source: S12-wounds-medics.md 9 R1-R6. Switches on in the row only; player commands, no AI.
+# R1/R2 scene (fortify10.s12.mg300, .medics): each faction's line squad in the open under two of the
+# other's mg cards at 100 m (the plan's 300 m is past the cards' 150 m sight) for 30 s, then the MGs
+# leave; 300 s in all. R2 adds a medic team 60 m back that moves up when the fire lifts (auto-tend).
+[[target]]
+id = "T164"
+metric = "fortify10.s12.mg300.outright_pct"
+min = 20
+max = 45
+kind = "report"
+exposure = "fortify10.s12.mg300.downed"
+exposure_min = 50
+control = "fortify10.s12.medics.outright_pct"
+note = "report (R1): killed outright of killed outright plus downed (%), 20-45 (WW2 about 1:3); exposure: downs; control: the R2 scene"
+[[target]]
+id = "T165"
+metric = "fortify10.s12.medics.drop_pts"
+min = 30
+exposure = "fortify10.s12.medics.downed"
+exposure_min = 50
+control = "fortify10.s12.mg300.stabilised_pct"
+note = "R2: bled-out share (% of downs) with a medic team, points under R1's; exposure: downs; control: R1's stabilised share (no medics: 0)"
+# R3/R4 scene (fortify10.s12.post): a built aid post with a medic team; a wounded man (40 HP) walks in.
+[[target]]
+id = "T166a"
+metric = "fortify10.s12.post.treated_pct"
+min = 100
+exposure = "fortify10.s12.post.runs"
+exposure_min = 20
+control = "fortify10.s12.post.unstaffed_treated_pct"
+note = "R3: runs in which the staffed post treats him in treat_s + 60 s (%); exposure: runs; control: runs treated once its medics left (the post stops: 0)"
+[[target]]
+id = "T166b"
+metric = "fortify10.s12.post.hp"
+min = 75
+max = 75
+exposure = "fortify10.s12.post.runs"
+exposure_min = 20
+control = "fortify10.s12.post.treated_pct"
+note = "R3: his HP after treatment (return_hp_pct 75); exposure: runs; control: treated runs (%)"
+[[target]]
+id = "T167"
+metric = "fortify10.s12.post.second_pct"
+max = 0
+exposure = "fortify10.s12.post.runs"
+exposure_min = 20
+control = "fortify10.s12.post.treated_pct"
+note = "R4: runs in which a treated man wounded again was treated twice (%); exposure: runs; control: first treatments (%)"
+# R5 scene (fortify10.s12.refund): Evacuate in base of a called-in (paid) man, a start squad's
+# (unpaid) man, and the paid man again.
+[[target]]
+id = "T168a"
+metric = "fortify10.s12.refund.paid_ok_pct"
+min = 100
+exposure = "fortify10.s12.refund.runs"
+exposure_min = 20
+control = "fortify10.s12.refund.unpaid_mp"
+note = "R5: runs in which the paid man refunds evac_refund_pct of his price once (%); exposure: runs; control: the unpaid man's refund (MP)"
+[[target]]
+id = "T168b"
+metric = "fortify10.s12.refund.unpaid_mp"
+max = 0
+exposure = "fortify10.s12.refund.runs"
+exposure_min = 20
+control = "fortify10.s12.refund.paid_ok_pct"
+note = "R5: MP refunded for unpaid men; exposure: runs; control: paid refunds right (%)"
+[[target]]
+id = "T168c"
+metric = "fortify10.s12.refund.repeat_mp"
+max = 0
+exposure = "fortify10.s12.refund.runs"
+exposure_min = 20
+control = "fortify10.s12.refund.paid_ok_pct"
+note = "R5: MP refunded by a second Evacuate of the gone man; exposure: runs; control: paid refunds right (%)"
+# R6 scene (fortify10.s12.reinforce, reinforce 1): a line squad in base loses three men to Evacuate,
+# then Reinforce.
+[[target]]
+id = "T169a"
+metric = "fortify10.s12.reinforce.filled_pct"
+min = 100
+exposure = "fortify10.s12.reinforce.runs"
+exposure_min = 20
+control = "fortify10.s12.reinforce.control_filled_pct"
+note = "R6: runs in which Reinforce brings the squad back to card size (%); exposure: runs; control: the same with the reinforce switch 0"
+[[target]]
+id = "T169b"
+metric = "fortify10.s12.reinforce.rifle_kit_pct"
+min = 100
+exposure = "fortify10.s12.reinforce.runs"
+exposure_min = 20
+control = "fortify10.s12.reinforce.control_filled_pct"
+note = "R6: runs in which every new man carries the card's plain rifle kit (%); exposure: runs; control: filled runs with the reinforce switch 0 (%)"

@@ -1,0 +1,12 @@
+# S12 ablation (docs/slices/S12-wounds-medics.md 2, 9, S12-12): as the
+# default but no Reinforce (the W11 switch off, A5 off): squads are bought
+# whole as before.
+[wounds]
+enabled = 1
+reinforce = 0
+
+[ai.medic]
+buy = 1
+field = 1
+post = 1
+reinforce = 0
