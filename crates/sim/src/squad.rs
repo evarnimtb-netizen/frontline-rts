@@ -381,6 +381,21 @@ impl MatchState {
                 None => carrying.push((sid, pct)),
             }
         }
+        // S12 W7: a squad paces to its men carrying a casualty.
+        if self.setup.rules.wounds.enabled != 0 && !self.casualties.is_empty() {
+            for (m, _) in self.carriers() {
+                let Some(pct) = self.carry_pace(ctx.ents, m) else {
+                    continue;
+                };
+                let Some(sid) = ctx.ents.squad.get(m.index()).copied().flatten() else {
+                    continue;
+                };
+                match carrying.iter_mut().find(|(s, _)| *s == sid) {
+                    Some(e) => e.1 = e.1.min(pct),
+                    None => carrying.push((sid, pct)),
+                }
+            }
+        }
         for (&id, sq) in self.squads.iter_mut() {
             // Vehicle squads drive in the Movement stage (`crate::vehicle`).
             if self.setup.squad_types[sq.type_idx as usize]

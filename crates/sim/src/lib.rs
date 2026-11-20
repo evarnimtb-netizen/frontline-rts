@@ -56,6 +56,7 @@ pub mod guns;
 mod hash;
 pub mod indirect;
 pub mod items;
+mod medics;
 pub mod orders;
 pub mod path;
 pub mod projectile;

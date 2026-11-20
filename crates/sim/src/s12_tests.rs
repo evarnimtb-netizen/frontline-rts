@@ -360,7 +360,7 @@ fn blows_now(
 }
 
 /// A bullet of `weapon` (player `by`) striking man `m` in `zone`.
-fn bullet(w: &mut World, by: u8, wpn: &str, m: SimId, zone: u8) {
+pub(super) fn bullet(w: &mut World, by: u8, wpn: &str, m: SimId, zone: u8) {
     let ev = BallisticEvent {
         weapon: weapon(w, wpn),
         player: by,

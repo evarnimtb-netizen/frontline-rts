@@ -701,6 +701,18 @@ pub(crate) fn aim_and_fire(
             c.target = None;
             continue;
         }
+        // S12 W7: a carrier (always detached) does not fire.
+        if ctx.unit[i].detached
+            && setup.rules.wounds.enabled != 0
+            && ctx
+                .game
+                .casualties
+                .values()
+                .any(|cs| cs.carriers.contains(&Some(SimId(i as u32))))
+        {
+            c.target = None;
+            continue;
+        }
         // S4: every man carries his own weapon (`Kit::weapon`); S5a: his
         // slot's sidearm while his main weapon is dry.
         let ty = &setup.squad_types[sq.type_idx as usize];

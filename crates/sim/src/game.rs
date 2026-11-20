@@ -1276,8 +1276,12 @@ impl MatchState {
             &CommandKind::CutWire { squad, at } => self.order_cut_wire(ctx, p, squad, at),
             &CommandKind::ClearMines { squad, a, b } => self.order_clear_mines(ctx, p, squad, a, b),
             &CommandKind::Demolish { squad, at } => self.order_demolish(ctx, p, squad, at),
-            // S12: declared, not built yet (Build B).
-            CommandKind::Tend { .. } | CommandKind::Carry { .. } | CommandKind::Evacuate { .. } => {
+            // S12 W6, W7 (`crate::medics`).
+            CommandKind::Tend { units, target } => self.order_tend(ctx, p, units, *target),
+            CommandKind::Carry { units, target, to } => {
+                self.order_carry(ctx, p, units, *target, *to)
+            }
+            CommandKind::Evacuate { .. } => {
                 self.refuse_fort(p, None, crate::fort::FortRefusal::NotAllowed)
             }
             &CommandKind::Reinforce { squad } => {

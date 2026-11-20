@@ -342,6 +342,10 @@ impl MatchState {
                 self.credit_kill(by, by.0 == owner);
             }
         }
+        // W6: the possible tenders (buddies, medics) and the carriers.
+        let idle = Self::idle_detached(ctx.ents);
+        let carrying = self.carriers();
+        let mut done_buddies: Vec<SimId> = Vec::new();
         let mut fell: Vec<SimId> = Vec::new();
         for i in 0..ctx.ents.len() {
             if ctx.ents.kind()[i] != EntityKind::Soldier
@@ -350,10 +354,16 @@ impl MatchState {
                 continue;
             }
             let id = SimId(i as u32);
+            // W6: a buddy standing by him bandages him, under fire too.
+            let buddy = if ctx.ents.combat[i].wound.bandaged || idle.is_empty() {
+                None
+            } else {
+                self.buddy_of(ctx.ents, &idle, i, &carrying)
+            };
             let c = &mut ctx.ents.combat[i];
             let owner = ctx.ents.owner[i].0;
             if !c.wound.bandaged {
-                let calm = c.suppression / 1000 < crouch && c.since_shot > 1;
+                let calm = buddy.is_some() || (c.suppression / 1000 < crouch && c.since_shot > 1);
                 if c.wound.bandaging > 0 {
                     if !calm {
                         c.wound.bandaging = 0;
@@ -364,6 +374,9 @@ impl MatchState {
                             c.wound.bleed_acc_ms = 0;
                             if let Some(p) = self.players.get_mut(owner as usize) {
                                 p.s12.bandaged = p.s12.bandaged.saturating_add(1);
+                            }
+                            if let Some(b) = buddy {
+                                done_buddies.push(b);
                             }
                         }
                     }
@@ -398,5 +411,11 @@ impl MatchState {
                 self.down(ctx.ents, ctx.hash, Some(ctx.terrain), id, by, tick, seed);
             }
         }
+        // W6: a buddy whose dressing is done rejoins his squad.
+        for b in done_buddies {
+            Self::release(ctx, b);
+        }
+        // W6, W7 (`crate::medics`).
+        self.medics_tick(ctx);
     }
 }
