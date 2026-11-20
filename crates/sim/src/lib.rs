@@ -100,11 +100,11 @@ pub use projectile::{Projectile, ProjectilePool};
 pub use rng::{Purpose, RngStream, rng};
 pub use rules::Defeat;
 pub use snapshot::{
-    ArmourEvent, ArmourEventKind, ChargeSnapshot, CorpseSnapshot, CrateSnapshot, ExplosionSnapshot,
-    FortPieceSnapshot, FortSnapshot, FortWorkSnapshot, LoadedSnap, NO_SQUAD, PlayerSnapshot,
-    PointSnapshot, RenderSnapshot, SeatSnap, ShellKind, ShellSnapshot, ShotSnapshot, SmokeSnapshot,
-    SquadSnapshot, StructureSnapshot, ThrownSnapshot, UnitSnapshot, VehicleSnapshot, WireSnapshot,
-    tile_heights_f32, vehicle_flags,
+    ArmourEvent, ArmourEventKind, BedSnapshot, CasualtySnapshot, ChargeSnapshot, CorpseSnapshot,
+    CrateSnapshot, ExplosionSnapshot, FortPieceSnapshot, FortSnapshot, FortWorkSnapshot,
+    LoadedSnap, NO_SQUAD, PlayerSnapshot, PointSnapshot, RenderSnapshot, SeatSnap, ShellKind,
+    ShellSnapshot, ShotSnapshot, SmokeSnapshot, SquadSnapshot, StructureSnapshot, ThrownSnapshot,
+    UnitSnapshot, VehicleSnapshot, WireSnapshot, tile_heights_f32, vehicle_flags, wound_bits,
 };
 pub use structures::{
     CookOff, Crate, S6Account, StaticBox, StaticRef, Structure, SupplyEvent, SupplyRefusal,

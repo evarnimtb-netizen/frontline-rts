@@ -146,10 +146,12 @@ kind the relay may not send. Clients cannot send relay messages.
 - Version 16 (S12) adds four commands at the end of `CommandKind`:
   `Tend { units, target }` (1 to 150 ids, a `u32` man id), `Carry { units,
   target, to }` (1 to 150 ids, a man id, a point), `Evacuate { units }` (1
-  to 150 ids) and `Reinforce { squad }` (a `u32` squad id). Until S12a
-  Build B the sim refuses each (`FortRefusal::NotAllowed`). The setup gains
-  `StockKind` 3 `Aid`. The save version is `-s30`. The one bump for the S12
-  slice.
+  to 150 ids) and `Reinforce { squad }` (a `u32` squad id). The sim
+  accepts them from S12a Build B (with `[wounds] enabled`; else it refuses
+  each, `FortRefusal::NotAllowed`). The setup gains `StockKind` 3 `Aid`,
+  `DigProfile` 9 aid-post pit and, in S12a Build B (same version, not yet
+  shipped), `StockSetup::beds` and `staff_min` (two `u8` after the box
+  list). The save version is `-s30`. The one bump for the S12 slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells

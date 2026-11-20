@@ -149,6 +149,40 @@ pub struct CorpseSnapshot {
     pub seen_by: u16,
 }
 
+/// S12: a downed man (`EntityKind::Downed`), ascending id: he lies prone
+/// where he fell (or where his carriers are).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CasualtySnapshot {
+    pub id: SimId,
+    /// `[x, y, z, yaw]`.
+    pub pos: [f32; 4],
+    pub owner: u8,
+    /// Players that see him (as for corpses).
+    pub seen_by: u16,
+    /// Stabilised by a medic: he no longer bleeds out.
+    pub stabilised: bool,
+    /// Ticks until he bleeds out (0 when stabilised).
+    pub bleed_ticks: u32,
+    /// The medic tending him (`u32::MAX`: none) and ticks to go.
+    pub tend: u32,
+    pub tend_ticks: u32,
+    /// His carriers (`u32::MAX`: none) and where they take him.
+    pub carriers: [u32; 2],
+    pub dest: Option<[f32; 2]>,
+    /// Ticks until his evacuation in base (0: none).
+    pub evac_ticks: u32,
+}
+
+/// S12 W8: one bed of an aid post.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BedSnapshot {
+    pub man: SimId,
+    /// Ticks until he is treated or evacuated (paused while unstaffed).
+    pub ticks_left: u32,
+    /// Evacuation (else treatment).
+    pub evac: bool,
+}
+
 /// A round fired this tick (muzzle flash, tracer, sound).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ShotSnapshot {
@@ -487,6 +521,23 @@ pub struct StructureSnapshot {
     pub cap_kg: [f32; 3],
     /// Hit points left of each def box (%).
     pub box_pct: Vec<u8>,
+    /// S12 W8 (aid posts): the beds in use and the own medics staffing it
+    /// now (it works at the def's `staff_min`).
+    pub beds: Vec<BedSnapshot>,
+    pub staff: u8,
+}
+
+/// S12 `Wound` bits of a soldier (`Snapshot::soldier_wound`).
+pub mod wound_bits {
+    /// Wounded (else fit).
+    pub const WOUNDED: u8 = 1;
+    pub const BANDAGED: u8 = 2;
+    /// A leg wound.
+    pub const LEGS: u8 = 4;
+    /// Treated at an aid post once.
+    pub const TREATED: u8 = 8;
+    /// Dressing a wound now.
+    pub const BANDAGING: u8 = 16;
 }
 
 /// S6: a crate, ascending id.
@@ -664,10 +715,14 @@ pub struct RenderSnapshot {
     /// rides (`u32::MAX`: on foot) and his passenger slot.
     pub soldier_riding: Vec<u32>,
     pub soldier_ride_slot: Vec<u8>,
+    /// S12, per entry of `soldiers` (match mode only): [`wound_bits`].
+    pub soldier_wound: Vec<u8>,
     /// Detached soldiers, ascending id (match mode only).
     pub units: Vec<UnitSnapshot>,
     /// Dead soldiers, ascending id (match mode only).
     pub corpses: Vec<CorpseSnapshot>,
+    /// S12: downed men, ascending id (match mode only).
+    pub casualties: Vec<CasualtySnapshot>,
     /// Rounds fired this tick, in fire order (match mode only).
     pub shots: Vec<ShotSnapshot>,
     /// HE bursts this tick, in order (match mode only).
@@ -767,8 +822,10 @@ impl RenderSnapshot {
         self.soldier_fire.clear();
         self.soldier_riding.clear();
         self.soldier_ride_slot.clear();
+        self.soldier_wound.clear();
         self.units.clear();
         self.corpses.clear();
+        self.casualties.clear();
         for (i, kind) in ents.kind().iter().enumerate() {
             let t = &ents.transform()[i];
             let [x, y, z] = t.pos.to_f32();
@@ -821,6 +878,19 @@ impl RenderSnapshot {
                         self.soldier_riding
                             .push(u.riding.map_or(u32::MAX, |r| r.vehicle.0));
                         self.soldier_ride_slot.push(u.riding.map_or(0, |r| r.slot));
+                        let w = &c.wound;
+                        self.soldier_wound.push(
+                            [
+                                (w.state == crate::wounds::WOUNDED, wound_bits::WOUNDED),
+                                (w.bandaged, wound_bits::BANDAGED),
+                                (w.legs, wound_bits::LEGS),
+                                (w.treated, wound_bits::TREATED),
+                                (w.bandaging > 0, wound_bits::BANDAGING),
+                            ]
+                            .iter()
+                            .filter(|b| b.0)
+                            .fold(0, |a, b| a | b.1),
+                        );
                         if u.detached
                             && let Some(g) = game
                         {
@@ -852,9 +922,27 @@ impl RenderSnapshot {
                         }
                     }
                 }
-                // S12: a downed man lies as a body until Build B's
-                // snapshot fields (`ticks_left` 0: not fading).
-                EntityKind::Corpse | EntityKind::Downed => self.corpses.push(CorpseSnapshot {
+                // S12: a downed man (`casualties`).
+                EntityKind::Downed => {
+                    let cs = game.and_then(|g| g.casualties.get(&SimId(i as u32)));
+                    let left = |at: u64| at.saturating_sub(tick).min(u32::MAX as u64) as u32;
+                    self.casualties.push(CasualtySnapshot {
+                        id: SimId(i as u32),
+                        pos: [x, y, z, t.yaw.to_f32()],
+                        owner,
+                        seen_by: c.seen_by,
+                        stabilised: cs.is_some_and(|k| k.bleed_out_at == 0),
+                        bleed_ticks: cs.map_or(0, |k| left(k.bleed_out_at)),
+                        tend: cs.and_then(|k| k.tend).map_or(u32::MAX, |m| m.0.0),
+                        tend_ticks: cs.and_then(|k| k.tend).map_or(0, |m| left(m.1)),
+                        carriers: cs.map_or([u32::MAX; 2], |k| {
+                            k.carriers.map(|m| m.map_or(u32::MAX, |m| m.0))
+                        }),
+                        dest: cs.and_then(|k| k.dest).map(|d| d.to_f32()),
+                        evac_ticks: cs.map_or(0, |k| left(k.evac_at)),
+                    });
+                }
+                EntityKind::Corpse => self.corpses.push(CorpseSnapshot {
                     id: SimId(i as u32),
                     pos: [x, y, z, t.yaw.to_f32()],
                     owner,
@@ -1008,7 +1096,7 @@ impl RenderSnapshot {
                 contested: c.contested,
             });
         }
-        self.fill_supply(ents, g);
+        self.fill_supply(tick, ents, g);
         self.outcome = g.outcome();
         if let Outcome::Won { winner } = g.outcome() {
             self.winner = Some(winner.0);
@@ -1016,7 +1104,7 @@ impl RenderSnapshot {
     }
 
     /// S6: structures and crates.
-    fn fill_supply(&mut self, ents: &Entities, g: &MatchState) {
+    fn fill_supply(&mut self, tick: u64, ents: &Entities, g: &MatchState) {
         let setup = g.setup();
         let kg = |gr: u32| crate::fx::Fx::from_ratio(gr as i64, 1000).to_f32();
         for (&id, s) in &g.supply6().structures {
@@ -1048,6 +1136,20 @@ impl RenderSnapshot {
                     .enumerate()
                     .map(|(k, b)| (s.box_hp[k] as u64 * 100 / b.hp.max(1) as u64) as u8)
                     .collect(),
+                beds: s
+                    .beds
+                    .iter()
+                    .map(|b| BedSnapshot {
+                        man: b.man,
+                        ticks_left: b.done_at.saturating_sub(tick).min(u32::MAX as u64) as u32,
+                        evac: b.evac,
+                    })
+                    .collect(),
+                staff: if d.kind == frontline_content::setup::StockKind::Aid {
+                    g.post_staff(ents, s)
+                } else {
+                    0
+                },
             });
         }
         for (&id, c) in &g.supply6().crates {

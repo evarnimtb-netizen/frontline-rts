@@ -1131,4 +1131,19 @@ impl MatchState {
         }
         true
     }
+
+    /// S12 W8 (snapshot): own medics staffing aid post `st` now.
+    pub(crate) fn post_staff(
+        &self,
+        ents: &crate::ecs::Entities,
+        st: &crate::structures::Structure,
+    ) -> u8 {
+        let d = &self.setup.stocks[st.def as usize];
+        let r: Fx = d.radius.into();
+        let r_sq = r.mul(r);
+        (0..ents.len())
+            .filter(|&j| self.is_medic(ents, j) && self.staffs(ents, j, st.owner, st.pos, r_sq))
+            .count()
+            .min(u8::MAX as usize) as u8
+    }
 }

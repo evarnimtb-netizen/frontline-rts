@@ -888,3 +888,43 @@ fn w11_save_load_while_replacements_walk() {
     }
     assert_eq!(x.full_state_hash(), w.full_state_hash());
 }
+
+/// S12 snapshot: a downed man is in `casualties` (not `corpses`) with his
+/// tend; a wounded man's `soldier_wound` bits; an aid post's beds and
+/// staff. Control: a fit man's bits are 0 and a dump has no staff.
+#[test]
+fn s12_snapshot_shows_casualties_wounds_and_beds() {
+    use crate::snapshot::wound_bits;
+    let (mut w, d, _, med) = scene(0, 503);
+    assert!(cmd(
+        &mut w,
+        1,
+        CommandKind::Tend {
+            units: med.clone(),
+            target: d
+        }
+    ));
+    until(&mut w, 30 * 30, |w| cas(w, d).tend.is_some()).expect("tending");
+    let s = w.snapshot();
+    assert!(s.corpses.iter().all(|c| c.id != d));
+    let k = s.casualties.iter().find(|c| c.id == d).expect("listed");
+    assert!(!k.stabilised && k.bleed_ticks > 0 && k.tend != u32::MAX && k.tend_ticks > 0);
+    let (pid, _) = post(&mut w, 400, 400);
+    let m = wounded_to(&mut w, 430, 400, c(404, 404), 2);
+    until(&mut w, 40 * 30, |w| !beds(w, pid).is_empty()).expect("a bed");
+    w.step(&[]);
+    let s = w.snapshot();
+    let st = s.structures.iter().find(|t| t.id == pid).unwrap();
+    assert_eq!(st.beds.len(), 1);
+    assert_eq!(st.beds[0].man, m);
+    assert!(st.beds[0].ticks_left > 0 && !st.beds[0].evac);
+    assert_eq!(st.staff, 2);
+    let i = s.soldier_ids.iter().position(|&x| x == m).unwrap();
+    assert_eq!(
+        s.soldier_wound[i],
+        wound_bits::WOUNDED | wound_bits::BANDAGED
+    );
+    let fit = s.soldier_ids.iter().position(|&x| x == med[0]).unwrap();
+    assert_eq!(s.soldier_wound[fit], 0, "control: fit");
+    assert_eq!(s.soldier_wound.len(), s.soldier_ids.len());
+}

@@ -627,7 +627,7 @@ pub fn unit_command(
     })
 }
 
-/// The Command for an S3 vehicle intent `kind` on `units` (filtered by
+/// The Command for an S3 vehicle intent (or an S12 medic intent) `kind` on `units` (filtered by
 /// [`unit_set`], non-empty): `target` is sim xy (reverse, face), `id` the
 /// vehicle named (`attack_unit`'s target, `follow_units`' vehicle), `word`
 /// the ammo choice. `None` when the intent lacks what it needs.
@@ -661,6 +661,17 @@ pub fn vehicle_command(
             units,
             vehicle: SimId(id?),
         },
+        // S12: `id` is the man (`man`), `target` where Carry takes him.
+        "tend_units" => CommandKind::Tend {
+            units,
+            target: SimId(id?),
+        },
+        "carry_units" => CommandKind::Carry {
+            units,
+            target: SimId(id?),
+            to: t()?,
+        },
+        "evacuate_units" => CommandKind::Evacuate { units },
         _ => return None,
     })
 }
@@ -669,6 +680,31 @@ pub fn vehicle_command(
 mod tests {
     use super::*;
     use crate::match_frame::polyline_len;
+
+    #[test]
+    fn s12_medic_intents_need_their_man_and_point() {
+        let u = || vec![SimId(3), SimId(4)];
+        assert_eq!(
+            vehicle_command("tend_units", u(), None, Some(9), ""),
+            Some(CommandKind::Tend {
+                units: u(),
+                target: SimId(9)
+            })
+        );
+        assert!(vehicle_command("tend_units", u(), None, None, "").is_none());
+        assert!(vehicle_command("carry_units", u(), None, Some(9), "").is_none());
+        assert!(matches!(
+            vehicle_command("carry_units", u(), Some([1.0, 2.0]), Some(9), ""),
+            Some(CommandKind::Carry {
+                target: SimId(9),
+                ..
+            })
+        ));
+        assert_eq!(
+            vehicle_command("evacuate_units", u(), None, None, ""),
+            Some(CommandKind::Evacuate { units: u() })
+        );
+    }
 
     #[test]
     fn godot_points_become_sim_fixed_point() {
