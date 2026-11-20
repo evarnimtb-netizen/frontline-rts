@@ -4,28 +4,33 @@ ablations `targets/S12-ablations/`. Branch `claude/project-thread-aj1tww`, base 
 Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never `target/`, `.claude/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S12a Build A done** (e847067..HEAD on `1209c99`): SAVE 30 / PROTOCOL 16, keys, W1-W5, W12-W14, R7/R8 rows, `s12` JSON block;
-every S12 switch 0. Neutral proof: `target/s12-base40` (REF0) vs `target/s12-A-40` (REF1) `neutral.py`: same 40/40, Germany 20/40 both;
-only new keys: `factions.*.s12` and `sides[].s12` (all 0). REF0: length mean 20.15 min, HE share 25.5; kills_by_source_pct ger rifle 41.5,
-tank_he 19.9, vehicle_mg 10.1, mortar 9.1, mg 6.9; usa rifle 53.0, vehicle_mg 16.5, tank_he 8.1, rifle_grenade 7.2, mortar 5.8.
-**Code map.** `crates/sim/src/wounds.rs`: types, `zone_at` (W1), `deal` (W2/W3 per hit; `None` tuning = the old `saturating_sub`),
-`wounds_tick` (W4 bandage/bleed, W5 bleed-out; once a second at `(tick + id) % hz`), `validate_s12`/`wound_ok`. `combat.rs`:
-`hurt`/`hurt_by` -> `deal`; `resolve_falls` (W3 outcome, stable id order; old loop kept verbatim when `enabled` 0), `down` (W5: rider
-to `door_spot`, gun crew slot freed, seeded `WOUND_BLEED` draw), `credit_kill` (shared), `leave_squad` (factored out of `kill`), `fly`/
-`burst` read `World::downed` (spatial hash, rebuilt only when casualties exist), wounded-shooter penalties in fire. `damage.rs` rider core
-hit and `guns.rs` crew core hit call `deal`. `squad.rs` pace, `game.rs` population (+casualties), `spotting.rs`, `snapshot.rs` (Downed
-shown as a corpse with ticks_left 0 until Build B). W14 needs no `rules.rs` edit (`check_defeats` counts `soldiers()` only).
-Tests: `crates/sim/src/s12_tests.rs` (16), `sdk/crates/content/tests/s12_content.rs`, `fortify/s12.rs` (rows + 1/2/3/8-thread hash),
-`save_fuzz.rs` `staged_s12` (`World::down_soldier` hook). Fuzz 0 panics, 0 unloadable.
-**Build B must know.** Tend/Carry/Evacuate are refused `FortRefusal::NotAllowed` (squad None), Reinforce with `Some(squad)`: the
-dispatch arms in `game.rs` (grep `NotAllowed`). An `aid` stock def is refused at load (`defs.rs` "aid posts are not built yet");
-lift it and audit the `StockKind` matches: `structures.rs` (11), `ai/supply.rs` (4), `ai/truck.rs` (3), `ai/fort.rs`, `ai/armour.rs`,
-`fort.rs`, `scenarios.rs`, `world.rs`, godot-bridge `intents.rs`/`match_node.rs`, cli `armour_test/s8b.rs`/`s9.rs`, content `modset.rs`.
-Beds are validated only on Aid structures. AI medic counters exist (`AiCounters`), no job code.
-**R7/R8 (fortify10.s12, T159-T161), seeds 1-10, 220 men a variant** (`S12_SEEDS=10` one-off test): trench out 5.9 % vs base 5.5 %
-= 107.3 % (R7 pass, 13 vs 12 men: thin), head_300 6.4 %; prone out 2.7 % vs 2.7 % = 100 % (R8 holds). Every downed man died in the 300 s.
-**Deviations.** Keys and BASELINE went into the layout commit (setup bytes change with the layout). `Hit` also carries `dmg` (for
-`head_kill_dmg`). Downed men keep hp 1. Zone hit counters count on the victim's owner, only with `enabled` 1. Bleed-outs credit a kill
-to the hitter but do not add `stats.deaths`. A detached wounded man has no own speed penalty (only the squad pace). `riders_lost` and
-`gun_crew_lost` count at the down. Steps 4-6 are one commit (the pieces share `Fallen` and `resolve_falls`). R7 "lose" = left the squad
-(dead or downed), the stricter reading. New commands refused with the existing `NotAllowed` reason (no new refusal variant).
+**State: S12a Build B done** (d611c16..HEAD on 0493f07): W6-W11, cards, aid post, commands, snapshot, R1-R6, checker F1-F8. Switches 0
+play as `1209c99`: `neutral.py target/s12-base40 target/s12-B-40` same 40/40 (after F1-F8, R1-R6). Not done: S12b (AI, presenter, gate).
+**LAYOUT commit 84e95fd** (the one saved-setup change, a field truly missing): `StockSetup::beds`, `staff_min`, `DigProfile::AidPit` 9,
+`RulesSetup::aid_pit`; SAVE 30 / PROTOCOL 16 kept (not shipped); BASELINE in `resolved_defs.rs` updated.
+**Code map.** `crates/sim/src/medics.rs`: `medics_tick` (end of `wounds_tick`) = `carry_tick` (W7 phases fetch/wait/carry/arrive;
+pace `stretcher_speed_pct` two medics else `drag_speed_pct`; a carrier no longer Fit sets him down), `stabilise_tick` (W6; ready = medic
+within 2 m, still, no move order; pinned pauses +1 tick; lowest id tends), `auto_tend` (once a second, `auto_tend_m`), `posts_tick` (W8
+beds ascending id, staffed by `staff_min` own medics in radius, treat `treat_s` to `return_hp_pct`, `treated` once; evac beds), `base_evac`
+(W9 `Casualty::evac_at`), `evacuate` (refund `evac_refund_pct` of the per-man price if `paid`, once). Orders: `order_tend`,
+`order_carry`, `order_evacuate`, `order_reinforce` (W11; dispatched in `game.rs`); helpers `is_medic`, `carriers()`, `staffs`,
+`post_staff`, `release`. Buddy bandage (W6) in `wounds.rs` `wounds_tick`. Pace hooks `unit.rs`/`squad.rs`, carriers hold fire
+(`combat.rs aim_and_fire`). StockKind::Aid audit in `structures.rs`: `serving` and serve sources skip Aid, load cap `aid_max`,
+`order_build` max per kind, box-break note. `call_in` sets `paid` (wounds on, cost > 0, not vehicles).
+**What the AI (Build C) calls.** Commands `Tend{units,target}`, `Carry{units,target,to}`, `Evacuate{units}`, `Reinforce{squad}`
+(refusals as `FortEvent`: NotAllowed/Cap/Manpower); `Build` with the faction's Aid def (`stock_of(f, Aid, None)`, `built_by` medic);
+read `MatchState::casualties` (bleed_out_at 0 = stabilised), `Structure::beds`, `is_medic`, `post_staff`. Cards `ger_sanitaetstrupp`,
+`usa_aid_men` (tag medic, ai_weight 0). `[ai.medic]` switches exist, no job code.
+**Tests.** `s12b_tests.rs` (20: W6-W11, saves mid-tend/carry/bed/evac, snapshot), `s12_tests.rs` (+F1-F8), bridge intents test,
+`s12_content.rs` (cards, aid def, ablations), fuzz `staged_s12` (12021 mutations: 0 panicked, 0 unloadable), 1/2/3/8-thread hash of
+the medic scene. Snapshot: `soldier_wound` (`wound_bits`), `casualties`, structure `beds`/`staff` (`godot/docs/match_state.md` S12).
+**Rows, fortify10 seeds 1-10** (`S12_SEEDS=10`): R1 mg300 downed 180/220, outright 0.0 % (report miss of 20-45: two LMG hits down,
+overkill 60 is rarely reached), bled out 80.6 %; R2 medics bled out 16.4 %, stabilised 67.2 %, drop 64.2 pts (pass); R3 treated 100 %,
+75 HP, stops unstaffed 100 %; R4 second treatment 0 %; R5 refund once 100 %, unpaid 0, repeat 0; R6 filled 100 %, rifle kit 100 %;
+R7 trench 5.5 % vs 5.5 % = 100 % (pass), R8 prone 66.7 %.
+**Deviations.** R1/R2 at 100 m, MGs fire 30 s then leave (cards see 150 m); R2's medics wait 60 m back, move up then. R3 "medics die"
+= moved out (same rule; killing is a unit test). Steps 2+3, 4+5 share commits. Buddy = halted own detached man within 3 m; still < 0.5
+m/s; tenders rejoin. Evacuate in base is at once; a reinforcement joins at once; basic kit = first slot with no crew weapon, no trait;
+Aid Men: M1911A1, 0 rounds. Downed men: snapshot `casualties`, not `corpses` (bridge draws them as bodies). Checker F1 `<` tick, F2
+bleed-outs in `stats.deaths`, F3 mine downs at the down (wire at death), F4 two same-tick hits kill, F5 own wounded pace, F6 Downed
+spotted, F7/F8 tests; accepted: downed 1 HP, riders/gun crew lost at down, crewman down in place, reload pct on aim. Next: S12b.
