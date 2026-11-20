@@ -767,6 +767,8 @@ impl MatchState {
                         };
                         let o = ctx.ents.owner[i].0;
                         self.bump_s12(o, |x| &mut x.treated);
+                        // Checker G2: his HP and wound changed.
+                        ctx.hash.mark_entity_chunk(b.man.chunk());
                         Self::release(ctx, b.man);
                     }
                 }

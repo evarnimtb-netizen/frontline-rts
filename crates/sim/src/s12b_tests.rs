@@ -953,3 +953,22 @@ fn g1_downed_in_a_treatment_bed_leaves_it() {
     assert!(World::load(&w.save(), 1).is_ok(), "loadable");
 }
 
+/// Checker G2: a man rejoined to his squad while in a treatment bed is
+/// treated with his chunk marked: the incremental hash equals the full
+/// one. Control: the same check before the treatment.
+#[test]
+fn g2_treatment_marks_the_mans_chunk() {
+    let mut w = world(0);
+    let (pid, _) = post(&mut w, 400, 400);
+    let m = wounded_to(&mut w, 404, 398, c(404, 404), 1);
+    until(&mut w, 40 * 30, |w| beds(w, pid).iter().any(|b| b.man == m)).expect("a bed");
+    assert!(w.edit_unit(m, |u| u.rejoin()));
+    w.step(&[]);
+    assert_eq!(w.state_hash(), w.full_state_hash(), "control");
+    until(&mut w, 70 * 30, |w| {
+        w.state.entities.combat[m.index()].wound.treated
+    })
+    .expect("treated");
+    assert_eq!(w.state_hash(), w.full_state_hash());
+}
+
