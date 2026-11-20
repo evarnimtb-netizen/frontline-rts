@@ -758,3 +758,110 @@ fn wound_by_with_a_vehicle_class_loads() {
     // vehicle types (type 17 needs 18).
     assert!(!crate::wounds::wound_ok(EntityKind::Downed, &w, 2, 17, 300));
 }
+
+/// S12 F2 (review R7): a wounded medic walking to the own post is a
+/// patient, not a stale job: his team is not regrouped (which would pull
+/// him back and send him again). Control: an unwounded medic walking to
+/// the post on no job is regrouped.
+#[test]
+fn r7_wounded_medic_walking_to_the_post_is_not_regrouped() {
+    for wounded in [true, false] {
+        let mut w = med_world(|s| {
+            let m = &mut s.rules.ai.medic;
+            m.buy = 0;
+            m.field = 0;
+        });
+        let p = out(&w, 60);
+        aid_post(&mut w, p);
+        let mt = atk(&mut w, 0, MEDICS, 200);
+        steps(&mut w, 2);
+        let m = members(&w, mt)[0];
+        if wounded {
+            w.edit_soldier(m, |_, c| {
+                c.hp = 40;
+                c.wound.state = WOUNDED;
+                c.wound.bandaged = true;
+            });
+        }
+        run(
+            &mut w,
+            0,
+            9000,
+            CommandKind::MoveUnits {
+                units: vec![m],
+                target: p,
+            },
+        );
+        steps(&mut w, 2);
+        assert!(detached(&w, m), "sent to the post");
+        steps(&mut w, 30 * 5);
+        assert_eq!(detached(&w, m), wounded, "wounded {wounded}");
+        if wounded {
+            assert_eq!(
+                w.state.entities.unit[m.index()].order,
+                UnitOrder::Move { target: p }
+            );
+        }
+    }
+}
+
+/// S12 F2 (review R8): a medic team that `patients` regroups (a stalled
+/// patient) and the liveness pass finds stale too (a man on no job) gets
+/// one Regroup per pass, not two. Control: the team is regrouped.
+#[test]
+fn r8_one_regroup_per_team_per_pass() {
+    let mut w = med_world(|s| {
+        let m = &mut s.rules.ai.medic;
+        m.buy = 0;
+        m.field = 0;
+    });
+    let p = out(&w, 60);
+    aid_post(&mut w, p);
+    let mt = atk(&mut w, 0, MEDICS, 200);
+    steps(&mut w, 2);
+    let men = members(&w, mt);
+    let (a, b) = (men[0], men[1]);
+    w.edit_soldier(a, |_, c| {
+        c.hp = 40;
+        c.wound.state = WOUNDED;
+        c.wound.bandaged = true;
+    });
+    run(
+        &mut w,
+        0,
+        9000,
+        CommandKind::MoveUnits {
+            units: vec![a],
+            target: p,
+        },
+    );
+    let elsewhere = out(&w, 260);
+    run(
+        &mut w,
+        0,
+        9001,
+        CommandKind::MoveUnits {
+            units: vec![b],
+            target: elsewhere,
+        },
+    );
+    steps(&mut w, 2);
+    // a stalls on his walk to the post (patients: stale).
+    let u = &mut w.state.entities.unit[a.index()];
+    u.nav.phase_ticks = (crate::ai::medic::STALL_S * 30) as u32;
+    u.nav.phase = crate::game::NavPhase::PathPending;
+    let mut most = 0;
+    for _ in 0..(30 * 5) {
+        w.step(&[]);
+        let n = w.game().unwrap().ai[0]
+            .as_ref()
+            .unwrap()
+            .pending
+            .iter()
+            .filter(|c| matches!(c.kind, CommandKind::Regroup { squad } if squad == mt))
+            .count();
+        most = most.max(n);
+    }
+    assert_eq!(most, 1, "one Regroup pending at most");
+    assert!(!detached(&w, a) && !detached(&w, b), "control: regrouped");
+}

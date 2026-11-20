@@ -114,8 +114,10 @@ impl Planner<'_> {
         mine.retain(|m| !team_ids.contains(&m.id));
         let post = self.own_post();
         let mut regroup: Vec<SquadId> = Vec::new();
+        // Own men in a bed (review R6: collected once).
+        let beds = self.own_beds();
         if cfg.post != 0 {
-            self.patients(mine, post.as_ref(), busy, &mut regroup);
+            self.patients(mine, post.as_ref(), busy, &mut regroup, &beds);
         }
         // Teams: liveness first.
         let mut teams: Vec<Team> = Vec::new();
@@ -129,6 +131,13 @@ impl Planner<'_> {
             let mut stale = false;
             let mut on_job = matches!(sq.order, Order::Dig { .. });
             for &m in &sq.members {
+                // S12 F2 (review R7): a wounded team man at or walking to
+                // the post (or in a bed) is a patient, not a stale job;
+                // `patients` watches his stall.
+                if self.at_aid(m, post.as_ref(), &beds) {
+                    on_job = true;
+                    continue;
+                }
                 match self.man_job(m) {
                     Job::Free => {}
                     Job::Busy => on_job = true,
@@ -136,7 +145,8 @@ impl Planner<'_> {
                 }
             }
             if stale {
-                if !self.regroup_pending(id) {
+                // S12 F2 (review R8): `patients` may have listed it.
+                if !self.regroup_pending(id) && !regroup.contains(&id) {
                     regroup.push(id);
                 }
                 continue;
@@ -189,6 +199,32 @@ impl Planner<'_> {
             .iter()
             .find(|(_, st)| st.owner == self.me && s.stocks[st.def as usize].kind == StockKind::Aid)
             .map(|(&id, st)| (id, st.clone(), s.stocks[st.def as usize].radius.into()))
+    }
+
+    /// The men lying in a bed of any structure (sorted; review R6: once
+    /// per pass, not a scan per man).
+    fn own_beds(&self) -> Vec<SimId> {
+        let mut v: Vec<SimId> = self
+            .g
+            .supply6
+            .structures
+            .values()
+            .flat_map(|st| st.beds.iter().map(|b| b.man))
+            .collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// S12 F2 (review R7): own man `m` is a patient: in a bed (`beds`
+    /// sorted), or a patient of the own built post.
+    fn at_aid(
+        &self,
+        m: SimId,
+        post: Option<&(u32, crate::structures::Structure, Fx)>,
+        beds: &[SimId],
+    ) -> bool {
+        beds.binary_search(&m).is_ok()
+            || post.is_some_and(|(_, p, r)| p.built && self.patient_at(m, p, *r))
     }
 
     fn regroup_pending(&self, id: SquadId) -> bool {
@@ -461,7 +497,11 @@ impl Planner<'_> {
                 && ((c.bleed_out_at == 0 && inside(self.ents.transform[id.index()].pos.xy()))
                     || c.dest.is_some_and(inside))
         });
-        downed || self.ents.soldiers().any(|m| self.patient_at(m, p, r))
+        downed
+            || self
+                .ents
+                .soldiers()
+                .any(|m| self.ents.owner[m.index()] == self.me && self.patient_at(m, p, r))
     }
 
     /// A4: own soldier `m` is a patient of post `p`: wounded, untreated,
@@ -496,17 +536,13 @@ impl Planner<'_> {
         post: Option<&(u32, crate::structures::Structure, Fx)>,
         busy: &[SquadId],
         regroup: &mut Vec<SquadId>,
+        beds: &[SimId],
     ) {
         let g = self.g;
         let me = self.me;
         let base = g.base_of(me);
         let built = post.filter(|x| x.1.built);
-        let in_bed = |m: SimId| {
-            g.supply6
-                .structures
-                .values()
-                .any(|st| st.beds.iter().any(|b| b.man == m))
-        };
+        let in_bed = |m: SimId| beds.binary_search(&m).is_ok();
         let mut waiting: Vec<SquadId> = Vec::new();
         for (&id, sq) in &g.squads {
             if sq.owner != me || busy.contains(&id) {
@@ -588,23 +624,31 @@ impl Planner<'_> {
         let carry2 = sq_m(Fx::from_int(CARRY_CLEAR_M));
         let tend2 = sq_m(Fx::from_int(crate::medics::REACH_M));
         let pos = |id: SimId| self.ents.transform[id.index()].pos.xy();
-        // Downed men another own medic tends or walks to.
+        // Downed own men another own medic tends or walks to (only own
+        // men are tended or carried). S12 F2 (review R6): the own detached
+        // medics' spots are collected once.
+        let medic_spots: Vec<FxVec2> = self
+            .ents
+            .soldiers()
+            .filter(|&m| {
+                self.ents.owner[m.index()] == me
+                    && self.ents.unit[m.index()].detached
+                    && g.is_medic(self.ents, m.index())
+            })
+            .map(|m| match self.ents.unit[m.index()].order {
+                UnitOrder::Move { target } => target,
+                _ => pos(m),
+            })
+            .collect();
         let mut claimed: Vec<SimId> = g
             .casualties
             .iter()
             .filter(|&(&id, c)| {
-                c.tend.is_some()
-                    || self.ents.soldiers().any(|m| {
-                        let u = &self.ents.unit[m.index()];
-                        let spot = match u.order {
-                            UnitOrder::Move { target } => target,
-                            _ => pos(m),
-                        };
-                        self.ents.owner[m.index()] == me
-                            && u.detached
-                            && (spot - pos(id)).length_sq_raw() <= tend2
-                            && g.is_medic(self.ents, m.index())
-                    })
+                self.ents.owner[id.index()] == me
+                    && (c.tend.is_some()
+                        || medic_spots
+                            .iter()
+                            .any(|&spot| (spot - pos(id)).length_sq_raw() <= tend2))
             })
             .map(|(&id, _)| id)
             .collect();
