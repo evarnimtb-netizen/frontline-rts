@@ -104,7 +104,10 @@ Ablations (`targets/S12-ablations/`): `s12_off` (all 0: equals `<BASE>`), `wound
   spotting or squad strength. Counts toward pop until dead or evacuated (S12-6).
 - **W6 Stabilise.** A `medic` man within 2 m, not moving, not pinned, for `stabilise_s`. Auto: a medic with no move order tends the nearest
   own downed man within `auto_tend_m` when his suppression is under `crouch_suppression`; `Tend` sends him to one. A non-medic's `Tend`
-  bandages a Wounded man (buddy, `bandage_s`); he cannot stabilise.
+  bandages a Wounded man (buddy, `bandage_s`); he cannot stabilise. *(S12a F: no saved field marks a man sent by `Tend`, so the buddy is
+  any own detached man halted within 3 m who is on no other job: not a tender, carrier, medic by a downed man or post staff, thrower,
+  rider or crewman. When the job ends early (casualty dies or is evacuated, the wounded man dies, goes down or dresses himself) its men
+  rejoin their squads.)*
 - **W7 Carry.** One man drags at `drag_speed_pct`; two medics (stretcher) at `stretcher_speed_pct`; two non-medics drag. Carriers do not fire;
   their squad paces to them. Carrier hit or re-ordered: casualty set down there. Unstabilised men keep bleeding.
 - **W8 Aid post.** Built like the HQ. Works while `staff_min` own `medic` men stand in its radius with no move order. Beds fill by ascending
@@ -113,10 +116,14 @@ Ablations (`targets/S12-ablations/`): `s12_off` (all 0: equals `<BASE>`), `wound
   `Evacuate`**. A post that loses its staff pauses its beds. HE that breaks the tent destroys the post (S6-14); men in beds stay.
 - **W9 Evacuation.** At a staffed post, or in the own base (a stabilised downed man carried inside, or `Evacuate` on a wounded man there;
   `evac_s`, no worker). The man is removed (no corpse), pop freed, counted a loss. Refund `card cost / card size * evac_refund_pct / 100`
-  only when `paid`, once per man. Refund 40 < reinforce price 100: no gain loop; start-squad and crew men pay nothing back.
+  only when `paid`, once per man. Refund 40 < reinforce price 100: no gain loop (a load check keeps `evac_refund_pct <=
+  reinforce_cost_pct`); start-squad and crew men pay nothing back. *(S12a: `Evacuate` on a wounded man inside his own base removes him
+  at once, not after `evac_s`; a stabilised downed man in base still waits `evac_s`.)*
 - **W11 Reinforce.** `Reinforce { squad }` on an infantry squad below its card size (members plus its own living casualties): one man per gap,
   per-man price, spawned at base with the card's **basic member kit** (the first `[[members]]` entry with no crew weapon: no duplicate MG or
   launcher), walks to the squad and joins. Starts the card's cooldown (S12-12). Refused at pop cap. Not for vehicle or gun crews.
+  *(S12a: refused while the card's cooldown runs. The man joins the squad at once (a member, one more slot at the end of its line; the
+  squad keeps its slots), walks detached to its first man in formation and takes his place at the squad's next order or `Regroup`.)*
 - **W12 Targeting.** Nobody aims at a Downed man (auto or `AttackUnit`); stray rounds and fragments hit him. This drops IS 5.2's "human
   players can" on purpose (S12-4).
 - **W13 Credit.** A down is a casualty inflicted (`downed_by_class`); the kill counts at death as today. An evacuated man is a loss, not a kill.
