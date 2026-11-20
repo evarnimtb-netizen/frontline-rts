@@ -188,6 +188,7 @@ mod breach;
 mod demolish;
 pub(crate) mod fort;
 mod guns;
+pub(crate) mod medic;
 mod mortar;
 pub(crate) mod obstacles;
 mod overwatch;
@@ -970,7 +971,9 @@ impl AiState {
                 | CommandKind::FaceUnits { units, .. }
                 | CommandKind::RepairUnits { units }
                 | CommandKind::FollowUnits { units, .. }
-                | CommandKind::ReverseUnits { units, .. } => units.len() > crate::unit::MAX_UNITS,
+                | CommandKind::ReverseUnits { units, .. }
+                | CommandKind::Tend { units, .. }
+                | CommandKind::Carry { units, .. } => units.len() > crate::unit::MAX_UNITS,
                 CommandKind::SuppressUnits { units, line } => {
                     units.len() > crate::unit::MAX_UNITS || !(1..=2).contains(&line.len())
                 }
@@ -1065,7 +1068,9 @@ fn squad_of(kind: &CommandKind) -> Option<SquadId> {
         // S10b-ai: the sweep and demolition jobs' orders (no other AI
         // habit sends them).
         | CommandKind::ClearMines { squad, .. }
-        | CommandKind::Demolish { squad, .. } => Some(*squad),
+        | CommandKind::Demolish { squad, .. }
+        // S12b: only the medic habit sends it.
+        | CommandKind::Reinforce { squad } => Some(*squad),
         _ => None,
     }
 }
@@ -1080,6 +1085,8 @@ fn units_of(kind: &CommandKind) -> Option<&[SimId]> {
         | CommandKind::SuppressUnits { units, .. } => Some(units),
         // S8a: the vehicles' squads.
         CommandKind::Disembark { vehicles, .. } => Some(vehicles),
+        // S12b: the medic teams (only the medic habit sends these).
+        CommandKind::Tend { units, .. } | CommandKind::Carry { units, .. } => Some(units),
         _ => None,
     }
 }
@@ -1500,6 +1507,9 @@ impl Planner<'_> {
         self.refills(&mut mine, &known);
         // S6: the HQ, crate runs, dry mortars to the HQ.
         self.supply(&mut mine, &tanks, &known);
+        // S12b: medic teams, the aid post, patients and reinforcements
+        // (before the buys: a reinforcement comes before a new card).
+        self.medics(&mut mine, &known, &busy);
         // S8a: half-track jobs take their vehicles out of the tank habits
         // (but support, which is the overwatch habit).
         let waiting = self.transport_jobs(&mut tanks, &known, &busy);
@@ -1805,7 +1815,8 @@ impl Planner<'_> {
         let pl = &g.players[p];
         // S9: the guns' own budget (`ai::guns`) is not for other cards;
         // S11a1: nor the infantry guns' (`ai::arty`).
-        let mut budget = pl.manpower as i64 - self.held_pots();
+        // S12b A5: and not the pending reinforcements'.
+        let mut budget = pl.manpower as i64 - self.held_pots() - self.medic_pot();
         // S5a: keep `float_mp` back while an own unit waits for a paid
         // refill in the base.
         if self.waiting_refill() {
@@ -1831,6 +1842,12 @@ impl Planner<'_> {
                 // S8a: transports are outside the vehicle limit.
                 vehicles += (ty.vehicle.is_some() && !g.is_outside_limit_type(squad_type)) as u32;
                 bought.push(squad_type);
+            }
+            // S12b A5: a pending `Reinforce` starts its card's cooldown.
+            if let CommandKind::Reinforce { squad } = c.kind
+                && let Some(q) = g.squads.get(&squad)
+            {
+                bought.push(q.type_idx);
             }
         }
         // A type can be bought when its cooldown is over by the time the

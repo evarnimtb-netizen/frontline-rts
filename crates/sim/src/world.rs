@@ -3040,6 +3040,9 @@ mod s11b_ai_tests;
 #[path = "s11b_tests.rs"]
 mod s11b_tests;
 #[cfg(test)]
+#[path = "s12_ai_tests.rs"]
+mod s12_ai_tests;
+#[cfg(test)]
 #[path = "s12_tests.rs"]
 mod s12_tests;
 #[cfg(test)]
