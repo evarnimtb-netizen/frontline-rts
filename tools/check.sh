@@ -146,6 +146,9 @@ quick() {
     # S11b: its override files (the five switches at 0, how_income_pct 10).
     step "ablate.sh S11b" ablate_dry_s11b env ABLATIONS=docs/slices/targets/S11b-ablations \
         tools/ablate.sh --dry-run target/ablate-on target/ablate-dry
+    # S12: its override files (the S12 switches, head_damage_pct 300).
+    step "ablate.sh S12" ablate_dry_s12 env ABLATIONS=docs/slices/targets/S12-ablations \
+        tools/ablate.sh --dry-run target/ablate-on target/ablate-dry
     pk=$(crates_changed "$base")
     # Release, not debug: the same build the batches use, and the whole
     # workspace's tests take 6 minutes in release against 18 in debug.

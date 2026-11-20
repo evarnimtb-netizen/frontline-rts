@@ -1,0 +1,11 @@
+# S12 (spec 2, 9): wound states on, medics, posts, reinforcements and the
+# medic AI off (the S12b gate's 480 reads this file).
+[wounds]
+enabled = 1
+reinforce = 0
+
+[ai.medic]
+buy = 0
+field = 0
+post = 0
+reinforce = 0

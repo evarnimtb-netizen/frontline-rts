@@ -1,0 +1,12 @@
+# S12 report (spec 2, risk 1, S12-3): wound states on with IS 5.3's head
+# factor 300 % (a man on a fire step dies to one rifle hit). A report only.
+[wounds]
+enabled = 1
+head_damage_pct = 300
+reinforce = 0
+
+[ai.medic]
+buy = 0
+field = 0
+post = 0
+reinforce = 0

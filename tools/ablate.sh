@@ -64,6 +64,13 @@
 # neutrality control there (NEUTRAL_BASE default target/s11b-A0-40, the
 # 40 set after the X1 counter fix with every switch 0).
 #
+# S12 (docs/slices/S12-wounds-medics.md 2): with ABLATIONS=docs/slices/
+# targets/S12-ablations every *.toml there is an override (s12_off,
+# wounds_only, head_300, ...), and a file may hold only the S12 switches
+# ([wounds] enabled, reinforce; [ai.medic] buy, field, post, reinforce) and
+# [wounds] head_damage_pct 300. s12_off is the neutrality control there
+# (NEUTRAL_BASE default target/s12-base40, the 40 set of base 1209c99).
+#
 # Env: ABLATIONS=DIR (default docs/slices/targets/S10b-ai-ablations; the
 # S10a set is docs/slices/targets/S10a-ai-ablations), TARGETS (default the
 # slice file beside DIR: S10b-ai.toml / S10a-ai.toml), NEUTRAL_BASE (default
@@ -103,6 +110,13 @@ if [ "$(basename "$DIR")" = S11b-ablations ]; then
     MODE=s11b
     NEUTRAL_NAME=s11b_off
     NEUTRAL_BASE=${NEUTRAL_BASE:-target/s11b-A0-40}
+fi
+if [ "$(basename "$DIR")" = S12-ablations ]; then
+    # The S10c rules for listing and applying, the S12 key list.
+    S10C=1
+    MODE=s12
+    NEUTRAL_NAME=s12_off
+    NEUTRAL_BASE=${NEUTRAL_BASE:-target/s12-base40}
 fi
 NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10b-verify}
 DRY=0
@@ -181,6 +195,12 @@ elif mode == "s11b":
         "ai.arty": {"cb_alternate": {0}, "buy_pending": {0}, "how": {0},
                     "light": {0}, "how_income_pct": {10}},
         "items": {"rifle_grenades": {0}},
+    }
+elif mode == "s12":
+    # S12: its switches (wounds may be on), and the IS 5.3 head factor.
+    switches = {
+        "wounds": {"enabled": {0, 1}, "reinforce": {0, 1}, "head_damage_pct": {300}},
+        "ai.medic": {"buy": {0, 1}, "field": {0, 1}, "post": {0, 1}, "reinforce": {0, 1}},
     }
 elif mode == "s11a2":
     # S11a2: its four switches, at 0 only.
