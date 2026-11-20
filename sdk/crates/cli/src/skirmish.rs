@@ -1040,6 +1040,8 @@ pub struct S12Faction {
     /// [`S12_COUNTERS`] order.
     pub counters: [u64; 12],
     pub downed_by_class: [u64; frontline_sim::kill_class::COUNT],
+    /// S12 F2 (review R1): deaths of downed enemy men credited, by class.
+    pub finished_by_class: [u64; frontline_sim::kill_class::COUNT],
     /// `[trench, open]`.
     pub head_hits: [u64; 2],
     pub torso_hits: [u64; 2],
@@ -1069,14 +1071,15 @@ pub const HE_CLASSES: [u16; 3] = [
     frontline_sim::kill_class::RIFLE_GRENADE,
 ];
 
-/// S12 Build C: HE kills plus HE downs over all kills plus downs (%), of
-/// `kills` and `downs` by class; 0 with none.
-pub fn he_cas_pct(kills: &[u64], downs: &[u64]) -> f64 {
-    let all: u64 = kills.iter().chain(downs).sum();
-    let he: u64 = HE_CLASSES
-        .iter()
-        .map(|&c| kills[c as usize] + downs[c as usize])
-        .sum();
+/// S12 Build C: the HE share of casualties (%): one casualty per man, by
+/// the class that first took him out. Per class, the men killed outright
+/// (`kills - finished`: kills less deaths of men already down, S12 F2
+/// review R1) plus the men downed (`downs`); HE classes over all. 0 with
+/// none.
+pub fn he_cas_pct(kills: &[u64], finished: &[u64], downs: &[u64]) -> f64 {
+    let cas = |c: usize| kills[c].saturating_sub(finished[c]) + downs[c];
+    let all: u64 = (0..kills.len()).map(cas).sum();
+    let he: u64 = HE_CLASSES.iter().map(|&c| cas(c as usize)).sum();
     if all == 0 {
         0.0
     } else {
@@ -1121,6 +1124,9 @@ impl S12Faction {
             *a += b as u64;
         }
         for (a, b) in self.downed_by_class.iter_mut().zip(c.downed_by_class) {
+            *a += b as u64;
+        }
+        for (a, b) in self.finished_by_class.iter_mut().zip(c.finished_by_class) {
             *a += b as u64;
         }
         for k in 0..2 {
@@ -3973,14 +3979,16 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
         he += r.armour.he_share_pct;
         {
             let mut k = [0u64; frontline_sim::kill_class::COUNT];
+            let mut f = [0u64; frontline_sim::kill_class::COUNT];
             let mut d = [0u64; frontline_sim::kill_class::COUNT];
             for p in &r.players {
                 for c in 0..k.len() {
                     k[c] += p.s12.kills_by[c] as u64;
+                    f[c] += p.s12.s.finished_by_class[c] as u64;
                     d[c] += p.s12.s.downed_by_class[c] as u64;
                 }
             }
-            let v = he_cas_pct(&k, &d);
+            let v = he_cas_pct(&k, &f, &d);
             he_cas += v;
             s.he_cas_max_pct = s.he_cas_max_pct.max(v);
         }

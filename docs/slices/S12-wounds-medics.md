@@ -77,8 +77,8 @@ Ablations (`targets/S12-ablations/`): `s12_off` (all 0: equals `<BASE>`), `wound
 - `Fallen` widens to `(id, player, class, Hit { raw: i32, zone: u8, blast: bool })`; `hurt`, `damage.rs:869` and `guns.rs:531` stop using
   `saturating_sub` for the outcome.
 - `PlayerState::s12: S12Counters`: `downed`, `killed_outright`, `bled_out`, `downed_killed`, `stabilised`, `bandaged`, `carried`,
-  `treated`, `evacuated`, `refund_mp`, `reinforced_men`, `reinforce_mp`, `downed_by_class[kill_class::COUNT]`, `head_hits`, `torso_hits`,
-  `leg_hits` (each split trench / open). `AiCounters` += `medic_buys`, `medic_tends`, `medic_carries`, `post_builds`, `reinforce_orders`,
+  `treated`, `evacuated`, `refund_mp`, `reinforced_men`, `reinforce_mp`, `downed_by_class[kill_class::COUNT]`, `finished_by_class[kill_class::COUNT]`
+  (S12 F2: deaths of downed enemies credited, by class), `head_hits`, `torso_hits`, `leg_hits` (each split trench / open). `AiCounters` += `medic_buys`, `medic_tends`, `medic_carries`, `post_builds`, `reinforce_orders`,
   `medic_holds`.
 - RNG purpose `WOUND_BLEED`, one draw per down. Zones use no RNG.
 - Load validation `load_rejects_bad_s12_state` (one case per check) and `save_fuzz.rs` staging: a man mid-bandage, a downed man mid-tend, one
@@ -158,7 +158,8 @@ and burst; timers once a second (`(tick + id) % hz`). Tick p99 from `tools/verif
 ## 8. Measures (`s12_derived` per faction; `targets/S12.toml`)
 `downed_per_match`, `outright_kill_pct`, `bled_out_pct`, `stabilised_pct`, `downed_killed_pct`, `treated_per_match`, `evac_per_match`,
 `refund_mp_per_match`, `reinforced_men_per_match`, `head_hit_pct` (trench / open), `pop_downed_peak`, `medic_matches_pct` (RE "6 of 10"),
-`he_share_casualties_pct` (HE over kills plus downs, for T8: S12-15), `length_min`, `losses_per_match`. Rows with no design figure are reports.
+`he_share_casualties_pct` (HE over casualties, one per man by the class that first took him out: per class `kills_by -
+finished_by_class + downed_by_class`; for T8: S12-15), `length_min`, `losses_per_match`. Rows with no design figure are reports.
 
 ## 9. Done when
 **S12a** (switches 0): `s12_off` 40 set equals `<BASE>` 40/40 (`tools/neutral.py`); named tests pass; SAVE and PROTOCOL bumped; save fuzz 0

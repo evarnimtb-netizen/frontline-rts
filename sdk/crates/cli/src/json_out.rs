@@ -1295,6 +1295,16 @@ pub fn s12_blocks(c: &crate::skirmish::S12Faction) -> Value {
                 .collect(),
         ),
     );
+    raw.insert(
+        "finished_by".into(),
+        Value::Object(
+            kill_class::NAMES
+                .iter()
+                .zip(c.finished_by_class)
+                .map(|(k, v)| ((*k).to_string(), json!(v)))
+                .collect(),
+        ),
+    );
     for (k, v) in [
         ("head_hits", c.head_hits),
         ("torso_hits", c.torso_hits),
@@ -1319,9 +1329,9 @@ pub fn s12_blocks(c: &crate::skirmish::S12Faction) -> Value {
 /// peaks of own downed men lying at once); `medic_matches_pct` (matches
 /// in which a medic stabilised or a post treated an own man);
 /// `team_matches_pct` (matches with a medic team bought);
-/// `he_share_casualties_pct` (S12-15: HE kills plus downs the faction
-/// inflicted over all its kills plus downs). Null where a denominator is
-/// 0.
+/// `he_share_casualties_pct` (S12-15: HE casualties the faction
+/// inflicted over all its casualties, one per man by the class that first
+/// took him out, `he_cas_pct`). Null where a denominator is 0.
 pub fn s12_derived(c: &crate::skirmish::S12Faction) -> Value {
     let n = c.matches.max(1) as f64;
     let per = |v: u64| round3(v as f64 / n);
@@ -1337,7 +1347,6 @@ pub fn s12_derived(c: &crate::skirmish::S12Faction) -> Value {
         let all = c.head_hits[z] + c.torso_hits[z] + c.leg_hits[z];
         pct_or_null(c.head_hits[z] as f64, all as f64)
     };
-    let downs: Vec<u64> = c.downed_by_class.to_vec();
     json!({
         "matches": c.matches,
         "downed_per_match": per(downed),
@@ -1359,7 +1368,7 @@ pub fn s12_derived(c: &crate::skirmish::S12Faction) -> Value {
         },
         "medic_matches_pct": pct_or_null(c.medic_matches as f64, c.matches as f64),
         "team_matches_pct": pct_or_null(c.team_matches as f64, c.matches as f64),
-        "he_share_casualties_pct": crate::skirmish::he_cas_pct(&c.kills_by, &downs),
+        "he_share_casualties_pct": crate::skirmish::he_cas_pct(&c.kills_by, &c.finished_by_class, &c.downed_by_class),
         "length_min": round3(c.seconds / 60.0 / n),
         "losses_per_match": per(c.losses),
     })

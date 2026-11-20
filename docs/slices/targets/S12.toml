@@ -230,8 +230,9 @@ min = 15
 max = 30
 
 # --- T8: HE share of kills 20-25 % (S5b-17), hard cap 26.3 % -----------------
-# S12b Build C (S12-15 (A)): T8a-T8c read the HE share over kills plus downs
-# (`s12_derived.he_share_casualties_pct`); T8d stays on kills (report).
+# S12b Build C (S12-15 (A)): T8a-T8c read the HE share over casualties
+# (`s12_derived.he_share_casualties_pct`; S12 F2: one per man, by the class
+# that first took him out); T8d stays on kills (report).
 [[target]]
 id = "T8a"
 metric = "skirmish160.s12_derived.he_share_casualties_pct.mean"

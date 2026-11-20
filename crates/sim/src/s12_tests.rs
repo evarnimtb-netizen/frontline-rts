@@ -130,6 +130,7 @@ fn s12_layout_roundtrips_and_hashes() {
         Box::new(|s| game_mut(s).players[0].s12.downed += 1),
         Box::new(|s| game_mut(s).players[0].s12.torso_hits[0] += 1),
         Box::new(|s| game_mut(s).players[1].s12.downed_by_class[0] += 1),
+        Box::new(|s| game_mut(s).players[1].s12.finished_by_class[2] += 1),
         Box::new(|s| game_mut(s).players[1].s12.refund_mp += 1),
         Box::new(move |s| cas(s, down).tend = Some((SimId(0), u64::MAX))),
     ];
@@ -1067,6 +1068,83 @@ fn w5_bleed_out_seeded_and_w12_strays_kill() {
     assert_eq!(s12(&w, 0).bled_out, 1);
     assert_eq!(w.game().unwrap().players[1].kills, kills + 1);
     assert!(w.game().unwrap().casualties.is_empty());
+}
+
+/// S12 F2 (review R1): a downed man's death (a later hit, a same-tick
+/// second hit, a bleed-out) counts in the hitter's `finished_by_class`
+/// as well as `kills_by`, so `kills_by - finished_by_class` per class is
+/// the men killed outright and each casualty counts once, by the class
+/// that first took him out. Control: a man killed outright adds a kill
+/// and no finish.
+#[test]
+fn r1_finished_downed_men_count_once() {
+    let mut w = wounds_world(1);
+    let _keep = lone(&mut w, 0, 900, 900);
+    // (kills_by, finished_by_class) of player 1 at class `c`.
+    let kf = |w: &World, c: u16| {
+        let p = &w.game().unwrap().players[1];
+        (p.kills_by[c as usize], p.s12.finished_by_class[c as usize])
+    };
+    let (rifle, mortar, he) = (kill_class::RIFLE, kill_class::MORTAR, kill_class::TANK_HE);
+    // Downed by a mortar fragment, finished by a rifle: a kill and a
+    // finish for the rifle, a down for the mortar.
+    let a = lone(&mut w, 0, 500, 500);
+    assert!(w.down_soldier(a, (1, mortar)));
+    let r0 = kf(&w, rifle);
+    bullet(&mut w, 1, "ww2:m1_garand", a, ZONE_TORSO);
+    assert_eq!(kind(&w, a), EntityKind::Corpse);
+    assert_eq!(kf(&w, rifle), (r0.0 + 1, r0.1 + 1));
+    assert_eq!(kf(&w, mortar), (0, 0));
+    // Control: killed outright by a rifle: a kill, no finish.
+    let b = lone(&mut w, 0, 530, 500);
+    set_hp(&mut w, b, 10);
+    let r0 = kf(&w, rifle);
+    bullet(&mut w, 1, "ww2:kar98k", b, ZONE_TORSO);
+    assert_eq!(kind(&w, b), EntityKind::Corpse);
+    assert_eq!(kf(&w, rifle), (r0.0 + 1, r0.1));
+    // Down and finished in one tick by two rifle hits.
+    let c2 = lone(&mut w, 0, 560, 500);
+    set_hp(&mut w, c2, 20);
+    let ev = BallisticEvent {
+        weapon: weapon(&w, "ww2:m1_garand"),
+        player: 1,
+        ammo: NO_AMMO,
+        slot: 0,
+        shooter: SimId(u32::MAX),
+        blow: Blow::Hit(c2, ZONE_TORSO),
+        mission: 0,
+    };
+    let r0 = kf(&w, rifle);
+    blows_now(&mut w, &[ev, ev], |_, _| {});
+    assert_eq!(kind(&w, c2), EntityKind::Corpse);
+    assert_eq!(kf(&w, rifle), (r0.0 + 1, r0.1 + 1));
+    // Downed by a tank HE round, bleeds out: the bleed-out finishes him
+    // for the class that downed him.
+    let d = lone(&mut w, 0, 590, 500);
+    assert!(w.down_soldier(d, (1, he)));
+    let h0 = kf(&w, he);
+    let at = w.game().unwrap().casualties[&d].bleed_out_at;
+    while w.tick() <= at {
+        w.step(&[]);
+    }
+    assert_eq!(kind(&w, d), EntityKind::Corpse);
+    assert_eq!(kf(&w, he), (h0.0 + 1, h0.1 + 1));
+    // Over the whole run (player 1's AI may fight too): per class
+    // `kills_by - finished_by_class` sums to player 0's men killed
+    // outright, and outright plus downs to every man taken out once.
+    let p1 = &w.game().unwrap().players[1];
+    let (k, f, dn) = (
+        p1.kills_by,
+        p1.s12.finished_by_class,
+        p1.s12.downed_by_class,
+    );
+    let s0 = s12(&w, 0);
+    let outright: u32 = (0..kill_class::COUNT).map(|c| k[c] - f[c]).sum();
+    assert_eq!(outright, s0.killed_outright, "{k:?} {f:?} {s0:?}");
+    let cas: u32 = (0..kill_class::COUNT).map(|c| k[c] - f[c] + dn[c]).sum();
+    assert_eq!(cas, s0.killed_outright + s0.downed);
+    assert_eq!(dn[mortar as usize], 1, "a counts once, for the mortar");
+    assert_eq!(k[mortar as usize], 0);
 }
 
 /// W5 (S12-6 (A)): a downed man counts toward pop until he dies. W14: a

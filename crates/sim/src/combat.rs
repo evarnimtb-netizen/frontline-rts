@@ -4035,6 +4035,38 @@ impl MatchState {
         self.credit_kill(by, ff);
     }
 
+    /// S12 F2 (review R1): [`Self::fall`] for a man who was already down.
+    fn finish(
+        &mut self,
+        ctx: &mut DamageCtx,
+        id: SimId,
+        by: (u8, u16),
+        ff: bool,
+        corpse_ticks: u32,
+    ) {
+        self.kill(ctx.ents, ctx.hash, id, corpse_ticks);
+        ctx.stats.deaths += 1;
+        self.credit_finish(by, ff);
+    }
+
+    /// S12 F2 (review R1): the kill credit of a downed man's death (a
+    /// bleed-out, a later hit, a same-tick second hit): [`Self::credit_kill`]
+    /// and, not for own fire, the hitter's `finished_by_class`, so that
+    /// `kills_by - finished_by_class` counts the men killed outright and a
+    /// casualty counts once, by the class that first took him out.
+    pub(crate) fn credit_finish(&mut self, by: (u8, u16), ff: bool) {
+        self.credit_kill(by, ff);
+        if !ff
+            && let Some(p) = self.players.get_mut(by.0 as usize)
+            && let Some(n) = p
+                .s12
+                .finished_by_class
+                .get_mut(kill_class::base(by.1) as usize)
+        {
+            *n = n.saturating_add(1);
+        }
+    }
+
     /// The kill credit of one death (S12: factored out of the Damage
     /// stage's kill loop; a bleed-out credits the last hitter the same
     /// way). `ff`: own fire (S11a2 F4: `ff_kills`, no kill).
@@ -4088,7 +4120,7 @@ impl MatchState {
             match ctx.ents.kind[i] {
                 EntityKind::Downed => {
                     self.bump_s12(owner, |c| &mut c.downed_killed);
-                    self.fall(ctx, id, by, by.0 == owner, corpse_ticks);
+                    self.finish(ctx, id, by, by.0 == owner, corpse_ticks);
                 }
                 EntityKind::Soldier => {
                     if first.3.outright(w) || self.casualties.len() >= crate::wounds::MAX_CASUALTIES
@@ -4114,7 +4146,7 @@ impl MatchState {
                     if let Some(next) = group.get(1) {
                         let by2 = (next.1, next.2);
                         self.bump_s12(owner, |c| &mut c.downed_killed);
-                        self.fall(ctx, id, by2, by2.0 == owner, corpse_ticks);
+                        self.finish(ctx, id, by2, by2.0 == owner, corpse_ticks);
                     }
                 }
                 _ => {}

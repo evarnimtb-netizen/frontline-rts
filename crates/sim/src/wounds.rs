@@ -197,6 +197,11 @@ pub struct S12Counters {
     pub reinforce_mp: u32,
     /// Enemy men this player downed, by `kill_class` (W13).
     pub downed_by_class: [u32; kill_class::COUNT],
+    /// S12 F2 (review R1): downed enemy men whose death credited this
+    /// player a kill, by the finishing `kill_class` (a bleed-out credits
+    /// the class that downed him). `kills_by - finished_by_class` is the
+    /// men this player killed outright.
+    pub finished_by_class: [u32; kill_class::COUNT],
     pub head_hits: [u32; 2],
     pub torso_hits: [u32; 2],
     pub leg_hits: [u32; 2],
@@ -370,7 +375,7 @@ impl MatchState {
                 self.kill(ctx.ents, ctx.hash, id, corpse_ticks);
                 // Checker F2: every death counts in `deaths`.
                 stats.deaths += 1;
-                self.credit_kill(by, by.0 == owner);
+                self.credit_finish(by, by.0 == owner);
             }
         }
         // W6: the possible tenders (buddies, medics) and the carriers.
