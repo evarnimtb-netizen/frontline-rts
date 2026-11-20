@@ -4,8 +4,9 @@ extends Node3D
 ## a tan second pip low on him for a leg wound), a pale groundsheet under
 ## every downed man with a pip above him (red: bleeding out, white:
 ## stabilised) and a stretcher (two poles) under one being carried, a white
-## armband on each medic, and a cot under each bed of an aid post. White
-## armband and stretcher only: no red cross (owner decision S12-2).
+## armband on each medic, a cot for each bed of an aid post (empty ones
+## paler) and over a built post one mark per medic it needs (white: there).
+## White armband and stretcher only: no red cross (owner decision S12-2).
 ## One pooled MeshInstance3D per box (dozens at most), unshaded so the
 ## signs read in shade; drawn only while the state shows wounds
 ## (`MatchView.s12_on()` is not asked here: no wound, no downed man, no
@@ -20,6 +21,8 @@ const SHEET := Color(0.70, 0.68, 0.58)
 const POLE := Color(0.42, 0.33, 0.22)
 const ARMBAND := Color(1.0, 1.0, 1.0)
 const COT := Color(0.62, 0.60, 0.50)
+const COT_EMPTY := Color(0.48, 0.47, 0.42)
+const STAFF_MISSING := Color(0.40, 0.40, 0.40)
 ## Pip height over the feet by stance (m).
 const PIP_LIFT := {"stand": 2.15, "crouch": 1.6, "prone": 0.95}
 
@@ -32,6 +35,10 @@ var sheets := 0
 var poles := 0
 var armbands := 0
 var cots := 0
+## Empty cots, and the post's staff marks (all, and those lit).
+var empty_cots := 0
+var staff_marks := 0
+var staff_lit := 0
 ## Last frame's pip colours of the wounded men by id (tests).
 var man_pip: Dictionary = {}
 ## Last frame's pip colours of the downed men by id (tests).
@@ -45,6 +52,9 @@ func update_state(s: Dictionary) -> void:
 	poles = 0
 	armbands = 0
 	cots = 0
+	empty_cots = 0
+	staff_marks = 0
+	staff_lit = 0
 	man_pip.clear()
 	down_pip.clear()
 	var medic_squads := {}
@@ -84,18 +94,35 @@ func update_state(s: Dictionary) -> void:
 		_box(cp + Vector3(0, 1.0, 0), Vector3(0.26, 0.26, 0.26), 0.0, col)
 		pips += 1
 	for st in s.get("structures", []):
-		for i in (st.get("beds", []) as Array).size():
-			var b: Dictionary = st.beds[i]
-			var yaw2 := float(st.get("yaw", 0.0))
-			var f := Vector2(cos(yaw2), sin(yaw2))
-			var l := Vector2(-f.y, f.x)
-			var at := l * (1.2 * (i - 0.5)) + f * 2.2
+		var beds: Array = st.get("beds", [])
+		# S12 F2 (bridge gap B3): every bed of the def, empty ones paler.
+		var n := maxi(beds.size(), int(st.get("beds_max", 0)))
+		var yaw2 := float(st.get("yaw", 0.0))
+		var f := Vector2(cos(yaw2), sin(yaw2))
+		var l := Vector2(-f.y, f.x)
+		for i in n:
+			var at := l * (1.2 * (i - (n - 1) * 0.5)) + f * 2.2
 			var pos: Vector3 = st.pos + Vector3(at.x, 0.12, -at.y)
+			if i >= beds.size():
+				_box(pos, Vector3(0.7, 0.12, 1.9), yaw2, COT_EMPTY)
+				empty_cots += 1
+				continue
 			_box(pos, Vector3(0.7, 0.18, 1.9), yaw2, COT)
 			cots += 1
-			if bool(b.get("evac", false)):
+			if bool(beds[i].get("evac", false)):
 				_box(pos + Vector3(0, 0.8, 0), Vector3(0.2, 0.2, 0.2), 0.0, DRESSING)
 				pips += 1
+		# B3: staff over staff_min, one armband mark per medic the post
+		# needs (white: there, grey: missing), over a built post.
+		if st.get("kind", "") == "aid" and bool(st.get("built", false)):
+			var need := int(st.get("staff_min", 0))
+			var have := int(st.get("staff", 0))
+			for k in need:
+				var mp: Vector3 = st.pos + Vector3(0.3 * (k - (need - 1) * 0.5), 2.4, 0)
+				_box(mp, Vector3(0.18, 0.18, 0.18), 0.0, ARMBAND if k < have else STAFF_MISSING)
+				staff_marks += 1
+				if k < have:
+					staff_lit += 1
 	for k in range(_n, _pool.size()):
 		_pool[k].visible = false
 

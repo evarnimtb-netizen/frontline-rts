@@ -67,8 +67,8 @@ const FORT_LABELS := {&"build_sandbags": "Sandbags", &"build_wire": "Wire", &"bu
 const AID := [&"aid_menu", "Aid", &"", "Wounds: tend and carry the wounded and downed, evacuate them, call replacements, build the aid post. Opens the aid menu."]
 const ROW_AID := [
 	[&"tend", "Tend", &"", "Click a wounded man or a downed one: the nearest selected man goes to him. A medic stabilises a downed man (15 s) so he stops bleeding out; anyone bandages a wounded man (10 s), who then loses no more HP."],
-	[&"carry", "Carry", &"", "Click a downed man, then the ground: one or two selected men (medics first, on a stretcher) carry him there, slowly. Toward an aid post or the base, where Evacuate takes him off the map."],
-	[&"evacuate", "Evacuate", &"", "Selected wounded men: at a staffed aid post with a free bed they are treated and return; in the base they leave the map (a paid man refunds part of his price). With none selected, click a downed man."],
+	[&"carry", "Carry", &"", "Click a downed man, then the ground: one or two selected men (medics first, on a stretcher) carry him there, slowly. Toward a staffed aid post or the base, where he is evacuated once stabilised."],
+	[&"evacuate", "Evacuate", &"", "Selected wounded men: in the ring of a staffed aid post with a free bed they are treated and return; in the base they leave the map (a paid man refunds part of his price). Carry a downed man to the post or the base: he is evacuated there."],
 	[&"reinforce", "Reinforce", &"", "Selected infantry squads fill their gaps from the base: the men are paid per head (at the card's price), walk to the squad and join. One order per card cooldown; not at the pop cap, not without manpower."],
 	[&"build_aid", "Aid post", &"", "Click the spot (medic squads): a tent on a scrape with two beds. It works while two own medics stand within its ring: a stabilised downed man in the ring is evacuated, a wounded man is treated and returns to the fight. Shell fire that breaks the tent destroys it."],
 ]
@@ -163,7 +163,7 @@ const ROW_SUPPLY := [
 ]
 const PLACE := [&"place_crate", "Place", &"", "Click the ground: the squad carries its crates there and sets them down. Inside an own HQ or dump ring they go into its stock; within 5 m of a mortar or tank they feed it."]
 const PICK_UP := [&"pick_up", "Pick up", &"", "Click an own crate on the ground: the squad walks to it and a free man takes it."]
-const TOOLS := [&"tend", &"carry", &"evacuate", &"build_aid", &"emplace", &"hitch", &"push_gun", &"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up", &"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq", &"cut_wire", &"bangalore", &"lay_ap_mines", &"lay_at_mines", &"build_hedgehog", &"build_log_barrier", &"build_bunker", &"clear_mines", &"demolish"]
+const TOOLS := [&"tend", &"carry", &"build_aid", &"emplace", &"hitch", &"push_gun", &"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up", &"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq", &"cut_wire", &"bangalore", &"lay_ap_mines", &"lay_at_mines", &"build_hedgehog", &"build_log_barrier", &"build_bunker", &"clear_mines", &"demolish"]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 ## S4: item buttons with a count badge (the Panzerfaust is a tool, not a

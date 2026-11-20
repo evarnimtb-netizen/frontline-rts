@@ -1994,7 +1994,7 @@ func stage_aid_post(pos: Vector3, built := true, beds := 1, staff := 2, pct := 1
 		"pos": pos, "yaw": 0.0, "radius": 12.0, "built": built, "build_pct": pct if not built else 100, "radio": false,
 		"stock_kg": {}, "cap_kg": {},
 		"boxes": [{"part": "tent", "pct": 100, "size": Vector3(2.5, 1.8, 2.0), "offset": Vector2(0, 0)}],
-		"beds": bed_list, "staff": staff,
+		"beds": bed_list, "staff": staff, "beds_max": 2, "staff_min": 2,
 	})
 
 

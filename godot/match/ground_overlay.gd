@@ -143,7 +143,7 @@ func update_state(state: Dictionary, view: MatchView) -> void:
 ## (5 m) round set-down own crates while a mortar is selected, and the
 ## placement ghost (the def's radius) under the cursor of a build tool.
 func _draw_supply(view: MatchView, sel: Node, state: Dictionary) -> void:
-	var show: bool = sel.tool in [&"build_hq", &"build_dump", &"build_aid", &"place_crate", &"pick_up", &"evacuate", &"carry"]
+	var show: bool = sel.tool in [&"build_hq", &"build_dump", &"build_aid", &"place_crate", &"pick_up", &"carry"]
 	# S8b: the selected trucks' reach: vehicles (solid), men (dashed).
 	for id in sel.truck_vehicles():
 		var tv: Dictionary = view.vehicles_by_id.get(id, {})

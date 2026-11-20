@@ -419,6 +419,33 @@ func squad_is_medic(sid: int) -> bool:
 	return (squads_by_id.get(sid, {}).get("tags", PackedStringArray()) as PackedStringArray).has("medic")
 
 
+## S12 F2 (review R3): whether own wounded man `id` at `p` would be
+## evacuated now: in the own base ring (`map.own_base`), or in the ring of
+## a built own aid post with a free bed and its staff, and not in a bed.
+func can_evacuate_at(id: int, p: Vector3) -> bool:
+	var flat := Vector2(p.x, p.z)
+	var posts: Array = []
+	for st in state.get("structures", []):
+		for b in st.get("beds", []):
+			if int(b.man) == id:
+				return false
+		if int(st.get("owner", -1)) == local_player and st.get("kind", "") == "aid":
+			posts.append(st)
+	var base: Variant = state.get("map", {}).get("own_base")
+	if base is Dictionary:
+		var bp: Vector3 = base.pos
+		if flat.distance_to(Vector2(bp.x, bp.z)) <= float(base.radius):
+			return true
+	for st in posts:
+		var sp: Vector3 = st.pos
+		if bool(st.get("built", false)) \
+				and (st.get("beds", []) as Array).size() < int(st.get("beds_max", 2)) \
+				and int(st.get("staff", 0)) >= int(st.get("staff_min", 2)) \
+				and flat.distance_to(Vector2(sp.x, sp.z)) <= float(st.get("radius", 0.0)):
+			return true
+	return false
+
+
 ## S12: own downed men, ascending.
 func own_casualties() -> PackedInt32Array:
 	var out := PackedInt32Array()

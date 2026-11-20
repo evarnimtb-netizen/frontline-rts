@@ -613,6 +613,18 @@ func wounded_men() -> PackedInt32Array:
 	return out
 
 
+## S12 F2 (review R3): the selected wounded men Evacuate takes now: in the
+## own base or in the ring of a staffed own aid post with a free bed (the
+## sim's rule; a downed man is evacuated by carrying him there).
+func evacuable_men() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for id in wounded_men():
+		var so: Dictionary = view.soldiers_by_id.get(id, {})
+		if so.has("pos") and view.can_evacuate_at(id, so.pos):
+			out.append(id)
+	return out
+
+
 ## S12: selected infantry squads with a gap in them (Reinforce fills it).
 func reinforce_squads() -> PackedInt32Array:
 	var out := PackedInt32Array()
@@ -736,7 +748,7 @@ func can(order: StringName) -> bool:
 		&"carry":
 			return view.s12_on() and not selected_soldiers().is_empty() and not view.own_casualties().is_empty()
 		&"evacuate":
-			return view.s12_on() and not selected_soldiers().is_empty() and (not wounded_men().is_empty() or not view.own_casualties().is_empty())
+			return view.s12_on() and not evacuable_men().is_empty()
 		&"reinforce":
 			return not reinforce_squads().is_empty()
 		&"build_aid":
@@ -922,15 +934,12 @@ func activate(order: StringName) -> void:
 		&"reinforce":
 			view.emit_intent(&"reinforce", {"squads": reinforce_squads()})
 			cancel_tool()
-		# S12: wounded men selected go at once (to the aid post in reach or
-		# the base); otherwise a click on a downed man.
+		# S12: the selected wounded men in the base or a staffed post's
+		# ring go at once (review R3: no downed-man click; the sim takes
+		# only wounded men there).
 		&"evacuate":
-			var wounded := wounded_men()
-			if wounded.is_empty():
-				_set_tool(&"evacuate")
-			else:
-				view.emit_intent(&"evacuate_units", {"units": wounded})
-				cancel_tool()
+			view.emit_intent(&"evacuate_units", {"units": evacuable_men()})
+			cancel_tool()
 		&"tend", &"carry", &"build_aid":
 			carry_man = -1
 			_set_tool(order)
@@ -1473,21 +1482,18 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 			var what := "hq" if tool == &"build_hq" else ("aid" if tool == &"build_aid" else "dump")
 			view.emit_intent(&"build", {"squads": selected_squads(), "target": g, "what": what, "facing": across})
 		# S12: tend a downed man (a medic stabilises him) or a wounded one
-		# (anyone bandages him); evacuate a downed one; carry takes two
-		# clicks, the downed man and then where to.
-		&"tend", &"evacuate":
+		# (anyone bandages him); carry takes two clicks, the downed man and
+		# then where to.
+		&"tend":
 			var man := view.pick_casualty(screen)
-			if man == -1 and tool == &"tend":
+			if man == -1:
 				var so := pick_soldier(screen, 1)
 				if so != -1 and view.soldiers_by_id.get(so, {}).has("wound"):
 					man = so
 			if man == -1:
 				AudioManager.play_ui(&"error")
 				return
-			if tool == &"tend":
-				view.emit_intent(&"tend_units", {"units": selected_soldiers(), "man": man})
-			else:
-				view.emit_intent(&"evacuate_units", {"units": PackedInt32Array([man])})
+			view.emit_intent(&"tend_units", {"units": selected_soldiers(), "man": man})
 		&"carry":
 			if carry_man == -1:
 				carry_man = view.pick_casualty(screen)

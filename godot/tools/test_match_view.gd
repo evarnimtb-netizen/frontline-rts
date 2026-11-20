@@ -1816,6 +1816,7 @@ func _test_s12() -> void:
 	_check(_view.soldier_wounded(_view.soldiers_by_id[men[1]]), "S12: a wound makes the pip read as wounded")
 	var wv: Node3D = _match.wound_view
 	_check(wv.pips == 4 and wv.sheets == 1 and wv.cots == 1 and wv.armbands == 2, "S12: pips 4, sheet 1, cot 1, armbands 2 (%d, %d, %d, %d)" % [wv.pips, wv.sheets, wv.cots, wv.armbands])
+	_check(wv.empty_cots == 1 and wv.staff_marks == 2 and wv.staff_lit == 2, "S12: the post's empty cot and staff 2/2 (%d, %d, %d)" % [wv.empty_cots, wv.staff_marks, wv.staff_lit])
 	_check(wv.man_pip[men[1]] == wv.BLEED and wv.man_pip[men[2]] == wv.DRESSING and wv.down_pip[men[3]] == wv.BLEED, "S12: bleeding red, dressed white")
 	_check(_match.supply_view.drawn >= 1, "S12: the aid post's tent is drawn")
 	await _frames(2)
@@ -1868,7 +1869,8 @@ func _test_s12() -> void:
 	_check(not (_view.casualties_by_id[cid].carriers as PackedInt32Array).is_empty(), "S12: the mock shows the carriers")
 	await _frames(2)
 	_check(_match.wound_view.poles == 2, "S12: a carried man lies on a stretcher (%d poles)" % _match.wound_view.poles)
-	# Evacuate: a selected wounded man goes at once.
+	# Evacuate (review R3): a selected wounded man in the ring of the staged
+	# post (built, staffed 2/2, a free bed) goes at once.
 	_sel.aid_menu = false
 	_sel.select_only(PackedInt32Array([men[1]]))
 	_view.update_state(_source.get_state())
@@ -1876,20 +1878,25 @@ func _test_s12() -> void:
 	_intents.clear()
 	_check(grid.grid_mode == "soldier" and grid.label_of(&"aid_menu") == "Aid", "S12: one man selected: the Aid button")
 	grid.press(&"aid_menu")
+	# Control: the post short of staff (1/2): off, as the sim refuses.
+	var post: Dictionary = _source.s6_structures[_source.s6_structures.size() - 1]
+	post.staff = 1
+	_view.update_state(_source.get_state())
 	grid.update_state(_view.state)
+	_check(not grid.enabled(&"evacuate"), "S12: Evacuate is off at a post short of staff")
+	post.staff = 2
+	_view.update_state(_source.get_state())
+	grid.update_state(_view.state)
+	_check(grid.enabled(&"evacuate"), "S12: Evacuate is on in a staffed post's ring")
 	grid.press(&"evacuate")
 	var ev: Variant = _last(&"evacuate_units")
 	_check(ev != null and (ev.units as PackedInt32Array) == PackedInt32Array([men[1]]), "S12: Evacuate sends the selected wounded man")
-	# Evacuate with none wounded selected: a click on the downed man.
+	# No wounded man selected: off (no downed-man click: the sim takes
+	# wounded men only).
 	_sel.select_only(PackedInt32Array([men[0]]))
 	_view.update_state(_source.get_state())
 	grid.update_state(_view.state)
-	_intents.clear()
-	grid.press(&"evacuate")
-	_check(_sel.tool == &"evacuate", "S12: Evacuate with none wounded arms a tool")
-	_click(_view.casualty_screen[cid])
-	ev = _last(&"evacuate_units")
-	_check(ev != null and (ev.units as PackedInt32Array) == PackedInt32Array([cid]), "S12: a click on the downed man evacuates him")
+	_check(not grid.enabled(&"evacuate"), "S12: Evacuate is off with no wounded man selected")
 	# The medic squad: Build menu with the aid post.
 	_sel.aid_menu = false
 	_sel.cancel_tool()
