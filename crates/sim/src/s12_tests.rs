@@ -23,6 +23,10 @@ fn wd(s: &mut SimState, id: SimId) -> &mut Wound {
     &mut s.entities.combat[id.index()].wound
 }
 
+fn beds_mut(s: &mut SimState, id: u32) -> &mut Vec<crate::wounds::Bed> {
+    &mut game_mut(s).supply6.structures.get_mut(&id).unwrap().beds
+}
+
 fn cas(s: &mut SimState, id: SimId) -> &mut Casualty {
     s.game.as_mut().unwrap().casualties.get_mut(&id).unwrap()
 }
@@ -149,8 +153,97 @@ fn load_rejects_bad_s12_state() {
     World::load(&bytes, 1).expect("control: the staged save loads");
     let tick = w.tick();
     let other = members(&w, sq)[0];
+    // Checker F7: an enemy soldier, and an aid post (accepted since Build B)
+    // holding one valid bed.
+    let enemy = (0..w.state.entities.kind.len())
+        .map(|i| SimId(i as u32))
+        .find(|&m| {
+            kind(&w, m) == EntityKind::Soldier && w.state.entities.owner[m.index()] == PlayerId(1)
+        })
+        .unwrap();
+    let aid_def = super::s6_tests::def(&w, 0, frontline_content::setup::StockKind::Aid, None);
+    let aid = super::s6_tests::add_built(&mut w, 0, aid_def, c(320, 320), [0; 3]);
+    let bed = |man: SimId, done_at: u64| crate::wounds::Bed {
+        man,
+        done_at,
+        evac: false,
+    };
+    game_mut(&mut w.state)
+        .supply6
+        .structures
+        .get_mut(&aid)
+        .unwrap()
+        .beds
+        .push(bed(band, tick + 60));
+    w.refresh_hashes();
+    let bytes = w.save();
+    World::load(&bytes, 1).expect("control: an aid post with a bed loads");
     type Edit = Box<dyn Fn(&mut SimState)>;
     let cases: Vec<(&str, Edit)> = vec![
+        (
+            "F7: more casualties than the cap",
+            Box::new(move |s| {
+                let c0 = cas(s, down).clone();
+                for k in 0..=crate::wounds::MAX_CASUALTIES as u32 {
+                    game_mut(s)
+                        .casualties
+                        .insert(SimId(100_000 + k), c0.clone());
+                }
+            }),
+        ),
+        (
+            "F7: a downed man in a squad",
+            Box::new(move |s| s.entities.squad[down.index()] = Some(sq)),
+        ),
+        (
+            "F7: a downed man with a corpse timer",
+            Box::new(move |s| s.entities.combat[down.index()].corpse = 30),
+        ),
+        (
+            "F7: a fit man with a leg wound",
+            Box::new(move |s| wd(s, other).legs = true),
+        ),
+        (
+            "F7: an enemy medic tends him",
+            Box::new(move |s| cas(s, down).tend = Some((enemy, tick + 30))),
+        ),
+        (
+            "F7: a tend past MAX_TICK",
+            Box::new(move |s| cas(s, down).tend = Some((other, crate::bounds::MAX_TICK + 1))),
+        ),
+        (
+            "F7: an enemy carrier",
+            Box::new(move |s| cas(s, down).carriers = [Some(other), Some(enemy)]),
+        ),
+        (
+            "F7: evacuation past MAX_TICK",
+            Box::new(move |s| cas(s, down).evac_at = crate::bounds::MAX_TICK + 1),
+        ),
+        (
+            "F7: destination beyond the map size",
+            Box::new(move |s| cas(s, down).dest = Some(c(100_000, 10))),
+        ),
+        (
+            "F7: more beds than MAX_BEDS",
+            Box::new(move |s| {
+                let b = beds_mut(s, aid);
+                while b.len() <= crate::wounds::MAX_BEDS {
+                    b.push(bed(band, tick + 60));
+                }
+            }),
+        ),
+        (
+            "F7: a bed holding an enemy",
+            Box::new(move |s| beds_mut(s, aid)[0].man = enemy),
+        ),
+        (
+            "F7: a bed holding nobody",
+            Box::new(move |s| beds_mut(s, aid)[0].man = SimId(99_999)),
+        ),
+        (
+            "F7: a bed done past MAX_TICK",
+            Box::new(move |s| beds_mut(s, aid)[0].done_at = crate::bounds::MAX_TICK + 1),
+        ),
         (
             "wound state past Downed",
             Box::new(move |s| wd(s, band).state = 3),
