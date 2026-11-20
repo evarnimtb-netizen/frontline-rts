@@ -710,6 +710,10 @@ fn s10b_path(path: &str) -> bool {
         || path.contains(".rg.")
         || path.ends_with(".rg")
         || path.ends_with(".cb_last")
+        // S12: the wounds, the casualties and the counters.
+        || path.contains(".wound")
+        || path.starts_with("state.game.casualties")
+        || path.contains(".s12.")
         || path.contains("Order.ClearMines")
         || path.contains("Order.Demolish")
         // Fuzz stage `staged_s10b_ai`.
@@ -1002,9 +1006,12 @@ fn staged_s10b() -> World {
     let leig = s.squad_type_index("ww2:ger_leig18_squad").unwrap();
     // S11b: the US rifle squad's riflemen carry three rifle grenades.
     let rifles = arm_rifle_grenades(&mut s, "ww2:usa_rifle_squad", "rifleman", 3);
+    // S12: wounds on, so the staged wounded and downed men play on.
+    s.rules.wounds.enabled = 1;
     let mut w = World::new_match(s, 1).unwrap();
     staged_s11a2_gun(&mut w, leig);
     staged_s11b(&mut w, rifles);
+    staged_s12(&mut w);
     let spawn = |w: &mut World, x: i32| {
         w.spawn_squad_at(PlayerId(0), eng, c(x, 300), FxVec2::new(Fx::ONE, Fx::ZERO))
             .unwrap()
@@ -1112,6 +1119,42 @@ fn staged_s11b(w: &mut World, rifles: u16) {
         p.s11b.rg_fired = 2;
         p.s11b.arty_emplaced = 1;
         p.s11b.how_rounds = [1, 2, 3];
+    }));
+}
+
+/// Fuzz stage S12 (spec 3): a German rifle squad with a man mid-bandage
+/// and a man downed (a casualty bleeding out); a few S12 counters.
+fn staged_s12(w: &mut World) {
+    use frontline_sim::fx::{Fx, FxVec2};
+    use frontline_sim::wounds::WOUNDED;
+    let t = w
+        .game()
+        .unwrap()
+        .setup()
+        .squad_type_index("ww2:ger_grenadiergruppe")
+        .unwrap();
+    let sq = w
+        .spawn_squad_at(
+            PlayerId(0),
+            t,
+            FxVec2::from_int(200, 700),
+            FxVec2::new(Fx::ONE, Fx::ZERO),
+        )
+        .unwrap();
+    let ms = w.game().unwrap().squads()[&sq].members.clone();
+    assert!(w.edit_soldier(ms[1], |_, c| {
+        c.hp = 40;
+        c.wound.state = WOUNDED;
+        c.wound.legs = true;
+        c.wound.bandaging = 120;
+        c.wound.bleed_acc_ms = 500;
+        c.wound.by = (1, 1);
+    }));
+    assert!(w.down_soldier(ms[2], (1, 1)), "the staged man went down");
+    assert!(w.edit_player(PlayerId(0), |p| {
+        p.s12.downed = 1;
+        p.s12.bandaged = 2;
+        p.s12.torso_hits = [3, 4];
     }));
 }
 
