@@ -533,6 +533,48 @@ fn w3_mine_blast_kills_outright() {
     assert_eq!(s12(&w, 1).killed_outright, 1);
 }
 
+/// Checker F3: a man a mine's fragments down counts in
+/// `men_lost_to_mines` at the down, once. Control: the stepper (blast,
+/// outright) counts too, so the account equals every loss to the mine.
+#[test]
+fn w3_mine_downs_count_as_mine_losses() {
+    let mut w = wounds_world(1);
+    let f = w
+        .match_setup()
+        .unwrap()
+        .forts
+        .iter()
+        .position(|f| f.id == "ww2:ap_minefield")
+        .unwrap() as u16;
+    w.lay_mine_now(f, c(500, 500), PlayerId(0)).unwrap();
+    let walker = lone(&mut w, 1, 490, 500);
+    let mut near = Vec::new();
+    for (k, (dx, dy)) in [(3, 2), (-3, 3), (2, -3), (-4, -2), (4, 4), (0, 5)]
+        .into_iter()
+        .enumerate()
+    {
+        let m = lone(&mut w, 1, 500 + dx, 500 + dy);
+        set_hp(&mut w, m, 1 + k as u16);
+        near.push((m, c(500 + dx, 500 + dy)));
+    }
+    for k in 0..30 * 10 {
+        if kind(&w, walker) == EntityKind::Soldier {
+            let x = Fx::from_int(490) + Fx::from_milli(200 * k.min(100));
+            w.place_soldier(walker, FxVec2::new(x, Fx::from_int(500)));
+        }
+        for &(m, p) in &near {
+            if kind(&w, m) == EntityKind::Soldier {
+                w.place_soldier(m, p);
+            }
+        }
+        w.step(&[]);
+    }
+    let sc = s12(&w, 1);
+    assert!(sc.downed >= 1, "a fragment downed someone: {sc:?}");
+    let lost = w.game().unwrap().fort().accounts[1].men_lost_to_mines;
+    assert_eq!(lost, sc.killed_outright + sc.downed, "{sc:?}");
+}
+
 /// W3 (own fire, S11a2 F4): an own mission burst's fragment that downs an
 /// own man credits no down to his own player, and his bleed-out is an
 /// own-fire kill, not a kill. Control: an enemy's down is credited.

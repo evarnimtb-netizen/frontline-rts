@@ -4065,6 +4065,10 @@ impl MatchState {
                         self.fall(ctx, id, by, by.0 == owner, corpse_ticks);
                         continue;
                     }
+                    // Checker F3: a man a mine downs counts in
+                    // `men_lost_to_mines` at the down (once; his later
+                    // death does not count again).
+                    self.mine_loss(ctx.ents, mine_dead, id);
                     self.down(
                         ctx.ents,
                         ctx.hash,
