@@ -1114,3 +1114,32 @@ fn g4_job_men_rejoin_when_the_job_ends() {
     }
 }
 
+/// Checker G5: `Reinforce` on a holding squad keeps its slots and adds
+/// one per man; the new men walk detached (not in the column). Control:
+/// the old men's slots are the ones before.
+#[test]
+fn g5_reinforce_keeps_the_squads_slots() {
+    let mut w = flat_world_with(1, |s| {
+        s.rules.wounds.enabled = 1;
+        s.rules.wounds.reinforce = 1;
+    });
+    let sq = spawn(&mut w, 0, RIFLES, 500, 500);
+    steps(&mut w, 3);
+    let ms = members(&w, sq);
+    assert!(w.kill_soldier(ms[8]));
+    steps(&mut w, 60);
+    let before = w.game().unwrap().squads[&sq].nav.clone();
+    assert!(matches!(
+        before.phase,
+        crate::game::NavPhase::Holding | crate::game::NavPhase::Arriving
+    ));
+    assert!(cmd(&mut w, 1, CommandKind::Reinforce { squad: sq }));
+    let after = &w.game().unwrap().squads[&sq].nav;
+    assert_eq!(after.phase, before.phase);
+    assert_eq!(after.slots.len(), before.slots.len() + 1);
+    assert_eq!(after.slots[..before.slots.len()], before.slots[..]);
+    let new = *members(&w, sq).last().unwrap();
+    assert!(w.state.entities.unit[new.index()].detached);
+    assert!(World::load(&w.save(), 1).is_ok(), "loadable");
+}
+

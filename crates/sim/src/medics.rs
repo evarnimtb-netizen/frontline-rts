@@ -1119,8 +1119,10 @@ impl MatchState {
     /// each) and the pop cap allow, when the card's cooldown is over; it
     /// starts the card's cooldown (S12-12). Each man spawns at the base with
     /// the card's basic member kit (the first slot with no crew weapon and
-    /// no trait: a rifleman),
-    /// joins the squad at once and walks to his place in its line.
+    /// no trait: a rifleman), joins the squad at once (a member, one more
+    /// slot at the end of its line) and walks detached to its first man in
+    /// formation; he takes his place at the squad's next order or Regroup
+    /// (checker G5).
     /// Refused (a `FortEvent`, as before Build B) otherwise.
     pub(crate) fn order_reinforce(
         &mut self,
@@ -1205,6 +1207,8 @@ impl MatchState {
             }
         }
         let spot = self.spawn_spot(ctx.ents, ctx.terrain, p, squad);
+        let ty_spacing = self.setup.squad_types[t as usize].spacing;
+        let mut new_men: Vec<SimId> = Vec::with_capacity(n);
         for _ in 0..n {
             let sid = ctx.ents.spawn(EntityKind::Soldier, p);
             let i = sid.index();
@@ -1232,16 +1236,38 @@ impl MatchState {
                 &mut ctx.ents.combat[i],
             );
             ctx.hash.mark_entity_chunk(sid.chunk());
-            self.squads
-                .get_mut(&squad)
-                .expect("squad")
-                .members
-                .push(sid);
+            let sq = self.squads.get_mut(&squad).expect("squad");
+            sq.members.push(sid);
+            // Checker G5: the squad keeps its slots (a trench, cover, a
+            // Dig or sweep line); one more at the end of its line for him.
+            if !sq.nav.slots.is_empty() {
+                let n = sq.nav.slots.len();
+                let last = sq.nav.slots[n - 1];
+                let step = if n >= 2 {
+                    last - sq.nav.slots[n - 2]
+                } else {
+                    -sq.nav.facing.perp() * Fx::from(ty_spacing)
+                };
+                sq.nav.slots.push(ctx.terrain.clamp(last + step));
+            }
+            new_men.push(sid);
         }
+        // Checker G5: he walks to the squad detached (not in its column:
+        // a Moving squad is not strung out by him) and takes his place in
+        // its formation at the squad's next order or Regroup.
         let sq = &self.squads[&squad];
-        if matches!(sq.nav.phase, NavPhase::Holding | NavPhase::Arriving) {
-            let facing = sq.nav.facing;
-            self.regroup_here(ctx, squad, facing);
+        let lead = sq
+            .members
+            .iter()
+            .copied()
+            .find(|m| {
+                let u = &ctx.ents.unit[m.index()];
+                !new_men.contains(m) && !u.detached && u.riding.is_none() && u.serving.is_none()
+            })
+            .unwrap_or(sq.members[0]);
+        let to = ctx.ents.transform[lead.index()].pos.xy();
+        for m in new_men {
+            self.send_man(ctx, m, to);
         }
         true
     }
