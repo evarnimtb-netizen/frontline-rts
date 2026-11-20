@@ -246,7 +246,7 @@ impl MatchState {
             if c.card as usize >= s.squad_types.len() {
                 return Err("a casualty's card is unknown");
             }
-            if c.bleed_out_at != 0 && (c.bleed_out_at <= tick || c.bleed_out_at > max_bleed) {
+            if c.bleed_out_at != 0 && (c.bleed_out_at < tick || c.bleed_out_at > max_bleed) {
                 return Err("a casualty's bleed-out tick is out of range");
             }
             let owner = ents.owner()[id.index()];
@@ -255,7 +255,7 @@ impl MatchState {
                     && ents.owner()[m.index()] == owner
             };
             if let Some((m, at)) = c.tend
-                && (!own_man(m) || at <= tick || at > crate::bounds::MAX_TICK)
+                && (!own_man(m) || at < tick || at > crate::bounds::MAX_TICK)
             {
                 return Err("a casualty's medic is bad");
             }
@@ -273,7 +273,7 @@ impl MatchState {
                     return Err("a casualty's destination is off the map");
                 }
             }
-            if c.evac_at != 0 && (c.evac_at <= tick || c.evac_at > crate::bounds::MAX_TICK) {
+            if c.evac_at != 0 && (c.evac_at < tick || c.evac_at > crate::bounds::MAX_TICK) {
                 return Err("a casualty's evacuation tick is out of range");
             }
         }

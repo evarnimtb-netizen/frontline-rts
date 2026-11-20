@@ -213,7 +213,7 @@ fn load_rejects_bad_s12_state() {
         ("card unknown", Box::new(move |s| cas(s, down).card = 9999)),
         (
             "bleed-out in the past",
-            Box::new(move |s| cas(s, down).bleed_out_at = tick),
+            Box::new(move |s| cas(s, down).bleed_out_at = tick - 1),
         ),
         (
             "bleed-out far ahead",
@@ -225,7 +225,7 @@ fn load_rejects_bad_s12_state() {
         ),
         (
             "a tend that ended",
-            Box::new(move |s| cas(s, down).tend = Some((other, tick))),
+            Box::new(move |s| cas(s, down).tend = Some((other, tick - 1))),
         ),
         (
             "the same carrier twice",
@@ -241,7 +241,7 @@ fn load_rejects_bad_s12_state() {
         ),
         (
             "evacuation in the past",
-            Box::new(move |s| cas(s, down).evac_at = tick),
+            Box::new(move |s| cas(s, down).evac_at = tick - 1),
         ),
         (
             "beds on a structure that is not an aid post",
@@ -269,6 +269,13 @@ fn load_rejects_bad_s12_state() {
         e(&mut x.state);
         assert!(World::load(&x.save(), 1).is_err(), "{name}: loaded");
     }
+    // Checker F1: an event due on the tick the save resumes at is legal.
+    let mut x = World::load(&bytes, 1).unwrap();
+    let c0 = cas(&mut x.state, down);
+    c0.bleed_out_at = tick;
+    c0.tend = Some((other, tick));
+    c0.evac_at = tick;
+    World::load(&x.save(), 1).expect("F1: events due at the save's tick load");
 }
 
 // ------------------------------------------------------------ rules --
