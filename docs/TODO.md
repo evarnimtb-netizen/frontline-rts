@@ -523,6 +523,14 @@ exchange is not worse than the USA's; US rifles kill 48.3 men a match against 28
   by 8 points or more, three go over the cap (26.5, 27.2, 29.3). (A) Keep the cap and retune HE sources first. (B) Move the
   cap, a design change; not measured.
 
+## S12 open items (2026-11-21; branch `claude/project-thread-aj1tww`, log `docs/slices/S12-log.md`)
+
+- S12-16 **T8 known miss (accepted for now, first item of the next balance pass).** With wounds on, HE's share of
+  casualties (each man counted once, by the class that first took him out) reads 29.97 % on the 40 set against the hard
+  cap 26.3 (25.5 with every S12 switch off). The double count found in Review was removed; the rest is a real shift.
+  Decided 2026-11-21: ship S12 with T8 as a known miss; the next balance pass starts with it. Germany 20/40, length unchanged.
+- S12-17 Stabilisation stays at about 3 % of downs (medics reach few men); not tuned (features first). Read it in the balance pass.
+
 ## Planned work queue
 
 1. Infra step (done; on main).
