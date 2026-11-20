@@ -742,10 +742,19 @@ fn wound_by_with_a_vehicle_class_loads() {
         by: (1, kill_class::VEHICLE_MG | (17 + 1) << 4),
         ..Default::default()
     };
-    assert!(crate::wounds::wound_ok(EntityKind::Downed, &w, 2, 300));
+    assert!(crate::wounds::wound_ok(EntityKind::Downed, &w, 2, 18, 300));
     let bad = crate::wounds::Wound {
         by: (1, kill_class::COUNT as u16 | (17 + 1) << 4),
         ..w
     };
-    assert!(!crate::wounds::wound_ok(EntityKind::Downed, &bad, 2, 300));
+    assert!(!crate::wounds::wound_ok(
+        EntityKind::Downed,
+        &bad,
+        2,
+        18,
+        300
+    ));
+    // S12 F2 (review R10): the type bits name one of the setup's
+    // vehicle types (type 17 needs 18).
+    assert!(!crate::wounds::wound_ok(EntityKind::Downed, &w, 2, 17, 300));
 }

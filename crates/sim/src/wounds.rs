@@ -208,7 +208,15 @@ pub struct S12Counters {
 }
 
 /// Load checks of one entity's wound (spec 3, `load_rejects_bad_s12_state`).
-pub(crate) fn wound_ok(kind: EntityKind, w: &Wound, players: usize, bandage_ticks: u64) -> bool {
+/// `vehicles`: the setup's vehicle types (S12 F2, review R10: the type
+/// bits of `by.1` name one of them, as `kill_class::vehicle` reads them).
+pub(crate) fn wound_ok(
+    kind: EntityKind,
+    w: &Wound,
+    players: usize,
+    vehicles: usize,
+    bandage_ticks: u64,
+) -> bool {
     let state_ok = match kind {
         EntityKind::Soldier => w.state <= WOUNDED,
         EntityKind::Downed => w.state == DOWNED,
@@ -223,7 +231,8 @@ pub(crate) fn wound_ok(kind: EntityKind, w: &Wound, players: usize, bandage_tick
         // its class (`kill_class::vehicle`), as every kill class does.
         && (w.by == (0, 0)
             || ((w.by.0 as usize) < players
-                && (kill_class::base(w.by.1) as usize) < kill_class::COUNT))
+                && (kill_class::base(w.by.1) as usize) < kill_class::COUNT
+                && kill_class::vehicle(w.by.1).is_none_or(|t| t < vehicles)))
 }
 
 impl MatchState {

@@ -2816,7 +2816,7 @@ impl MatchState {
                 // S12: a downed man keeps 1 HP (a hit kills him), no squad.
                 || (kind == EntityKind::Downed
                     && (c.hp == 0 || c.corpse != 0 || ents.squad[i].is_some()))
-                || !crate::wounds::wound_ok(kind, &c.wound, np, bandage_ticks)
+                || !crate::wounds::wound_ok(kind, &c.wound, np, s.vehicles.len(), bandage_ticks)
                 || (vehicle
                     && *c
                         != crate::ecs::Combat {
