@@ -167,6 +167,21 @@ passes = 4
 all_round = true
 pit_length_cm = 250
 
+# S12 W8 aid pit: the aid post's shallow scrape for the tent, 2.5 x 2.0 m,
+# 40 cm deep (6,000 points on a 0.5 m line, the HQ pit's rate: two
+# medics at 100 % dig it in about 30 s;
+# verify). Not engineers only: the medics dig it.
+[dig.profiles.aid_pit]
+depth_cm = 40
+floor_cm = 150
+wall_cm = 30
+parapet_cm = 20
+max_length_m = 5
+work_per_m = 12000
+passes = 2
+all_round = true
+pit_length_cm = 250
+
 # S10a pits (docs/slices/S10a-fortifications.md 3.2), engineers only, all-round
 # spoil, the S6 rate (about 5,250 points a m3). MG nest pit: 2.2 m long, 2.0 m
 # wide, 90 cm deep (verify; about 4.4 m3, 23,000 points on a 0.2 m line).

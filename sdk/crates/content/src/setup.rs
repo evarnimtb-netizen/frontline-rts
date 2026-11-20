@@ -282,7 +282,8 @@ pub use crate::defs::StockKind;
 /// S6: one box of a supply def (lowered `StockBoxDef`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StockBoxSetup {
-    /// Index into `defs::STOCK_BOX_PARTS` (0 stock, 1 radio, 2 crate).
+    /// Index into `defs::STOCK_BOX_PARTS` (0 stock, 1 radio, 2 crate,
+    /// 3 tent).
     pub part: u8,
     /// Half extents (along the facing, across, up).
     pub half: [Fixed; 3],
@@ -314,6 +315,10 @@ pub struct StockSetup {
     /// Index into `MatchSetup::ammo`: the cook-off burst.
     pub cookoff: Option<u16>,
     pub boxes: Vec<StockBoxSetup>,
+    /// S12 W8 aid post: beds (0 for other kinds).
+    pub beds: u8,
+    /// S12 W8 aid post: own medics in its radius it needs to work.
+    pub staff_min: u8,
 }
 
 impl MatchSetup {
@@ -454,6 +459,8 @@ pub struct RulesSetup {
     pub dugout_pit: DigSetup,
     /// S10b: the bunker's pit.
     pub bunker_pit: DigSetup,
+    /// S12 W8: the aid post's pit.
+    pub aid_pit: DigSetup,
     pub combat: CombatSetup,
     pub items: ItemRulesSetup,
     /// Vehicle rules (S3).
@@ -491,6 +498,7 @@ impl RulesSetup {
             DigProfile::MgNestPit => &self.mg_nest_pit,
             DigProfile::DugoutPit => &self.dugout_pit,
             DigProfile::BunkerPit => &self.bunker_pit,
+            DigProfile::AidPit => &self.aid_pit,
         }
     }
 }
@@ -530,6 +538,8 @@ pub enum DigProfile {
     DugoutPit = 7,
     /// S10b: the bunker's pit (engineers only).
     BunkerPit = 8,
+    /// S12 W8: the aid post's shallow pit (medics dig it).
+    AidPit = 9,
 }
 
 impl DigProfile {
@@ -543,6 +553,7 @@ impl DigProfile {
                 | DigProfile::GunPit
                 | DigProfile::MgNestPit
                 | DigProfile::DugoutPit
+                | DigProfile::AidPit
                 | DigProfile::BunkerPit
         )
     }
@@ -2014,6 +2025,7 @@ impl ModDefs {
                 mg_nest_pit: pit_setup(&rules.dig, |p| p.mg_nest_pit.as_ref()),
                 dugout_pit: pit_setup(&rules.dig, |p| p.dugout_pit.as_ref()),
                 bunker_pit: pit_setup(&rules.dig, |p| p.bunker_pit.as_ref()),
+                aid_pit: pit_setup(&rules.dig, |p| p.aid_pit.as_ref()),
                 combat: {
                     let c = &rules.combat;
                     CombatSetup {
@@ -2500,6 +2512,8 @@ fn lower_stock(
         supply: d.supply.as_deref().and_then(SupplyKind::from_crate_name),
         g: d.kg.saturating_mul(1000),
         carry_speed_pct: d.carry_speed_pct,
+        beds: d.beds.min(u8::MAX as u32) as u8,
+        staff_min: d.staff_min.min(u8::MAX as u32) as u8,
         cookoff: d.cookoff.as_ref().and_then(|c| index_of(ammo.keys(), c)),
         boxes: d
             .boxes
@@ -2739,6 +2753,7 @@ impl MatchSetup {
             &r.mg_nest_pit,
             &r.dugout_pit,
             &r.bunker_pit,
+            &r.aid_pit,
         ] {
             check(
                 d.pit_line >= Fixed::ZERO && fx_in(d.pit_line, 0, 20),
@@ -3203,7 +3218,7 @@ impl MatchSetup {
                     && d.built_by.iter().all(|&t| (t as usize) < self.tags.len())
                     && (1..=4).contains(&d.boxes.len())
                     && d.boxes.iter().all(|b| {
-                        b.part < 3
+                        (b.part as usize) < crate::defs::STOCK_BOX_PARTS.len()
                             && (1..=10_000).contains(&b.hp)
                             && b.half.iter().all(|h| *h > Fixed::ZERO && fx_in(*h, 0, 10))
                             && b.offset
@@ -3215,7 +3230,17 @@ impl MatchSetup {
                     && d.cap_g.iter().all(|g| *g <= 10_000_000)
                     && d.g <= 200_000
                     && (10..=100).contains(&d.carry_speed_pct)
-                    && (d.kind != StockKind::Crate || (d.supply.is_some() && d.g > 0)),
+                    && (d.kind != StockKind::Crate || (d.supply.is_some() && d.g > 0))
+                    // S12 W8: an aid post has beds and staff, no stock;
+                    // other kinds have none.
+                    && if d.kind == StockKind::Aid {
+                        (1..=8).contains(&d.beds)
+                            && (1..=8).contains(&d.staff_min)
+                            && d.pit == DigProfile::AidPit
+                            && d.cap_g == [0; 3]
+                    } else {
+                        d.beds == 0 && d.staff_min == 0
+                    },
                 "stocks",
                 "a supply def is out of range",
             );

@@ -1331,6 +1331,13 @@ pub struct StockDef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cookoff: Option<String>,
     pub boxes: Vec<StockBoxDef>,
+    /// S12 W8 aid post: beds, 1..=8 (men treated or evacuated at once).
+    #[serde(default)]
+    pub beds: u32,
+    /// S12 W8 aid post: own medics standing in its radius it needs to work,
+    /// 1..=8.
+    #[serde(default)]
+    pub staff_min: u32,
     /// Citations.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
@@ -1341,7 +1348,7 @@ fn full_pct() -> u32 {
 }
 
 /// S6: box part names (`StockBoxDef::part`), by their setup index.
-pub const STOCK_BOX_PARTS: [&str; 3] = ["stock", "radio", "crate"];
+pub const STOCK_BOX_PARTS: [&str; 4] = ["stock", "radio", "crate", "tent"];
 
 impl StockDef {
     pub fn validate(&self) -> Vec<Issue> {
@@ -1356,7 +1363,7 @@ impl StockDef {
             if !STOCK_BOX_PARTS.contains(&b.part.as_str()) {
                 out.push(Issue::new(
                     format!("boxes[{k}].part"),
-                    format!("`{}` is not one of stock, radio, crate", b.part),
+                    format!("`{}` is not one of stock, radio, crate, tent", b.part),
                 ));
             }
             for (j, s) in b.size_cm.iter().enumerate() {
@@ -1413,12 +1420,34 @@ impl StockDef {
                     );
                 }
             }
-            // S12 W8: the layout has the kind; the aid post's rules and
-            // its `[[...]] beds` keys arrive in S12a Build B.
-            StockKind::Aid => out.push(Issue::new(
-                "kind",
-                "aid posts are not built yet (S12a Build B)",
-            )),
+            // S12 W8: the aid post: a shallow pit, beds and staff, no stock.
+            StockKind::Aid => {
+                if self.pit != Some(DigProfile::AidPit) {
+                    out.push(
+                        Issue::new("pit", "an aid post names the aid pit profile")
+                            .with_hint("pit = \"aid_pit\""),
+                    );
+                }
+                range(&mut out, "radius_m", self.radius_m, 1, 100);
+                range(&mut out, "cost", self.cost, 0, 10_000);
+                range(&mut out, "beds", self.beds, 1, 8);
+                range(&mut out, "staff_min", self.staff_min, 1, 8);
+                if !self.cap_kg.is_empty() {
+                    out.push(Issue::new("cap_kg", "an aid post holds no stock"));
+                }
+                if self.built_by.is_empty() {
+                    out.push(
+                        Issue::new("built_by", "names at least one unit tag")
+                            .with_hint("built_by = [\"medic\"]"),
+                    );
+                }
+            }
+        }
+        if self.kind != StockKind::Aid && (self.beds != 0 || self.staff_min != 0) {
+            out.push(Issue::new(
+                "beds",
+                "only an aid post has beds and staff_min",
+            ));
         }
         out
     }
@@ -1916,6 +1945,9 @@ pub struct DigProfilesDef {
     /// S10b: the bunker's pit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bunker_pit: Option<DigProfileDef>,
+    /// S12 W8: the aid post's pit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aid_pit: Option<DigProfileDef>,
 }
 
 /// A dug cross-section: a flat floor, walls sloping out to the lip, and a
@@ -3040,6 +3072,7 @@ impl RulesDef {
             ("mg_nest_pit", pits.mg_nest_pit.as_ref()),
             ("dugout_pit", pits.dugout_pit.as_ref()),
             ("bunker_pit", pits.bunker_pit.as_ref()),
+            ("aid_pit", pits.aid_pit.as_ref()),
         ]
         .into_iter()
         .filter_map(|(n, d)| d.map(|d| (n, d)))

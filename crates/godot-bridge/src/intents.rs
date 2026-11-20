@@ -81,6 +81,8 @@ pub fn dig_profile(name: &str) -> DigProfile {
         "hq_pit" => DigProfile::HqPit,
         "dump_pit" => DigProfile::DumpPit,
         "gun_pit" => DigProfile::GunPit,
+        // S12 W8.
+        "aid_pit" => DigProfile::AidPit,
         _ => DigProfile::Trench,
     }
 }
@@ -353,6 +355,8 @@ pub fn stock_kind(name: &str) -> Option<frontline_content::setup::StockKind> {
     Some(match name {
         "hq" => StockKind::Hq,
         "dump" => StockKind::Dump,
+        // S12 W8.
+        "aid" => StockKind::Aid,
         _ => return None,
     })
 }

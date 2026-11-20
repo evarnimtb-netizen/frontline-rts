@@ -2347,6 +2347,18 @@
           "spoil_crater_pct": 150
         },
         "profiles": {
+          "aid_pit": {
+            "all_round": true,
+            "depth_cm": 40,
+            "engineers_only": false,
+            "floor_cm": 150,
+            "max_length_m": 5,
+            "parapet_cm": 20,
+            "passes": 2,
+            "pit_length_cm": 250,
+            "wall_cm": 30,
+            "work_per_m": 12000
+          },
           "at_ditch": {
             "all_round": false,
             "depth_cm": 230,

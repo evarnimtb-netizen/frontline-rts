@@ -1981,6 +1981,7 @@ impl MatchRuntime {
                 "hq_pit" => &profile(&rules.hq_pit),
                 "dump_pit" => &profile(&rules.dump_pit),
                 "gun_pit" => &profile(&rules.gun_pit),
+                "aid_pit" => &profile(&rules.aid_pit),
             },
             // S6: crate feed distance and the HUD low marker.
             "supply" => &vdict! {
@@ -2048,7 +2049,8 @@ impl MatchRuntime {
                 boxes.push(
                     &vdict! {
                         "pos" => self.ground(bxy),
-                        "part" => frontline_content::defs::STOCK_BOX_PARTS[b.part as usize % 3],
+                        "part" => frontline_content::defs::STOCK_BOX_PARTS
+                            [b.part as usize % frontline_content::defs::STOCK_BOX_PARTS.len()],
                         "pct" => st.box_pct.get(k).copied().unwrap_or(0) as i64,
                         "size" => Vector3::new(
                             fx(b.half[0]) * 2.0,
@@ -2066,6 +2068,8 @@ impl MatchRuntime {
                     "owner" => st.owner as i64,
                     "kind" => match d.kind {
                         frontline_content::setup::StockKind::Hq => "hq",
+                        // S12 W8.
+                        frontline_content::setup::StockKind::Aid => "aid",
                         _ => "dump",
                     },
                     "name" => d.name.as_str(),
