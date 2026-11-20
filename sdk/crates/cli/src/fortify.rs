@@ -451,8 +451,17 @@ fn call_in(w: &mut World, p: u8, role: &str) -> Result<SquadId> {
     bail!("the {role} call-in never arrived")
 }
 
+/// Player `p`'s men out of the fight: his losses plus (S12 F2, review R2)
+/// his downed men lying now, at the end of the window (a downed man is no
+/// loss until he dies or is evacuated; 0 with wounds off).
 fn losses(w: &World, p: u8) -> u32 {
-    w.game().unwrap().players()[p as usize].losses
+    let g = w.game().unwrap();
+    let down = g
+        .downed_by_player(w.entities())
+        .get(p as usize)
+        .copied()
+        .unwrap_or(0);
+    g.players()[p as usize].losses + down
 }
 
 fn faction(setup: &MatchSetup, p: u8) -> String {
@@ -560,7 +569,7 @@ fn mortar_run(
         bail!("seed {seed}: the barrage burst {fired} of {BARRAGE_ROUNDS} shells");
     }
     Ok((
-        losses(&w, target) - before,
+        losses(&w, target).saturating_sub(before),
         (w.tick() - start) as f64 / hz as f64,
     ))
 }
@@ -790,8 +799,8 @@ fn assault_run(
         smoke,
         frags_thrown: (w.stats().throws - throws - smoke as u64) as u32,
         frags_in_trench: in_trench,
-        defender_losses: losses(&w, dug) - lost_d,
-        attacker_losses: losses(&w, att) - lost_a,
+        defender_losses: losses(&w, dug).saturating_sub(lost_d),
+        attacker_losses: losses(&w, att).saturating_sub(lost_a),
     })
 }
 
@@ -944,8 +953,8 @@ fn suppress_run(
         entrenched: faction(w.match_setup().unwrap(), dug),
         mg,
         def_mg,
-        defender_losses: losses(&w, dug) - lost_d,
-        attacker_losses: losses(&w, att) - lost_a,
+        defender_losses: losses(&w, dug).saturating_sub(lost_d),
+        attacker_losses: losses(&w, att).saturating_sub(lost_a),
         attacker_men: att_men,
         second,
         defender_men: def_men,
@@ -1047,7 +1056,7 @@ fn smoke_run(args: &FortifyArgs, seed: u64, hidden: u8, smoke: bool) -> Result<S
         smoke,
         seen_ticks: seen,
         mg_shots: shots,
-        losses: losses(&w, hidden) - before,
+        losses: losses(&w, hidden).saturating_sub(before),
     })
 }
 
