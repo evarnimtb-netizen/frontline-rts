@@ -119,7 +119,7 @@ impl MatchState {
 
     /// The door of vehicle `id` on the ground, a metre out from the hull
     /// (where men walk to and step out).
-    fn door_spot(&self, ents: &Entities, id: SimId) -> Option<(FxVec2, FxVec2)> {
+    pub(crate) fn door_spot(&self, ents: &Entities, id: SimId) -> Option<(FxVec2, FxVec2)> {
         let t = self.transport_of(id)?;
         let f = self.vderived.frame(id)?;
         let tr = &ents.transform[id.index()];

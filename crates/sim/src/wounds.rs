@@ -6,8 +6,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ecs::{Entities, EntityKind, SimId};
-use crate::fx::FxVec2;
+use frontline_content::tuning::WoundsTuning;
+
+use crate::ecs::{Combat, Entities, EntityKind, SimId, Stance, Transform};
+use crate::fx::{Fx, FxVec2};
 use crate::game::{MatchState, SquadId, kill_class};
 
 /// `Wound::state`: not hurt past `wounded_hp`.
@@ -85,6 +87,95 @@ pub struct Hit {
     pub zone: u8,
     /// Blast overpressure (always a death, W3).
     pub blast: bool,
+    /// The damage dealt after the zone factor (W3 `head_kill_dmg`).
+    pub dmg: u32,
+}
+
+impl Hit {
+    /// W3: whether a man who fell to this hit dies outright (else he is
+    /// Downed).
+    pub fn outright(&self, w: &WoundsTuning) -> bool {
+        self.blast
+            || self.raw <= -(w.overkill_kill as i32)
+            || (self.zone == ZONE_HEAD && w.head_kill_dmg > 0 && self.dmg >= w.head_kill_dmg)
+    }
+}
+
+/// W1: the zone of a hit at world height `z` on a man (standing or
+/// crouched: his capsule's top `head_top_pct` is the head, the bottom
+/// `legs_bottom_pct` the legs; prone men are torso).
+pub(crate) fn zone_at(t: &Transform, c: &Combat, z: Fx, w: &WoundsTuning) -> u8 {
+    if c.stance == Stance::Prone || c.height <= Fx::ZERO {
+        return ZONE_TORSO;
+    }
+    let pct = (z - t.pos.z).raw() as i64 * 100 / c.height.raw() as i64;
+    if pct >= 100 - w.head_top_pct as i64 {
+        ZONE_HEAD
+    } else if pct < w.legs_bottom_pct as i64 {
+        ZONE_LEGS
+    } else {
+        ZONE_TORSO
+    }
+}
+
+/// W2, W3, W4: deals `dmg` to the man with combat state `c`, hit in `zone`
+/// (`blast`: overpressure, no zone) by `by`. Returns the hit when he falls
+/// to 0 HP (a downed man falls to any hit). `w` is `None` with `[wounds]
+/// enabled` 0: then exactly the pre-S12 arithmetic (`saturating_sub`) and
+/// no wound state.
+pub(crate) fn deal(
+    c: &mut Combat,
+    dmg: u32,
+    zone: u8,
+    blast: bool,
+    by: (u8, u16),
+    w: Option<&WoundsTuning>,
+) -> Option<Hit> {
+    let Some(w) = w else {
+        let before = c.hp as i64;
+        c.hp = c.hp.saturating_sub(dmg.min(u16::MAX as u32) as u16);
+        return (c.hp == 0).then_some(Hit {
+            raw: (before - dmg as i64).max(i32::MIN as i64) as i32,
+            zone,
+            blast,
+            dmg,
+        });
+    };
+    let pct = match zone {
+        ZONE_HEAD => w.head_damage_pct,
+        ZONE_LEGS => w.legs_damage_pct,
+        ZONE_TORSO => w.torso_damage_pct,
+        _ => 100,
+    };
+    let dmg = if blast || zone == ZONE_NONE {
+        dmg
+    } else {
+        (dmg as u64 * pct as u64 / 100).min(u32::MAX as u64) as u32
+    };
+    let raw = (c.hp as i64 - dmg as i64).max(i32::MIN as i64) as i32;
+    let wd = &mut c.wound;
+    wd.by = by;
+    // A new hit breaks a dressing in progress.
+    wd.bandaging = 0;
+    if wd.state == DOWNED || raw <= 0 {
+        c.hp = 0;
+        return Some(Hit {
+            raw,
+            zone,
+            blast,
+            dmg,
+        });
+    }
+    c.hp = raw as u16;
+    if raw <= w.wounded_hp as i32 {
+        wd.state = WOUNDED;
+        wd.bandaged = false;
+        wd.bleed_acc_ms = 0;
+        if zone == ZONE_LEGS {
+            wd.legs = true;
+        }
+    }
+    None
 }
 
 /// S12 per-player counters (saved, hashed; the `s12` JSON block). Pairs
@@ -208,5 +299,95 @@ impl MatchState {
             }
         }
         Ok(())
+    }
+}
+
+impl MatchState {
+    /// S12 W4, W5 (Status stage, serial, ascending id; nothing with
+    /// `[wounds] enabled` 0): downed men whose bleed-out tick came die,
+    /// credited to their last hitter; wounded men bandage themselves while
+    /// under `crouch_suppression` and not firing (`bandage_s`; firing,
+    /// suppression or a new hit breaks it) and bleed 1 HP per
+    /// `bleed_ms_per_hp` until bandaged (counted once a second, on the
+    /// tick `(tick + id) % hz == 0`); at 0 HP a wounded man goes down.
+    pub(crate) fn wounds_tick(&mut self, ctx: &mut crate::game::Ctx, seed: u64) {
+        let w = &self.setup.rules.wounds;
+        if w.enabled == 0 {
+            return;
+        }
+        let tick = ctx.tick;
+        let hz = self.setup.tick_hz.max(1) as u64;
+        let (bandage, per_hp) = (w.bandage_s as u64 * hz, w.bleed_ms_per_hp.max(1));
+        let crouch = self.setup.rules.combat.crouch_suppression;
+        let corpse_ticks = self.setup.rules.combat.corpse_ticks;
+        if !self.casualties.is_empty() {
+            let due: Vec<SimId> = self
+                .casualties
+                .iter()
+                .filter(|(_, c)| c.bleed_out_at != 0 && c.bleed_out_at <= tick)
+                .map(|(&id, _)| id)
+                .collect();
+            for id in due {
+                let i = id.index();
+                let (owner, by) = (ctx.ents.owner()[i].0, ctx.ents.combat()[i].wound.by);
+                self.bump_s12(owner, |c| &mut c.bled_out);
+                self.kill(ctx.ents, ctx.hash, id, corpse_ticks);
+                self.credit_kill(by, by.0 == owner);
+            }
+        }
+        let mut fell: Vec<SimId> = Vec::new();
+        for i in 0..ctx.ents.len() {
+            if ctx.ents.kind()[i] != EntityKind::Soldier
+                || ctx.ents.combat()[i].wound.state != WOUNDED
+            {
+                continue;
+            }
+            let id = SimId(i as u32);
+            let c = &mut ctx.ents.combat[i];
+            let owner = ctx.ents.owner[i].0;
+            if !c.wound.bandaged {
+                let calm = c.suppression / 1000 < crouch && c.since_shot > 1;
+                if c.wound.bandaging > 0 {
+                    if !calm {
+                        c.wound.bandaging = 0;
+                    } else {
+                        c.wound.bandaging -= 1;
+                        if c.wound.bandaging == 0 {
+                            c.wound.bandaged = true;
+                            c.wound.bleed_acc_ms = 0;
+                            if let Some(p) = self.players.get_mut(owner as usize) {
+                                p.s12.bandaged = p.s12.bandaged.saturating_add(1);
+                            }
+                        }
+                    }
+                } else if calm {
+                    c.wound.bandaging = bandage.min(u16::MAX as u64) as u16;
+                }
+            }
+            if !c.wound.bandaged && (tick + i as u64).is_multiple_of(hz) {
+                let mut acc = c.wound.bleed_acc_ms as u32 + 1000;
+                while acc >= per_hp && c.hp > 0 {
+                    c.hp -= 1;
+                    acc -= per_hp;
+                }
+                c.wound.bleed_acc_ms = acc.min(u16::MAX as u32) as u16;
+                if c.hp == 0 {
+                    fell.push(id);
+                }
+            }
+            ctx.hash.mark_entity_chunk(id.chunk());
+        }
+        for id in fell {
+            let i = id.index();
+            let (owner, by) = (ctx.ents.owner()[i].0, ctx.ents.combat()[i].wound.by);
+            if self.casualties.len() >= MAX_CASUALTIES {
+                self.bump_s12(owner, |c| &mut c.bled_out);
+                self.kill(ctx.ents, ctx.hash, id, corpse_ticks);
+                self.credit_kill(by, by.0 == owner);
+            } else {
+                ctx.ents.combat[i].hp = 1;
+                self.down(ctx.ents, ctx.hash, Some(ctx.terrain), id, by, tick, seed);
+            }
+        }
     }
 }

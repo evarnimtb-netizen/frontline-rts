@@ -1014,6 +1014,13 @@ impl MatchState {
             .soldiers()
             .filter(|id| ents.owner[id.index()] == player)
             .count() as u32;
+        // S12 (S12-6 (A)): downed men count until they die or leave.
+        let alive = alive
+            + self
+                .casualties
+                .keys()
+                .filter(|id| ents.owner[id.index()] == player)
+                .count() as u32;
         // S9: a gun counts its own `pop`; its crew are soldiers (above).
         let vehicles: u32 = self
             .vehicles

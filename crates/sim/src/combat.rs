@@ -722,7 +722,18 @@ pub(crate) fn aim_and_fire(
         }
         // S4: his training scales his aim time, spread and reload.
         let tr = training_of(setup, sq);
-        let aim_ticks = pct_of(hz / 2, tr.aim_time_pct) as u16;
+        // S12 W4: a wounded man spreads, aims and reloads worse.
+        let (tr_spread, tr_aim, tr_reload) = if c.wound.state == crate::wounds::WOUNDED {
+            let wt = &setup.rules.wounds;
+            (
+                pct_of(tr.spread_pct, wt.wounded_spread_pct),
+                pct_of(tr.aim_time_pct, wt.wounded_reload_pct),
+                pct_of(tr.reload_pct, wt.wounded_reload_pct),
+            )
+        } else {
+            (tr.spread_pct, tr.aim_time_pct, tr.reload_pct)
+        };
+        let aim_ticks = pct_of(hz / 2, tr_aim) as u16;
         let still = is_still(&ctx.velocity[i], &rules.body);
         let u = &ctx.unit[i];
         // S3b: a ducked man keeps his target but does not fire; coming up
@@ -766,25 +777,14 @@ pub(crate) fn aim_and_fire(
                 continue;
             }
             let dist = (aim - from).length();
-            let pct = spread_pct(rules, c, !still, dist, range) * tr.spread_pct as i64 / 100;
+            let pct = spread_pct(rules, c, !still, dist, range) * tr_spread as i64 / 100;
             let spread = Fx::from_raw(
                 (Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64) as i32,
             );
             let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::AIM);
             let vel = shot_velocity(from, aim, w.muzzle_speed.into(), spread, &mut rng);
             fire_round(
-                out,
-                ws,
-                c,
-                kit,
-                feed,
-                w,
-                id,
-                wi,
-                owner,
-                from,
-                vel,
-                tr.reload_pct,
+                out, ws, c, kit, feed, w, id, wi, owner, from, vel, tr_reload,
             );
             continue;
         }
@@ -864,24 +864,13 @@ pub(crate) fn aim_and_fire(
         };
         let dist = (aim - from).length();
         let range: Fx = w.range_max.into();
-        let pct = spread_pct(rules, c, !still, dist, range) * tr.spread_pct as i64 / 100;
+        let pct = spread_pct(rules, c, !still, dist, range) * tr_spread as i64 / 100;
         let spread =
             Fx::from_raw((Fx::from(w.spread).raw() as i64 * pct / 100).min(i32::MAX as i64) as i32);
         let mut rng = RngStream::new(ctx.seed, ctx.tick, id, Purpose::AIM);
         let vel = shot_velocity(from, aim, w.muzzle_speed.into(), spread, &mut rng);
         fire_round(
-            out,
-            ws,
-            c,
-            kit,
-            feed,
-            w,
-            id,
-            wi,
-            owner,
-            from,
-            vel,
-            tr.reload_pct,
+            out, ws, c, kit, feed, w, id, wi, owner, from, vel, tr_reload,
         );
     }
     changed
@@ -2050,7 +2039,9 @@ pub(crate) fn spawn_rounds(
 /// slot order).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub(crate) enum Blow {
-    Hit(SimId),
+    /// A soldier (S12: or downed man) struck, and the W1 zone (torso with
+    /// `[wounds] enabled` 0).
+    Hit(SimId, u8),
     NearMiss(SimId),
     /// A shell burst at this point (on the surface for a ground hit; at the
     /// hit point on a soldier).
@@ -2172,6 +2163,10 @@ pub(crate) struct FlightCtx<'a> {
     pub ammo: &'a [AmmoSetup],
     /// S6: this tick's structure boxes and set-down crates.
     pub statics: &'a [crate::structures::StaticBox],
+    /// S12: the downed men's hash (`None` without any) and `[wounds]` when
+    /// `enabled` (hit zones).
+    pub downed: Option<&'a SpatialHash>,
+    pub wounds: Option<&'a frontline_content::tuning::WoundsTuning>,
 }
 
 /// A soldier near a round's segment this substep.
@@ -2347,6 +2342,23 @@ pub(crate) fn fly(
                         dist_sq: dsq,
                     });
                 });
+                // S12 W12: a round meets a downed man in its way (no near
+                // miss: he is out).
+                if let Some(dh) = ctx.downed {
+                    dh.for_each_near(mid.xy(), reach, |id| {
+                        let i = id.index();
+                        if ents.owner[i].0 == player {
+                            return;
+                        }
+                        let t = &ents.transform[i];
+                        let o = t.pos;
+                        let (a, b, r) = capsule(t, &ents.combat[i], ctx.body);
+                        let (s, dsq) = seg_seg(from - o, d, a - o, b - a);
+                        if dsq <= r.mul(r) && hit.is_none_or(|(hs, hid)| (s, id) < (hs, hid)) {
+                            hit = Some((s, id));
+                        }
+                    });
+                }
             }
             // Earliest hit wins; at equal t: terrain, then box, then
             // capsule. A box hit re-tests the terrain in front of it at
@@ -2445,10 +2457,14 @@ pub(crate) fn fly(
             }
             if let Some((s, id)) = capsule_hit {
                 p.pos = from + d * s;
+                let zone = ctx.wounds.map_or(crate::wounds::ZONE_TORSO, |w| {
+                    let i = id.index();
+                    crate::wounds::zone_at(&ents.transform[i], &ents.combat[i], p.pos.z, w)
+                });
                 events.push(ev(if bursts {
                     Blow::Burst(p.pos)
                 } else {
-                    Blow::Hit(id)
+                    Blow::Hit(id, zone)
                 }));
                 ended.push((slot_id, ProjectileEnd::SoldierHit));
                 *slot = None;
@@ -2519,14 +2535,24 @@ pub(crate) struct DamageCtx<'a> {
     /// S11a2 F4: own men hit by the burst being dealt (scratch, cleared
     /// per burst).
     pub ff_hit: Vec<SimId>,
+    /// S12: `[wounds]` when `enabled` (set by `apply_blows`; `None`: a man
+    /// at 0 HP dies, as before S12).
+    pub wounds: Option<frontline_content::tuning::WoundsTuning>,
+    /// S12: the downed men's spatial hash (`None` without any).
+    pub downed: Option<&'a SpatialHash>,
 }
 
-/// A soldier at 0 HP this tick: `(victim, killer's player, kill class)`.
-pub(crate) type Fallen = (SimId, u8, u16);
+/// A soldier at 0 HP this tick: `(victim, killer's player, kill class,
+/// the hit)` (S12: the hit decides Downed or dead, W3).
+pub(crate) type Fallen = (SimId, u8, u16, crate::wounds::Hit);
 
-/// Takes `dmg` hit points from soldier `id`; one who drops to 0 joins
-/// `dead` with the player who killed him and the `game::kill_class`.
-/// Returns whether this hit killed him (S11a2 F4).
+/// Takes `dmg` hit points from soldier (S12: or downed man) `id`, hit in
+/// `zone` (`blast`: overpressure); one who drops to 0 joins `dead` with the
+/// player who hit him, the `game::kill_class` and the hit (W1-W3 with
+/// `wounds`). Returns whether this hit dropped him (S11a2 F4). S12: a man
+/// already at 0 this tick who is hit again joins `dead` once more (with
+/// `wounds` only: a down then a kill in one tick).
+#[allow(clippy::too_many_arguments)]
 fn hurt(
     ents: &mut Entities,
     hash: &mut HashCache,
@@ -2534,24 +2560,46 @@ fn hurt(
     id: SimId,
     dmg: u32,
     by: (u8, u16),
+    hit: (u8, bool),
+    wounds: Option<&frontline_content::tuning::WoundsTuning>,
 ) -> bool {
     let c = &mut ents.combat[id.index()];
     if c.hp == 0 {
+        if wounds.is_some() && !dead.iter().any(|f| f.0 == id && (f.1, f.2) == by) {
+            dead.push((id, by.0, by.1, crate::wounds::Hit::default()));
+        }
         return false;
     }
-    c.hp = c.hp.saturating_sub(dmg.min(u16::MAX as u32) as u16);
-    let killed = c.hp == 0;
-    if killed {
-        dead.push((id, by.0, by.1));
+    let fell = crate::wounds::deal(c, dmg, hit.0, hit.1, by, wounds);
+    if let Some(h) = fell {
+        dead.push((id, by.0, by.1, h));
     }
     hash.mark_entity_chunk(id.chunk());
-    killed
+    fell.is_some()
 }
 
 /// S11a2 F4: [`hurt`] by burst `b`; an own man hit by an own mission burst
-/// is noted (`ff_hit`) and, on the killing hit, joins `ff_dead`.
-fn hurt_by(ctx: &mut DamageCtx, dead: &mut Vec<Fallen>, b: &Burst, id: SimId, dmg: u32) {
-    let killed = hurt(ctx.ents, ctx.hash, dead, id, dmg, (b.player, b.class));
+/// is noted (`ff_hit`) and, on the killing hit, joins `ff_dead`. S12:
+/// `zone` of a fragment hit, `None` for the overpressure.
+fn hurt_by(
+    ctx: &mut DamageCtx,
+    dead: &mut Vec<Fallen>,
+    b: &Burst,
+    id: SimId,
+    dmg: u32,
+    zone: Option<u8>,
+) {
+    let hit = (zone.unwrap_or(crate::wounds::ZONE_NONE), zone.is_none());
+    let killed = hurt(
+        ctx.ents,
+        ctx.hash,
+        dead,
+        id,
+        dmg,
+        (b.player, b.class),
+        hit,
+        ctx.wounds.as_ref(),
+    );
     if b.ff && ctx.ents.owner[id.index()].0 == b.player {
         ctx.ff_hit.push(id);
         if killed {
@@ -2613,6 +2661,10 @@ impl MatchState {
         let mut ids = Vec::new();
         ctx.spatial
             .for_each_near(pos.xy(), supp_r.max(blast_r), |id| ids.push(id));
+        // S12 W12: downed men take blasts and fragments too.
+        if let Some(dh) = ctx.downed {
+            dh.for_each_near(pos.xy(), supp_r.max(blast_r), |id| ids.push(id));
+        }
         ids.sort_unstable();
         ids.dedup();
         ctx.ff_hit.clear();
@@ -2620,7 +2672,8 @@ impl MatchState {
             let i = id.index();
             // S11a2 F2: an own mission burst spares no own man.
             let own = ctx.ents.owner[i].0 == b.player;
-            if ctx.ents.kind[i] != EntityKind::Soldier || (own && !b.ff) {
+            let downed = ctx.ents.kind[i] == EntityKind::Downed;
+            if (ctx.ents.kind[i] != EntityKind::Soldier && !downed) || (own && !b.ff) {
                 continue;
             }
             let c = ctx.ents.combat[i];
@@ -2638,7 +2691,7 @@ impl MatchState {
             let clear = ctx.terrain.line_of_sight(lift, body)
                 && self.out_of_box(b, lift, body)
                 && !self.piece_between(lift, body, skip_owner);
-            if dist <= supp_r {
+            if dist <= supp_r && !downed {
                 let mut add = (b.suppression as i64 * 1000 * (supp_r - dist).raw() as i64
                     / supp_r.raw().max(1) as i64) as u32;
                 if !clear {
@@ -2650,7 +2703,7 @@ impl MatchState {
             }
             // Overpressure: close in, with a clear line.
             if clear && dist <= blast_r {
-                hurt_by(ctx, dead, b, id, b.damage);
+                hurt_by(ctx, dead, b, id, b.damage, None);
             }
         }
         // S10b R20: a demolition charge's piece takes its tamped damage
@@ -2851,6 +2904,10 @@ impl MatchState {
         let mut ids = Vec::new();
         ctx.spatial
             .for_each_near(pos.xy(), reach + Fx::ONE, |id| ids.push(id));
+        // S12 W12: and downed men.
+        if let Some(dh) = ctx.downed {
+            dh.for_each_near(pos.xy(), reach + Fx::ONE, |id| ids.push(id));
+        }
         ids.sort_unstable();
         ids.dedup();
         let mut men: Vec<(SimId, FxVec3, FxVec3, FxVec3, Fx)> = Vec::new();
@@ -2858,7 +2915,7 @@ impl MatchState {
             let i = id.index();
             let c = &ctx.ents.combat[i];
             // S11a2 F3: an own mission burst's fragments find own men too.
-            if ctx.ents.kind[i] != EntityKind::Soldier
+            if !matches!(ctx.ents.kind[i], EntityKind::Soldier | EntityKind::Downed)
                 || (ctx.ents.owner[i].0 == b.player && !b.ff)
                 || c.hp == 0
             {
@@ -3162,7 +3219,13 @@ impl MatchState {
                     &mut ctx.ents.combat[id.index()],
                     rules.hit_suppression * 1000,
                 );
-                hurt_by(ctx, dead, b, id, dmg);
+                // S12 W1: the ray's own hit point.
+                let zone = ctx.wounds.as_ref().map_or(crate::wounds::ZONE_TORSO, |w| {
+                    let z = (o + d * s).z;
+                    let i = id.index();
+                    crate::wounds::zone_at(&ctx.ents.transform[i], &ctx.ents.combat[i], z, w)
+                });
+                hurt_by(ctx, dead, b, id, dmg, Some(zone));
                 ctx.stats.frag_hits += 1;
             }
         }
@@ -3346,7 +3409,10 @@ impl MatchState {
         armour_events: &mut Vec<ArmourEv>,
     ) {
         let rules = self.setup.rules.combat.clone();
-        // (victim, killer, class) in the order they fell.
+        // S12: wound states with `[wounds] enabled` (else a man at 0 HP dies).
+        ctx.wounds =
+            (self.setup.rules.wounds.enabled != 0).then(|| self.setup.rules.wounds.clone());
+        // (victim, killer, class, hit) in the order they fell.
         let mut dead: Vec<Fallen> = Vec::new();
         let mut fires = FireRolls::default();
         // S5b: bursts of fire-mission rounds, for the observers.
@@ -3378,8 +3444,9 @@ impl MatchState {
             .sum();
         for (k, e) in events.iter().enumerate() {
             let burst_at = match e.blow {
-                Blow::Hit(id) => {
-                    if ctx.ents.kind[id.index()] != EntityKind::Soldier {
+                Blow::Hit(id, zone) => {
+                    let kind = ctx.ents.kind[id.index()];
+                    if kind != EntityKind::Soldier && kind != EntityKind::Downed {
                         continue;
                     }
                     let w = &self.setup.weapons[e.weapon as usize];
@@ -3396,7 +3463,24 @@ impl MatchState {
                         id,
                         w.damage,
                         (e.player, class),
+                        (zone, false),
+                        ctx.wounds.as_ref(),
                     );
+                    // S12: hits on standing men by zone, trench / open.
+                    if ctx.wounds.is_some() && kind == EntityKind::Soldier {
+                        let c = &ctx.ents.combat[id.index()];
+                        let k = (!c.in_trench) as usize;
+                        if let Some(p) = self.players.get_mut(ctx.ents.owner[id.index()].0 as usize)
+                        {
+                            let z = &mut p.s12;
+                            let n = match zone {
+                                crate::wounds::ZONE_HEAD => &mut z.head_hits[k],
+                                crate::wounds::ZONE_LEGS => &mut z.leg_hits[k],
+                                _ => &mut z.torso_hits[k],
+                            };
+                            *n = n.saturating_add(1);
+                        }
+                    }
                     None
                 }
                 Blow::NearMiss(id) => {
@@ -3688,43 +3772,17 @@ impl MatchState {
             }
         }
         dead.append(&mut ctx.fallen);
-        dead.sort_unstable();
         ctx.ff_dead.sort_unstable();
-        for (id, by, class) in dead {
-            if !mine_dead.is_empty()
-                && mine_dead.contains(&id)
-                && ctx.ents.kind[id.index()] == EntityKind::Soldier
-                && let Some(a) = self
-                    .fort
-                    .accounts
-                    .get_mut(ctx.ents.owner[id.index()].0 as usize)
-            {
-                a.men_lost_to_mines = a.men_lost_to_mines.saturating_add(1);
-            }
-            self.kill(ctx.ents, ctx.hash, id, rules.corpse_ticks);
-            ctx.stats.deaths += 1;
-            // S11a2 F4: killed by his own side's mission burst: a loss (in
-            // `kill`) and no kill; mortar or gun by the burst's class.
-            if !ctx.ff_dead.is_empty() && ctx.ff_dead.binary_search(&id).is_ok() {
-                if let Some(p) = self.players.get_mut(by as usize) {
-                    let k = (kill_class::base(class) != kill_class::MORTAR) as usize;
-                    p.s11a2.ff_kills[k] = p.s11a2.ff_kills[k].saturating_add(1);
-                }
-                continue;
-            }
-            if let Some(p) = self.players.get_mut(by as usize) {
-                p.kills += 1;
-                p.kills_by[kill_class::base(class) as usize] += 1;
-                // S7: per shooting vehicle type.
-                if let Some(n) =
-                    kill_class::vehicle(class).and_then(|t| p.s7.kills_by_vehicle.get_mut(t))
-                {
-                    *n += 1;
-                }
-            }
-            // S9: with a captured gun.
-            if let Some(t) = kill_class::vehicle(class) {
-                self.note_gun_kill(by as usize, t, 1);
+        if let Some(w) = ctx.wounds.clone() {
+            // S12 W3, W5: each man's hits in event order (a stable sort).
+            dead.sort_by_key(|f| f.0);
+            self.resolve_falls(ctx, &dead, &mine_dead, &w, rules.corpse_ticks);
+        } else {
+            dead.sort_unstable();
+            for (id, by, class, _) in dead {
+                self.mine_loss(ctx.ents, &mine_dead, id);
+                let ff = !ctx.ff_dead.is_empty() && ctx.ff_dead.binary_search(&id).is_ok();
+                self.fall(ctx, id, (by, class), ff, rules.corpse_ticks);
             }
         }
         self.sweep_vehicle_refs(ctx.ents);
@@ -3837,6 +3895,27 @@ impl MatchState {
         if let Some(p) = self.players.get_mut(owner) {
             p.losses += 1;
         }
+        // S12: a downed man's casualty ends with him (none without wounds).
+        if !self.casualties.is_empty() {
+            self.casualties.remove(&id);
+        }
+        self.leave_squad(ents, id, carried, left_in, fell_at);
+    }
+
+    /// Takes man `id` (who fell at `fell_at` carrying `carried` with
+    /// `left_in` rounds in it) out of his squad: slots, focus, the AT and
+    /// rifle-grenade states, a crew weapon to the squad's drops, path
+    /// requests, the squad itself when he was its last man (S12: shared by
+    /// `kill` and the W5 down).
+    fn leave_squad(
+        &mut self,
+        ents: &mut Entities,
+        id: SimId,
+        carried: u16,
+        left_in: u16,
+        fell_at: FxVec2,
+    ) {
+        let i = id.index();
         let Some(sid) = ents.squad[i].take() else {
             return;
         };
@@ -3899,6 +3978,244 @@ impl MatchState {
         if !self.fort_off {
             self.trim_carried();
         }
+    }
+
+    /// S10b: a man a mine burst dropped counts in `men_lost_to_mines`.
+    fn mine_loss(&mut self, ents: &Entities, mine_dead: &[SimId], id: SimId) {
+        if !mine_dead.is_empty()
+            && mine_dead.contains(&id)
+            && ents.kind[id.index()] == EntityKind::Soldier
+            && let Some(a) = self
+                .fort
+                .accounts
+                .get_mut(ents.owner[id.index()].0 as usize)
+        {
+            a.men_lost_to_mines = a.men_lost_to_mines.saturating_add(1);
+        }
+    }
+
+    /// Kills `id` and credits `by` (player, kill class) with him; `ff`: an
+    /// own mission burst's (S11a2 F4: a loss, no kill).
+    fn fall(&mut self, ctx: &mut DamageCtx, id: SimId, by: (u8, u16), ff: bool, corpse_ticks: u32) {
+        self.kill(ctx.ents, ctx.hash, id, corpse_ticks);
+        ctx.stats.deaths += 1;
+        self.credit_kill(by, ff);
+    }
+
+    /// The kill credit of one death (S12: factored out of the Damage
+    /// stage's kill loop; a bleed-out credits the last hitter the same
+    /// way). `ff`: own fire (S11a2 F4: `ff_kills`, no kill).
+    pub(crate) fn credit_kill(&mut self, (by, class): (u8, u16), ff: bool) {
+        if ff {
+            if let Some(p) = self.players.get_mut(by as usize) {
+                let k = (kill_class::base(class) != kill_class::MORTAR) as usize;
+                p.s11a2.ff_kills[k] = p.s11a2.ff_kills[k].saturating_add(1);
+            }
+            return;
+        }
+        if let Some(p) = self.players.get_mut(by as usize) {
+            p.kills += 1;
+            p.kills_by[kill_class::base(class) as usize] += 1;
+            // S7: per shooting vehicle type.
+            if let Some(n) =
+                kill_class::vehicle(class).and_then(|t| p.s7.kills_by_vehicle.get_mut(t))
+            {
+                *n += 1;
+            }
+        }
+        // S9: with a captured gun.
+        if let Some(t) = kill_class::vehicle(class) {
+            self.note_gun_kill(by as usize, t, 1);
+        }
+    }
+
+    /// S12 W3, W5, W13: this tick's falls with wounds on, `dead` sorted by
+    /// man, each man's hits in event order. A man downed before this tick
+    /// dies (`downed_killed`); a standing man dies outright (`Hit::outright`,
+    /// or with no room for a casualty) or goes down, and a second hit in
+    /// the same tick then kills him.
+    fn resolve_falls(
+        &mut self,
+        ctx: &mut DamageCtx,
+        dead: &[Fallen],
+        mine_dead: &[SimId],
+        w: &frontline_content::tuning::WoundsTuning,
+        corpse_ticks: u32,
+    ) {
+        let mut k = 0;
+        while k < dead.len() {
+            let id = dead[k].0;
+            let n = dead[k..].iter().take_while(|f| f.0 == id).count();
+            let group = &dead[k..k + n];
+            k += n;
+            let i = id.index();
+            let owner = ctx.ents.owner[i].0;
+            let first = group[0];
+            let by = (first.1, first.2);
+            match ctx.ents.kind[i] {
+                EntityKind::Downed => {
+                    self.bump_s12(owner, |c| &mut c.downed_killed);
+                    self.fall(ctx, id, by, by.0 == owner, corpse_ticks);
+                }
+                EntityKind::Soldier => {
+                    if first.3.outright(w) || self.casualties.len() >= crate::wounds::MAX_CASUALTIES
+                    {
+                        self.mine_loss(ctx.ents, mine_dead, id);
+                        self.bump_s12(owner, |c| &mut c.killed_outright);
+                        self.fall(ctx, id, by, by.0 == owner, corpse_ticks);
+                        continue;
+                    }
+                    self.down(
+                        ctx.ents,
+                        ctx.hash,
+                        Some(ctx.terrain),
+                        id,
+                        by,
+                        ctx.tick,
+                        ctx.seed,
+                    );
+                    if let Some(next) = group.get(1) {
+                        let by2 = (next.1, next.2);
+                        self.bump_s12(owner, |c| &mut c.downed_killed);
+                        self.fall(ctx, id, by2, by2.0 == owner, corpse_ticks);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Adds one to an S12 counter of player `p`.
+    pub(crate) fn bump_s12(
+        &mut self,
+        p: u8,
+        f: impl FnOnce(&mut crate::wounds::S12Counters) -> &mut u32,
+    ) {
+        if let Some(pl) = self.players.get_mut(p as usize) {
+            let n = f(&mut pl.s12);
+            *n = n.saturating_add(1);
+        }
+    }
+
+    /// S12 W5: soldier `id` goes down, hit by `by` (player, kill class): he
+    /// leaves his squad as [`Self::kill`] takes him out (a crew weapon to
+    /// its drops), a rider is set down at his vehicle's door and a gun
+    /// crewman where he stands, and he bleeds out at a seeded tick (RNG
+    /// `WOUND_BLEED`, one draw). Counts `downed` for his player and
+    /// `downed_by_class` for the hitter (not for own fire).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn down(
+        &mut self,
+        ents: &mut Entities,
+        hash: &mut HashCache,
+        terrain: Option<&Heightfield>,
+        id: SimId,
+        by: (u8, u16),
+        tick: u64,
+        seed: u64,
+    ) {
+        let i = id.index();
+        let owner = ents.owner[i].0;
+        let carried = ents.kit[i].weapon;
+        let left_in = if ents.kit[i].on_sidearm {
+            0
+        } else {
+            ents.combat[i].mag
+        };
+        // S8a: a rider leaves his slot and lies at the door.
+        if let Some(r) = ents.unit[i].riding {
+            if let Some(vs) = self.vehicles.get_mut(&r.vehicle)
+                && vs.riders.get(r.slot as usize) == Some(&Some(id))
+            {
+                vs.riders[r.slot as usize] = None;
+            }
+            let spot = self
+                .door_spot(ents, r.vehicle)
+                .map(|d| d.0)
+                .unwrap_or(ents.transform[r.vehicle.index()].pos.xy());
+            let z = terrain.map_or(ents.transform[r.vehicle.index()].pos.z, |t| {
+                t.height_at(spot)
+            });
+            ents.transform[i].pos = spot.extend(z);
+            if let Some(p) = self.players.get_mut(owner as usize) {
+                p.s8a.riders_lost = p.s8a.riders_lost.saturating_add(1);
+            }
+        }
+        // S9: a gun crewman leaves his slot where he stands.
+        if let Some(sv) = ents.unit[i].serving
+            && let Some(st) = self
+                .vehicles
+                .get_mut(&sv.gun)
+                .and_then(|v| v.served.as_mut())
+            && let Some(sl) = st.slots.get_mut(sv.slot as usize)
+            && sl.man == Some(id)
+        {
+            sl.man = None;
+            let inf_gun = self.vehicles.get(&sv.gun).is_some_and(|v| {
+                self.setup.vehicles[v.type_idx as usize].role
+                    == frontline_content::VehicleRole::InfGun
+            });
+            if let Some(p) = self.players.get_mut(owner as usize) {
+                if inf_gun {
+                    p.s11b.arty_crew_lost = p.s11b.arty_crew_lost.saturating_add(1);
+                } else {
+                    p.s9.gun_crew_lost = p.s9.gun_crew_lost.saturating_add(1);
+                }
+            }
+        }
+        let fell_at = ents.transform[i].pos.xy();
+        let sq = ents.squad[i];
+        let card = sq
+            .and_then(|s| self.squads.get(&s))
+            .map_or(0, |q| q.type_idx);
+        ents.kind[i] = EntityKind::Downed;
+        ents.velocity[i] = Velocity::default();
+        let prone = Fx::from_milli(self.setup.rules.combat.body.prone_mm as i32);
+        let c = &mut ents.combat[i];
+        let wound = crate::wounds::Wound {
+            state: crate::wounds::DOWNED,
+            bandaging: 0,
+            by,
+            ..c.wound
+        };
+        *c = Combat {
+            hp: 1,
+            stance: Stance::Prone,
+            height: prone,
+            fire_height: prone,
+            seen_by: c.seen_by,
+            wound,
+            ..Combat::default()
+        };
+        ents.unit[i] = Unit::default();
+        ents.kit[i] = Kit::default();
+        hash.mark_entity_chunk(id.chunk());
+        let w = &self.setup.rules.wounds;
+        let hz = self.setup.tick_hz as i32;
+        let mut rng = RngStream::new(seed, tick, id, Purpose::WOUND_BLEED);
+        let bleed = rng.range_i32(
+            w.down_bleed_min_s as i32 * hz,
+            w.down_bleed_max_s as i32 * hz,
+        );
+        self.casualties.insert(
+            id,
+            crate::wounds::Casualty {
+                from_squad: sq.unwrap_or_default(),
+                card,
+                bleed_out_at: tick + bleed.max(1) as u64,
+                ..crate::wounds::Casualty::default()
+            },
+        );
+        self.bump_s12(owner, |c| &mut c.downed);
+        if by.0 != owner {
+            let k = kill_class::base(by.1) as usize;
+            if let Some(p) = self.players.get_mut(by.0 as usize)
+                && let Some(n) = p.s12.downed_by_class.get_mut(k)
+            {
+                *n = n.saturating_add(1);
+            }
+        }
+        self.leave_squad(ents, id, carried, left_in, fell_at);
     }
 }
 
@@ -4273,6 +4590,8 @@ mod tests {
                 armour: self.game.armour(),
                 ammo: &setup.ammo,
                 statics: &[],
+                downed: None,
+                wounds: None,
             };
             let (mut ended, mut events) = (Vec::new(), Vec::new());
             for _ in 0..60 {
@@ -4305,6 +4624,8 @@ mod tests {
                 fallen: Vec::new(),
                 ff_dead: Vec::new(),
                 ff_hit: Vec::new(),
+                wounds: None,
+                downed: None,
             };
             let ev = [BallisticEvent {
                 weapon: mortar,
@@ -4347,7 +4668,7 @@ mod tests {
             aim_point(pos, &c, &r.game.setup().rules.combat.body.clone()),
         );
         assert_eq!(end, ProjectileEnd::GroundHit, "{ev:?}");
-        assert!(!ev.iter().any(|e| matches!(e.blow, Blow::Hit(_))));
+        assert!(!ev.iter().any(|e| matches!(e.blow, Blow::Hit(..))));
         // He rises to fire: 0.3 m above the parapet, and only that shows.
         r.ents.combat[man.index()].target = Some(SimId(9999));
         r.status();
@@ -4364,7 +4685,10 @@ mod tests {
             aim_point(pos, &c, &r.game.setup().rules.combat.body.clone()),
         );
         assert_eq!(end, ProjectileEnd::SoldierHit);
-        assert_eq!(ev.last().unwrap().blow, Blow::Hit(man));
+        assert_eq!(
+            ev.last().unwrap().blow,
+            Blow::Hit(man, crate::wounds::ZONE_TORSO)
+        );
         // His chest is still behind the parapet.
         let chest = FxVec3::new(pos.x, pos.y, Fx::from_milli(100));
         let (end, _) = r.shoot(muzzle, chest);
@@ -4376,7 +4700,10 @@ mod tests {
         let chest = FxVec3::new(pos.x, pos.y, Fx::from_milli(1100));
         let (end, ev) = open.shoot(muzzle, chest);
         assert_eq!(end, ProjectileEnd::SoldierHit);
-        assert_eq!(ev.last().unwrap().blow, Blow::Hit(man));
+        assert_eq!(
+            ev.last().unwrap().blow,
+            Blow::Hit(man, crate::wounds::ZONE_TORSO)
+        );
     }
 
     #[test]
@@ -4420,6 +4747,8 @@ mod tests {
             armour: r.game.armour(),
             ammo: &r.game.setup().ammo,
             statics: &[],
+            downed: None,
+            wounds: None,
         };
         let (mut ended, mut events) = (Vec::new(), Vec::new());
         fly(0, &mut slots, &ctx, 2, &mut ended, &mut events, &mut 0);
@@ -4479,6 +4808,8 @@ mod tests {
             fallen: Vec::new(),
             ff_dead: Vec::new(),
             ff_hit: Vec::new(),
+            wounds: None,
+            downed: None,
         };
         let mg = r
             .game

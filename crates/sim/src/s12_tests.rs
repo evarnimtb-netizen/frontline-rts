@@ -270,3 +270,628 @@ fn load_rejects_bad_s12_state() {
         assert!(World::load(&x.save(), 1).is_err(), "{name}: loaded");
     }
 }
+
+// ------------------------------------------------------------ rules --
+
+use super::s6_tests::steps;
+use super::s11a2_tests::{burst_now, hp, lone, pose, weapon};
+use crate::FxVec3;
+use crate::combat::{BallisticEvent, Blow, DamageCtx};
+use crate::ecs::Stance;
+use crate::game::kill_class;
+use crate::projectile::NO_AMMO;
+use crate::wounds::{FIT, ZONE_HEAD, ZONE_LEGS, ZONE_TORSO};
+
+fn kind(w: &World, m: SimId) -> EntityKind {
+    w.state.entities.kind[m.index()]
+}
+
+fn wound(w: &World, m: SimId) -> Wound {
+    w.state.entities.combat[m.index()].wound
+}
+
+fn s12(w: &World, p: usize) -> crate::wounds::S12Counters {
+    w.game().unwrap().players[p].s12
+}
+
+fn set_hp(w: &mut World, m: SimId, hp: u16) {
+    w.state.entities.combat[m.index()].hp = hp;
+}
+
+/// Applies `events` (and `fallen`, as riders and gun crews add them) as
+/// the Damage stage would at the world's tick; `pre` runs on the context
+/// first (with `wounds` set as `apply_blows` sets it).
+fn blows_now(
+    w: &mut World,
+    events: &[BallisticEvent],
+    pre: impl FnOnce(&mut MatchState, &mut DamageCtx),
+) {
+    let tick = w.tick();
+    let any_down = !w.game().unwrap().casualties.is_empty();
+    if any_down {
+        w.downed
+            .rebuild_kinds(&w.state.entities, |k| k == EntityKind::Downed);
+    }
+    let World {
+        state,
+        hash,
+        spatial,
+        downed,
+        ..
+    } = w;
+    let SimState {
+        entities,
+        terrain,
+        stats,
+        game,
+        ..
+    } = state;
+    let g = game.as_mut().unwrap();
+    let mut ctx = DamageCtx {
+        ents: entities,
+        terrain,
+        spatial,
+        hash,
+        stats,
+        seed: 1,
+        tick,
+        fallen: Vec::new(),
+        ff_dead: Vec::new(),
+        ff_hit: Vec::new(),
+        wounds: (g.setup.rules.wounds.enabled != 0).then(|| g.setup.rules.wounds.clone()),
+        downed: any_down.then_some(&*downed),
+    };
+    pre(g, &mut ctx);
+    g.apply_blows(
+        &mut ctx,
+        events,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut Vec::new(),
+    );
+    w.refresh_hashes();
+}
+
+/// A bullet of `weapon` (player `by`) striking man `m` in `zone`.
+fn bullet(w: &mut World, by: u8, wpn: &str, m: SimId, zone: u8) {
+    let ev = BallisticEvent {
+        weapon: weapon(w, wpn),
+        player: by,
+        ammo: NO_AMMO,
+        slot: 0,
+        shooter: SimId(u32::MAX),
+        blow: Blow::Hit(m, zone),
+        mission: 0,
+    };
+    blows_now(w, &[ev], |_, _| {});
+}
+
+/// W1: the head is the top `head_top_pct`, the legs the bottom
+/// `legs_bottom_pct` of a standing or crouched capsule; a prone man is
+/// torso. Control: with the bands swapped the same heights change zone.
+#[test]
+fn w1_zone_by_height_and_prone_is_torso() {
+    let mut w = wounds_world(1);
+    let m = lone(&mut w, 0, 500, 500);
+    pose(&mut w, m, Stance::Stand);
+    let wt = w.match_setup().unwrap().rules.wounds.clone();
+    let c = w.state.entities.combat[m.index()];
+    let t = w.state.entities.transform[m.index()];
+    let at = |pct: i32| t.pos.z + c.height.mul_int(pct).div_int(100);
+    let z = |pct: i32| crate::wounds::zone_at(&t, &c, at(pct), &wt);
+    assert_eq!(z(95), ZONE_HEAD);
+    assert_eq!(z(85), ZONE_TORSO);
+    assert_eq!(z(60), ZONE_TORSO);
+    assert_eq!(z(40), ZONE_LEGS);
+    assert_eq!(z(5), ZONE_LEGS);
+    let mut p = c;
+    p.stance = Stance::Prone;
+    assert_eq!(crate::wounds::zone_at(&t, &p, at(95), &wt), ZONE_TORSO);
+    let mut wide = wt.clone();
+    (wide.head_top_pct, wide.legs_bottom_pct) = (50, 10);
+    assert_eq!(crate::wounds::zone_at(&t, &c, at(60), &wide), ZONE_HEAD);
+}
+
+/// W2, W3 (bullets, `hurt`): a Kar98k torso hit (70) leaves 30 HP:
+/// Wounded; a second leaves -40: Downed (out of his squad, a casualty,
+/// credited as a down to the rifle). A leg hit does 60 %. Control: with
+/// `enabled` 0 the second hit kills, as before S12.
+#[test]
+fn w3_bullets_wound_then_down_and_off_kills() {
+    let mut w = wounds_world(1);
+    let sq = spawn(&mut w, 0, RIFLES, 500, 500);
+    steps(&mut w, 2);
+    let m = members(&w, sq)[1];
+    bullet(&mut w, 1, "ww2:kar98k", m, ZONE_LEGS);
+    assert_eq!(hp(&w, m), 100 - 42);
+    assert_eq!(wound(&w, m).state, FIT);
+    // 58 - 70 = -12: down (not -60: no kill).
+    bullet(&mut w, 1, "ww2:kar98k", m, ZONE_TORSO);
+    assert_eq!(kind(&w, m), EntityKind::Downed);
+    let mut w = wounds_world(1);
+    let sq = spawn(&mut w, 0, RIFLES, 500, 500);
+    steps(&mut w, 2);
+    let m = members(&w, sq)[1];
+    bullet(&mut w, 1, "ww2:kar98k", m, ZONE_TORSO);
+    assert_eq!((hp(&w, m), wound(&w, m).state), (30, WOUNDED));
+    assert_eq!(wound(&w, m).by, (1, kill_class::RIFLE));
+    assert_eq!(s12(&w, 0).torso_hits[1], 1);
+    bullet(&mut w, 1, "ww2:kar98k", m, ZONE_TORSO);
+    assert_eq!(kind(&w, m), EntityKind::Downed);
+    assert!(!members(&w, sq).contains(&m));
+    assert!(w.game().unwrap().casualties.contains_key(&m));
+    assert_eq!(s12(&w, 0).downed, 1);
+    assert_eq!(s12(&w, 1).downed_by_class[kill_class::RIFLE as usize], 1);
+    assert_eq!(w.game().unwrap().players[1].kills, 0, "a down is no kill");
+    assert_eq!(w.game().unwrap().players[0].losses, 0, "nor a loss yet");
+    World::load(&w.save(), 1).expect("a downed man saves and loads");
+    // Control: wounds off.
+    let mut w = wounds_world(0);
+    let sq = spawn(&mut w, 0, RIFLES, 500, 500);
+    steps(&mut w, 2);
+    let m = members(&w, sq)[1];
+    bullet(&mut w, 1, "ww2:kar98k", m, ZONE_TORSO);
+    assert_eq!((hp(&w, m), wound(&w, m)), (30, Wound::default()));
+    bullet(&mut w, 1, "ww2:kar98k", m, ZONE_TORSO);
+    assert_eq!(kind(&w, m), EntityKind::Corpse);
+    assert_eq!(w.game().unwrap().players[1].kills, 1);
+}
+
+/// W3: a hit that leaves -`overkill_kill` or less kills outright; one that
+/// leaves -59 downs. Control: `overkill_kill` 1000 downs the first too.
+#[test]
+fn w3_overkill_kills_outright() {
+    for (overkill, hp0, want) in [
+        (60, 10, EntityKind::Corpse),
+        (60, 11, EntityKind::Downed),
+        (1000, 10, EntityKind::Downed),
+    ] {
+        let mut w = flat_world_with(1, |s| {
+            s.rules.wounds.enabled = 1;
+            s.rules.wounds.overkill_kill = overkill;
+        });
+        let m = lone(&mut w, 0, 500, 500);
+        set_hp(&mut w, m, hp0);
+        bullet(&mut w, 1, "ww2:kar98k", m, ZONE_TORSO);
+        assert_eq!(kind(&w, m), want, "{overkill} {hp0}");
+        let outright = (want == EntityKind::Corpse) as u32;
+        assert_eq!(s12(&w, 0).killed_outright, outright);
+    }
+}
+
+/// W3 (blast and fragments, `hurt_by`): overpressure kills outright
+/// whatever is left; fragments of a mortar burst 6 m off wound or down,
+/// never kill a fit man outright (70 at most each). Control: the man at
+/// the burst point is a corpse, the far ones are not.
+#[test]
+fn w3_blast_kills_outright_fragments_wound_or_down() {
+    let mut w = wounds_world(1);
+    let near = lone(&mut w, 0, 500, 500);
+    let far: Vec<SimId> = (0..6).map(|k| lone(&mut w, 0, 494 + 2 * k, 506)).collect();
+    let mortar = weapon(&w, "ww2:grw34");
+    w.place_soldier(near, c(500, 500));
+    for (k, &m) in far.iter().enumerate() {
+        w.place_soldier(m, c(494 + 2 * k as i32, 506));
+    }
+    w.spatial.rebuild(&w.state.entities);
+    let t = w.tick();
+    burst_now(&mut w, 1, mortar, 0, c(500, 500), t);
+    assert_eq!(
+        kind(&w, near),
+        EntityKind::Corpse,
+        "hp {} {:?}",
+        hp(&w, near),
+        w.state.entities.transform[near.index()].pos
+    );
+    assert_eq!(s12(&w, 0).killed_outright, 1);
+    let mut hurt = 0;
+    for &m in &far {
+        let k = kind(&w, m);
+        assert_ne!(
+            k,
+            EntityKind::Corpse,
+            "a fragment killed a fit man outright"
+        );
+        if k == EntityKind::Downed || hp(&w, m) < 100 {
+            hurt += 1;
+        }
+    }
+    assert!(hurt > 0, "no fragment struck");
+}
+
+/// W3 (mines): an AP mine's burst under a man kills him outright (blast)
+/// and counts in `men_lost_to_mines`. Control: the counter is 0 before.
+#[test]
+fn w3_mine_blast_kills_outright() {
+    let mut w = wounds_world(1);
+    let f = w
+        .match_setup()
+        .unwrap()
+        .forts
+        .iter()
+        .position(|f| f.id == "ww2:ap_minefield")
+        .unwrap() as u16;
+    w.lay_mine_now(f, c(500, 500), PlayerId(0)).unwrap();
+    let walker = lone(&mut w, 1, 490, 500);
+    assert_eq!(w.game().unwrap().fort().accounts[1].men_lost_to_mines, 0);
+    for k in 0..30 * 10 {
+        if kind(&w, walker) == EntityKind::Soldier {
+            let x = Fx::from_int(490) + Fx::from_milli(200 * k.min(100));
+            w.place_soldier(walker, FxVec2::new(x, Fx::from_int(500)));
+        }
+        w.step(&[]);
+    }
+    assert_eq!(kind(&w, walker), EntityKind::Corpse);
+    assert_eq!(w.game().unwrap().fort().accounts[1].men_lost_to_mines, 1);
+    assert_eq!(s12(&w, 1).killed_outright, 1);
+}
+
+/// W3 (own fire, S11a2 F4): an own mission burst's fragment that downs an
+/// own man credits no down to his own player, and his bleed-out is an
+/// own-fire kill, not a kill. Control: an enemy's down is credited.
+#[test]
+fn w3_own_fire_down_is_no_credit() {
+    let mut w = flat_world_with(1, |s| {
+        s.rules.wounds.enabled = 1;
+        s.rules.fire_mission.as_mut().unwrap().friendly_fire = 1;
+    });
+    let m = lone(&mut w, 0, 500, 500);
+    set_hp(&mut w, m, 20);
+    let ev = BallisticEvent {
+        weapon: weapon(&w, "ww2:kar98k"),
+        player: 0,
+        ammo: NO_AMMO,
+        slot: 0,
+        shooter: SimId(u32::MAX),
+        blow: Blow::Hit(m, ZONE_TORSO),
+        mission: 0,
+    };
+    blows_now(&mut w, &[ev], |_, _| {});
+    assert_eq!(kind(&w, m), EntityKind::Downed);
+    assert_eq!(s12(&w, 0).downed, 1);
+    assert_eq!(s12(&w, 0).downed_by_class, [0; kill_class::COUNT]);
+    let at = w.game().unwrap().casualties[&m].bleed_out_at;
+    while w.tick() <= at {
+        w.step(&[]);
+    }
+    assert_eq!(kind(&w, m), EntityKind::Corpse);
+    let p0 = &w.game().unwrap().players[0];
+    assert_eq!((p0.kills, p0.s11a2.ff_kills[1], p0.s12.bled_out), (0, 1, 1));
+}
+
+/// W3 (gun crews, `core_through_crew`): an AP core through the shield
+/// downs a gunner it leaves between 0 and -59 and frees his slot.
+/// Control: `enabled` 0 kills him.
+#[test]
+fn w3_gun_crew_core_hit_downs() {
+    for on in [1, 0] {
+        let mut w = wounds_world(on);
+        let sq = spawn(&mut w, 0, "ww2:ger_pak40_squad", 500, 500);
+        let g = members(&w, sq)[0];
+        steps(&mut w, 2);
+        let slot0 = |w: &World| {
+            w.game().unwrap().vehicles[&g]
+                .served
+                .as_ref()
+                .unwrap()
+                .slots[0]
+                .man
+        };
+        let gunner = slot0(&w).unwrap();
+        let (kwk, ammo, core) = {
+            let s = w.match_setup().unwrap();
+            let a = s
+                .ammo
+                .iter()
+                .position(|a| a.id == "ww2:75mm_pzgr39")
+                .unwrap();
+            (
+                s.weapons
+                    .iter()
+                    .position(|w| w.id == "ww2:kwk40_l48")
+                    .unwrap() as u16,
+                a as u16,
+                s.ammo[a].core.as_ref().unwrap().damage,
+            )
+        };
+        set_hp(&mut w, gunner, (core - 10).min(100) as u16);
+        let p = w.entities().transform[gunner.index()].pos;
+        let aim = FxVec3::new(p.x, p.y, p.z + Fx::from_ratio(8, 10));
+        let from = FxVec3::new(p.x + Fx::from_int(100), p.y, aim.z);
+        assert!(w.fire_shell_now(1, kwk, ammo, from, aim));
+        steps(&mut w, 8);
+        let want = if on == 1 {
+            EntityKind::Downed
+        } else {
+            EntityKind::Corpse
+        };
+        assert_eq!(kind(&w, gunner), want, "enabled {on}");
+        assert_ne!(slot0(&w), Some(gunner));
+    }
+}
+
+/// W3 (rider core hits, `damage::deal`): a rider struck to between 0 and
+/// -59 is downed, leaves his slot and lies at the door. Control: `enabled`
+/// 0 kills him.
+#[test]
+fn w3_rider_hit_downs_at_the_door() {
+    for on in [1, 0] {
+        let mut w = wounds_world(on);
+        let ht = spawn(&mut w, 0, "ww2:ger_sdkfz251_1_squad", 500, 500);
+        let v = members(&w, ht)[0];
+        let inf = spawn(&mut w, 0, RIFLES, 510, 500);
+        steps(&mut w, 2);
+        assert!(w.seat_now(inf, v));
+        steps(&mut w, 1);
+        let vs = &w.game().unwrap().vehicles[&v];
+        let (k, rider) = vs
+            .riders
+            .iter()
+            .enumerate()
+            .find_map(|(k, r)| r.map(|m| (k, m)))
+            .expect("a rider");
+        set_hp(&mut w, rider, 30);
+        blows_now(&mut w, &[], |g, ctx| {
+            g.deal(
+                ctx,
+                v,
+                &[crate::damage::Dealt {
+                    inner: crate::damage::Inner::Rider(k as u8),
+                    dmg: 50,
+                }],
+                (1, kill_class::TANK_HE),
+                SimId(0),
+                &mut crate::damage::FireRolls::default(),
+                &mut Vec::new(),
+                FxVec3::ZERO,
+                0,
+            );
+        });
+        let want = if on == 1 {
+            EntityKind::Downed
+        } else {
+            EntityKind::Corpse
+        };
+        assert_eq!(kind(&w, rider), want, "enabled {on}");
+        assert!(
+            w.game().unwrap().vehicles[&v]
+                .riders
+                .iter()
+                .all(|r| *r != Some(rider))
+        );
+        if on == 1 {
+            assert!(w.state.entities.unit[rider.index()].riding.is_none());
+            let d = (w.state.entities.transform[rider.index()].pos.xy()
+                - w.state.entities.transform[v.index()].pos.xy())
+            .length();
+            assert!(d < Fx::from_int(8), "lies by the vehicle ({d:?})");
+            World::load(&w.save(), 1).expect("loads");
+        }
+    }
+}
+
+/// Holds man `m`'s suppression at `points` (as the Status stage would
+/// leave it under fire).
+fn suppress(w: &mut World, m: SimId, points: u32) {
+    w.state.entities.combat[m.index()].suppression = points * 1000;
+}
+
+/// W4: an unbandaged wounded man under fire bleeds 1 HP per
+/// `bleed_ms_per_hp` and goes down at 0, credited to his last hitter.
+/// Control: a man held calm bandages himself in `bandage_s` (walking
+/// included) and then stops bleeding.
+#[test]
+fn w4_bleeding_downs_and_a_bandage_stops_it() {
+    let mut w = wounds_world(1);
+    let crouch = w.match_setup().unwrap().rules.combat.crouch_suppression;
+    let sq = spawn(&mut w, 0, RIFLES, 300, 300);
+    steps(&mut w, 2);
+    let ms = members(&w, sq);
+    let (a, b) = (ms[1], ms[2]);
+    for m in [a, b] {
+        bullet(&mut w, 1, "ww2:mg42", m, ZONE_TORSO);
+        bullet(&mut w, 1, "ww2:mg42", m, ZONE_TORSO);
+        assert_eq!((hp(&w, m), wound(&w, m).state), (10, WOUNDED));
+    }
+    // The squad walks (b bandages while walking).
+    super::s6_tests::run(
+        &mut w,
+        0,
+        0,
+        CommandKind::Move {
+            squad: sq,
+            target: c(300, 400),
+        },
+    );
+    for _ in 0..45 * 30 {
+        suppress(&mut w, a, crouch + 5);
+        suppress(&mut w, b, 0);
+        w.step(&[]);
+    }
+    assert_eq!(kind(&w, a), EntityKind::Downed, "bled to 0 under fire");
+    assert_eq!(wound(&w, a).by, (1, kill_class::MG));
+    assert_eq!(s12(&w, 1).downed_by_class[kill_class::MG as usize], 1);
+    let wb = wound(&w, b);
+    assert!(wb.bandaged && wb.bandaging == 0, "{wb:?}");
+    assert!(
+        hp(&w, b) >= 10 - 3,
+        "bled at most bandage_s / 4 s: {}",
+        hp(&w, b)
+    );
+    assert_eq!(s12(&w, 0).bandaged, 1);
+    let moved = w.state.entities.transform[b.index()].pos.y - Fx::from_int(300);
+    assert!(moved > Fx::from_int(5), "he walked while bandaging");
+}
+
+/// W4 (spec 6 row Bandage): a new hit or firing breaks a dressing in
+/// progress; it then restarts. Control: an undisturbed dressing finishes.
+#[test]
+fn w4_a_new_hit_or_firing_breaks_the_bandage() {
+    let mut w = wounds_world(1);
+    let m = lone(&mut w, 0, 500, 500);
+    bullet(&mut w, 1, "ww2:kar98k", m, ZONE_TORSO);
+    steps(&mut w, 30);
+    assert!(wound(&w, m).bandaging > 0, "a dressing started");
+    bullet(&mut w, 1, "ww2:mg42", m, ZONE_LEGS);
+    assert_eq!(wound(&w, m).bandaging, 0, "the hit broke it");
+    assert!(wound(&w, m).legs);
+    suppress(&mut w, m, 0);
+    steps(&mut w, 3);
+    assert!(wound(&w, m).bandaging > 0, "restarted");
+    w.state.entities.combat[m.index()].since_shot = 0;
+    w.step(&[]);
+    assert_eq!(wound(&w, m).bandaging, 0, "firing broke it");
+    steps(&mut w, 11 * 30);
+    assert!(wound(&w, m).bandaged, "control: it finishes undisturbed");
+    assert_eq!(s12(&w, 0).bandaged, 1, "one dressing counted");
+}
+
+/// W4: a squad walks at its slowest wounded man's pace (legs 60 %).
+/// Control: the same squad unhurt walks farther.
+#[test]
+fn w4_the_squad_paces_to_its_wounded_man() {
+    let walk = |legs: bool| {
+        let mut w = wounds_world(1);
+        let sq = spawn(&mut w, 0, RIFLES, 300, 300);
+        steps(&mut w, 2);
+        let m = members(&w, sq)[2];
+        if legs {
+            w.edit_soldier(m, |_, c| {
+                c.hp = 40;
+                c.wound.state = WOUNDED;
+                c.wound.legs = true;
+                c.wound.bandaged = true;
+            });
+        }
+        super::s6_tests::run(
+            &mut w,
+            0,
+            0,
+            CommandKind::Move {
+                squad: sq,
+                target: c(300, 600),
+            },
+        );
+        steps(&mut w, 20 * 30);
+        w.state.entities.transform[members(&w, sq)[0].index()].pos.y - Fx::from_int(300)
+    };
+    let (slow, fast) = (walk(true), walk(false));
+    assert!(
+        slow.mul_int(100) < fast.mul_int(75),
+        "slow {slow:?} fast {fast:?}"
+    );
+}
+
+/// W5: a downed man bleeds out at the seeded tick (one `WOUND_BLEED`
+/// draw, in [60, 180] s) and dies there, credited to his hitter as a kill
+/// and counted his player's loss. W12: nobody aims at him meanwhile, but a
+/// stray round kills him (`downed_killed`). Control: the second man,
+/// not hit again, lives to his own bleed-out tick.
+#[test]
+fn w5_bleed_out_seeded_and_w12_strays_kill() {
+    let mut w = wounds_world(1);
+    let a = lone(&mut w, 0, 500, 500);
+    let b = lone(&mut w, 0, 520, 500);
+    let enemy = spawn(&mut w, 1, US_RIFLES, 500, 560);
+    for m in [a, b] {
+        set_hp(&mut w, m, 20);
+        bullet(&mut w, 1, "ww2:m1_garand", m, ZONE_TORSO);
+        assert_eq!(kind(&w, m), EntityKind::Downed);
+    }
+    let hz = 30u64;
+    let t0 = w.tick();
+    let at = w.game().unwrap().casualties[&b].bleed_out_at;
+    assert!(
+        (t0 + 60 * hz..=t0 + 180 * hz).contains(&at),
+        "{at} from {t0}"
+    );
+    let draw =
+        crate::rng::RngStream::new(w.state.config.seed, t0, b, crate::rng::Purpose::WOUND_BLEED)
+            .range_i32(60 * hz as i32, 180 * hz as i32);
+    assert_eq!(at, t0 + draw as u64, "the seeded draw");
+    // The enemy squad stands near and never aims at the downed men.
+    for _ in 0..60 {
+        w.step(&[]);
+        for m in members(&w, enemy) {
+            let t = w.state.entities.combat[m.index()].target;
+            assert!(t != Some(a) && t != Some(b), "aimed at a downed man");
+        }
+    }
+    // A stray round kills a.
+    bullet(&mut w, 1, "ww2:m1_garand", a, ZONE_TORSO);
+    assert_eq!(kind(&w, a), EntityKind::Corpse);
+    assert_eq!(s12(&w, 0).downed_killed, 1);
+    let kills = w.game().unwrap().players[1].kills;
+    while w.tick() <= at {
+        w.step(&[]);
+    }
+    assert_eq!(kind(&w, b), EntityKind::Corpse);
+    assert_eq!(s12(&w, 0).bled_out, 1);
+    assert_eq!(w.game().unwrap().players[1].kills, kills + 1);
+    assert!(w.game().unwrap().casualties.is_empty());
+}
+
+/// W5 (S12-6 (A)): a downed man counts toward pop until he dies. W14: a
+/// player whose men are all downed and who cannot buy is wiped. Control:
+/// with one man standing he is not.
+#[test]
+fn w14_downed_men_count_in_pop_but_do_not_keep_a_player_in() {
+    for standing in [false, true] {
+        let mut w = wounds_world(1);
+        let a = lone(&mut w, 1, 500, 500);
+        let b = lone(&mut w, 1, 520, 500);
+        lone(&mut w, 0, 100, 100);
+        // Only a and b stand for player 1 (the start forces go).
+        let others: Vec<SimId> = w
+            .state
+            .entities
+            .soldiers()
+            .filter(|&s| w.state.entities.owner[s.index()] == PlayerId(1) && s != a && s != b)
+            .collect();
+        for s in others {
+            assert!(w.kill_soldier(s));
+        }
+        let pop = w.game().unwrap().population(&w.state.entities, PlayerId(1));
+        set_hp(&mut w, a, 20);
+        bullet(&mut w, 0, "ww2:kar98k", a, ZONE_TORSO);
+        if !standing {
+            set_hp(&mut w, b, 20);
+            bullet(&mut w, 0, "ww2:kar98k", b, ZONE_TORSO);
+        }
+        assert_eq!(
+            w.game().unwrap().population(&w.state.entities, PlayerId(1)),
+            pop,
+            "downed men keep their pop"
+        );
+        assert!(w.edit_player(PlayerId(1), |p| p.manpower = 0));
+        // The US roster holds free cards (cost 0); price them so a player
+        // with no manpower cannot buy.
+        for t in game_mut(&mut w.state).setup.squad_types.iter_mut() {
+            t.cost = t.cost.max(1);
+        }
+        steps(&mut w, 3 * 30);
+        let out = w.game().unwrap().players[1].defeat.is_some();
+        assert_eq!(out, !standing, "standing {standing}");
+    }
+}
+
+/// Spec 6 row Bandage, save/load: a man mid-bandage and a downed man
+/// play on after a save and load exactly as without (hashes equal, at 1
+/// and 3 threads). Control: the staged state differs from a fresh one.
+#[test]
+fn s12_save_load_mid_bandage_and_downed_keeps_the_hash() {
+    let (mut w, _sq, band, down) = staged();
+    assert!(wound(&w, band).bandaging > 0 && kind(&w, down) == EntityKind::Downed);
+    steps(&mut w, 2);
+    let bytes = w.save();
+    let mut a = World::load(&bytes, 1).unwrap();
+    let mut b = World::load(&bytes, 3).unwrap();
+    for _ in 0..20 * 30 {
+        w.step(&[]);
+        a.step(&[]);
+        b.step(&[]);
+    }
+    assert_eq!(a.full_state_hash(), w.full_state_hash());
+    assert_eq!(b.full_state_hash(), w.full_state_hash());
+    assert!(wound(&w, band).bandaged || kind(&w, band) != EntityKind::Soldier);
+}

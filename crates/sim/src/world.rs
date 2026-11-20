@@ -503,6 +503,9 @@ pub struct World {
     threads: Arc<rayon::ThreadPool>,
     thread_count: usize,
     spatial: SpatialHash,
+    /// S12: downed men (rebuilt with `spatial` before the Ballistics stage
+    /// while any exist; read by the hit paths only).
+    downed: SpatialHash,
     hash: HashCache,
     snapshot: RenderSnapshot,
     published: Option<(u64, u64)>,
@@ -657,6 +660,7 @@ impl World {
         };
         let mut world = World {
             spatial: SpatialHash::new(state.config.map_size_m),
+            downed: SpatialHash::new(state.config.map_size_m),
             hash: HashCache::new(&state),
             config_bytes,
             setup_bytes,
@@ -1079,6 +1083,7 @@ impl World {
                 hash,
                 flags,
                 spatial,
+                downed,
                 planned,
                 armour_events,
                 ..
@@ -1164,6 +1169,10 @@ impl World {
                 g.rebuild_statics(&state.terrain);
                 // Ballistics and blasts test soldiers where they now stand.
                 spatial.rebuild(&state.entities);
+                // S12: and downed men (none with `[wounds] enabled` 0).
+                if !g.casualties.is_empty() {
+                    downed.rebuild_kinds(&state.entities, |k| k == EntityKind::Downed);
+                }
             }
         }
         let t3 = Instant::now();
@@ -1343,6 +1352,7 @@ impl World {
                 box_test_bufs,
                 blows,
                 spatial,
+                downed,
                 ..
             } = self;
             let SimState {
@@ -1383,6 +1393,9 @@ impl World {
                         armour: g.armour(),
                         ammo: &g.setup().ammo,
                         statics: g.static_boxes(),
+                        downed: (!g.casualties.is_empty()).then_some(&*downed),
+                        wounds: (g.setup().rules.wounds.enabled != 0)
+                            .then_some(&g.setup().rules.wounds),
                     };
                     threads.install(|| {
                         projectiles
@@ -1436,6 +1449,7 @@ impl World {
                 state,
                 hash,
                 spatial,
+                downed,
                 blows,
                 explosions,
                 fused,
@@ -1460,6 +1474,11 @@ impl World {
                 fallen: Vec::new(),
                 ff_dead: Vec::new(),
                 ff_hit: Vec::new(),
+                wounds: None,
+                downed: game
+                    .as_ref()
+                    .is_some_and(|g| !g.casualties.is_empty())
+                    .then_some(&*downed),
             };
             game.as_mut().expect("match world").apply_blows(
                 &mut ctx,
@@ -1547,6 +1566,9 @@ impl World {
                 );
                 // S8a: boarding, unloading, forced dismounts.
                 game.transport_status(&mut ctx);
+                // S12 W4, W5: bandages, bleeding, bleed-outs (nothing with
+                // `[wounds] enabled` 0).
+                game.wounds_tick(&mut ctx, seed);
                 game.update_items(&mut self.state.entities, &mut self.hash);
                 // S5a: crew feed, sharing and the priced base refill.
                 let bombs_before = game.mortar_bombs_by_player(&self.state.entities);
@@ -2533,6 +2555,35 @@ impl World {
         }
         let ticks = game.setup.rules.combat.corpse_ticks;
         game.kill(&mut self.state.entities, &mut self.hash, id, ticks);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// S12 staged saves and tests: downs soldier `id` as a hit by `by`
+    /// (player, card) would with `[wounds] enabled` 1 (casualty, seeded
+    /// bleed-out, out of his squad). False for anything but a live soldier
+    /// or with the casualty list full.
+    pub fn down_soldier(&mut self, id: SimId, by: (u8, u16)) -> bool {
+        let tick = self.tick();
+        let seed = self.state.config.seed;
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        if self.state.entities.kind.get(id.index()) != Some(&EntityKind::Soldier)
+            || game.casualties.len() >= crate::wounds::MAX_CASUALTIES
+        {
+            return false;
+        }
+        game.down(
+            &mut self.state.entities,
+            &mut self.hash,
+            Some(&self.state.terrain),
+            id,
+            by,
+            tick,
+            seed,
+        );
         self.refresh_hashes();
         self.fill_snapshot();
         true
@@ -5504,6 +5555,8 @@ mod tests {
             fallen: Vec::new(),
             ff_dead: Vec::new(),
             ff_hit: Vec::new(),
+            wounds: None,
+            downed: None,
         };
         let g = game.as_mut().unwrap();
         g.deal(
@@ -5621,6 +5674,8 @@ mod tests {
                 fallen: Vec::new(),
                 ff_dead: Vec::new(),
                 ff_hit: Vec::new(),
+                wounds: None,
+                downed: None,
             };
             let g = state.game.as_mut().unwrap();
             let ko = g.deal(

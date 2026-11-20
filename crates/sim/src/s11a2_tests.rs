@@ -256,7 +256,7 @@ fn ff_world(ff: u32) -> World {
     w
 }
 
-fn weapon(w: &World, id: &str) -> u16 {
+pub(super) fn weapon(w: &World, id: &str) -> u16 {
     w.match_setup()
         .unwrap()
         .weapons
@@ -267,11 +267,11 @@ fn weapon(w: &World, id: &str) -> u16 {
 
 /// A lone standing man of player `p` at `(x, y)` (a squad with every other
 /// member killed), the spatial hash rebuilt.
-fn lone(w: &mut World, p: u8, x: i32, y: i32) -> SimId {
+pub(super) fn lone(w: &mut World, p: u8, x: i32, y: i32) -> SimId {
     lone_at(w, p, c(x, y))
 }
 
-fn lone_at(w: &mut World, p: u8, at: FxVec2) -> SimId {
+pub(super) fn lone_at(w: &mut World, p: u8, at: FxVec2) -> SimId {
     let (x, y) = (at.x.floor_int(), at.y.floor_int());
     let card = if p == 0 {
         "ww2:ger_grenadiergruppe"
@@ -294,7 +294,14 @@ fn lone_at(w: &mut World, p: u8, at: FxVec2) -> SimId {
 
 /// One shell burst of `weapon` for `player` on the ground at `at`, dealt
 /// as the Damage stage would at `tick` (`mission` 0: not a mission round).
-fn burst_now(w: &mut World, player: u8, weapon: u16, mission: u32, at: FxVec2, tick: u64) {
+pub(super) fn burst_now(
+    w: &mut World,
+    player: u8,
+    weapon: u16,
+    mission: u32,
+    at: FxVec2,
+    tick: u64,
+) {
     let World {
         state,
         hash,
@@ -320,6 +327,8 @@ fn burst_now(w: &mut World, player: u8, weapon: u16, mission: u32, at: FxVec2, t
         fallen: Vec::new(),
         ff_dead: Vec::new(),
         ff_hit: Vec::new(),
+        wounds: None,
+        downed: None,
     };
     let ev = [BallisticEvent {
         weapon,
@@ -347,7 +356,7 @@ fn prone(w: &mut World, m: SimId) {
 }
 
 /// Puts man `m` in `stance` now (stance and capsule height).
-fn pose(w: &mut World, m: SimId, stance: Stance) {
+pub(super) fn pose(w: &mut World, m: SimId, stance: Stance) {
     let b = &w.match_setup().unwrap().rules.combat.body;
     let mm = match stance {
         Stance::Prone => b.prone_mm,
@@ -359,7 +368,7 @@ fn pose(w: &mut World, m: SimId, stance: Stance) {
     c.height = Fx::from_milli(mm);
 }
 
-fn hp(w: &World, m: SimId) -> u16 {
+pub(super) fn hp(w: &World, m: SimId) -> u16 {
     w.state.entities.combat[m.index()].hp
 }
 

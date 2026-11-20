@@ -408,6 +408,26 @@ impl MatchState {
             if let Some(&(_, pct)) = carrying.iter().find(|(s, _)| *s == id) {
                 speed = speed.mul_int(pct as i32).div_int(100);
             }
+            // S12 W4: the squad walks at its slowest wounded man's pace.
+            if setup.rules.wounds.enabled != 0 {
+                let wt = &setup.rules.wounds;
+                let slowest = sq
+                    .members
+                    .iter()
+                    .map(|m| ctx.ents.combat[m.index()].wound)
+                    .filter(|w| w.state == crate::wounds::WOUNDED)
+                    .map(|w| {
+                        if w.legs {
+                            wt.legs_speed_pct
+                        } else {
+                            wt.wounded_speed_pct
+                        }
+                    })
+                    .min();
+                if let Some(pct) = slowest {
+                    speed = speed.mul_int(pct as i32).div_int(100);
+                }
+            }
             let fast = speed.mul_int(mv.catch_up_speed_pct as i32).div_int(100);
             // A man's own pace (prone men crawl; S10a: inside a wire band
             // at `wire_speed_pct`, per man).
