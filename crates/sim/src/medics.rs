@@ -729,6 +729,15 @@ impl MatchState {
                     if !inside(ctx.ents, b.man) {
                         return false;
                     }
+                    // Checker G1: a treatment bed holds a wounded soldier;
+                    // hit again (downed) or dead, he leaves it.
+                    let i = b.man.index();
+                    if !b.evac
+                        && (ctx.ents.kind[i] != EntityKind::Soldier
+                            || ctx.ents.combat[i].wound.state != WOUNDED)
+                    {
+                        return false;
+                    }
                     if !staffed {
                         b.done_at += 1;
                     } else if b.done_at <= tick {

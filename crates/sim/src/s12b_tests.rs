@@ -928,3 +928,28 @@ fn s12_snapshot_shows_casualties_wounds_and_beds() {
     assert_eq!(s.soldier_wound[fit], 0, "control: fit");
     assert_eq!(s.soldier_wound.len(), s.soldier_ids.len());
 }
+
+// --------------------------------------------------- checker G1-G6, G9 --
+
+/// Checker G1: a wounded man in a treatment bed who goes down leaves the
+/// bed; the bed never makes a downed man Fit, and a save loads. Control:
+/// an undisturbed man is treated (`w8_post_treats_once_...`).
+#[test]
+fn g1_downed_in_a_treatment_bed_leaves_it() {
+    let mut w = world(0);
+    let (pid, _) = post(&mut w, 400, 400);
+    let m = wounded_to(&mut w, 430, 400, c(404, 404), 1);
+    until(&mut w, 40 * 30, |w| beds(w, pid).iter().any(|b| b.man == m)).expect("a bed");
+    assert!(w.down_soldier(m, (1, crate::game::kill_class::RIFLE)));
+    steps(&mut w, 2);
+    assert!(
+        beds(&w, pid).iter().all(|b| b.man != m || b.evac),
+        "left the bed"
+    );
+    steps(&mut w, 70 * 30);
+    assert_ne!(kind(&w, m), EntityKind::Soldier, "never Fit again");
+    assert!(!w.state.entities.combat[m.index()].wound.treated);
+    assert_eq!(s12(&w, 0).treated, 0);
+    assert!(World::load(&w.save(), 1).is_ok(), "loadable");
+}
+
