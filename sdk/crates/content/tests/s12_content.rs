@@ -171,7 +171,13 @@ fn s12_medic_cards_resolve() {
             assert!(m.traits & member_trait::MEDIC != 0, "{id}");
             assert_eq!(s.weapons[m.weapon as usize].id, w, "{id}");
             assert_eq!(m.rounds.iter().any(|&r| r > 0), armed, "{id}");
+            // Checker G8: the card counts rounds (the P 38's `load`, 16,
+            // with no `rounds` key), so its pistols run dry.
+            if armed {
+                assert_eq!(m.rounds.iter().sum::<u16>(), 16, "{id}");
+            }
         }
+        assert!(!t.feeds.is_empty(), "{id}: counted");
         let f = &s.factions[t.faction as usize];
         assert_eq!(*f.roster.last().unwrap(), k, "{id} is appended last");
     }

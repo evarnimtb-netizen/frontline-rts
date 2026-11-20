@@ -1,8 +1,10 @@
 # Sanitätstrupp (S12 Build B): two stretcher-bearer medics (Krankenträger)
 # with pistols. Medics stabilise downed men near them on their own (W6),
 # carry them on a stretcher together (W7) and build and staff the aid post
-# (defs/supply/ger_truppenverbandplatz.toml, W8). No mix tag and ai_weight
-# 0: the AI buys none until S12b (docs/slices/S12-wounds-medics.md 5).
+# (defs/supply/ger_verwundetennest.toml, W8). Each P 38 carries its
+# weapon's `load` (16 rounds; no `rounds` key needed): the card counts
+# rounds like every other card. No mix tag and ai_weight 0: the AI buys
+# none until S12b (docs/slices/S12-wounds-medics.md 5).
 id = "ww2:ger_sanitaetstrupp"
 name = "Sanitätstrupp"
 short_name = "Sanitäter"
