@@ -1232,9 +1232,9 @@ const M36: &str = "ww2:usa_m36_squad";
 
 /// USA (player 1) an AI with no start squads, vehicles unlocked at 0, H1
 /// as `heavy_buy`, every vehicle card ready from tick 0 but the 76 W and
-/// the M36 (their unlock in ticks as given); manpower topped up each
+/// the M36 (their unlock in ticks as given); manpower set to `mp` each
 /// second. Returns the card counts of the first vehicle-slot buy.
-fn first_vehicle_buy(heavy_buy: u32, w76: u32, m36: u32) -> Vec<(&'static str, u32)> {
+fn first_vehicle_buy(heavy_buy: u32, w76: u32, m36: u32, mp: u32) -> Vec<(&'static str, u32)> {
     let mut w = flat_world_with(1, |s| {
         s.players[1].is_ai = true;
         let f = s.players[1].faction as usize;
@@ -1257,7 +1257,7 @@ fn first_vehicle_buy(heavy_buy: u32, w76: u32, m36: u32) -> Vec<(&'static str, u
         if ai_of(&w, 1).counters.vehicles_bought > 0 {
             break;
         }
-        set_mp(&mut w, 1, 5000);
+        set_mp(&mut w, 1, mp);
         steps(&mut w, 30);
     }
     assert_eq!(ai_of(&w, 1).counters.vehicles_bought, 1, "one vehicle buy");
@@ -1268,14 +1268,24 @@ fn first_vehicle_buy(heavy_buy: u32, w76: u32, m36: u32) -> Vec<(&'static str, u
         .collect()
 }
 
-/// S13 G: in the vehicle slot, with every card at 0 buys and the same
-/// weight, the tie goes to the newer card: the later unlock first (76 W
-/// over the M36, later in the roster), then the later in the roster
-/// (M36 over the 76 W at the same unlock).
+/// S13 G2: in the vehicle slot, with every card at 0 buys and the same
+/// weight and the wave cards affordable, the tie goes to the newer
+/// `heavy_wave` card: the later unlock first (76 W over the M36, later in
+/// the roster), then the later in the roster (M36 over the 76 W at the
+/// same unlock); the non-wave M10 and M3A1 (later than the Sherman) never
+/// take it.
 #[test]
 fn vehicle_tie_goes_to_the_newer_card() {
-    assert_eq!(first_vehicle_buy(1, 2, 1), vec![(W76, 1)]);
-    assert_eq!(first_vehicle_buy(1, 1, 1), vec![(M36, 1)]);
+    assert_eq!(first_vehicle_buy(1, 2, 1, 5000), vec![(W76, 1)]);
+    assert_eq!(first_vehicle_buy(1, 1, 1, 5000), vec![(M36, 1)]);
+}
+
+/// S13 G2: a wave card the AI cannot pay now (the 76 W at 690 and the
+/// M36 at 760 with 650 manpower) does not take the tie: roster order, the
+/// Sherman (590), not the M10 or M3A1 either.
+#[test]
+fn vehicle_tie_unaffordable_wave_card_keeps_roster_order() {
+    assert_eq!(first_vehicle_buy(1, 2, 1, 650), vec![(SHERMAN, 1)]);
 }
 
 /// S13 G control: with `heavy_buy` 0 the tie keeps roster order (the
@@ -1283,5 +1293,5 @@ fn vehicle_tie_goes_to_the_newer_card() {
 /// S13 G.
 #[test]
 fn vehicle_tie_roster_order_with_heavy_buy_off() {
-    assert_eq!(first_vehicle_buy(0, 2, 1), vec![(SHERMAN, 1)]);
+    assert_eq!(first_vehicle_buy(0, 2, 1, 5000), vec![(SHERMAN, 1)]);
 }

@@ -388,7 +388,7 @@ impl MatchSetup {
     }
 
     /// S13-ai Build C: the S13 AI switches 0 on a resolved setup (`[ai.armour]
-    /// heavy_buy` (with it the S13 G vehicle-slot tie rule), `heavy_overwatch`,
+    /// heavy_buy` (with it the S13 G2 vehicle-slot tie rule), `heavy_overwatch`,
     /// `push_limit`): the defaults the tests written before S13-ai assume (the
     /// S13 tests turn on what they test).
     pub fn s13_off(&mut self) {

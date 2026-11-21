@@ -1064,7 +1064,7 @@ td_hunt_m = 300
 td_infantry_standoff_m = 120
 open_top_infantry_m = 60
 # S13 heavies (docs/slices/S13-heavy-wave.md 5, rules H1-H3); switches 0 in S13a, on since S13-ai Build C.
-heavy_buy = 1                # switch H1: buy an ai_heavy card once enemy armour was seen; 0: no heavy_wave card at all. S13 G: 1 also gives a vehicle-slot tie to the newer card (later unlock, then later in the roster)
+heavy_buy = 1                # switch H1: buy an ai_heavy card once enemy armour was seen; 0: no heavy_wave card at all. S13 G2: 1 also gives a vehicle-slot tie to an affordable heavy_wave card (later unlock, then later in the roster)
 heavy_seen_s = 300           # H1: an enemy tank, TD or assault gun seen this recently (s)
 heavy_save_max_s = 240       # H1: save for the heavy at most this long (s)
 heavy_overwatch = 1          # switch H2: ai_overwatch vehicles join the TD/AG overwatch

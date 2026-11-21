@@ -2142,10 +2142,21 @@ impl Planner<'_> {
             // ties: roster order), so full and understrength cards come in
             // the ratio of their weights. Out of manpower or pop for it:
             // save up (no cheaper card instead).
-            // S13 G: in the vehicle slot with `[ai.armour] heavy_buy` 1, a
-            // tie goes to the newer card: the later unlock, then the later
-            // in the roster (else an appended card never wins a tie).
-            let newer_wins = Some(r) == veh_slot && ai.armour.heavy_buy != 0;
+            // S13 G2: in the vehicle slot with `[ai.armour] heavy_buy` 1, a
+            // tie goes to a `heavy_wave` card the AI can pay now (manpower
+            // and pop): the later unlock, then the later in the roster
+            // (appended, it never won roster order). Any other tie, and a
+            // wave card out of reach, keeps roster order, so the slot never
+            // starts saving for a wave card through this rule.
+            let wave_tie = Some(r) == veh_slot && ai.armour.heavy_buy != 0;
+            let wave_rank = |k: usize, t: u16| -> Option<(u32, usize)> {
+                let ty = &s.squad_types[t as usize];
+                (wave_tie
+                    && s.type_has_tag(t, "heavy_wave")
+                    && budget >= ty.cost as i64
+                    && pop + ty.pop(&s.vehicles) as i64 <= s.rules.pop_cap as i64)
+                    .then(|| (g.card_unlock_ticks(t), k))
+            };
             let ready_cards: Vec<u16> = cards[r]
                 .iter()
                 .copied()
@@ -2167,12 +2178,8 @@ impl Planner<'_> {
                     let wa = s.squad_types[a as usize].ai_weight.max(1) as u64;
                     let wb = s.squad_types[b as usize].ai_weight.max(1) as u64;
                     let by_share = ((buys(a) + 1) * wb).cmp(&((buys(b) + 1) * wa));
-                    if !newer_wins {
-                        return by_share;
-                    }
-                    by_share.then_with(|| {
-                        (g.card_unlock_ticks(b), kb).cmp(&(g.card_unlock_ticks(a), ka))
-                    })
+                    // `None` (roster order) sorts after any wave rank.
+                    by_share.then_with(|| wave_rank(kb, b).cmp(&wave_rank(ka, a)))
                 })
             else {
                 return;
