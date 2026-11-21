@@ -531,6 +531,16 @@ exchange is not worse than the USA's; US rifles kill 48.3 men a match against 28
   Decided 2026-11-21: ship S12 with T8 as a known miss; the next balance pass starts with it. Germany 20/40, length unchanged.
 - S12-17 Stabilisation stays at about 3 % of downs (medics reach few men); not tuned (features first). Read it in the balance pass.
 
+## S13 open items (2026-11-21; branch `claude/project-thread-aj1tww`, log `docs/slices/S13-log.md`)
+
+- S13-F1 **Armour-test case 45 known miss (for the balance pass, with S13-1b).** The Jumbo leading into a PaK 40 at 400 m
+  survives 3 hits in 0 of 10 runs (bound >= 6). Every hit is one of the PaK's 2 old PzGr 40 (APCR without `slope_class`:
+  S13-1 (A) classes only the new rounds), which the cosine law lets through the 101.6 mm @ 47 glacis. Not fixed in S13 (no old
+  round is classed); `targets/S13.toml` T184d is `kind = "report"` with this note until the balance pass decides S13-1b.
+- S13-F2 **T155 (T179a-d) misses on the 40 set: tuning, not a defect** (diagnosis in `docs/slices/S13-log.md`, Fix stage). The
+  M36 and 76 W lose the vehicle slot's pick to the Sherman and the M10 by roster order at equal weight and zero buys; the AI
+  rarely makes a second vehicle-slot buy. Smallest lever set for the owner there.
+
 ## Planned work queue
 
 1. Infra step (done; on main).
