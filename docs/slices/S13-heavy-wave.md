@@ -13,7 +13,7 @@ merged, from a fresh main. Card: `docs/design/roster/roster-expansion.md` 4.2 "S
   the Panther glacis head-on to about 900 m and 76 mm HVAP past 1 km. US trials say the M82 failed the glacis and HVAP only worked at
   400 yd or less, often not. The slice's central fight would be wrong in the direction the owner rule forbids ("authentic stats").
 - So S13 adds **one small sim rule, O1** (obliquity by plate-to-calibre ratio and round class, section 3). It is **opt-in per round**
-  (`slope_class` ammo key): S13a sets it only on the eleven new rounds, so every existing duel is unchanged by construction.
+  (`slope_class` ammo key): S13a sets it only on the new AP rounds (every new AP round; HE has no class), so every existing duel is unchanged by construction.
 - **Split (owner rule 2026-11-09, `TODO.md` 40):** **S13a** mechanics: O1, all data, five cards at `ai_weight` 0, every new key in one
   layout commit, proven neutral (all S13a switches on = base, match for match, because no AI buys a new card and no old round is
   classed). **S13-ai**: the AI rules H1-H3 and card weights, measured on 480. **S13m**: heavy mortars, after S11b (S13-4).
@@ -214,7 +214,7 @@ Group (20-21 Aug 1944), Ordnance pamphlet on 90 mm ammunition (Jan 1945, lonesen
 summarised in "The Chieftain's Hatch: US guns vs German armour" 1-2. Production and arrival: Wikipedia Panther, Tiger I, M36, M4.
 
 ## 10. Owner questions: all DECIDED (A) on 2026-11-19 (settled on the recommendation; the part in brackets is the first affected)
-- **S13-1 Armour rule [S13a].** (A) Add O1, opt-in per round, on the 11 new rounds only, calibrated to US trials (3.3, 3.4).
+- **S13-1 Armour rule [S13a].** (A) Add O1, opt-in per round, on the new AP rounds only (every new AP round), calibrated to US trials (3.3, 3.4).
   (B) Keep the cosine law: the 90 mm and 76 mm HVAP pierce the Panther glacis to ~1 km, the Jumbo falls to the 8.8 cm at 600 m.
   (C) Lower the new rows instead: breaks "do not touch guns". **Decided (A).**
 - **S13-1b Old rounds [balance pass].** (A) Leave existing rounds on the cosine law in S13; the balance pass decides with the leak
