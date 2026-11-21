@@ -42,7 +42,7 @@ moving_spread_pct = 400
 
 [hull]
 # As the Sherman's (the M4A2 lower hull).
-track_band_pct = 45
+track_band_pct = 90  # S13 review V1: of box 0 (the lower hull) only; 90 % keeps the S3 band (45 % of the whole hull) in cm
 track_mm = 20
 
 # The open-topped turret: hand traverse, slow (vehicles.md 4.4: a full turn

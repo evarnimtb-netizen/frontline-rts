@@ -938,3 +938,34 @@ fn tank_turns_back_at_push_limit() {
     assert_eq!(n, 0, "control");
     assert_ne!(task, Some(crate::ai::TaskKind::Rearm), "control");
 }
+
+// ------------------------------------------- S13a review V1, V3, V5 --
+
+const S13_VEHICLES: [&str; 5] = [
+    "ww2:ger_panther_g",
+    "ww2:ger_tiger_1",
+    "ww2:usa_m4a3_76w",
+    "ww2:usa_m36",
+    "ww2:usa_m4a3e2",
+];
+
+/// Review V1: the S13 defs' track band (a share of box 0, the lower hull)
+/// is within 10 cm of the S3 band (45 % of the whole hull side). Control:
+/// at the old 45 % of box 0 it is 25 cm or more short.
+#[test]
+fn s13_track_band_keeps_the_s3_height() {
+    let w = flat_world_with(1, |_| {});
+    let s = &w.game().unwrap().setup;
+    for id in S13_VEHICLES {
+        let v = s.vehicles.iter().find(|v| v.id == id).unwrap();
+        let cm = |f: frontline_content::Fixed| f.0 as f64 * 100.0 / 65536.0;
+        let box0 = 2.0 * cm(v.hull.half.z);
+        // The whole hull side: box 0's bottom to the superstructure's top.
+        let sup = &v.boxes[1].bounds;
+        let body = cm(sup.center.z) + cm(sup.half.z) - cm(v.hull.center.z) + cm(v.hull.half.z);
+        let want = body * 0.45;
+        let band = box0 * f64::from(v.track_band_pct) / 100.0;
+        assert!((band - want).abs() <= 10.0, "{id}: {band} cm vs {want} cm");
+        assert!(want - box0 * 0.45 >= 25.0, "control {id}");
+    }
+}

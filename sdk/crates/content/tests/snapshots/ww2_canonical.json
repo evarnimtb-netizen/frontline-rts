@@ -8695,7 +8695,7 @@
         }
       ],
       "hull": {
-        "track_band_pct": 45,
+        "track_band_pct": 75,
         "track_mm": 20
       },
       "id": "ww2:ger_panther_g",
@@ -11758,7 +11758,7 @@
         }
       ],
       "hull": {
-        "track_band_pct": 45,
+        "track_band_pct": 75,
         "track_mm": 20
       },
       "id": "ww2:ger_tiger_1",
@@ -14994,7 +14994,7 @@
         }
       ],
       "hull": {
-        "track_band_pct": 45,
+        "track_band_pct": 90,
         "track_mm": 20
       },
       "id": "ww2:usa_m36",
@@ -16613,7 +16613,7 @@
         }
       ],
       "hull": {
-        "track_band_pct": 45,
+        "track_band_pct": 75,
         "track_mm": 20
       },
       "id": "ww2:usa_m4a3_76w",
@@ -17189,7 +17189,7 @@
         }
       ],
       "hull": {
-        "track_band_pct": 45,
+        "track_band_pct": 75,
         "track_mm": 20
       },
       "id": "ww2:usa_m4a3e2",

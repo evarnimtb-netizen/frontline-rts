@@ -43,8 +43,8 @@ moving_spread_pct = 400
 
 [hull]
 # S7: the hull box and its plates moved to [[boxes]] "hull" (box 0).
-# The lower 45 % of each side is running gear (track hits, +20 mm).
-track_band_pct = 45
+# The lower part of box 0's sides is running gear (track hits, +20 mm).
+track_band_pct = 75  # S13 review V1: of box 0 (the lower hull) only; 75 % keeps the S3 band (45 % of the whole hull) in cm
 track_mm = 20
 
 [turret]
