@@ -1548,11 +1548,21 @@ func _test_s8b() -> void:
 	card.alive = 2
 	_check(ci._full(card) and ci.blocked_reason(card) == "card", "at its own cap the tile is blocked")
 	# S13: an in-limit card with its own cap (max_alive or a limit group).
+	var saved_v := [ci._vehicles, ci._vehicle_limit]
+	ci._vehicles = 1
+	ci._vehicle_limit = 4
 	var heavy := {"type": "vehicle", "vehicle": "x", "card_alive": 0, "card_max": 1, "card_group": "heavy"}
-	_check(ci._badge(heavy).ends_with(" 0/1") and not ci._card_full(heavy), "an in-limit capped tile shows its cap")
+	_check(ci._badge(heavy) == "heavy 0/1" and not ci._card_full(heavy), "an in-limit capped tile shows its named cap")
+	var capped := {"type": "vehicle", "vehicle": "x", "card_alive": 0, "card_max": 9, "card_group": ""}
+	_check(ci._badge(capped) == "%d/%d" % [ci._vehicles, ci._vehicle_limit], "a looser card cap leaves the vehicle limit's badge")
+	_check(ci._badge(capped) == "1/4", "the vehicle limit's badge")
+	capped.card_max = 1
+	_check(ci._badge(capped) == "cap 0/1", "a max_alive cap is named cap")
 	heavy.card_alive = 1
 	_check(ci._full(heavy) and ci.blocked_reason(heavy) == "card", "at its card cap an in-limit tile is blocked")
 	_check(ci.refusal_text(heavy) == "this card's limit reached (1)", "the card cap's words")
+	ci._vehicles = saved_v[0]
+	ci._vehicle_limit = saved_v[1]
 	var sel: Node = _view.selection
 	_check(sel.DROP_KINDS.size() == 3 and sel.DROP_COUNT == 4, "drop kinds and count")
 

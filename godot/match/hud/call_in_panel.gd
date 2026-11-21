@@ -125,14 +125,24 @@ func tile_rect(i: int) -> Rect2:
 
 
 ## S8b-1: the tile's badge: this card's own alive/max for a card outside
-## the vehicle limit, else vehicles/limit. S13: an in-limit card with its
-## own cap (`card_max`: `max_alive` or its limit group's) adds it.
+## the vehicle limit, else vehicles/limit. S13 (stage A check N4): an
+## in-limit card with its own cap (`card_max`: `max_alive` or its limit
+## group's) shows whichever of the two has fewer places left, the card cap
+## named ("heavy 1/1", "cap 2/3"); the tooltip gives both.
 func _badge(c: Dictionary) -> String:
 	if bool(c.get("own_cap", false)):
 		return "%d/%d" % [int(c.get("alive", 0)), int(c.get("max_alive", 0))]
-	if int(c.get("card_max", 0)) > 0:
-		return "%d/%d %d/%d" % [_vehicles, _vehicle_limit, int(c.get("card_alive", 0)), int(c.get("card_max", 0))]
-	return "%d/%d" % [_vehicles, _vehicle_limit]
+	var vehicles := "%d/%d" % [_vehicles, _vehicle_limit]
+	var cmax := int(c.get("card_max", 0))
+	if cmax > 0 and cmax - int(c.get("card_alive", 0)) <= _vehicle_limit - _vehicles:
+		return _card_cap(c)
+	return vehicles
+
+
+## S13: an in-limit card's own cap, named: its limit group, else "cap".
+static func _card_cap(c: Dictionary) -> String:
+	var group := String(c.get("card_group", ""))
+	return "%s %d/%d" % ["cap" if group == "" else group, int(c.get("card_alive", 0)), int(c.get("card_max", 0))]
 
 
 ## S13: an in-limit card at its own cap.
@@ -499,7 +509,9 @@ func _get_tooltip(at: Vector2) -> String:
 	var c: Dictionary = _catalog[i]
 	var what := "%d men" % int(c.get("men", 0))
 	if is_vehicle(c):
-		what = "%d pop, %s %s" % [int(c.get("pop", 0)), "own limit" if bool(c.get("own_cap", false)) else "vehicle", _badge(c)]
+		what = "%d pop, %s %s" % [int(c.get("pop", 0)), "own limit" if bool(c.get("own_cap", false)) else "vehicle", _badge(c) if bool(c.get("own_cap", false)) else "%d/%d" % [_vehicles, _vehicle_limit]]
+		if not bool(c.get("own_cap", false)) and int(c.get("card_max", 0)) > 0:
+			what += ", " + _card_cap(c)
 	var recall := float(c.get("recall_s", c.get("cooldown_total_s", 0.0)))
 	var after := "" if recall <= 0.0 else " Then %d s before the next." % int(recall)
 	var why := refusal_text(c)
