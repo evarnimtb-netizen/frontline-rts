@@ -1083,6 +1083,25 @@ impl MatchState {
             .is_some_and(|v| v.role.outside_limit())
     }
 
+    /// The tick from which `squad_type` may be called in: the card's own
+    /// `unlock_s`, with the rules' vehicle unlock as a floor for vehicles.
+    pub fn card_unlock_ticks(&self, squad_type: u16) -> u32 {
+        let s = &self.setup;
+        let ty = &s.squad_types[squad_type as usize];
+        let vr = &s.rules.vehicles;
+        // S8a-5: a transport's floor is `[vehicles.transport] unlock_s`,
+        // never later than the vehicles' own.
+        match ty.vehicle {
+            Some(_) if self.is_transport_type(squad_type) => ty
+                .initial_cooldown_ticks
+                .max((vr.transport.unlock_s * s.tick_hz).min(vr.unlock_ticks)),
+            // S8b-1: a recon car or truck keeps its card's own unlock.
+            Some(_) if self.is_outside_limit_type(squad_type) => ty.initial_cooldown_ticks,
+            Some(_) => ty.initial_cooldown_ticks.max(vr.unlock_ticks),
+            None => ty.initial_cooldown_ticks,
+        }
+    }
+
     /// Whether `player` could call in `squad_type` at `tick` (S3b), checked
     /// in this order: roster, unlock (the card's `unlock_s`, and the rules'
     /// vehicle unlock as a floor for vehicles), S4 `max_alive`, S4 limit
@@ -1104,19 +1123,8 @@ impl MatchState {
         }
         let ty = &s.squad_types[squad_type as usize];
         let vr = &s.rules.vehicles;
-        // S8a-5: a transport's floor is `[vehicles.transport] unlock_s`,
-        // never later than the vehicles' own.
-        let transport = self.is_transport_type(squad_type);
         let outside = self.is_outside_limit_type(squad_type);
-        let unlock = match ty.vehicle {
-            Some(_) if transport => ty
-                .initial_cooldown_ticks
-                .max((vr.transport.unlock_s * s.tick_hz).min(vr.unlock_ticks)),
-            // S8b-1: a recon car or truck keeps its card's own unlock.
-            Some(_) if outside => ty.initial_cooldown_ticks,
-            Some(_) => ty.initial_cooldown_ticks.max(vr.unlock_ticks),
-            None => ty.initial_cooldown_ticks,
-        };
+        let unlock = self.card_unlock_ticks(squad_type);
         if tick < unlock as u64 {
             return Err(CallInRefusal::Locked {
                 ticks: (unlock as u64 - tick) as u32,

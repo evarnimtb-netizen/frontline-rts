@@ -2142,6 +2142,10 @@ impl Planner<'_> {
             // ties: roster order), so full and understrength cards come in
             // the ratio of their weights. Out of manpower or pop for it:
             // save up (no cheaper card instead).
+            // S13 G: in the vehicle slot with `[ai.armour] heavy_buy` 1, a
+            // tie goes to the newer card: the later unlock, then the later
+            // in the roster (else an appended card never wins a tie).
+            let newer_wins = Some(r) == veh_slot && ai.armour.heavy_buy != 0;
             let ready_cards: Vec<u16> = cards[r]
                 .iter()
                 .copied()
@@ -2156,11 +2160,21 @@ impl Planner<'_> {
                     .copied()
                     .unwrap_or(0) as u64
             };
-            let Some(&t) = ready_cards.iter().min_by(|&&a, &&b| {
-                let wa = s.squad_types[a as usize].ai_weight.max(1) as u64;
-                let wb = s.squad_types[b as usize].ai_weight.max(1) as u64;
-                ((buys(a) + 1) * wb).cmp(&((buys(b) + 1) * wa))
-            }) else {
+            let Some((_, &t)) = ready_cards
+                .iter()
+                .enumerate()
+                .min_by(|&(ka, &a), &(kb, &b)| {
+                    let wa = s.squad_types[a as usize].ai_weight.max(1) as u64;
+                    let wb = s.squad_types[b as usize].ai_weight.max(1) as u64;
+                    let by_share = ((buys(a) + 1) * wb).cmp(&((buys(b) + 1) * wa));
+                    if !newer_wins {
+                        return by_share;
+                    }
+                    by_share.then_with(|| {
+                        (g.card_unlock_ticks(b), kb).cmp(&(g.card_unlock_ticks(a), ka))
+                    })
+                })
+            else {
                 return;
             };
             {

@@ -1225,3 +1225,63 @@ fn special_round_judged_on_the_glacis() {
         "control: PzGr 39/42 at the 76 W"
     );
 }
+
+const SHERMAN: &str = "ww2:usa_m4a3_75_squad";
+const W76: &str = "ww2:usa_m4a3_76w_squad";
+const M36: &str = "ww2:usa_m36_squad";
+
+/// USA (player 1) an AI with no start squads, vehicles unlocked at 0, H1
+/// as `heavy_buy`, every vehicle card ready from tick 0 but the 76 W and
+/// the M36 (their unlock in ticks as given); manpower topped up each
+/// second. Returns the card counts of the first vehicle-slot buy.
+fn first_vehicle_buy(heavy_buy: u32, w76: u32, m36: u32) -> Vec<(&'static str, u32)> {
+    let mut w = flat_world_with(1, |s| {
+        s.players[1].is_ai = true;
+        let f = s.players[1].faction as usize;
+        s.factions[f].start_squads.clear();
+        s.rules.start_manpower = 0;
+        s.rules.vehicles.unlock_ticks = 0;
+        s.rules.ai.armour.heavy_buy = heavy_buy;
+        let veh = s.tag("vehicle");
+        for t in s.squad_types.iter_mut() {
+            if t.has_tag(veh) {
+                t.initial_cooldown_ticks = match t.id.as_str() {
+                    W76 => w76,
+                    M36 => m36,
+                    _ => 0,
+                };
+            }
+        }
+    });
+    for _ in 0..300 {
+        if ai_of(&w, 1).counters.vehicles_bought > 0 {
+            break;
+        }
+        set_mp(&mut w, 1, 5000);
+        steps(&mut w, 30);
+    }
+    assert_eq!(ai_of(&w, 1).counters.vehicles_bought, 1, "one vehicle buy");
+    [SHERMAN, "ww2:usa_m10_squad", "ww2:usa_m3a1_squad", W76, M36]
+        .into_iter()
+        .map(|id| (id, buys(&w, 1, id)))
+        .filter(|&(_, n)| n > 0)
+        .collect()
+}
+
+/// S13 G: in the vehicle slot, with every card at 0 buys and the same
+/// weight, the tie goes to the newer card: the later unlock first (76 W
+/// over the M36, later in the roster), then the later in the roster
+/// (M36 over the 76 W at the same unlock).
+#[test]
+fn vehicle_tie_goes_to_the_newer_card() {
+    assert_eq!(first_vehicle_buy(1, 2, 1), vec![(W76, 1)]);
+    assert_eq!(first_vehicle_buy(1, 1, 1), vec![(M36, 1)]);
+}
+
+/// S13 G control: with `heavy_buy` 0 the tie keeps roster order (the
+/// Sherman over the M10 and the M3A1, later in the roster), as before
+/// S13 G.
+#[test]
+fn vehicle_tie_roster_order_with_heavy_buy_off() {
+    assert_eq!(first_vehicle_buy(0, 2, 1), vec![(SHERMAN, 1)]);
+}
