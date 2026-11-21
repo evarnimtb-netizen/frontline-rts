@@ -268,7 +268,10 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
     let fx = |v: frontline_content::Fixed| Fx::from(v).to_f32();
     let mut out = VarDictionary::new();
     for v in &setup.vehicles {
-        let hull = &v.hull;
+        // S13 review V2: the hull body (box 0 and an S13 superstructure;
+        // box 0 alone for every earlier def) and its glacis box's front.
+        let body = v.hull_body();
+        let hull = &body;
         let tur = &v.turret;
         let gun = v.main_gun();
         let seats: PackedStringArray = SeatRole::ALL
@@ -404,7 +407,9 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             "pintles" => &pintles,
             "shields" => &shields,
             "slots" => &slots,
-            "glacis_deg" => v.plate(0).map_or(0, |p| p.slope_deg) as f32,
+            "glacis_deg" => v
+                .plate((v.glacis_box() * frontline_content::vehicle::PLATE_GROUPS) as u8)
+                .map_or(0, |p| p.slope_deg) as f32,
             "seats" => &seats,
             "ammo" => &ammo,
             "casemate" => casemate,

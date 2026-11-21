@@ -978,6 +978,48 @@ fn hull_body_is_box_0_before_s13() {
     }
 }
 
+/// Review V2 (what the presenter draws, `match_node::vehicle_types`): the
+/// glacis box is box 0 for every pre-S13 def and the superstructure for the
+/// S13 defs, so the Tiger's drawn glacis is its 8 deg driver's plate, not
+/// the 24 deg nose, and the drawn hull reaches the turret ring (no floating
+/// turret). Control: box 0's front (the old `plate(0)`) and top differ.
+#[test]
+fn presenter_hull_is_the_body_and_its_glacis() {
+    let w = flat_world_with(1, |_| {});
+    let s = &w.game().unwrap().setup;
+    let glacis = |v: &frontline_content::vehicle::VehicleSetup| {
+        v.plate((v.glacis_box() * frontline_content::vehicle::PLATE_GROUPS) as u8)
+            .map(|p| p.slope_deg)
+    };
+    for v in &s.vehicles {
+        if S13_VEHICLES.contains(&v.id.as_str()) {
+            assert_eq!(v.glacis_box(), 1, "{}", v.id);
+            let top = v.hull_body().center.z.0 + v.hull_body().half.z.0;
+            assert!(
+                top > v.hull.center.z.0 + v.hull.half.z.0,
+                "control {}",
+                v.id
+            );
+        } else {
+            assert_eq!(v.glacis_box(), 0, "{}", v.id);
+            assert_eq!(glacis(v), v.plate(0).map(|p| p.slope_deg), "{}", v.id);
+        }
+    }
+    let tiger = s
+        .vehicles
+        .iter()
+        .find(|v| v.id == "ww2:ger_tiger_1")
+        .unwrap();
+    assert_eq!(glacis(tiger), Some(8));
+    assert_eq!(tiger.plate(0).map(|p| p.slope_deg), Some(24), "control");
+    let panther = s
+        .vehicles
+        .iter()
+        .find(|v| v.id == "ww2:ger_panther_g")
+        .unwrap();
+    assert_eq!(glacis(panther), Some(55));
+}
+
 /// Review V1: the S13 defs' track band (a share of box 0, the lower hull)
 /// is within 10 cm of the S3 band (45 % of the whole hull side). Control:
 /// at the old 45 % of box 0 it is 25 cm or more short.

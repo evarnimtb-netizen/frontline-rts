@@ -3341,6 +3341,24 @@ impl VehicleSetup {
             .collect()
     }
 
+    /// S13 (review V2): the hull body's glacis box: of
+    /// [`Self::hull_body_boxes`] the one whose top is highest (ties: the
+    /// lower index). Box 0 for every pre-S13 def; the superstructure for
+    /// the S13 defs (its front plate is the glacis the presenter draws).
+    pub fn glacis_box(&self) -> usize {
+        let top = |k: usize| {
+            let b = &self.boxes[k].bounds;
+            b.center.z.0 as i64 + b.half.z.0 as i64
+        };
+        let mut best = 0;
+        for k in self.hull_body_boxes() {
+            if k < self.boxes.len() && (best >= self.boxes.len() || top(k) > top(best)) {
+                best = k;
+            }
+        }
+        best
+    }
+
     /// S13 (review V3): the bounds of [`Self::hull_body_boxes`]: `hull`
     /// (box 0) exactly when that is box 0 alone.
     pub fn hull_body(&self) -> BoxSetup {
