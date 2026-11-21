@@ -56,3 +56,14 @@ C's `armour_test/s13.rs` (tallies by `zone_name`); the S3 tally in `armour_test.
 layout commit fede1bb and the O1 commit b358a68 were not compiled on their own (stage A built at its head): a bisect over them
 needs a per-commit build. T155: traced, no defect (above). 40 sets: default `target/s13-F-40`, `s13_off` `target/s13-F-off40`.
 
+
+## S13 G (vehicle-slot tie)
+Commit 0439e70: the vehicle slot's pick (fewest buys per weight) breaks a tie by the newer card, the later unlock
+(`Game::card_unlock_ticks`, the rule `call_in_check` uses) then the later in the roster, when `[ai.armour] heavy_buy` is 1; with
+0 (`s13_off`, `heavy_off`, every pre-S13 test via `s13_off()`) roster order as before. No new key, no saved field, no data change.
+Tests `vehicle_tie_goes_to_the_newer_card`, `vehicle_tie_roster_order_with_heavy_buy_off`; `check.sh quick 6f7bda0` all ok (1212).
+**40 set** `target/s13-G-40` (default): Germany 19/40, no winner 0, median 19.65 min (min 11.25, max 31.86; F: 20/40, 20.6).
+Heavy buys (matches with one / bought): Panther 8/9, Tiger 3/5, Jumbo 18/19, M36 3/3, 76 W 1/1; plans/buys/drops Germany
+29/14/4, USA 38/19/6. **Side effect:** the rule applies to every tie in the slot, not only the S13 cards. USA: the slot now
+saves for the M36 (760) over the Sherman (590): US slot buys 4 in 40 (F: 24, Sherman 19, M10 4, M3A1 1). Germany: the StuG III
+(later in the roster) wins over the Pz IV: StuG 30, Pz IV 1 (F: 5, 27). Owner: keep, or narrow the rule to `heavy_wave` cards.
