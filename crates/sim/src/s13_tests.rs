@@ -163,7 +163,21 @@ fn s13_setup_keys_are_hashed_and_checked() {
             Box::new(|s| s.rules.vehicles.gunnery.special_min_pct = 101),
         ),
         ("heavy_buy 2", Box::new(|s| s.rules.ai.armour.heavy_buy = 2)),
+        // Stage A check N1: a numeric [ai.armour] key at the setup level.
+        (
+            "push_without_supply_m over 5000",
+            Box::new(|s| s.rules.ai.armour.push_without_supply_m = 5001),
+        ),
     ];
+    // Stage A check N2: the class allow-list is exhaustive (AP and APHE).
+    for (m, ok) in [
+        (AmmoMechanism::Ap, true),
+        (AmmoMechanism::Aphe, true),
+        (AmmoMechanism::He, false),
+        (AmmoMechanism::Heat, false),
+    ] {
+        assert_eq!(m.takes_slope_class(), ok, "{m:?}");
+    }
     assert!(
         base.validate().is_empty(),
         "control: the unedited setup is valid"

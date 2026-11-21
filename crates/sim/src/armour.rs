@@ -342,6 +342,17 @@ impl Obliquity {
     /// class or the switch is off (the cosine law).
     pub fn of(a: &AmmoSetup, t: &ArmourTuning) -> Option<Obliquity> {
         let class = a.slope_class?;
+        // Stage A check N7: the setup's check refuses both (a classed
+        // round's calibre is 1..=500; lo < hi); the fallback below keeps a
+        // release build on the cosine law if one slips through.
+        debug_assert!(
+            t.obliquity == 0 || (a.caliber_mm > 0 && t.td_lo_pct < t.td_hi_pct),
+            "O1 on {}: calibre {} mm, ramp {}..{}",
+            a.id,
+            a.caliber_mm,
+            t.td_lo_pct,
+            t.td_hi_pct
+        );
         if t.obliquity == 0 || a.caliber_mm == 0 || t.td_lo_pct >= t.td_hi_pct {
             return None;
         }

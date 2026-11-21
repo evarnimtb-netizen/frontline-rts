@@ -479,7 +479,7 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// 31: S13 (`AiState::{armour_seen_at, heavy_plan_since}`, four
 /// `AiCounters`; in the setup `[armour]`, `[vehicles.gunnery]
 /// special_min_pct`, the S13 `[ai.armour]` keys, `AmmoSetup::slope_class`,
-/// `SquadSetup::ai_heavy` and `VehicleSetup::ai_overwatch`). One bump for
+/// `SquadTypeSetup::ai_heavy` and `VehicleSetup::ai_overwatch`). One bump for
 /// the whole slice.
 const SAVE_VERSION: u32 = 31;
 

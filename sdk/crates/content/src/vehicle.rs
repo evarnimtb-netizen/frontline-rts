@@ -323,6 +323,16 @@ pub enum AmmoMechanism {
 }
 
 impl AmmoMechanism {
+    /// S13 (O1): rounds that may carry a `slope_class`. An exhaustive
+    /// allow-list (stage A check N2): a new mechanism must be placed here
+    /// before it compiles, so it is neither accepted nor refused silently.
+    pub const fn takes_slope_class(self) -> bool {
+        match self {
+            AmmoMechanism::Ap | AmmoMechanism::Aphe => true,
+            AmmoMechanism::He | AmmoMechanism::Heat => false,
+        }
+    }
+
     /// Rounds that pierce armour (a core and spall after penetration).
     pub const fn penetrator(self) -> bool {
         !matches!(self, AmmoMechanism::He)
@@ -2684,9 +2694,7 @@ impl AmmoDef {
             out.push(Issue::new("name", "must not be empty"));
         }
         range(&mut out, "caliber_mm", self.caliber_mm as i64, 1, 500);
-        if self.slope_class.is_some()
-            && !matches!(self.mechanism, AmmoMechanism::Ap | AmmoMechanism::Aphe)
-        {
+        if self.slope_class.is_some() && !self.mechanism.takes_slope_class() {
             out.push(
                 Issue::new(
                     "slope_class",
@@ -3969,7 +3977,7 @@ pub(crate) fn check_ammo(a: &AmmoSetup) -> Option<&'static str> {
         return Some("ammo.mechanism: parts disagree with the mechanism");
     }
     // S13 (O1): a slope class only on a full-bore or sub-calibre AP round.
-    if a.slope_class.is_some() && !matches!(a.mechanism, AmmoMechanism::Ap | AmmoMechanism::Aphe) {
+    if a.slope_class.is_some() && !a.mechanism.takes_slope_class() {
         return Some("ammo.slope_class: only on `ap` and `aphe` rounds");
     }
     if let Some(c) = &a.core
