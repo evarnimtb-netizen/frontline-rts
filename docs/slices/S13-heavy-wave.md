@@ -75,8 +75,9 @@ today's rule. Ricochet unchanged; the track band's `extra * c` unchanged.
 | | `td_lo_pct` / `td_hi_pct` | 40 / 90 | - | ramp of `w` over T/d |
 | | `apcbc_w_pct` / `apcr_w_pct` | 100 / 100 | - | `w_max` per class |
 | ammo def | `slope_class` | absent | absent | `"apcbc"` (AP, APC, APCBC) or `"apcr"` (APCR, HVAP); load error on HE/HEAT |
-Ranges: switch 0..=1; `td_*` 0..=300, lo < hi; `*_w_pct` 0..=100. Every one of the 16 (lo, hi) pairs in {25,30,40,50} x {75,80,90,100}
-passes T151a-g below (script); 40 / 90 is the middle of that window, so the calibration is not fragile.
+Ranges: switch 0..=1; `td_*` 0..=300, lo < hi; `*_w_pct` 0..=100. Of the 16 (lo, hi) pairs in {25,30,40,50} x {75,80,90,100}, 15
+pass T151a-g below (script); (50, 100) misses T151e at 31 % with aimed descent (stage A check N5). The defaults 40 / 90 pass, inside
+that window, so the calibration is not fragile; the window is not a promise that every pair passes.
 ### 3.3 Chance to penetrate, cosine law -> O1 (defaults; B&L rows; per hit; 0° yaw / 30° yaw)
 | Round | Plate | 100 m | 350 m | 1000 m | History |
 |---|---|---|---|---|---|
