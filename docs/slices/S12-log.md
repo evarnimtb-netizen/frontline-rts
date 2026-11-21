@@ -54,3 +54,10 @@ test_net_ui 143/143, check_project OK.
 so `have` is true only while a team digs it; the next pass sees no post and orders the build again (Build on the old site would be
 refused by `aid_max` anyway).
 
+
+## Orchestrator: final measure (2026-11-21)
+480 at `b89ef42` (`target/s12-on2`): Germany 42.71 % (45.00 / 42.50 / 40.62), no winner 0, HE share of casualties 28.3 /
+28.0 / 28.1 (T8 cap 26.3: known miss S12-16, accepted for now, first item of the next balance pass). Ablations
+(`target/s12-abl2`, against 42.71): s12_off 44.17 (+1.46; neutral vs `target/s12-base40` same 40/40), no_medics 41.04
+(-1.67), no_post 44.17 (+1.46), no_reinforce 45.00 (+2.29, matters), head_300 43.54 (+0.83; HE share of casualties 26.6).
+Paired s12_off vs default moves 1.46 points (< 5: no stop). CI run 47 (workflow_dispatch) on `91078e9`: success.
