@@ -351,6 +351,35 @@ fn type_of_setup(s: &MatchSetup, p: u8, role: SquadRole) -> Option<u16> {
     type_with_tag(s, p, role_tag(role)).and_then(|t| s.squad_types[t as usize].vehicle)
 }
 
+/// S13 (docs/slices/S13-heavy-wave.md 1, 7): the squad type whose card
+/// id is `id` (namespaced, e.g. `ww2:usa_m4a3_75_squad`), on player `p`'s
+/// roster (a card of the other faction is not found).
+pub fn type_by_card(s: &MatchSetup, p: u8, id: &str) -> Option<u16> {
+    let f = &s.factions[s.players.get(p as usize)?.faction as usize];
+    f.roster
+        .iter()
+        .copied()
+        .find(|&t| s.squad_types[t as usize].id == id)
+}
+
+/// S13: spawns player `p`'s vehicle card `id` at `pos` facing `facing`:
+/// `(squad, vehicle)`. None for a soldier card or a card not on `p`'s
+/// roster.
+pub fn vehicle_by_card(
+    w: &mut World,
+    p: u8,
+    id: &str,
+    pos: FxVec2,
+    facing: FxVec2,
+) -> Option<(SquadId, SimId)> {
+    let s = w.match_setup()?;
+    let t = type_by_card(s, p, id)?;
+    s.squad_types[t as usize].vehicle?;
+    let sq = w.spawn_squad_at(PlayerId(p), t, pos, facing)?;
+    let v = *w.game()?.squad(sq)?.members.first()?;
+    Some((sq, v))
+}
+
 /// Case 3f: the tanks' sight (m), so that they see each other at 600 m
 /// as if an observer had spotted them (× the 200 % size factor: 700 m).
 pub const DUEL_600_SIGHT_M: i32 = 350;
@@ -377,11 +406,19 @@ pub enum Duel {
 /// Sherman]`. S3b: in 3b the angled Panzer IV starts with its turret laid
 /// on the Sherman (angling doctrine: hull angled, turret on the threat);
 /// before, its turret sat on its hull line, 30° off, a staging artefact.
-pub fn duel(
+pub fn duel(setup: MatchSetup, threads: usize, kind: Duel, flip: bool) -> Result<Staged, SimError> {
+    duel_cards(setup, threads, kind, flip, None)
+}
+
+/// S13: [`duel`] with the two vehicles named by card id (`[player 0's,
+/// player 1's]`, see [`vehicle_by_card`]); `None`: each player's first
+/// tank (the Panzer IV and the Sherman), exactly [`duel`].
+pub fn duel_cards(
     mut setup: MatchSetup,
     threads: usize,
     kind: Duel,
     flip: bool,
+    cards: Option<[&str; 2]>,
 ) -> Result<Staged, SimError> {
     staging(&mut setup, true);
     if kind == Duel::Frontal600 {
@@ -400,8 +437,16 @@ pub fn duel(
         Duel::PzFlank150 => (350, EAST, 500, NORTH),
         Duel::Frontal600 => (200, EAST, 800, WEST),
     };
-    let pz = need(tank(w, 0, at(mx(pz_at), LANE_Y), md(pz_f)), "Panzer IV")?;
-    let sh = need(tank(w, 1, at(mx(sh_at), LANE_Y), md(sh_f)), "Sherman")?;
+    let (pz, sh) = match cards {
+        None => (
+            need(tank(w, 0, at(mx(pz_at), LANE_Y), md(pz_f)), "Panzer IV")?,
+            need(tank(w, 1, at(mx(sh_at), LANE_Y), md(sh_f)), "Sherman")?,
+        ),
+        Some([a, b]) => (
+            need(vehicle_by_card(w, 0, a, at(mx(pz_at), LANE_Y), md(pz_f)), a)?,
+            need(vehicle_by_card(w, 1, b, at(mx(sh_at), LANE_Y), md(sh_f)), b)?,
+        ),
+    };
     if kind == Duel::Angled300 {
         // Lay the turret on the Sherman: the bearing less the hull yaw.
         let d = at(mx(sh_at), LANE_Y) - at(mx(pz_at), LANE_Y);

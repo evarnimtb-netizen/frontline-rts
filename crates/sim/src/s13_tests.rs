@@ -551,6 +551,70 @@ fn hit_record_matches_the_rule() {
     }
 }
 
+// ------------------------------------------------ armour-test helper --
+
+/// Plan 1: armour-test spawns a duel side by card id. Control: naming the
+/// first tanks (Panzer IV, Sherman) is exactly the role-based duel
+/// (same state hash after a few seconds); a StuG named for player 0 is
+/// spawned; a card of the other faction or a soldier card is refused.
+#[test]
+fn duel_by_card_spawns_the_named_vehicles() {
+    use crate::scenarios::{Duel, duel, duel_cards, type_by_card};
+    let setup = || flat_world_with(1, |_| {}).game().unwrap().setup.clone();
+    let mut a = duel(setup(), 1, Duel::Frontal300, false).unwrap();
+    let mut b = duel_cards(
+        setup(),
+        1,
+        Duel::Frontal300,
+        false,
+        Some(["ww2:ger_pz4_h_squad", "ww2:usa_m4a3_75_squad"]),
+    )
+    .unwrap();
+    for _ in 0..60 {
+        a.world.step(&[]);
+        b.world.step(&[]);
+    }
+    assert_eq!(a.world.full_state_hash(), b.world.full_state_hash());
+    let s = setup();
+    let stug = s
+        .squad_types
+        .iter()
+        .find(|t| {
+            t.vehicle.is_some_and(|v| {
+                s.vehicles[v as usize].role == frontline_content::VehicleRole::AssaultGun
+            }) && type_by_card(&s, 0, &t.id).is_some()
+        })
+        .map(|t| t.id.clone())
+        .expect("a German assault gun card");
+    let c = duel_cards(
+        setup(),
+        1,
+        Duel::Frontal300,
+        false,
+        Some([&stug, "ww2:usa_m4a3_75_squad"]),
+    )
+    .unwrap();
+    let v = c.tanks[0].1;
+    let g = c.world.game().unwrap();
+    let ty = g.setup.vehicles[g.vehicle(v).unwrap().type_idx as usize].role;
+    assert_eq!(ty, frontline_content::VehicleRole::AssaultGun);
+    assert!(
+        type_by_card(&s, 0, "ww2:usa_m4a3_75_squad").is_none(),
+        "other faction"
+    );
+    assert!(
+        duel_cards(
+            setup(),
+            1,
+            Duel::Frontal300,
+            false,
+            Some(["ww2:ger_grenadiergruppe", "ww2:usa_m4a3_75_squad"])
+        )
+        .is_err(),
+        "a soldier card"
+    );
+}
+
 // ------------------------------------------------- special_min_pct --
 
 /// Plan 3.6: `Auto` fires the special round only when its chance reaches
