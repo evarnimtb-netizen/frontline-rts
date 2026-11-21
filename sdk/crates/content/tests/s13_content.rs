@@ -129,8 +129,8 @@ fn load_rejects_bad_s13_keys() {
         .clone()
         .apply_override(&f, "ww2:skirmish")
         .err()
-        .expect("td_lo_pct = td_hi_pct was accepted")
-        .to_string();
+        .map(|e| e.to_string())
+        .unwrap_or_else(|| panic!("td_lo_pct = td_hi_pct was accepted"));
     assert!(e.contains("armour.td_lo_pct"), "{e}");
     // The plan's window of ramps (3.2): every one is accepted.
     for lo in [25, 30, 40, 50] {

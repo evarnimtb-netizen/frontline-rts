@@ -1,6 +1,7 @@
 //! S13a Build A tests (docs/slices/S13-heavy-wave.md 3, 5): the SAVE 31
 //! layout and its load checks, rule O1 and `special_min_pct`. Each test
 //! names its control: the edit that makes it fail.
+#![allow(clippy::float_arithmetic)] // percentages for the targets only
 
 use super::s6_tests::{flat_world_with, spawn, steps};
 use super::*;
