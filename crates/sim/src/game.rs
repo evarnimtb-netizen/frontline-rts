@@ -890,6 +890,7 @@ impl MatchState {
                 &setup.vehicles,
                 &setup.weapons,
                 &setup.rules.vehicles.gunnery,
+                &setup.rules.armour,
             ),
             vderived: VehicleDerived::new(&setup, grid_dim(&setup)),
             hit_log: None,
@@ -919,6 +920,7 @@ impl MatchState {
             &self.setup.vehicles,
             &self.setup.weapons,
             &self.setup.rules.vehicles.gunnery,
+            &self.setup.rules.armour,
         );
         self.vderived = VehicleDerived::new(&self.setup, grid_dim(&self.setup));
     }

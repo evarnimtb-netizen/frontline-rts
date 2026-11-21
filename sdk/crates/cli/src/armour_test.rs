@@ -345,13 +345,27 @@ fn case1(env: &Env) -> Result<CaseReport> {
                 for h in got {
                     st.hits += 1;
                     // The rule replayed, and the CLI's closed form.
-                    let again =
-                        armour::penetrates(h.pen0, h.c, h.thickness, h.extra, h.cos_ricochet, h.v);
+                    // S13: the record carries O1's `c_pen` (`c` unclassed).
+                    let again = armour::penetrates_at(
+                        h.pen0,
+                        h.c,
+                        h.c_pen,
+                        h.thickness,
+                        h.extra,
+                        h.cos_ricochet,
+                        h.v,
+                    );
                     if again != h.result {
                         st.mismatches += 1;
                     }
-                    let ppm =
-                        armour::pen_chance_ppm(h.pen0, h.c, h.thickness, h.extra, h.cos_ricochet);
+                    let ppm = armour::pen_chance_ppm_at(
+                        h.pen0,
+                        h.c,
+                        h.c_pen,
+                        h.thickness,
+                        h.extra,
+                        h.cos_ricochet,
+                    );
                     let wrong = (ppm == PPM && h.result != PenResult::Penetration)
                         || (ppm == 0 && h.result == PenResult::Penetration);
                     if wrong {

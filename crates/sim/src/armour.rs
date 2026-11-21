@@ -25,6 +25,14 @@
 //! else                                       → NonPenetration
 //! ```
 //!
+//! **S13 rule O1** (`docs/slices/S13-heavy-wave.md` 3): for a round with a
+//! `slope_class` the `c` on the penetration side only becomes
+//! `c_pen = c · ((1 − w) + w · s(c))`, `s(c) = √c` (`apcbc`) or `c`
+//! (`apcr`), `w` the class weight ramped over the plate-to-calibre ratio
+//! ([`Obliquity`], [`AmmoTable::c_pen`]): `pen0 · (1 + v) · c_pen ≥
+//! thickness + extra · c`. Ricochet and the track band keep `c`. A round
+//! without a class (every round before S13a Build B) has `c_pen = c`.
+//!
 //! `extra` is the running gear's `track_mm` for hits in a hull side's track
 //! band. For a flat shot at a face with slope `s` and horizontal angle `a`
 //! from the face normal, `c = cos s · cos a`; a descending shell at a
@@ -34,9 +42,9 @@
 
 use frontline_content::Fixed;
 use frontline_content::setup::WeaponSetup;
-use frontline_content::tuning::GunneryTuning;
+use frontline_content::tuning::{ArmourTuning, GunneryTuning};
 use frontline_content::vehicle::{AmmoSetup, ArmourMaterial, PartBoxSetup, VehicleSetup};
-use frontline_content::{AmmoMechanism, MAX_ARMOUR_BOXES, MAX_ZONES, PlateGroup};
+use frontline_content::{AmmoMechanism, MAX_ARMOUR_BOXES, MAX_ZONES, PlateGroup, SlopeClass};
 
 use crate::fx::{Fx, FxVec3};
 use crate::rng::RngStream;
@@ -232,11 +240,26 @@ pub enum PenResult {
 /// `thickness` and `extra` in mm, `v` the variation from [`variation`]. No
 /// division.
 pub fn penetrates(pen0: Fx, c: Fx, thickness: Fx, extra: Fx, cos_ricochet: Fx, v: Fx) -> PenResult {
+    penetrates_at(pen0, c, c, thickness, extra, cos_ricochet, v)
+}
+
+/// [`penetrates`] with S13's `c_pen` on the penetration side (rule O1;
+/// [`AmmoTable::c_pen`]); `c` keeps the ricochet test and the track band.
+/// With `c_pen == c` exactly [`penetrates`].
+pub fn penetrates_at(
+    pen0: Fx,
+    c: Fx,
+    c_pen: Fx,
+    thickness: Fx,
+    extra: Fx,
+    cos_ricochet: Fx,
+    v: Fx,
+) -> PenResult {
     if c <= cos_ricochet || c <= Fx::ZERO {
         return PenResult::Ricochet;
     }
     let pen = pen0.mul(Fx::ONE + v);
-    if pen.mul(c) >= thickness + extra.mul(c) {
+    if pen.mul(c_pen) >= thickness + extra.mul(c) {
         PenResult::Penetration
     } else {
         PenResult::NonPenetration
@@ -263,13 +286,26 @@ pub fn effective_thickness(c: Fx, thickness: Fx, extra: Fx) -> Fx {
 /// continuous ±[`PEN_BAND`] triangular variation, in closed form (no
 /// sampling). 0 when the impact ricochets.
 pub fn pen_chance_ppm(pen0: Fx, c: Fx, thickness: Fx, extra: Fx, cos_ricochet: Fx) -> u32 {
+    pen_chance_ppm_at(pen0, c, c, thickness, extra, cos_ricochet)
+}
+
+/// [`pen_chance_ppm`] of [`penetrates_at`] (S13 `c_pen` on the
+/// penetration side). With `c_pen == c` exactly [`pen_chance_ppm`].
+pub fn pen_chance_ppm_at(
+    pen0: Fx,
+    c: Fx,
+    c_pen: Fx,
+    thickness: Fx,
+    extra: Fx,
+    cos_ricochet: Fx,
+) -> u32 {
     if c <= cos_ricochet || c <= Fx::ZERO || pen0 <= Fx::ZERO {
         return 0;
     }
-    // Penetration when v ≥ x = need / (pen0·c) − 1, in raw Q16.16 (i64 so
-    // a very thin pen or oblique hit cannot overflow).
+    // Penetration when v ≥ x = need / (pen0·c_pen) − 1, in raw Q16.16 (i64
+    // so a very thin pen or oblique hit cannot overflow).
     let need = thickness.raw() as i64 * 65_536 + extra.raw() as i64 * c.raw() as i64;
-    let have = pen0.raw() as i64 * c.raw() as i64; // Q32.32
+    let have = pen0.raw() as i64 * c_pen.raw() as i64; // Q32.32
     let x = (need * 65_536 / have.max(1)) - 65_536; // Q16.16, i64
     let a = PEN_BAND.raw() as i64;
     let ppm = PPM as i64;
@@ -285,6 +321,75 @@ pub fn pen_chance_ppm(pen0: Fx, c: Fx, thickness: Fx, extra: Fx, cos_ricochet: F
     }
 }
 
+/// S13 rule O1 of one classed round (`docs/slices/S13-heavy-wave.md` 3.1):
+/// its class, calibre and the rules' ramp and class weight.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Obliquity {
+    /// `apcr` (`s(c) = c`), else `apcbc` (`s(c) = √c`).
+    pub apcr: bool,
+    /// The round's `caliber_mm` (mm).
+    pub cal: Fx,
+    /// The weight is 0 at or below this plate-to-calibre ratio ...
+    pub lo: Fx,
+    /// ... and `w_max` at or above this one.
+    pub hi: Fx,
+    /// The class's full weight (`apcbc_w_pct` or `apcr_w_pct`, 0..=1).
+    pub w_max: Fx,
+}
+
+impl Obliquity {
+    /// O1 for round `a` under `[armour]` `t`: `None` when the round has no
+    /// class or the switch is off (the cosine law).
+    pub fn of(a: &AmmoSetup, t: &ArmourTuning) -> Option<Obliquity> {
+        let class = a.slope_class?;
+        if t.obliquity == 0 || a.caliber_mm == 0 || t.td_lo_pct >= t.td_hi_pct {
+            return None;
+        }
+        let pct = |p: u32| Fx::from_ratio(p as i64, 100);
+        let (apcr, w) = match class {
+            SlopeClass::Apcbc => (false, t.apcbc_w_pct),
+            SlopeClass::Apcr => (true, t.apcr_w_pct),
+        };
+        Some(Obliquity {
+            apcr,
+            cal: Fx::from_int(a.caliber_mm as i32),
+            lo: pct(t.td_lo_pct),
+            hi: pct(t.td_hi_pct),
+            w_max: pct(w.min(100)),
+        })
+    }
+
+    /// The O1 weight against a plate `thickness` mm thick (after face
+    /// hardening): `clamp((T/d − lo) / (hi − lo), 0, 1) · w_max`.
+    pub fn weight(&self, thickness: Fx) -> Fx {
+        if self.cal <= Fx::ZERO || thickness <= Fx::ZERO {
+            return Fx::ZERO;
+        }
+        let td = thickness.div(self.cal);
+        let ramp = if td <= self.lo {
+            Fx::ZERO
+        } else if td >= self.hi {
+            Fx::ONE
+        } else {
+            (td - self.lo).div(self.hi - self.lo)
+        };
+        ramp.mul(self.w_max)
+    }
+
+    /// `c_pen = c · ((1 − w) + w · s(c))` (see the module docs).
+    pub fn c_pen(&self, c: Fx, thickness: Fx) -> Fx {
+        if c <= Fx::ZERO {
+            return c;
+        }
+        let w = self.weight(thickness);
+        if w <= Fx::ZERO {
+            return c;
+        }
+        let s = if self.apcr { c } else { c.sqrt() };
+        c.mul(Fx::ONE - w + w.mul(s))
+    }
+}
+
 /// One round's derived numbers.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AmmoTable {
@@ -295,9 +400,12 @@ pub struct AmmoTable {
     pub cos_ref: Fx,
     /// `(range m, pen0 mm)` ascending, already divided by `cos_ref`.
     pub rows: Vec<(Fx, Fx)>,
+    /// S13 rule O1 (`None`: the cosine law, `c_pen = c`).
+    pub o1: Option<Obliquity>,
 }
 
 impl AmmoTable {
+    /// The round's table on the cosine law (no O1; see [`Self::with_o1`]).
     pub fn new(a: &AmmoSetup) -> AmmoTable {
         let cos_ref = deg(a.pen_ref_deg).cos();
         AmmoTable {
@@ -309,6 +417,26 @@ impl AmmoTable {
                 .iter()
                 .map(|r| (Fx::from(r.range), Fx::from_int(r.mm as i32).div(cos_ref)))
                 .collect(),
+            o1: None,
+        }
+    }
+
+    /// The round's table with S13 rule O1 under `[armour]` `t` (the match's
+    /// tables; a round without a class is [`Self::new`]).
+    pub fn with_o1(a: &AmmoSetup, t: &ArmourTuning) -> AmmoTable {
+        AmmoTable {
+            o1: Obliquity::of(a, t),
+            ..AmmoTable::new(a)
+        }
+    }
+
+    /// The impact cosine on the penetration side against a plate
+    /// `thickness` mm thick (S13 rule O1): `c` itself without a class.
+    #[inline]
+    pub fn c_pen(&self, c: Fx, thickness: Fx) -> Fx {
+        match &self.o1 {
+            Some(o) => o.c_pen(c, thickness),
+            None => c,
         }
     }
 
@@ -468,6 +596,7 @@ impl ArmourTables {
         vehicles: &[VehicleSetup],
         weapons: &[WeaponSetup],
         g: &GunneryTuning,
+        o: &ArmourTuning,
     ) -> ArmourTables {
         let vehicles: Vec<VehicleArmour> = vehicles
             .iter()
@@ -502,6 +631,7 @@ impl ArmourTables {
         let small = weapons
             .iter()
             .map(|w| AmmoTable {
+                o1: None,
                 mechanism: None,
                 cos_ricochet: deg(g.small_arms_ricochet_deg as i32).cos(),
                 cos_ref: Fx::ONE,
@@ -513,7 +643,7 @@ impl ArmourTables {
             })
             .collect();
         ArmourTables {
-            ammo: ammo.iter().map(AmmoTable::new).collect(),
+            ammo: ammo.iter().map(|a| AmmoTable::with_o1(a, o)).collect(),
             vehicles,
             reach,
             small,
@@ -851,6 +981,9 @@ pub fn in_track_band(hit: &ArmourHit, half_z: Fx, band_pct: u32) -> bool {
 pub struct PlateShot {
     pub pen0: Fx,
     pub c: Fx,
+    /// S13 rule O1: the impact cosine on the penetration side (`c` for a
+    /// round without a class).
+    pub c_pen: Fx,
     pub thickness: Fx,
     pub extra: Fx,
     pub effective: Fx,
@@ -882,15 +1015,27 @@ pub fn plate_shot(
         Fx::ZERO
     };
     let pen0 = ammo.pen0(range);
-    let rule = |v| penetrates(pen0, c, plate.thickness, extra, ammo.cos_ricochet, v);
+    let c_pen = ammo.c_pen(c, plate.thickness);
+    let rule = |v| penetrates_at(pen0, c, c_pen, plate.thickness, extra, ammo.cos_ricochet, v);
+    // The thickness the round must beat at 0 deg: `T / c_pen + extra ·
+    // c / c_pen` (O1), exactly the old `T / c + extra` without a class.
+    let effective = if c_pen == c || c_pen <= Fx::ZERO {
+        effective_thickness(c, plate.thickness, extra)
+    } else {
+        plate
+            .thickness
+            .div(c_pen)
+            .saturating_add(extra.mul(c).div(c_pen))
+    };
     PlateShot {
         pen0,
         c,
+        c_pen,
         thickness: plate.thickness,
         extra,
-        effective: effective_thickness(c, plate.thickness, extra),
+        effective,
         ricochet: c <= ammo.cos_ricochet || c <= Fx::ZERO,
-        chance_ppm: pen_chance_ppm(pen0, c, plate.thickness, extra, ammo.cos_ricochet),
+        chance_ppm: pen_chance_ppm_at(pen0, c, c_pen, plate.thickness, extra, ammo.cos_ricochet),
         at_low: rule(-PEN_BAND),
         at_high: rule(PEN_BAND),
     }
@@ -966,6 +1111,7 @@ mod tests {
     #[test]
     fn interpolation_between_rows_and_clamped_at_the_ends() {
         let t = AmmoTable {
+            o1: None,
             mechanism: None,
             cos_ricochet: Fx::ZERO,
             cos_ref: Fx::ONE,
@@ -983,6 +1129,7 @@ mod tests {
         assert_eq!(t.pen0(Fx::from_int(1000)), Fx::from_int(85));
         assert_eq!(t.pen0(Fx::from_int(5000)), Fx::from_int(85));
         let flat = AmmoTable {
+            o1: None,
             rows: vec![(Fx::ZERO, Fx::from_int(160))],
             ..t.clone()
         };

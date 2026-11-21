@@ -1224,18 +1224,24 @@ impl MatchState {
         let plates = &self.armour.vehicles[tf.type_idx as usize];
         let plate = plates.face(part, face);
         let c = crate::armour::impact_cos(dir, b.axes.apply(plate.normal));
+        // S13 rule O1: each round's own `c_pen` (its class, if any).
         let chance = |a: &crate::armour::AmmoTable| {
-            crate::armour::pen_chance_ppm(
+            crate::armour::pen_chance_ppm_at(
                 a.pen0(range),
                 c,
+                a.c_pen(c, plate.thickness),
                 plate.thickness,
                 Fx::ZERO,
                 a.cos_ricochet,
             )
         };
-        let (pa, ps) = (chance(ap), chance(sp));
-        let below = self.setup.rules.vehicles.gunnery.special_below_pct;
-        (pa as u64) * 100 < below as u64 * crate::armour::PPM as u64 && ps > pa
+        let g = &self.setup.rules.vehicles.gunnery;
+        special_pick(
+            chance(ap),
+            chance(sp),
+            g.special_below_pct,
+            g.special_min_pct,
+        )
     }
 
     /// Whether `t` is still a valid main-gun target of a vehicle of `owner`
@@ -1725,6 +1731,17 @@ fn main_spread(
         }
     }
     Fx::from_raw((base.raw() as i64 * pct / 100).clamp(0, i32::MAX as i64) as i32)
+}
+
+/// S3b, `Auto`'s special-round rule on two chances (ppm): the standard
+/// round's `pa` is under `below_pct` and the special's `ps` is higher;
+/// S13 (`docs/slices/S13-heavy-wave.md` 3.6): and `ps` reaches `min_pct`
+/// (0: any higher chance, as before S13).
+pub(crate) fn special_pick(pa: u32, ps: u32, below_pct: u32, min_pct: u32) -> bool {
+    let ppm = crate::armour::PPM as u64;
+    (pa as u64) * 100 < below_pct as u64 * ppm
+        && ps > pa
+        && (ps as u64) * 100 >= min_pct as u64 * ppm
 }
 
 #[cfg(test)]
