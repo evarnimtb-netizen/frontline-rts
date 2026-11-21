@@ -11,8 +11,7 @@ Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never
 point (`Geo::body_top`, V3a). `AmmoMechanism::takes_slope_class` (exhaustive allow-list). HUD badge names the binding card cap.
 **40 sets** (`target/s13-F-40` default; `target/s13-F-off40` = `s13_off`): default Germany 20/40, no winner 0, median 20.6 min
 (C: 20/40, 20.6). Heavy buys (matches with one): Panther 9/40 (22.5 %), Tiger 2/40 (5 %), Jumbo 16/40 (40 %), M36 0, 76 W 0;
-plans/buys/drops Germany 39/11/10, USA 36/16/6. Neutral (`s13_off` vs `target/s13-base40`): the F stage's set was still
-playing at hand-over; read `python3 -I tools/neutral.py target/s13-base40 target/s13-F-off40` once it is written.
+plans/buys/drops Germany 39/11/10, USA 36/16/6. Neutral: `neutral.py target/s13-base40 target/s13-F-off40`: same 40/40.
 **T155 diagnosis (traced per buy, seeds 1-4).** No rule does other than its doc, no S13 card is filtered out: the 76 W and M36 are
 in the vehicle slot's ready list from 6:00 / 8:00. (1) The slot's pick is "fewest buys per weight, ties roster order"
 (`min_by` keeps the first minimum). Every vehicle card has weight 100 and 0 buys until the first tank, so the Sherman (roster 8th)
