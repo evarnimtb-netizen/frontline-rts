@@ -1020,6 +1020,40 @@ fn presenter_hull_is_the_body_and_its_glacis() {
     assert_eq!(glacis(panther), Some(55));
 }
 
+/// Review V3a: the spotting hull point is `spot_drop_mm` under the hull
+/// body's top (the superstructure's for the S13 defs, box 0's before), so
+/// a Tiger's hull is seen over a crest at its real 1.9 m, not box 0's
+/// 1.3 m. Control: box 0's top is lower on every S13 def.
+#[test]
+fn spot_point_is_on_the_hull_body() {
+    use crate::ecs::Transform;
+    use crate::vehicle::{Geo, VehicleState, frame_of};
+    let w = flat_world_with(1, |_| {});
+    let s = &w.game().unwrap().setup;
+    let drop = s.rules.vehicles.driving.spot_drop_mm;
+    for v in &s.vehicles {
+        let geo = Geo::of(v, &s.rules.vehicles.driving);
+        let vs = VehicleState::new(0, v, &s.rules.vehicles);
+        let f = frame_of(SimId(1), PlayerId(0), &Transform::default(), &vs, &geo);
+        let [_, hull] = f.spot_points(drop);
+        let body = v.hull_body();
+        let want = Fx::from(body.center.z) + Fx::from(body.half.z) - Fx::from_milli(drop as i32);
+        assert!(
+            (hull.z - want).abs() <= Fx::from_milli(2),
+            "{}: {:?} {:?}",
+            v.id,
+            hull.z,
+            want
+        );
+        if S13_VEHICLES.contains(&v.id.as_str()) {
+            let box0 = Fx::from(v.hull.center.z) + Fx::from(v.hull.half.z);
+            assert!(hull.z > box0, "control {}", v.id);
+        } else {
+            assert_eq!(geo.body_top, 0, "{}", v.id);
+        }
+    }
+}
+
 /// Review V1: the S13 defs' track band (a share of box 0, the lower hull)
 /// is within 10 cm of the S3 band (45 % of the whole hull side). Control:
 /// at the old 45 % of box 0 it is 25 cm or more short.

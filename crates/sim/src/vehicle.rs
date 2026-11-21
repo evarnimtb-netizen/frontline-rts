@@ -783,6 +783,9 @@ pub struct Geo {
     pub n_boxes: u8,
     /// [`VehicleSetup::upper_box`].
     pub upper: u8,
+    /// S13 review V3a: [`VehicleSetup::glacis_box`], the hull body's top
+    /// box (0 before S13; an S13 superstructure).
+    pub body_top: u8,
     /// S8a MG shields: (index into `VehicleState::mgs` of the pintle it
     /// turns with, that pintle's pivot), centre, half extents (from the
     /// pivot in the MG's frame, or the hull frame); `n_shields` in use.
@@ -887,6 +890,7 @@ impl Geo {
             boxes,
             n_boxes: v.boxes.len().clamp(1, MAX_ARMOUR_BOXES) as u8,
             upper: v.upper_box() as u8,
+            body_top: v.glacis_box().min(MAX_ARMOUR_BOXES - 1) as u8,
             shields: {
                 let first_mg = v.mounts.len() - v.mg_mounts().len();
                 let mut out = [(None, FxVec3::ZERO, FxVec3::ZERO); MAX_SHIELDS];
@@ -1020,6 +1024,8 @@ pub struct VehicleFrame {
     pub boxes: [BoxFrame; MAX_ARMOUR_BOXES],
     pub n_boxes: u8,
     pub upper: u8,
+    /// [`Geo::body_top`].
+    pub body_top: u8,
     /// S3b: the main gun's exposed barrel, turning and elevating with the
     /// gun (zero half extents: none).
     pub barrel: BoxFrame,
@@ -1060,11 +1066,16 @@ impl VehicleFrame {
 
     /// Spotting check points: the upper box's top (S3: the turret; S7: a
     /// casemate), then the hull top centre, each `drop_mm` below the box
-    /// top (the rules' `spot_drop_mm`).
+    /// top (the rules' `spot_drop_mm`). S13 review V3a: the hull point is
+    /// on the hull body's top box ([`Geo::body_top`]: box 0 before S13, an
+    /// S13 superstructure), not on the lower hull.
     pub fn spot_points(&self, drop_mm: u32) -> [FxVec3; 2] {
         let drop = Fx::from_milli(drop_mm as i32);
         let t = self.upper_box();
-        let h = &self.hull;
+        let h = match self.body_top {
+            0 => &self.hull,
+            k => &self.boxes[(k as usize).min(MAX_ARMOUR_BOXES - 1)],
+        };
         [
             t.center + t.axes.z * (t.half.z - drop),
             h.center + h.axes.z * (h.half.z - drop),
@@ -1160,6 +1171,7 @@ pub fn frame_of(
         boxes,
         n_boxes: geo.n_boxes,
         upper: geo.upper,
+        body_top: geo.body_top,
         reach: geo.reach,
         shields: {
             let mut out = [BoxFrame::default(); MAX_SHIELDS];
