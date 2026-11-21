@@ -4,28 +4,35 @@ Branch `claude/project-thread-aj1tww`, base `<BASE>` = `6f7bda0` (main: S12 merg
 Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never `target/`, `.claude/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S13a Build B done** (commits db0754f brief, a1ad12a data; head after this log). Next: S13a Review/Fix (sim diff of A and
-the data of B), then Measure (480 at the head = base, T150a), then S13-ai (H1-H3, weights, armour-test cases 41-46).
-**Data.** 4 weapons (`kwk42_l70`, `kwk36_l56`, `m1a1_76mm`, `m3_90mm`), 11 rounds (7 AP/APCBC/APCR with `slope_class`: `75mm_pzgr3942`
-apcbc, `75mm_pzgr4042` apcr, `88mm_pzgr39` apcbc, `88mm_pzgr40` apcr, `76mm_m62` apcbc, `76mm_m93` apcr, `90mm_m82` apcbc; the 4 HE
-rounds carry none, the loader refuses one), 5 vehicles (`ger_panther_g`, `ger_tiger_1`, `usa_m4a3_76w`, `usa_m36`, `usa_m4a3e2`),
-5 cards `*_squad` at `ai_weight` 0 (`ai_heavy` on Panther, Tiger, Jumbo; `ai_overwatch` on the Panther and Tiger vehicle defs),
-`[limit_groups] "ww2:heavy" = 1` (Tiger, Jumbo cards), roster appends after S12's medic card (Germany 2, USA 3).
-**Shape.** Each vehicle has three armour boxes: `hull` (lower: nose, lower sides, engine deck), `superstructure` (glacis, upper
-sides, crew deck), `turret`. Zone names for `ballistics --zone`: `hull_front` = nose, `superstructure_front` = glacis,
-`turret_front`. Zone ids are therefore not the S3 0..7 for these five (turret_front = 8): code must go by name or `zone_name`.
-Cooldown and unlock sit on the vehicle defs (`recall_cooldown_s`, `initial_cooldown_s`), caps and dates on the cards.
-**Append-sensitive tests** moved: `s11a1_tests.rs` (25 vehicle defs, indices), `s10a_content`, `s11a1_content`, `s11b_content`,
-`s12_content` (roster tails), `s13_content` (exact classed rounds, heavy cards, overwatch defs, weight 0), the canonical JSON
-snapshot (`BLESS=1`; the legacy snapshot and `BASELINE` hashes did not change).
-**T151a-g read with `frontline-cli ballistics`** (flat shot, 0 deg yaw unless named): a M62 vs Panther glacis 100 m 0 % ; b M93 100 m
-28.2 %, 400 m 0 % ; c M82 vs glacis 100 m 0 % ; d M82 vs nose 350 m 100 % ; e M62 vs nose 350 m 0 % ; f PzGr 39/42 vs 76 W glacis
-1000 m 100 % (also at 30 deg) ; g 8.8 cm PzGr 39 vs Jumbo glacis 300 m 0 %. All inside the plan's bounds.
-**Not done (stage C):** armour-test cases 41-46 (no CLI case file for them; `scenarios::duel_cards` is the helper); AI weights.
-**Verify values left open** (marked in the defs): complete-round masses of the 8.8 cm rounds and M93, 8.8 cm Sprgr velocity and
-filler, M71 filler, M82 loading (808 m/s used), Tiger nose/rear slopes, Jumbo slopes and nose, Jumbo traverse 18, rack splits,
-reload times (6000-7000 ms starting values).
-**Neutral.** Default 40 at B (`target/s13-B-40`) = `target/s13-base40`: `neutral.py` same 40/40.
+**State: S13-ai Build C done** (head after this log; brief `S13-ai-build-C.md`). Next: S13-ai Review/Fix, then Measure (480 with
+`targets/S13.toml`, ablations `heavy_off`, `push_off` on 480). **T155 fails on the 40 (stop-and-report per plan 7): read below.**
+**Code map.** H1 `ai.rs` `Planner::heavy_plan` (+ the heavy step and `saving_heavy` in `buy`; sightings in `note_sightings`); with
+`heavy_buy` 0 no card tagged `heavy_wave` (all five S13 cards) is bought. H2 `ai/overwatch.rs` `overwatch` (tank def `ai_overwatch`).
+H3 `ai/armour.rs` `rearm` (`push`). `MatchSetup::s13_off` (content `setup.rs`) for the tests written before C. Review fixes:
+`VehicleSetup::hull_body_boxes`/`hull_body` (V3b overwatch, V3c `gunnery::special_better`, V3d `scenarios::hull_down`), V4a zone
+names in `skirmish.rs` hits by zone (3-box defs only), V1 track band 75 % (M36 90 %), V5 full-length superstructures. CLI `s13`
+block per faction and side (`S13Player`/`S13Faction`, `json_out::s13_blocks`: counters, per card bought/matches/matches_pct, kills
+and kos by vehicle). Armour-test 41-46 in `armour_test/s13.rs` (own staging, sight 1 km; each with an `o1_off` run).
+**40 sets** (`target/s13-C-40` default; `target/s13-C-off40` = `s13_off`): default Germany 20/40, no winner 0, length median 20.6
+min (base 20/40, 21.1). `neutral.py target/s13-base40 target/s13-C-off40`: same 40/40. Heavy buys (matches with one): Panther 9/40
+(22.5 %), Tiger 2/40 (5 %), Jumbo 16/40 (40 %), M36 0, 76 W 0; heavy plans/buys/drops Germany 40/12/11, USA 36/16/6; push
+turn-backs 0; rare tank rounds fired Germany 128, USA 0.
+**Why T155 fails.** The AI buys about one tank-slot vehicle a match (base too: Sherman 28, M10 9 in 40). The first, at the 4:00
+unlock, is the Sherman (only card ready); later vehicle-slot buys pick the fewest buys per weight with roster-order ties, so the M10
+(earlier in the roster) comes before the 76 W (6:00) and M36 (8:00); and while a Jumbo plan saves (10:00 on) no medium is bought.
+Panther 1050 and Tiger 1200 are often unaffordable within `heavy_save_max_s` (11 German drops). Levers are tuning (owner rule: none
+in C): weights, H1 timing, roster order. **H3 is dead at the defaults**: `tank_reserve_rounds` 10 is under the S3c marks (AP 3 +
+HE `tank_he_reserve` 6 + 1), so a tank needing H3 already rearms; its test raises the reserve to 20.
+**Armour-test (5 seeds x 2, O1 / o1_off):** 41 Panther vs 2 Shermans from 45 deg: Panther 0/10 (superstructure sides 12/11 pens,
+first pen 1.5 s; same off). 42 M36 vs Panther: glacis pens 0 (off 2), Panther wins 8/10. 43 76 W vs Panther: glacis pens 0 (off 2),
+Panther 10/10 (off 8), HVAP fired 4 (off 6). 44 Tiger vs 2 Shermans: Tiger 10/10 (both). 45 Jumbo into PaK 40: **FAIL** 0/10 survive
+3 hits: every hit is one of the PaK's 2 PzGr 40 (14 fired; an old, unclassed APCR round on the cosine law, S13-1b; the V3c fix lets
+Auto pick it against the glacis). 46 76 W on a Panther's flank: 10/10.
+**Deviations.** (1) Targets T174-T184 = plan T150-T159 + 24 (ids taken). (2) `heavy_buy` 0 also gates the 76 W and M36 (tag
+`heavy_wave`), so `s13_off` is neutral and `heavy_off` measures the whole wave. (3) A drop forgets the sighting (`armour_seen_at` 0);
+a new plan needs a later sighting (no extra state). (4) Cases 41-46 stage their own fights (`duel_cards` holds two tanks only).
+(5) T156 rare rounds by type, T157 losses by type, T159 rack-dry: not counted (only rare rounds per faction, kills/kos by type).
+(6) V4a has no own test (report keys only); V2, V3a, V6, V7 left to Fix. `special_min_pct` stays 0 (T156 not read on 480 yet).
 
 ## S13a A (Build A)
 Base 40 `target/s13-base40` (unchanged tree at 6f7bda0; cached from the S12 runs of the same binary and mods): Germany 20/40,
@@ -39,3 +46,8 @@ O1 effective thickness is in `plate_shot`. (3) `special_min_pct` shares the O1 c
 a small presenter change beside the one bridge change (the panel had no key for an in-limit card's own cap). (5) Ablations add
 `o1_off`, `heavy_off`, `push_off` beside `s13_off`. (6) T151h is proven on the tables (every ww2 `AmmoTable` equal with
 `obliquity` 1 and 0, no `o1`), not by re-running every armour-test case.
+
+## S13-ai C (Build C)
+Commits: 1e1b547 brief; 30565d2 H1-H3, switches and weights, CLI `s13`; a1b30b9 review V1; b2b1ede V5; 8669bca V3b-d; 34a24dd V4a;
+ab4e2d6 armour-test 41-46; bc23b06 `targets/S13.toml`; then this log. `tools/check.sh quick 6f7bda0` green at bc23b06
+(1207 tests). Numbers and deviations: "For the next stage" above.
