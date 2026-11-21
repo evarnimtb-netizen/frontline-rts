@@ -1,6 +1,7 @@
 # S13 ablation (docs/slices/S13-heavy-wave.md 5, H1, H2): the AI buys no
-# heavy by its own path and keeps no heavy on overwatch (S13-ai measures
-# it on 480).
+# heavy-wave card at all (S13-ai Build C: `heavy_buy` 0 also keeps the 76 W
+# and the M36, tag `heavy_wave`, out of its buys) and keeps no heavy on
+# overwatch (S13-ai measures it on 480).
 [ai.armour]
 heavy_buy = 0
 heavy_overwatch = 0

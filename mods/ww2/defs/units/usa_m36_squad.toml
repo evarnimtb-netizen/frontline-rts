@@ -1,11 +1,11 @@
 # The 90 mm GMC M36 as a buyable squad of one (S13a Build B): the 90 mm tank destroyer, cap 2. Cost, pop, cooldown and unlock are on the vehicle def (docs/slices/S13-heavy-wave.md 4.3).
-# ai_weight 0: the AI does not buy it until the S13-ai stage sets a weight.
+# ai_weight 100 (S13-ai Build C, plan 4.3); tag heavy_wave: [ai.armour] heavy_buy 0 keeps the AI from buying it.
 id = "ww2:usa_m36_squad"
 name = "90 mm GMC M36"
 short_name = "M36"
 faction = "ww2:usa"
-tags = ["vehicle"]
+tags = ["vehicle", "heavy_wave"]
 vehicle = "ww2:usa_m36"
-ai_weight = 0
+ai_weight = 100
 max_alive = 2
 available_from = "1944-09"

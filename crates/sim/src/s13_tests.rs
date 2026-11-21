@@ -662,3 +662,279 @@ fn special_min_pct_keeps_rare_rounds_for_real_chances() {
         0
     );
 }
+
+// ------------------------------------------------- S13-ai H1-H3 --
+
+const PANTHER: &str = "ww2:ger_panther_g_squad";
+const JUMBO: &str = "ww2:usa_m4a3e2_squad";
+
+fn card_of(w: &World, id: &str) -> u16 {
+    w.match_setup().unwrap().squad_type_index(id).unwrap()
+}
+
+fn ai_of(w: &World, p: usize) -> &crate::ai::AiState {
+    w.game().unwrap().ai[p].as_ref().unwrap()
+}
+
+fn buys(w: &World, p: usize, id: &str) -> u32 {
+    let t = card_of(w, id) as usize;
+    ai_of(w, p).counters.bought.get(t).copied().unwrap_or(0)
+}
+
+/// Germany (player 0) an AI with no start squads, vehicles unlocked, the
+/// Panther ready, H1 as `heavy_buy`; a German rifle squad 150 m from a US
+/// Sherman (`sherman`) at the map's middle, so the AI sees armour.
+fn heavy_world(
+    threads: usize,
+    heavy_buy: u32,
+    sherman: bool,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> World {
+    let mut w = flat_world_with(threads, |s| {
+        s.players[0].is_ai = true;
+        let f = s.players[0].faction as usize;
+        s.factions[f].start_squads.clear();
+        s.rules.start_manpower = 0;
+        s.rules.vehicles.unlock_ticks = 0;
+        s.rules.ai.armour.heavy_buy = heavy_buy;
+        for t in s.squad_types.iter_mut() {
+            if t.id == PANTHER {
+                t.initial_cooldown_ticks = 0;
+            }
+        }
+        edit(s);
+    });
+    let mid = w.game().unwrap().setup.map.size_m / 2;
+    spawn(&mut w, 0, "ww2:ger_grenadiergruppe", mid - 150, mid);
+    if sherman {
+        spawn(&mut w, 1, "ww2:usa_m4a3_75_squad", mid, mid);
+    }
+    w
+}
+
+fn set_mp(w: &mut World, p: usize, mp: u32) {
+    w.state.game.as_mut().unwrap().players[p].manpower = mp;
+}
+
+/// Plays until the AI has seen armour (at most 60 s), then gives it
+/// `mp` manpower.
+fn after_sighting(w: &mut World, mp: u32) -> bool {
+    for _ in 0..60 * 30 {
+        if ai_of(w, 0).armour_seen_at != 0 {
+            set_mp(w, 0, mp);
+            return true;
+        }
+        w.step(&[]);
+    }
+    false
+}
+
+/// H1: armour seen and the Panther ready: the AI saves for it and buys it
+/// within 5 min (income given as 300 a minute); a save and reload in the
+/// middle of the plan plays on to the same state; 1 and 4 threads agree.
+/// Control: `heavy_buy` 0 never buys it (weight 0) and never dates a
+/// sighting.
+#[test]
+fn heavy_bought_after_armour_seen() {
+    let run = |threads: usize, heavy: u32| {
+        let mut w = heavy_world(threads, heavy, true, |_| {});
+        let seen = after_sighting(&mut w, 300);
+        let mut mid = None;
+        for s in 0..300 {
+            if buys(&w, 0, PANTHER) > 0 {
+                break;
+            }
+            let mp = w.game().unwrap().players[0].manpower;
+            set_mp(&mut w, 0, mp + 5);
+            if s == 60 && mid.is_none() {
+                mid = Some(w.save());
+            }
+            steps(&mut w, 30);
+        }
+        (w, seen, mid)
+    };
+    let (w, seen, mid) = run(1, 1);
+    assert!(seen, "the AI saw the Sherman");
+    let c = &ai_of(&w, 0).counters;
+    assert_eq!(buys(&w, 0, PANTHER), 1, "the Panther is bought");
+    assert!(c.heavy_plans >= 1 && c.heavy_buys == 1, "{c:?}");
+    assert_eq!(
+        ai_of(&w, 0).heavy_plan_since,
+        0,
+        "the plan ends with the buy"
+    );
+    // Save fuzz with the new fields in play: mid-plan save reloads.
+    let mid = mid.expect("a mid-plan save");
+    let back = World::load(&mid, 1).expect("loads");
+    assert_eq!(
+        World::load(&back.save(), 1).unwrap().full_state_hash(),
+        back.full_state_hash()
+    );
+    assert!(ai_of(&back, 0).heavy_plan_since != 0, "saved mid-plan");
+    // Threads 1 vs 4.
+    let (w4, _, _) = run(4, 1);
+    assert_eq!(w4.full_state_hash(), w.full_state_hash());
+    // Control.
+    let (off, _, _) = run(1, 0);
+    assert_eq!(buys(&off, 0, PANTHER), 0);
+    assert_eq!(ai_of(&off, 0).armour_seen_at, 0);
+    assert_eq!(ai_of(&off, 0).counters.heavy_plans, 0);
+}
+
+/// H1: a plan that cannot be paid within `heavy_save_max_s` is dropped
+/// (`heavy_drops`). Control: a longer save keeps it.
+#[test]
+fn heavy_plan_drops_after_save_max() {
+    let run = |save_s: u32| {
+        let mut w = heavy_world(1, 1, true, |s| s.rules.ai.armour.heavy_save_max_s = save_s);
+        assert!(after_sighting(&mut w, 0));
+        for _ in 0..90 {
+            set_mp(&mut w, 0, 300);
+            steps(&mut w, 30);
+        }
+        w
+    };
+    let w = run(60);
+    let c = &ai_of(&w, 0).counters;
+    assert!(c.heavy_drops >= 1 && c.heavy_plans >= 1, "{c:?}");
+    assert_eq!(buys(&w, 0, PANTHER), 0);
+    let w = run(600);
+    let c = &ai_of(&w, 0).counters;
+    assert_eq!((c.heavy_drops, c.heavy_plans), (0, 1), "control: {c:?}");
+    assert!(ai_of(&w, 0).heavy_plan_since != 0);
+}
+
+/// H1: no enemy armour, no heavy plan however rich the AI. Control:
+/// `heavy_bought_after_armour_seen` (a Sherman in sight).
+#[test]
+fn no_armour_no_heavy() {
+    let mut w = heavy_world(1, 1, false, |_| {});
+    for _ in 0..120 {
+        set_mp(&mut w, 0, 5000);
+        steps(&mut w, 30);
+    }
+    let a = ai_of(&w, 0);
+    assert_eq!((a.armour_seen_at, a.counters.heavy_plans), (0, 0));
+    assert_eq!(buys(&w, 0, PANTHER), 0);
+    assert!(a.counters.bought.iter().sum::<u32>() > 0, "it does buy");
+}
+
+/// H1 (S13-11 (A)): with the vehicle limit full no plan starts and no
+/// heavy is bought. Control: one more place -> bought.
+#[test]
+fn heavy_waits_for_a_limit_place() {
+    let run = |limit: u32| {
+        let mut w = heavy_world(1, 1, true, |s| s.rules.vehicles.limit = limit);
+        let mid = w.game().unwrap().setup.map.size_m / 2;
+        spawn(&mut w, 0, "ww2:ger_pz4_h_squad", mid - 400, mid - 100);
+        assert!(after_sighting(&mut w, 2000));
+        for _ in 0..30 {
+            steps(&mut w, 30);
+        }
+        w
+    };
+    let w = run(1);
+    assert_eq!(buys(&w, 0, PANTHER), 0);
+    assert_eq!(ai_of(&w, 0).counters.heavy_plans, 0);
+    let w = run(2);
+    assert_eq!(buys(&w, 0, PANTHER), 1, "control");
+}
+
+/// One AI tank of `card` for player `p` (an AI), an enemy rifle squad in
+/// sight; true when its squad held an overwatch entry within 60 s.
+fn takes_overwatch(
+    p: u8,
+    card: &str,
+    edit: impl FnOnce(&mut frontline_content::MatchSetup),
+) -> bool {
+    let mut w = flat_world_with(1, |s| {
+        s.players[p as usize].is_ai = true;
+        s.rules.ai.armour.heavy_overwatch = 1;
+        edit(s);
+    });
+    let mid = w.game().unwrap().setup.map.size_m / 2;
+    let q = spawn(&mut w, p, card, mid - 200, mid);
+    spawn(
+        &mut w,
+        1 - p,
+        if p == 0 {
+            "ww2:usa_rifle_squad"
+        } else {
+            "ww2:ger_grenadiergruppe"
+        },
+        mid + 200,
+        mid,
+    );
+    for _ in 0..60 {
+        steps(&mut w, 30);
+        if ai_of(&w, p as usize).overwatch.contains_key(&q) {
+            return true;
+        }
+    }
+    false
+}
+
+/// H2: a Panther (`ai_overwatch`) holds overwatch with `heavy_overwatch`
+/// 1. Control: 0 -> it takes a tank's tasks.
+#[test]
+fn panther_takes_overwatch() {
+    assert!(takes_overwatch(0, PANTHER, |_| {}));
+    assert!(!takes_overwatch(0, PANTHER, |s| s
+        .rules
+        .ai
+        .armour
+        .heavy_overwatch = 0));
+}
+
+/// H2: the Jumbo (no `ai_overwatch`) leads like a tank. Control: its def
+/// flagged -> overwatch.
+#[test]
+fn jumbo_leads() {
+    assert!(!takes_overwatch(1, JUMBO, |_| {}));
+    assert!(takes_overwatch(1, JUMBO, |s| {
+        let v = s
+            .vehicles
+            .iter()
+            .position(|v| v.id == "ww2:usa_m4a3e2")
+            .unwrap();
+        s.vehicles[v].ai_overwatch = true;
+    }));
+}
+
+/// H3: a Panzer IV 600 m out from its base with 9 main rounds (AP and HE
+/// above the S3c rearm marks) turns back on the rearm trip
+/// (`push_turnbacks`). The default `tank_reserve_rounds` 10 is under the
+/// S3c marks (AP 3 + HE 6 + 1), so the test raises it to 20 with 15
+/// rounds. Control: `push_limit` 0 -> no trip.
+#[test]
+fn tank_turns_back_at_push_limit() {
+    let run = |push: u32| {
+        let mut w = flat_world_with(1, |s| {
+            s.players[0].is_ai = true;
+            s.rules.ai.armour.push_limit = push;
+            s.rules.ai.armour.tank_reserve_rounds = 20;
+        });
+        let base = w.game().unwrap().base_of(PlayerId(0));
+        let mid = w.game().unwrap().setup.map.size_m / 2;
+        let at = FxVec2::from_int(mid, mid);
+        assert!((at - base).length() > Fx::from_int(500), "far from base");
+        let q = spawn(&mut w, 0, "ww2:ger_pz4_h_squad", mid, mid);
+        let v = w.game().unwrap().squads[&q].members[0];
+        {
+            let vs = w.state.game.as_mut().unwrap().vehicles.get_mut(&v).unwrap();
+            for (k, n) in vs.ammo.iter_mut().enumerate() {
+                *n = [6, 8, 0][k.min(2)];
+            }
+            vs.loaded = Some(0);
+        }
+        steps(&mut w, 30 * 20);
+        let a = ai_of(&w, 0);
+        (a.counters.push_turnbacks, a.tasks.get(&q).map(|t| t.kind))
+    };
+    let (n, task) = run(1);
+    assert_eq!(n, 1);
+    assert_eq!(task, Some(crate::ai::TaskKind::Rearm));
+    let (n, task) = run(0);
+    assert_eq!(n, 0, "control");
+    assert_ne!(task, Some(crate::ai::TaskKind::Rearm), "control");
+}

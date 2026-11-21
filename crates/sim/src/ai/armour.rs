@@ -152,7 +152,30 @@ impl Planner<'_> {
             self.ai.tasks.remove(&t.squad);
             return false;
         }
-        if t.immobile || in_base || !self.needs_rearm(vs, v) {
+        if t.immobile || in_base {
+            return false;
+        }
+        // S13-ai H3 (plan 5, TODO S8b-13): the push limit. A vehicle with a
+        // main gun holding at most `tank_reserve_rounds` main rounds and
+        // further than `push_without_supply_m` from the nearest rearm
+        // source (the base's edge, an own HQ or dump or truck with shells:
+        // `fwd`'s reach) goes back on the same trip.
+        let needs = self.needs_rearm(vs, v);
+        let push = !needs && {
+            let a = &s.rules.ai.armour;
+            let rounds: u32 =
+                vs.ammo.iter().map(|&n| n as u32).sum::<u32>() + u32::from(vs.loaded.is_some());
+            let far = |d_sq: u64, r: Fx| {
+                let lim = r + Fx::from_int(a.push_without_supply_m.min(30_000) as i32);
+                d_sq > sq_m(lim)
+            };
+            a.push_limit != 0
+                && !v.main_ammo().is_empty()
+                && rounds <= a.tank_reserve_rounds
+                && far((t.pos - base_at).length_sq_raw(), base.radius.into())
+                && fwd.is_none_or(|(d, _, r)| far(d, r.into()))
+        };
+        if !needs && !push {
             return false;
         }
         let threat = sq_m(Fx::from_int(s.rules.ai.armour.threat_m as i32));
@@ -198,6 +221,7 @@ impl Planner<'_> {
         self.ai.emit(self.due, cmd);
         self.task(t.squad, TaskKind::Rearm, NO_POINT, goal);
         self.ai.counters.rearms += 1;
+        self.ai.counters.push_turnbacks += u32::from(push);
         true
     }
 

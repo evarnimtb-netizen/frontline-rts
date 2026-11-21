@@ -4544,6 +4544,7 @@ mod tests {
         let mut s = defs.resolve(&req).unwrap();
         // S12b Build C: these tests were written before wounds (S12 off).
         s.s12_off();
+        s.s13_off();
         s
     }
 

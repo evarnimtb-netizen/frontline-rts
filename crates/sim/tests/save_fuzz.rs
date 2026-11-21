@@ -62,6 +62,7 @@ fn setup(seed: u64) -> MatchSetup {
     // played in `save_roundtrip_carries_s11b_state`).
     s.s11b_off();
     s.s12_off();
+    s.s13_off();
     s
 }
 

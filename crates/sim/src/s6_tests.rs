@@ -39,6 +39,7 @@ pub(super) fn flat_world_with(
     // they test.
     setup.s11b_off();
     setup.s12_off();
+    setup.s13_off();
     edit(&mut setup);
     World::new_match(setup, threads).unwrap()
 }

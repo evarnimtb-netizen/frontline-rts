@@ -1,10 +1,10 @@
 # The M4A3E2 Sherman Jumbo as a buyable squad of one (S13a Build B): one of the two heavy cards (S13-7 (A)); 254 built, the 75 mm gun as delivered. Cost, pop, cooldown and unlock are on the vehicle def (docs/slices/S13-heavy-wave.md 4.3).
-# ai_weight 0: the AI does not buy it until the S13-ai stage (H1 buys it by its own path via ai_heavy).
+# ai_weight 0: H1 buys it by its own path (ai_heavy; [ai.armour] heavy_buy, S13-ai Build C); tag heavy_wave.
 id = "ww2:usa_m4a3e2_squad"
 name = "M4A3E2 Sherman Jumbo"
 short_name = "Jumbo"
 faction = "ww2:usa"
-tags = ["vehicle"]
+tags = ["vehicle", "heavy_wave"]
 vehicle = "ww2:usa_m4a3e2"
 ai_weight = 0
 ai_heavy = true

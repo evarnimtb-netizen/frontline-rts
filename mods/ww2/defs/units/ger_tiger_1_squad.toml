@@ -1,10 +1,10 @@
 # The Panzerkampfwagen VI Tiger Ausf. E as a buyable squad of one (S13a Build B): one of the two heavy cards (Tiger or Jumbo, `heavy = 1`, S13-7 (A)); about 130 in the West in three battalions. Cost, pop, cooldown and unlock are on the vehicle def (docs/slices/S13-heavy-wave.md 4.3).
-# ai_weight 0: the AI does not buy it until the S13-ai stage (H1 buys it by its own path via ai_heavy).
+# ai_weight 0: H1 buys it by its own path (ai_heavy; [ai.armour] heavy_buy, S13-ai Build C); tag heavy_wave.
 id = "ww2:ger_tiger_1_squad"
 name = "Panzerkampfwagen VI Tiger Ausf. E"
 short_name = "Tiger I"
 faction = "ww2:germany"
-tags = ["vehicle"]
+tags = ["vehicle", "heavy_wave"]
 vehicle = "ww2:ger_tiger_1"
 ai_weight = 0
 ai_heavy = true

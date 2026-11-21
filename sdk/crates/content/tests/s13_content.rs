@@ -39,8 +39,7 @@ fn load_rejects_bad_s13_keys() {
     let mut defs = defs0.clone();
     let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
     let s = defs.resolve(&req).unwrap();
-    // The ww2 rules state the defaults; every S13 switch is off except
-    // O1, which changes nothing while no round has a class.
+    // The ww2 rules state the defaults; S13-ai Build C turns H1-H3 on.
     assert_eq!(s.rules.armour, ArmourTuning::default());
     assert_eq!(ArmourTuning::KEYS.len(), 5);
     let a = &s.rules.armour;
@@ -63,7 +62,7 @@ fn load_rejects_bad_s13_keys() {
             ar.heavy_save_max_s,
             ar.heavy_overwatch
         ),
-        (0, 300, 240, 0)
+        (1, 300, 240, 1)
     );
     assert_eq!(
         (
@@ -71,7 +70,7 @@ fn load_rejects_bad_s13_keys() {
             ar.push_without_supply_m,
             ar.tank_reserve_rounds
         ),
-        (0, 300, 10)
+        (1, 300, 10)
     );
     // S13a Build B: exactly the seven AP / APCBC / APCR rounds of the eleven
     // new ones carry a class (the four HE rounds refuse one); no old round.
@@ -116,16 +115,18 @@ fn load_rejects_bad_s13_keys() {
         .collect();
     watch.sort();
     assert_eq!(watch, ["ww2:ger_panther_g", "ww2:ger_tiger_1"]);
-    // Every new card is at weight 0; the heavy slot is one place.
-    for id in [
-        "ww2:ger_panther_g_squad",
-        "ww2:ger_tiger_1_squad",
-        "ww2:usa_m4a3_76w_squad",
-        "ww2:usa_m36_squad",
-        "ww2:usa_m4a3e2_squad",
+    // S13-ai Build C: the heavy cards stay at weight 0 (H1 buys them), the
+    // 76 W and the M36 at 100 (plan 4.3); all five carry `heavy_wave`.
+    for (id, wt) in [
+        ("ww2:ger_panther_g_squad", 0),
+        ("ww2:ger_tiger_1_squad", 0),
+        ("ww2:usa_m4a3_76w_squad", 100),
+        ("ww2:usa_m36_squad", 100),
+        ("ww2:usa_m4a3e2_squad", 0),
     ] {
-        let t = s.squad_types.iter().find(|t| t.id == id).unwrap();
-        assert_eq!(t.ai_weight, 0, "{id}");
+        let k = s.squad_types.iter().position(|t| t.id == id).unwrap();
+        assert_eq!(s.squad_types[k].ai_weight, wt, "{id}");
+        assert!(s.type_has_tag(k as u16, "heavy_wave"), "{id}");
     }
     // The ablation files apply.
     for f in ["s13_off", "o1_off", "heavy_off", "push_off"] {

@@ -1013,6 +1013,7 @@ fn empty_fort_state_changes_nothing() {
         super::s10a_ai_tests::s10b_ai_off(&mut setup);
         // S12b Build C: and wounds and the medic AI (found without).
         setup.s12_off();
+        setup.s13_off();
         // S11a1 Build C: and the artillery AI (the fight was found without).
         let a = &mut setup.rules.ai.arty;
         (a.buy, a.fo, a.prep) = (0, 0, 0);

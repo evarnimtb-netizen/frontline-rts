@@ -423,6 +423,8 @@ pub struct PlayerReport {
     pub s11b: S11bPlayer,
     /// S12: the player's `S12Counters` and the AI's medic counters.
     pub s12: S12Player,
+    /// S13: the AI's heavy-wave counters, buys, kills and knock-outs.
+    pub s13: S13Player,
     /// B1-5 `--side-detail`: at [`SQUAD_MINUTES`], own foot squads with a
     /// man alive (no vehicle, not a crew) and own squads on a running
     /// (not parked) AI fort job (`None`: over sooner, or no side detail).
@@ -1060,6 +1062,96 @@ pub struct S12Faction {
     pub downed_peak_sum: u64,
     pub downed_peak_max: u64,
     pub seconds: f64,
+}
+
+/// S13-ai: the AI's heavy-wave counters in report order (names of
+/// [`S13Player::ai`]).
+pub const S13_AI: [&str; 4] = ["heavy_plans", "heavy_buys", "heavy_drops", "push_turnbacks"];
+
+/// S13 numbers of one player in one match (docs/slices/S13-heavy-wave.md 7):
+/// the AI counters, and for each `heavy_wave` card of the player's faction
+/// (short id) its buys and the men and vehicles its vehicle put out.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S13Player {
+    /// [`S13_AI`] order (zero for a human).
+    pub ai: [u32; 4],
+    pub bought: BTreeMap<String, u32>,
+    pub kills: BTreeMap<String, u32>,
+    pub kos: BTreeMap<String, u32>,
+}
+
+impl S13Player {
+    pub fn ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 4] {
+        [a.heavy_plans, a.heavy_buys, a.heavy_drops, a.push_turnbacks]
+    }
+
+    /// The player's S13 numbers: `bought` from the AI's buys by card (0
+    /// for a human), kills and knock-outs by vehicle type.
+    pub fn of(
+        s: &frontline_content::MatchSetup,
+        faction: u16,
+        ai: Option<&frontline_sim::ai::AiState>,
+        s7: &frontline_sim::game::S7Counters,
+    ) -> S13Player {
+        let short = |id: &str| id.split_once(':').map_or(id, |x| x.1).to_owned();
+        let mut p = S13Player {
+            ai: ai.map_or([0; 4], |a| Self::ai_counters(&a.counters)),
+            ..Default::default()
+        };
+        let Some(f) = s.factions.get(faction as usize) else {
+            return p;
+        };
+        for &t in &f.roster {
+            if !s.type_has_tag(t, "heavy_wave") {
+                continue;
+            }
+            let ty = &s.squad_types[t as usize];
+            let n = ai.map_or(0, |a| {
+                a.counters.bought.get(t as usize).copied().unwrap_or(0)
+            });
+            p.bought.insert(short(&ty.id), n);
+            if let Some(v) = ty.vehicle {
+                let id = short(&s.vehicles[v as usize].id);
+                let at = |x: &Vec<u32>| x.get(v as usize).copied().unwrap_or(0);
+                p.kills.insert(id.clone(), at(&s7.kills_by_vehicle));
+                p.kos.insert(id, at(&s7.kos_by_vehicle));
+            }
+        }
+        p
+    }
+}
+
+/// S13 sums of one faction over a `--seeds` run (the JSON block `s13`,
+/// [`crate::json_out::s13_blocks`]).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S13Faction {
+    pub matches: u64,
+    /// [`S13_AI`] order.
+    pub ai: [u64; 4],
+    pub bought: BTreeMap<String, u64>,
+    /// Matches with at least one buy, by card.
+    pub bought_matches: BTreeMap<String, u64>,
+    pub kills: BTreeMap<String, u64>,
+    pub kos: BTreeMap<String, u64>,
+}
+
+impl S13Faction {
+    pub fn add(&mut self, p: &S13Player) {
+        self.matches += 1;
+        for (a, b) in self.ai.iter_mut().zip(p.ai) {
+            *a += b as u64;
+        }
+        for (k, &n) in &p.bought {
+            *self.bought.entry(k.clone()).or_default() += n as u64;
+            *self.bought_matches.entry(k.clone()).or_default() += u64::from(n > 0);
+        }
+        for (k, &n) in &p.kills {
+            *self.kills.entry(k.clone()).or_default() += n as u64;
+        }
+        for (k, &n) in &p.kos {
+            *self.kos.entry(k.clone()).or_default() += n as u64;
+        }
+    }
 }
 
 /// S12 Build C (spec 8, S12-15): the kill classes counted as HE in
@@ -2593,6 +2685,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     downed_peak: downed_peak.get(p).copied().unwrap_or(0),
                     seconds: world.tick() as f64 / hz as f64,
                 },
+                s13: S13Player::of(s, s.players[p].faction, ai, &pl.s7),
                 s11b: {
                     let bought_tagged = |tag: &str| -> u32 {
                         ai.map_or(0, |a| {
@@ -3262,6 +3355,8 @@ pub struct FactionSummary {
     pub s11b: S11bFaction,
     /// S12 sums (the JSON block `s12`).
     pub s12: S12Faction,
+    /// S13 sums (the JSON block `s13`).
+    pub s13: S13Faction,
 }
 
 /// S10b: the twelve `FortAccount` counters in report order.
@@ -4157,6 +4252,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             f.s11a2.add(&p.s11a2, p.losses, p.s11a1.s11.gun_rounds);
             f.s11b.add(&p.s11b, p.kills, r.game_seconds, p.s11a2.ai[2]);
             f.s12.add(&p.s12);
+            f.s13.add(&p.s13);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;

@@ -1063,12 +1063,12 @@ relocate_m = 40
 td_hunt_m = 300
 td_infantry_standoff_m = 120
 open_top_infantry_m = 60
-# S13 heavies (docs/slices/S13-heavy-wave.md 5, rules H1-H3); every switch 0 in S13a.
-heavy_buy = 0                # switch H1: buy an ai_heavy card once enemy armour was seen
+# S13 heavies (docs/slices/S13-heavy-wave.md 5, rules H1-H3); switches 0 in S13a, on since S13-ai Build C.
+heavy_buy = 1                # switch H1: buy an ai_heavy card once enemy armour was seen; 0: no heavy_wave card at all
 heavy_seen_s = 300           # H1: an enemy tank, TD or assault gun seen this recently (s)
 heavy_save_max_s = 240       # H1: save for the heavy at most this long (s)
-heavy_overwatch = 0          # switch H2: ai_overwatch vehicles join the TD/AG overwatch
-push_limit = 0               # switch H3: the push limit extends the rearm trip
+heavy_overwatch = 1          # switch H2: ai_overwatch vehicles join the TD/AG overwatch
+push_limit = 1               # switch H3: the push limit extends the rearm trip
 push_without_supply_m = 300  # H3: this far from the nearest rearm source (m; vehicles.md 7.5) ...
 tank_reserve_rounds = 10     # H3: ... with at most this many main-gun rounds: go back
 

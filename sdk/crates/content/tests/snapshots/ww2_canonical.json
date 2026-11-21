@@ -2507,15 +2507,15 @@
           "face_range_m": 600,
           "face_slack_deg": 20,
           "halted_mm_s": 300,
-          "heavy_buy": 0,
-          "heavy_overwatch": 0,
+          "heavy_buy": 1,
+          "heavy_overwatch": 1,
           "heavy_save_max_s": 240,
           "heavy_seen_s": 300,
           "open_top_infantry_m": 60,
           "overwatch_back_m": 35,
           "overwatch_candidates": 8,
           "overwatch_ring_m": 30,
-          "push_limit": 0,
+          "push_limit": 1,
           "push_without_supply_m": 300,
           "rearm_ap_below": 3,
           "rearm_full_pct": 90,
@@ -4359,7 +4359,8 @@
       "speed_cm_s": 0,
       "steadiness_pct": 100,
       "tags": [
-        "vehicle"
+        "vehicle",
+        "heavy_wave"
       ],
       "vehicle": "ww2:ger_panther_g",
       "weapon": ""
@@ -4801,7 +4802,8 @@
       "speed_cm_s": 0,
       "steadiness_pct": 100,
       "tags": [
-        "vehicle"
+        "vehicle",
+        "heavy_wave"
       ],
       "vehicle": "ww2:ger_tiger_1",
       "weapon": ""
@@ -5882,7 +5884,7 @@
       "weapon": ""
     },
     "ww2:usa_m36_squad": {
-      "ai_weight": 0,
+      "ai_weight": 100,
       "available_from": "1944-09",
       "cost": 0,
       "dig_rate_pct": 0,
@@ -5901,7 +5903,8 @@
       "speed_cm_s": 0,
       "steadiness_pct": 100,
       "tags": [
-        "vehicle"
+        "vehicle",
+        "heavy_wave"
       ],
       "vehicle": "ww2:usa_m36",
       "weapon": ""
@@ -5953,7 +5956,7 @@
       "weapon": ""
     },
     "ww2:usa_m4a3_76w_squad": {
-      "ai_weight": 0,
+      "ai_weight": 100,
       "available_from": "1944-07",
       "cost": 0,
       "dig_rate_pct": 0,
@@ -5972,7 +5975,8 @@
       "speed_cm_s": 0,
       "steadiness_pct": 100,
       "tags": [
-        "vehicle"
+        "vehicle",
+        "heavy_wave"
       ],
       "vehicle": "ww2:usa_m4a3_76w",
       "weapon": ""
@@ -5999,7 +6003,8 @@
       "speed_cm_s": 0,
       "steadiness_pct": 100,
       "tags": [
-        "vehicle"
+        "vehicle",
+        "heavy_wave"
       ],
       "vehicle": "ww2:usa_m4a3e2",
       "weapon": ""

@@ -27,6 +27,7 @@ fn staged(edit: impl FnOnce(&mut MatchSetup)) -> MatchSetup {
     // S11b Build C: written with every S11b switch off (shipped on).
     s.s11b_off();
     s.s12_off();
+    s.s13_off();
     s.players.iter_mut().for_each(|p| p.is_ai = false);
     s.rules.start_manpower = 100_000;
     s.map.terrain.octaves.clear();
@@ -233,6 +234,7 @@ fn ai_setup(seed: u64, swapped: bool, edit: impl FnOnce(&mut MatchSetup)) -> Mat
     // S11b Build C: written with every S11b switch off (shipped on).
     s.s11b_off();
     s.s12_off();
+    s.s13_off();
     // S11a1 Build C: the scenes were found with the artillery AI off.
     // Review C-2 kept it: with it on, no seed 1-8 has a second with both a
     // refill trip and an ambush under way (the guns' pot and buys change

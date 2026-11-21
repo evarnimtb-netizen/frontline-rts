@@ -387,6 +387,14 @@ impl MatchSetup {
         (m.buy, m.field, m.post, m.reinforce) = (0, 0, 0, 0);
     }
 
+    /// S13-ai Build C: the S13 AI switches 0 on a resolved setup (`[ai.armour]
+    /// heavy_buy`, `heavy_overwatch`, `push_limit`): the defaults the tests
+    /// written before S13-ai assume (the S13 tests turn on what they test).
+    pub fn s13_off(&mut self) {
+        let a = &mut self.rules.ai.armour;
+        (a.heavy_buy, a.heavy_overwatch, a.push_limit) = (0, 0, 0);
+    }
+
     /// S11b G1: `[items] rifle_grenades` 0 on a resolved setup (the kind
     /// dropped from every squad type: `items[kind]` None, member counts 0).
     pub fn rifle_grenades_off(&mut self) {
