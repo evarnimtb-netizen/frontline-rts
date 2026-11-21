@@ -25,8 +25,6 @@ rare_cap = 0
 
 [mobility]
 type = "tracked"
-# 30 mph (48 km/h) road (Hunnicutt) on the game's road-speed scale
-# (Sherman 42 km/h -> 650 cm/s): 740 cm/s.
 # 42 km/h (plan 4.2) on the game's scale (Sherman 42 km/h = 650 cm/s).
 speed_cm_s = 650
 reverse_cm_s = 250
@@ -37,7 +35,7 @@ max_slope_pct = 50
 ditch_block_dm = 19
 bog_pct = 7
 unbog_s = [20, 40]
-# No gyrostabiliser on the M7 gun: x4 on the move.
+# No gyrostabiliser on the 90 mm M3: x4 on the move.
 moving_spread_pct = 400
 
 [hull]
@@ -45,8 +43,7 @@ moving_spread_pct = 400
 track_band_pct = 90  # S13 review V1: of box 0 (the lower hull) only; 90 % keeps the S3 band (45 % of the whole hull) in cm
 track_mm = 20
 
-# The open-topped turret: hand traverse, slow (vehicles.md 4.4: a full turn
-# about 80 s, 4.5 deg/s; whole degrees here: 5, 72 s, S7-10).
+# The open-topped turret, power traversed (unlike the M10's hand traverse).
 [turret]
 pivot = [-20, 0, 190]
 # Powered, up to 24 deg/s (afvdatabase.com; verify).

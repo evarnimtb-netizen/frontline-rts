@@ -8,9 +8,10 @@ range_m = 600
 damage = 300
 rounds_per_min = 10
 magazine = 1
-# Hand-loaded fixed round (ms; the crew rules scale it). A starting value
-# near the KwK 40's 6.5 s, set by round mass; no figure read (verify).
-reload_ms = 6000
+# Hand-loaded fixed round (ms; the crew rules scale it). As the 3-inch M7's
+# 6.5 s, which fires the same M62 projectile (S13 review V6); no figure
+# read (verify).
+reload_ms = 6500
 # 2.5 mrad stationary (urad), as the tank guns.
 spread_urad = 2500
 # Nominal; each round flies at its own.

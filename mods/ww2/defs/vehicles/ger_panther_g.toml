@@ -91,7 +91,8 @@ side = { thickness_mm = 45, slope_deg = 25 }
 rear = { thickness_mm = 45, slope_deg = 25 }
 top = { thickness_mm = 16 }
 
-# Crew seats, MGs, components and hatches as ger pz4_h (S13a Build B: the nearest def; positions approximate).
+# Crew seats, MGs and components as ger pz4_h (S13a Build B: the nearest def; positions approximate); track anchors,
+# ammunition bins and hatches placed for this hull (S13 review V6).
 [[seats]]
 id = "driver"
 role = "driver"
@@ -128,16 +129,9 @@ mount = "turret_main"
 # From the turret pivot.
 muzzle = [550, 0, 45]
 elevation_deg = [-8, 18]
-# S5a (owner question S5a-10 (A)): stowage restored to the historical 87
-# rounds of the Ausf. H (Jentz & Doyle, Panzer Tracts 4-3; Panzer Tracts 23
-# as quoted by armedconflicts.com, "Pz.Kpfw. IV Ausf. H"; it was 66 in S3).
-# Split half PzGr 39, half Sprgr 34 (starting value: no loading list
-# read, verify), and 3 PzGr 40 APCR (S5a-9 (A): tungsten rationed from
-# 1943, vehicles.md 6.11; it was 6, owner question S3b-7 (A)). Auto loads
-# the APCR only against a target the PzGr 39 likely fails on
-# ([vehicles.gunnery] special_below_pct). Each round is priced in base at
-# its weight x [supply] shell_mp_per_t x the rack factor (53 % here: a full
-# rack 877 kg costs at most 75 % of the 620 card, D4).
+# Auto loads the APCR only against a target the APCBC likely fails on
+# ([vehicles.gunnery] special_below_pct); each round is priced in base at
+# its weight x [supply] shell_mp_per_t x the rack factor (S5a D4).
 # 82 rounds (Wikipedia Panther: 82 for the G): 40 PzGr 39/42, 40 Sprgr 42, 2 PzGr 40/42 (S13-6 (A)); the split is a starting value (verify).
 ammo = [
   { id = "ww2:75mm_pzgr3942", count = 40 },
@@ -147,11 +141,9 @@ ammo = [
 # The exposed barrel from the muzzle back to the turret front; a round must strike it to damage the gun.
 barrel = { length_cm = 415, radius_cm = 9 }
 
-# S3b Fix (review M4): MG rounds stowed per mount. The Ausf. H carried
-# 3,150 rounds of 7.92 mm in belt bags for its two MG 34 (Jentz & Doyle,
-# Panzer Tracts 4-3, specification table); split evenly between the
-# mounts. Spent rounds refill one 150-round belt per base rearm step
-# (vehicles.base_rearm_s). Suppressive fire now spends real ammunition.
+# S3b Fix (review M4): MG rounds stowed per mount, split evenly; spent
+# rounds refill one 150-round belt per base rearm step. No figure read for
+# the Panther G (S13 review V6): a starting value (verify).
 [[weapons]]
 def = "ww2:mg34"
 mount = "coax"
@@ -176,13 +168,13 @@ repair = { to_hp = 50, time_s = 60 }
 [[components]]
 type = "track_left"
 hp = 100
-anchors = [{ pos = [250, 125, 45] }, { pos = [0, 125, 45] }, { pos = [-250, 125, 45] }]
+anchors = [{ pos = [290, 145, 45] }, { pos = [0, 145, 45] }, { pos = [-290, 145, 45] }]  # S13 review V6: 15 cm inside the hull side, as ger_pz4_h.toml
 repair = { to_hp = 100, time_s = 30 }
 
 [[components]]
 type = "track_right"
 hp = 100
-anchors = [{ pos = [250, -125, 45] }, { pos = [0, -125, 45] }, { pos = [-250, -125, 45] }]
+anchors = [{ pos = [290, -145, 45] }, { pos = [0, -145, 45] }, { pos = [-290, -145, 45] }]
 repair = { to_hp = 100, time_s = 30 }
 
 # The breech inside the turret; S3b: the barrel is the main-gun mount's
@@ -198,18 +190,17 @@ hp = 80
 box = { frame = "hull", center = [20, 0, 166], half = [80, 80, 10] }
 repair = { to_hp = 50, time_s = 40 }
 
-# S3b (rack geometry): the Ausf. H stowed its 87 rounds in bins low along
-# both hull sides of the fighting compartment and beside the radio operator,
-# none in the turret (Jentz & Doyle, Panzer Tracts 4-3). Three bins, one HP
-# pool, instead of one slab 2.2 m wide across the whole hull that every
-# core and spall ray crossed. Positions approximate within the box model.
+# S13 review V6: Panther G: most of the 82 rounds in the hull sponsons over the tracks, the rest in floor bins
+# (Jentz, Germany's Panther Tank; positions approximate).
+# Two sponson bins in the superstructure, one floor bin beside the radio
+# operator; one HP pool.
 [[components]]
 type = "ammo_rack"
 hp = 60
 boxes = [
-  { frame = "hull", center = [-20, 95, 70], half = [55, 30, 25] },
-  { frame = "hull", center = [-20, -95, 70], half = [55, 30, 25] },
-  { frame = "hull", center = [110, -95, 80], half = [25, 25, 30] },
+  { frame = "hull", center = [-20, 120, 155], half = [90, 25, 25] },
+  { frame = "hull", center = [-20, -120, 155], half = [90, 25, 25] },
+  { frame = "hull", center = [100, -50, 55], half = [25, 25, 15] },
 ]
 
 # S3b: the gearbox and final-drive train in the nose between the driver and
@@ -231,39 +222,32 @@ seats = ["driver", "gunner"]
 id = "commander"
 seats = ["commander"]
 
-# S3c hatches (docs/slices/S3c-armour.md "History"): the commander's cupola
-# (a single hatch on the H), a two-piece side door each side of the turret
-# (gunner left, loader right), and the driver's and radio operator's hatches
-# in the superstructure roof (Jentz & Doyle, Panzer Tracts 4-3; Lone Sentry).
+# S3c hatches (docs/slices/S3c-armour.md "History"); S13 review V6: no turret
+# side doors (the Pz IV's): the commander's cupola (the gunner leaves
+# through it too), the loader's escape hatch in the turret rear, and the
+# driver's and radio operator's hatches in the superstructure roof.
 # Positions in cm (hull frame, or turret frame from the pivot); exit times
-# are starting values: about 3 s out of a turret hatch, 4 s out of a hull
-# hatch past the gun and the hull MG.
+# as the Pz IV's: about 3 s out of a turret hatch, 4 s out of a hull hatch.
 [[hatches]]
-seats = ["commander"]
+seats = ["commander", "gunner"]
 frame = "turret"
 pos = [-70, 0, 90]
 exit_ms = 3000
 
 [[hatches]]
-seats = ["gunner"]
-frame = "turret"
-pos = [10, 95, 45]
-exit_ms = 3000
-
-[[hatches]]
 seats = ["loader"]
 frame = "turret"
-pos = [10, -95, 45]
+pos = [-135, -30, 45]
 exit_ms = 3000
 
 [[hatches]]
 seats = ["driver"]
 frame = "hull"
-pos = [190, 60, 176]
+pos = [190, 60, 190]
 exit_ms = 4000
 
 [[hatches]]
 seats = ["radio_mg"]
 frame = "hull"
-pos = [190, -60, 176]
+pos = [190, -60, 190]
 exit_ms = 4000

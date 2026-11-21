@@ -1054,6 +1054,68 @@ fn spot_point_is_on_the_hull_body() {
     }
 }
 
+/// Review V6 (data): the Panther and Tiger keep no Pz IV turret side doors
+/// (no turret hatch on a turret side face); every S13 hull hatch is on the
+/// hull body's roof; every S13 track anchor is within 20 cm of box 0's
+/// side and every hull-frame ammunition bin inside the hull body; the
+/// 76 mm M1A1 reloads as the 3-inch M7 (the same M62 projectile).
+/// Control: the Panzer IV (the copied def) has its two side doors.
+#[test]
+fn s13_data_has_its_own_hatches_bins_and_anchors() {
+    use frontline_content::vehicle::Frame;
+    let w = flat_world_with(1, |_| {});
+    let s = &w.game().unwrap().setup;
+    let side_doors = |v: &frontline_content::vehicle::VehicleSetup| {
+        let half_y = v.turret.half.y.0;
+        v.hatches
+            .iter()
+            .filter(|h| h.frame == Frame::Turret && (h.pos.y.0.abs() - half_y).abs() <= 6554)
+            .count()
+    };
+    let pz4 = s.vehicles.iter().find(|v| v.id == "ww2:ger_pz4_h").unwrap();
+    assert_eq!(side_doors(pz4), 2, "control");
+    for id in S13_VEHICLES {
+        let v = s.vehicles.iter().find(|v| v.id == id).unwrap();
+        assert_eq!(side_doors(v), 0, "{id}");
+        let body = v.hull_body();
+        let roof = body.center.z.0 + body.half.z.0;
+        for h in v.hatches.iter().filter(|h| h.frame == Frame::Hull) {
+            assert!(
+                (h.pos.z.0 - roof).abs() <= 656,
+                "{id}: hatch at {:?}",
+                h.pos
+            );
+        }
+        for c in &v.components {
+            for a in &c.anchors {
+                let gap = v.hull.half.y.0 - a.pos.y.0.abs();
+                assert!((0..=13200).contains(&gap), "{id}: anchor {:?}", a.pos);
+            }
+            for b in c.parts.iter().filter(|b| b.frame == Frame::Hull) {
+                for k in 0..3 {
+                    let (c0, h0) = match k {
+                        0 => (b.bounds.center.x.0, b.bounds.half.x.0),
+                        1 => (b.bounds.center.y.0, b.bounds.half.y.0),
+                        _ => (b.bounds.center.z.0, b.bounds.half.z.0),
+                    };
+                    let (bc, bh) = match k {
+                        0 => (body.center.x.0, body.half.x.0),
+                        1 => (body.center.y.0, body.half.y.0),
+                        _ => (body.center.z.0, body.half.z.0),
+                    };
+                    assert!(
+                        c0 - h0 >= bc - bh - 1 && c0 + h0 <= bc + bh + 1,
+                        "{id}: {:?} part outside the hull body",
+                        c.kind
+                    );
+                }
+            }
+        }
+    }
+    let reload = |id: &str| s.weapons.iter().find(|w| w.id == id).unwrap().reload_ticks;
+    assert_eq!(reload("ww2:m1a1_76mm"), reload("ww2:m7_3in"));
+}
+
 /// Review V1: the S13 defs' track band (a share of box 0, the lower hull)
 /// is within 10 cm of the S3 band (45 % of the whole hull side). Control:
 /// at the old 45 % of box 0 it is 25 cm or more short.
