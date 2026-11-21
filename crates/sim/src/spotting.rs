@@ -101,7 +101,7 @@ pub(crate) fn spot(
         if ents.owner[i] != p {
             enemies += matches!(
                 kind,
-                EntityKind::Soldier | EntityKind::Corpse | EntityKind::Vehicle
+                EntityKind::Soldier | EntityKind::Corpse | EntityKind::Vehicle | EntityKind::Downed
             ) as u32;
             continue;
         }
@@ -185,7 +185,8 @@ pub(crate) fn spot(
     let start = out.cursor as usize;
     for step in 0..n {
         let i = (start + step) % n;
-        let corpse = ents.kind[i] == EntityKind::Corpse;
+        // S12: a downed man's marker refreshes as a corpse's does.
+        let corpse = matches!(ents.kind[i], EntityKind::Corpse | EntityKind::Downed);
         let vehicle = ents.kind[i] == EntityKind::Vehicle;
         if !(corpse || vehicle || ents.kind[i] == EntityKind::Soldier) || ents.owner[i] == p {
             continue;

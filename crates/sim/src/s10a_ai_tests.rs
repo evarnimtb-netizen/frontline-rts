@@ -1514,6 +1514,7 @@ fn ai_roofs_its_hq_once_mortars_are_seen() {
                 box_hp: [1000; crate::structures::MAX_BOXES],
                 radio: true,
                 stock_g: [0; 3],
+                beds: Vec::new(),
             },
         );
         s.next_structure = s.next_structure.max(78);
@@ -1646,6 +1647,7 @@ fn work_started(kind: usize, off: usize) -> bool {
                         box_hp: [1000; crate::structures::MAX_BOXES],
                         radio: true,
                         stock_g: [0; 3],
+                        beds: Vec::new(),
                     },
                 );
                 s.next_structure = s.next_structure.max(78);
@@ -3004,6 +3006,7 @@ fn ai_starts_two_jobs_in_one_plan() {
                 box_hp: [1000; crate::structures::MAX_BOXES],
                 radio: true,
                 stock_g: [0; 3],
+                beds: Vec::new(),
             },
         );
         s.next_structure = s.next_structure.max(78);

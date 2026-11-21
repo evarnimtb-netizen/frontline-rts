@@ -421,6 +421,8 @@ pub struct PlayerReport {
     pub s11a2: S11a2Player,
     /// S11b: the player's `S11bCounters`, the AI's S11b counters, buys.
     pub s11b: S11bPlayer,
+    /// S12: the player's `S12Counters` and the AI's medic counters.
+    pub s12: S12Player,
     /// B1-5 `--side-detail`: at [`SQUAD_MINUTES`], own foot squads with a
     /// man alive (no vehicle, not a crew) and own squads on a running
     /// (not parked) AI fort job (`None`: over sooner, or no side detail).
@@ -988,6 +990,163 @@ impl S11bPlayer {
     /// The S11b counters of `a` in [`S11B_AI`] order.
     pub fn ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 4] {
         [a.cb_alt_holds, a.how_buys, a.how_pct_holds, a.how_mp_holds]
+    }
+}
+
+/// S12: the AI's medic counters in report order (names of
+/// [`S12Player::ai`]).
+pub const S12_AI: [&str; 6] = [
+    "medic_buys",
+    "medic_tends",
+    "medic_carries",
+    "post_builds",
+    "reinforce_orders",
+    "medic_holds",
+];
+
+/// S12 numbers of one player in one match (docs/slices/S12-wounds-medics.md 3).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S12Player {
+    /// The player's S12 counters (saved).
+    pub s: frontline_sim::wounds::S12Counters,
+    /// [`S12_AI`] order (zero for a human).
+    pub ai: [u32; 6],
+    /// Build C (`s12_derived`): the player's kills by class and losses,
+    /// the most own downed men lying at once (read once a second), and
+    /// the match length (s).
+    pub kills_by: [u32; frontline_sim::kill_class::COUNT],
+    pub losses: u32,
+    pub downed_peak: u32,
+    pub seconds: f64,
+}
+
+impl S12Player {
+    pub fn ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 6] {
+        [
+            a.medic_buys,
+            a.medic_tends,
+            a.medic_carries,
+            a.post_builds,
+            a.reinforce_orders,
+            a.medic_holds,
+        ]
+    }
+}
+
+/// S12 sums of one faction over a `--seeds` run (the JSON block `s12`,
+/// [`crate::json_out::s12_blocks`]; no derived shares before Build C).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S12Faction {
+    /// [`S12_COUNTERS`] order.
+    pub counters: [u64; 12],
+    pub downed_by_class: [u64; frontline_sim::kill_class::COUNT],
+    /// S12 F2 (review R1): deaths of downed enemy men credited, by class.
+    pub finished_by_class: [u64; frontline_sim::kill_class::COUNT],
+    /// `[trench, open]`.
+    pub head_hits: [u64; 2],
+    pub torso_hits: [u64; 2],
+    pub leg_hits: [u64; 2],
+    /// [`S12_AI`] order.
+    pub ai: [u64; 6],
+    /// Build C (`s12_derived`): matches, matches with a medic at work
+    /// (an own man stabilised or treated), matches with a medic team
+    /// bought, kills by class, losses, the per-match downed peaks (sum and
+    /// most) and the match seconds.
+    pub matches: u64,
+    pub medic_matches: u64,
+    pub team_matches: u64,
+    pub kills_by: [u64; frontline_sim::kill_class::COUNT],
+    pub losses: u64,
+    pub downed_peak_sum: u64,
+    pub downed_peak_max: u64,
+    pub seconds: f64,
+}
+
+/// S12 Build C (spec 8, S12-15): the kill classes counted as HE in
+/// `he_share_casualties_pct` (as the set's `he_share_pct`: mortar, tank HE,
+/// rifle grenade).
+pub const HE_CLASSES: [u16; 3] = [
+    frontline_sim::kill_class::MORTAR,
+    frontline_sim::kill_class::TANK_HE,
+    frontline_sim::kill_class::RIFLE_GRENADE,
+];
+
+/// S12 Build C: the HE share of casualties (%): one casualty per man, by
+/// the class that first took him out. Per class, the men killed outright
+/// (`kills - finished`: kills less deaths of men already down, S12 F2
+/// review R1) plus the men downed (`downs`); HE classes over all. 0 with
+/// none.
+pub fn he_cas_pct(kills: &[u64], finished: &[u64], downs: &[u64]) -> f64 {
+    let cas = |c: usize| kills[c].saturating_sub(finished[c]) + downs[c];
+    let all: u64 = (0..kills.len()).map(cas).sum();
+    let he: u64 = HE_CLASSES.iter().map(|&c| cas(c as usize)).sum();
+    if all == 0 {
+        0.0
+    } else {
+        round3(he as f64 * 100.0 / all as f64)
+    }
+}
+
+/// S12: the scalar `S12Counters` in report order.
+pub const S12_COUNTERS: [&str; 12] = [
+    "downed",
+    "killed_outright",
+    "bled_out",
+    "downed_killed",
+    "stabilised",
+    "bandaged",
+    "carried",
+    "treated",
+    "evacuated",
+    "refund_mp",
+    "reinforced_men",
+    "reinforce_mp",
+];
+
+impl S12Faction {
+    pub fn add(&mut self, p: &S12Player) {
+        let c = &p.s;
+        let v = [
+            c.downed,
+            c.killed_outright,
+            c.bled_out,
+            c.downed_killed,
+            c.stabilised,
+            c.bandaged,
+            c.carried,
+            c.treated,
+            c.evacuated,
+            c.refund_mp,
+            c.reinforced_men,
+            c.reinforce_mp,
+        ];
+        for (a, b) in self.counters.iter_mut().zip(v) {
+            *a += b as u64;
+        }
+        for (a, b) in self.downed_by_class.iter_mut().zip(c.downed_by_class) {
+            *a += b as u64;
+        }
+        for (a, b) in self.finished_by_class.iter_mut().zip(c.finished_by_class) {
+            *a += b as u64;
+        }
+        for k in 0..2 {
+            self.head_hits[k] += c.head_hits[k] as u64;
+            self.torso_hits[k] += c.torso_hits[k] as u64;
+            self.leg_hits[k] += c.leg_hits[k] as u64;
+        }
+        for (a, b) in self.ai.iter_mut().zip(p.ai) {
+            *a += b as u64;
+        }
+        self.matches += 1;
+        self.medic_matches += (c.stabilised + c.treated > 0) as u64;
+        self.team_matches += (p.ai[0] > 0) as u64;
+        for (a, b) in self.kills_by.iter_mut().zip(p.kills_by) {
+            *a += b as u64;
+        }
+        self.losses += p.losses as u64;
+        self.downed_peak_sum += p.downed_peak as u64;
+        self.downed_peak_max = self.downed_peak_max.max(p.downed_peak as u64);
+        self.seconds += p.seconds;
     }
 }
 
@@ -2112,6 +2271,8 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     // S4: own population at POP_MINUTES, per player.
     let n_players = world.match_setup().map_or(0, |s| s.players.len());
     let mut pop_at: Vec<[Option<u32>; 3]> = vec![[None; 3]; n_players];
+    // S12 Build C: the most own downed men lying at once, per player.
+    let mut downed_peak: Vec<u32> = vec![0; n_players];
     let mut squads_at: Vec<[Option<[u32; 2]>; 5]> = vec![[None; 5]; n_players];
     // Review B-1: gun-squad fire-mission refusals of every kind, by player.
     let mut gun_refused: Vec<u32> = vec![0; n_players];
@@ -2199,6 +2360,16 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                         at[k] = Some(squads_now(g, PlayerId(p as u8)));
                     }
                 }
+            }
+        }
+        if world.tick().is_multiple_of(hz)
+            && let Some(g) = world.game()
+        {
+            for (a, b) in downed_peak
+                .iter_mut()
+                .zip(g.downed_by_player(world.entities()))
+            {
+                *a = (*a).max(b);
             }
         }
         for (k, &m) in POP_MINUTES.iter().enumerate() {
@@ -2413,6 +2584,14 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 s11a2: S11a2Player {
                     s: pl.s11a2,
                     ai: ai.map_or([0; 6], |a| S11a2Player::ai_counters(&a.counters)),
+                },
+                s12: S12Player {
+                    s: pl.s12,
+                    ai: ai.map_or([0; 6], |a| S12Player::ai_counters(&a.counters)),
+                    kills_by: pl.kills_by,
+                    losses: pl.losses,
+                    downed_peak: downed_peak.get(p).copied().unwrap_or(0),
+                    seconds: world.tick() as f64 / hz as f64,
                 },
                 s11b: {
                     let bought_tagged = |tag: &str| -> u32 {
@@ -3081,6 +3260,8 @@ pub struct FactionSummary {
     pub s11a2: S11a2Faction,
     /// S11b sums (the JSON blocks `s11b` and `s11b_derived`).
     pub s11b: S11bFaction,
+    /// S12 sums (the JSON block `s12`).
+    pub s12: S12Faction,
 }
 
 /// S10b: the twelve `FortAccount` counters in report order.
@@ -3674,6 +3855,10 @@ pub struct ManySummary {
     pub ko_causes: BTreeMap<String, u32>,
     pub he_share_mean_pct: f64,
     pub he_share_max_pct: f64,
+    /// S12 Build C (S12-15): HE share of kills plus downs, both players,
+    /// per match: mean and most (%).
+    pub he_cas_mean_pct: f64,
+    pub he_cas_max_pct: f64,
     /// Highest per-match tick p99 over the peak ticks and over all ticks
     /// (ms; matches run in parallel, so they read high).
     pub peak_p99_max_ms: f64,
@@ -3780,6 +3965,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
     let mut factions: BTreeMap<String, FactionSummary> = BTreeMap::new();
     let mut minutes = 0.0;
     let mut he = 0.0;
+    let mut he_cas = 0.0;
     for m in matches {
         let r = &m.report;
         let swapped = m.swapped;
@@ -3791,6 +3977,21 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             s.over_25_min += 1;
         }
         he += r.armour.he_share_pct;
+        {
+            let mut k = [0u64; frontline_sim::kill_class::COUNT];
+            let mut f = [0u64; frontline_sim::kill_class::COUNT];
+            let mut d = [0u64; frontline_sim::kill_class::COUNT];
+            for p in &r.players {
+                for c in 0..k.len() {
+                    k[c] += p.s12.kills_by[c] as u64;
+                    f[c] += p.s12.s.finished_by_class[c] as u64;
+                    d[c] += p.s12.s.downed_by_class[c] as u64;
+                }
+            }
+            let v = he_cas_pct(&k, &f, &d);
+            he_cas += v;
+            s.he_cas_max_pct = s.he_cas_max_pct.max(v);
+        }
         s.he_share_max_pct = s.he_share_max_pct.max(r.armour.he_share_pct);
         s.peak_p99_max_ms = s.peak_p99_max_ms.max(r.timing.peak.p99_ms);
         s.all_p99_max_ms = s.all_p99_max_ms.max(r.timing.all.p99_ms);
@@ -3955,6 +4156,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             f.s11a1.add(&p.s11a1, p.kills, p.s10.income_mp);
             f.s11a2.add(&p.s11a2, p.losses, p.s11a1.s11.gun_rounds);
             f.s11b.add(&p.s11b, p.kills, r.game_seconds, p.s11a2.ai[2]);
+            f.s12.add(&p.s12);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;
@@ -4028,6 +4230,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
     };
     s.minutes_max = round3(s.minutes_max);
     s.he_share_mean_pct = round3(he / n);
+    s.he_cas_mean_pct = round3(he_cas / n);
     s.factions = factions.into_values().collect();
     let views: Vec<crate::s3c_tally::MatchView> = matches
         .iter()

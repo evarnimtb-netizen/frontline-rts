@@ -115,6 +115,10 @@ var throw_item := ""
 var dig_points := PackedVector3Array()
 ## S10a: the orders grid shows the build menu (Build button toggles it).
 var fort_menu := false
+## S12: the orders grid shows the aid menu (Tend, Carry, Evacuate, Reinforce).
+var aid_menu := false
+## S12: the downed man the Carry tool has picked (-1: it asks for one first).
+var carry_man := -1
 ## Box drag in screen space while dragging.
 var dragging := false
 var drag_from := Vector2.ZERO
@@ -180,6 +184,8 @@ func prune() -> void:
 	elif tool == &"dig" and not can(&"dig"):
 		cancel_tool()
 	elif (tool in FORT_LINE_TOOLS or tool in FORT_POINT_TOOLS or tool in [&"cut_wire", &"bangalore", &"clear_mines", &"demolish"]) and not can(tool):
+		cancel_tool()
+	elif tool in [&"tend", &"carry", &"build_aid"] and not can(tool):
 		cancel_tool()
 	elif tool == &"barrage" and not can(&"barrage"):
 		cancel_tool()
@@ -598,6 +604,41 @@ func set_fire(mode: String) -> void:
 	view.emit_intent(&"set_fire", {"units": selected.duplicate(), "mode": mode})
 
 
+## S12: selected own men that carry a wound (Tend and Evacuate act on them).
+func wounded_men() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for id in selected_soldiers():
+		if view.soldiers_by_id.get(id, {}).has("wound"):
+			out.append(id)
+	return out
+
+
+## S12 F2 (review R3): the selected wounded men Evacuate takes now: in the
+## own base or in the ring of a staffed own aid post with a free bed (the
+## sim's rule; a downed man is evacuated by carrying him there).
+func evacuable_men() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for id in wounded_men():
+		var so: Dictionary = view.soldiers_by_id.get(id, {})
+		if so.has("pos") and view.can_evacuate_at(id, so.pos):
+			out.append(id)
+	return out
+
+
+## S12: selected infantry squads with a gap in them (Reinforce fills it).
+func reinforce_squads() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if not view.s12_on():
+		return out
+	for sid in selected_squads():
+		var sq: Dictionary = view.squads_by_id.get(sid, {})
+		if sq.is_empty() or sq.has("crew_of") or sq.get("type", "") in ["crew", "vehicle"]:
+			continue
+		if int(sq.get("men", 0)) < int(sq.get("men_max", 0)):
+			out.append(sid)
+	return out
+
+
 ## S6: whether a selected squad has card tag `tag` (state `tags`).
 func has_tag(tag: String) -> bool:
 	for sid in selected_squads():
@@ -677,7 +718,7 @@ func can(order: StringName) -> bool:
 	match order:
 		# S10a: the build menu, by capability.
 		&"build_menu":
-			return _has_cap(FORT_CAPS, [])
+			return _has_cap(FORT_CAPS, []) or (view.s12_on() and has_tag("medic"))
 		&"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq", &"lay_ap_mines", &"lay_at_mines", &"build_hedgehog", &"build_log_barrier", &"build_bunker":
 			var bp := fort_blueprint(order)
 			if bp.is_empty():
@@ -699,6 +740,19 @@ func can(order: StringName) -> bool:
 			return _has_cap(["clear_wire"], [])
 		&"bangalore":
 			return _has_cap(["breach"], []) and item_count("bangalore") > 0
+		# S12: wounds and medics (the state shows them, see s12_on()).
+		&"aid_menu":
+			return view.s12_on() and not selected_soldiers().is_empty() and selected_vehicles().is_empty()
+		&"tend":
+			return view.s12_on() and not selected_soldiers().is_empty() and (not view.own_casualties().is_empty() or not wounded_men().is_empty())
+		&"carry":
+			return view.s12_on() and not selected_soldiers().is_empty() and not view.own_casualties().is_empty()
+		&"evacuate":
+			return view.s12_on() and not evacuable_men().is_empty()
+		&"reinforce":
+			return not reinforce_squads().is_empty()
+		&"build_aid":
+			return view.s12_on() and has_tag("medic")
 		# S6.
 		&"build_hq":
 			return has_tag("hq")
@@ -870,7 +924,25 @@ func activate(order: StringName) -> void:
 		# S10a: the build menu.
 		&"build_menu":
 			fort_menu = not fort_menu
+			aid_menu = false
 			cancel_tool()
+		# S12: the aid menu (Back and the Aid button toggle it).
+		&"aid_menu":
+			aid_menu = not aid_menu
+			fort_menu = false
+			cancel_tool()
+		&"reinforce":
+			view.emit_intent(&"reinforce", {"squads": reinforce_squads()})
+			cancel_tool()
+		# S12: the selected wounded men in the base or a staffed post's
+		# ring go at once (review R3: no downed-man click; the sim takes
+		# only wounded men there).
+		&"evacuate":
+			view.emit_intent(&"evacuate_units", {"units": evacuable_men()})
+			cancel_tool()
+		&"tend", &"carry", &"build_aid":
+			carry_man = -1
+			_set_tool(order)
 		&"load_materials":
 			view.emit_intent(&"load_materials", {"squads": materials_squads()})
 			cancel_tool()
@@ -1025,6 +1097,7 @@ func recrew(vehicle: int, crews_only := false) -> bool:
 
 
 func cancel_tool() -> void:
+	carry_man = -1
 	dig_points.clear()
 	throw_item = ""
 	suppress_from = null
@@ -1403,10 +1476,32 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 			return
 		# S6: build an HQ or dump here (long axis across the line to the
 		# camera's forward), set crates down, pick one up.
-		&"build_hq", &"build_dump":
+		&"build_hq", &"build_dump", &"build_aid":
 			var fwd: Vector3 = -view.camera.global_transform.basis.z if view.camera != null else Vector3(0, 0, -1)
 			var across := Vector3(-fwd.z, 0, fwd.x)
-			view.emit_intent(&"build", {"squads": selected_squads(), "target": g, "what": "hq" if tool == &"build_hq" else "dump", "facing": across})
+			var what := "hq" if tool == &"build_hq" else ("aid" if tool == &"build_aid" else "dump")
+			view.emit_intent(&"build", {"squads": selected_squads(), "target": g, "what": what, "facing": across})
+		# S12: tend a downed man (a medic stabilises him) or a wounded one
+		# (anyone bandages him); carry takes two clicks, the downed man and
+		# then where to.
+		&"tend":
+			var man := view.pick_casualty(screen)
+			if man == -1:
+				var so := pick_soldier(screen, 1)
+				if so != -1 and view.soldiers_by_id.get(so, {}).has("wound"):
+					man = so
+			if man == -1:
+				AudioManager.play_ui(&"error")
+				return
+			view.emit_intent(&"tend_units", {"units": selected_soldiers(), "man": man})
+		&"carry":
+			if carry_man == -1:
+				carry_man = view.pick_casualty(screen)
+				if carry_man == -1:
+					AudioManager.play_ui(&"error")
+				return
+			view.emit_intent(&"carry_units", {"units": selected_soldiers(), "man": carry_man, "target": g})
+			carry_man = -1
 		&"emplace":
 			view.emit_intent(&"emplace", {"units": gun_vehicles(), "target": g})
 		&"push_gun":

@@ -56,6 +56,7 @@ pub mod guns;
 mod hash;
 pub mod indirect;
 pub mod items;
+mod medics;
 pub mod orders;
 pub mod path;
 pub mod projectile;
@@ -75,6 +76,7 @@ pub mod transport;
 pub mod unit;
 pub mod vehicle;
 pub mod world;
+pub mod wounds;
 
 pub use ai::{AiCommand, AiCounters, AiEscort, AiOverwatch, AiState, AiTrench, Task, TaskKind};
 pub use armour::{ArmourTables, PenResult};
@@ -98,11 +100,11 @@ pub use projectile::{Projectile, ProjectilePool};
 pub use rng::{Purpose, RngStream, rng};
 pub use rules::Defeat;
 pub use snapshot::{
-    ArmourEvent, ArmourEventKind, ChargeSnapshot, CorpseSnapshot, CrateSnapshot, ExplosionSnapshot,
-    FortPieceSnapshot, FortSnapshot, FortWorkSnapshot, LoadedSnap, NO_SQUAD, PlayerSnapshot,
-    PointSnapshot, RenderSnapshot, SeatSnap, ShellKind, ShellSnapshot, ShotSnapshot, SmokeSnapshot,
-    SquadSnapshot, StructureSnapshot, ThrownSnapshot, UnitSnapshot, VehicleSnapshot, WireSnapshot,
-    tile_heights_f32, vehicle_flags,
+    ArmourEvent, ArmourEventKind, BedSnapshot, CasualtySnapshot, ChargeSnapshot, CorpseSnapshot,
+    CrateSnapshot, ExplosionSnapshot, FortPieceSnapshot, FortSnapshot, FortWorkSnapshot,
+    LoadedSnap, NO_SQUAD, PlayerSnapshot, PointSnapshot, RenderSnapshot, SeatSnap, ShellKind,
+    ShellSnapshot, ShotSnapshot, SmokeSnapshot, SquadSnapshot, StructureSnapshot, ThrownSnapshot,
+    UnitSnapshot, VehicleSnapshot, WireSnapshot, tile_heights_f32, vehicle_flags, wound_bits,
 };
 pub use structures::{
     CookOff, Crate, S6Account, StaticBox, StaticRef, Structure, SupplyEvent, SupplyRefusal,

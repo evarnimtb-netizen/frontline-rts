@@ -866,13 +866,21 @@ impl MatchState {
                     if c.hp == 0 {
                         continue;
                     }
-                    c.hp = c.hp.saturating_sub(d.dmg.min(u16::MAX as u32) as u16);
+                    // S12 W3: the rider core hit takes the wound rule.
+                    let fell = crate::wounds::deal(
+                        c,
+                        d.dmg,
+                        crate::wounds::ZONE_TORSO,
+                        false,
+                        (attacker, class),
+                        ctx.wounds.as_ref(),
+                    );
                     crate::combat::add_suppression(
                         c,
                         self.setup.rules.combat.hit_suppression * 1000,
                     );
-                    if c.hp == 0 {
-                        ctx.fallen.push((m, attacker, class));
+                    if let Some(h) = fell {
+                        ctx.fallen.push((m, attacker, class, h));
                     }
                     ctx.hash.mark_entity_chunk(m.chunk());
                 }

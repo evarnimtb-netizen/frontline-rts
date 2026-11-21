@@ -486,6 +486,8 @@ impl MatchState {
         vs.repairing = None;
         vs.repair_progress = 0;
         vs.base_ticks = 0;
+        // S12b Build C fix: as at a knock-out, no rearm step stays due.
+        vs.supply_due = 0;
         vs.followers.clear();
         vs.face = None;
         vs.lay_turn = None;

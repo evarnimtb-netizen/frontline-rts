@@ -100,6 +100,7 @@ func _run() -> void:
 	_test_s9()
 	await _test_s10a()
 	await _test_s10b()
+	await _test_s12()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1768,6 +1769,165 @@ func _test_s10b() -> void:
 	_view.update_state(_source.get_state())
 	await _frames(1)
 	_check(fv.drawn == 0 and fv.drawn_discs == 0, "S10b: nothing drawn without fortifications")
+
+
+# --- S12 ---------------------------------------------------------------------
+
+## Wounds and medics: nothing shows while the wound layer is off; with it on
+## the soldier's wound word and pip, the downed man's groundsheet, pip and
+## overlay tag, the armband and the stretcher, the aid post's tent and
+## cots, the medic card, the Aid menu (Tend, Carry, Evacuate, Reinforce,
+## Aid post), the build menu's Aid post and the four intents.
+func _test_s12() -> void:
+	var grid: Control = _view.orders
+	var sq := -1
+	for t in ["rifle", "engineer", "mg"]:
+		for sid in _source.squad_ids(0, t):
+			if sq == -1 and _source.unit_ids(sid).size() >= 4:
+				sq = sid
+	_check(sq != -1, "S12: a squad of four men to stage with")
+	if sq == -1:
+		return
+	# Off: no aid button, no medic card, nothing drawn.
+	_sel.select_squads(PackedInt32Array([sq]))
+	_view.update_state(_source.get_state())
+	await _frames(1)
+	grid.update_state(_view.state)
+	_check(not _view.s12_on() and grid.label_of(&"aid_menu") == "" and not grid.enabled(&"reinforce"), "S12: no Aid button while the wound layer is off")
+	var cards: Array = _view.call_in._cards({"callin": {"catalog": [{"id": "a", "tags": PackedStringArray(["medic"])}, {"id": "b"}]}})
+	_check(cards.size() == 1 and cards[0].id == "b", "S12: the medic card is hidden while the layer is off")
+	_check(_match.wound_view.drawn() == 0, "S12: nothing drawn while off")
+	# Stage: a bleeding man, a bandaged man with a leg wound, a downed man,
+	# a medic squad and an aid post with one man in a bed.
+	var men: PackedInt32Array = _source.unit_ids(sq)
+	var at: Vector3 = _source.squad_pos(sq)
+	_source.stage_wound(men[1])
+	_source.stage_wound(men[2], {"bandaged": true, "legs": true, "treated": false, "bandaging": false}, 48.0)
+	_source.stage_downed(men[3])
+	_source.stage_aid_post(at + Vector3(-12, 0, 8), true, 1, 2)
+	var med: int = _source.place_medics(Vector2(at.x + 8, at.z + 5))
+	_cam.height = 45.0
+	_cam.jump_to(at)
+	_view.update_state(_source.get_state())
+	await _frames(3)
+	_view.update_state(_source.get_state())
+	_check(_view.s12_on() and _view.casualties_by_id.has(men[3]) and not _view.soldiers_by_id.has(men[3]), "S12: the downed man is a casualty, not a soldier")
+	_check(_view.wound_word(_view.soldiers_by_id[men[1]]) == "Bleeding" and _view.wound_word(_view.soldiers_by_id[men[2]]) == "Bandaged, legs", "S12: wound words (%s, %s)" % [_view.wound_word(_view.soldiers_by_id[men[1]]), _view.wound_word(_view.soldiers_by_id[men[2]])])
+	_check(_view.soldier_wounded(_view.soldiers_by_id[men[1]]), "S12: a wound makes the pip read as wounded")
+	var wv: Node3D = _match.wound_view
+	_check(wv.pips == 4 and wv.sheets == 1 and wv.cots == 1 and wv.armbands == 2, "S12: pips 4, sheet 1, cot 1, armbands 2 (%d, %d, %d, %d)" % [wv.pips, wv.sheets, wv.cots, wv.armbands])
+	_check(wv.empty_cots == 1 and wv.staff_marks == 2 and wv.staff_lit == 2, "S12: the post's empty cot and staff 2/2 (%d, %d, %d)" % [wv.empty_cots, wv.staff_marks, wv.staff_lit])
+	_check(wv.man_pip[men[1]] == wv.BLEED and wv.man_pip[men[2]] == wv.DRESSING and wv.down_pip[men[3]] == wv.BLEED, "S12: bleeding red, dressed white")
+	_check(_match.supply_view.drawn >= 1, "S12: the aid post's tent is drawn")
+	await _frames(2)
+	_check(not _view.casualty_screen.is_empty(), "S12: the downed man is on screen")
+	# The medic squad's glyph and card.
+	_check(_view.squad_is_medic(med) and _view.call_in.index_of_id("ww2:ger_sanitaetstrupp") != -1, "S12: the medic card is in the call-in column")
+	# The Aid menu for the squad.
+	_sel.select_squads(PackedInt32Array([sq]))
+	_view.update_state(_source.get_state())
+	await _frames(1)
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "soldier" and grid.label_of(&"aid_menu") == "Aid", "S12: an Aid button in the Mission slot")
+	grid.press(&"aid_menu")
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "aid" and grid.label_of(&"tend") == "Tend" and grid.label_of(&"carry") == "Carry" and grid.label_of(&"evacuate") == "Evacuate" and grid.label_of(&"reinforce") == "Reinforce" and grid.label_of(&"build_aid") == "Aid post", "S12: the aid menu")
+	_check(grid.enabled(&"tend") and grid.enabled(&"carry") and grid.enabled(&"reinforce") and not grid.enabled(&"build_aid"), "S12: Tend, Carry, Reinforce live; no Aid post without medics")
+	for b in grid.buttons:
+		_check(not String(b.tip).to_lower().contains("red cross") and not String(b.label).to_lower().contains("cross"), "S12: no red cross on %s" % b.id)
+	# Reinforce.
+	_intents.clear()
+	grid.press(&"reinforce")
+	var ri: Variant = _last(&"reinforce")
+	_check(ri != null and (ri.squads as PackedInt32Array) == PackedInt32Array([sq]), "S12: Reinforce sends reinforce for the squad")
+	# Tend a downed man: click him.
+	var cid: int = men[3]
+	_intents.clear()
+	grid.press(&"tend")
+	_check(_sel.tool == &"tend", "S12: Tend arms a tool")
+	var picked_units: PackedInt32Array = _sel.selected_soldiers()
+	_click(_view.casualty_screen[cid])
+	var td: Variant = _last(&"tend_units")
+	_check(td != null and int(td.man) == cid and (td.units as PackedInt32Array) == picked_units and not picked_units.is_empty(), "S12: a click on the downed man sends tend_units (%s)" % [td])
+	# Tend a wounded man.
+	_sel.select_squads(PackedInt32Array([sq]))
+	_intents.clear()
+	grid.press(&"tend")
+	_click(_screen(men[1]))
+	td = _last(&"tend_units")
+	_check(td != null and int(td.man) == men[1], "S12: a click on a wounded man sends tend_units for him")
+	# Carry: the downed man, then the ground.
+	_sel.select_squads(PackedInt32Array([sq]))
+	_intents.clear()
+	grid.press(&"carry")
+	_click(_view.casualty_screen[cid])
+	_check(_sel.carry_man == cid and _last(&"carry_units") == null, "S12: the first Carry click picks the downed man")
+	_click(_ground_screen(at + Vector3(10, 0, -6)))
+	var ca: Variant = _last(&"carry_units")
+	_check(ca != null and int(ca.man) == cid and ca.target is Vector3 and _sel.carry_man == -1, "S12: the second click sends carry_units to the ground")
+	_view.update_state(_source.get_state())
+	_check(not (_view.casualties_by_id[cid].carriers as PackedInt32Array).is_empty(), "S12: the mock shows the carriers")
+	await _frames(2)
+	_check(_match.wound_view.poles == 2, "S12: a carried man lies on a stretcher (%d poles)" % _match.wound_view.poles)
+	# Evacuate (review R3): a selected wounded man in the ring of the staged
+	# post (built, staffed 2/2, a free bed) goes at once.
+	_sel.aid_menu = false
+	_sel.select_only(PackedInt32Array([men[1]]))
+	_view.update_state(_source.get_state())
+	grid.update_state(_view.state)
+	_intents.clear()
+	_check(grid.grid_mode == "soldier" and grid.label_of(&"aid_menu") == "Aid", "S12: one man selected: the Aid button")
+	grid.press(&"aid_menu")
+	# Control: the post short of staff (1/2): off, as the sim refuses.
+	var post: Dictionary = _source.s6_structures[_source.s6_structures.size() - 1]
+	post.staff = 1
+	_view.update_state(_source.get_state())
+	grid.update_state(_view.state)
+	_check(not grid.enabled(&"evacuate"), "S12: Evacuate is off at a post short of staff")
+	post.staff = 2
+	_view.update_state(_source.get_state())
+	grid.update_state(_view.state)
+	_check(grid.enabled(&"evacuate"), "S12: Evacuate is on in a staffed post's ring")
+	grid.press(&"evacuate")
+	var ev: Variant = _last(&"evacuate_units")
+	_check(ev != null and (ev.units as PackedInt32Array) == PackedInt32Array([men[1]]), "S12: Evacuate sends the selected wounded man")
+	# No wounded man selected: off (no downed-man click: the sim takes
+	# wounded men only).
+	_sel.select_only(PackedInt32Array([men[0]]))
+	_view.update_state(_source.get_state())
+	grid.update_state(_view.state)
+	_check(not grid.enabled(&"evacuate"), "S12: Evacuate is off with no wounded man selected")
+	# The medic squad: Build menu with the aid post.
+	_sel.aid_menu = false
+	_sel.cancel_tool()
+	_sel.select_squads(PackedInt32Array([med]))
+	_view.update_state(_source.get_state())
+	await _frames(1)
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "soldier" and grid.label_of(&"build_menu") == "Build", "S12: medics get the Build button")
+	grid.press(&"build_menu")
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "fort" and grid.label_of(&"build_aid") == "Aid post" and grid.enabled(&"build_aid") and grid.label_of(&"aid_menu") == "Aid", "S12: the build menu holds Aid post and Aid")
+	_check(not grid.enabled(&"build_sandbags"), "S12: medics build no sandbags")
+	_intents.clear()
+	grid.press(&"build_aid")
+	_check(_sel.tool == &"build_aid", "S12: Aid post arms the build tool")
+	var spot := at + Vector3(20, 0, 0)
+	_click(_ground_screen(spot))
+	var bi: Variant = _last(&"build")
+	_check(bi != null and String(bi.what) == "aid" and bi.has("target") and bi.has("facing") and (bi.squads as PackedInt32Array) == PackedInt32Array([med]), "S12: a click sends build aid (%s)" % [bi])
+	grid.press(&"aid_menu")
+	grid.update_state(_view.state)
+	_check(grid.grid_mode == "aid" and grid.enabled(&"build_aid"), "S12: Aid from the build menu opens the aid menu; medics can build there too")
+	# The overlay and the mock world draw it all without error.
+	_view.units.queue_redraw()
+	await _frames(2)
+	_sel.cancel_tool()
+	_sel.fort_menu = false
+	_sel.aid_menu = false
+	_sel.select_only(PackedInt32Array())
+	_view.update_state(_source.get_state())
+	await _frames(1)
 
 
 func _check(ok: bool, what: String) -> void:

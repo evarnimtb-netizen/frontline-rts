@@ -132,7 +132,13 @@ func _draw_soldier(so: Dictionary) -> void:
 	_pair(font, bold, x0, y + base, "Stance", "%s (%s)" % [stance.capitalize(), "Auto" if ov == "auto" else "set"])
 	var pinned := view.soldier_pinned(so)
 	var cond := "Pinned" if pinned else ("Detached" if so.get("detached", false) else "With squad")
-	HudStyle.text(self, font, Vector2(size.x - PAD, y + base), cond, HudStyle.FONT, HudStyle.ACCENT if pinned else HudStyle.DIM, 1)
+	var ccol: Color = HudStyle.ACCENT if pinned else HudStyle.DIM
+	# S12: his wound beats the squad word (bleeding: red; dressed: plain).
+	var wword := view.wound_word(so)
+	if wword != "":
+		cond = wword
+		ccol = HudStyle.DANGER if wword.begins_with("Bleeding") else HudStyle.ACCENT
+	HudStyle.text(self, font, Vector2(size.x - PAD, y + base), cond, HudStyle.FONT, ccol, 1)
 	y += rh
 	# Weapon and order target.
 	# S5a: the weapon in hand and the rounds he holds for it.

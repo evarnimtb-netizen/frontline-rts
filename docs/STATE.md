@@ -44,9 +44,9 @@ in the AI, HE for the 57 mm.
 
 ## Versions
 
-`SAVE_VERSION` **28** and `PROTOCOL_VERSION` **14** on main (`world.rs`, `protocol.rs`); **29** and **15** on the branch
-(S11b Build A: `ItemKind::RifleGrenade` on the wire; the layout fields are in each log). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
-S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15 (branch). A save, hash or command change
+`SAVE_VERSION` **29** and `PROTOCOL_VERSION` **15** on main (`world.rs`, `protocol.rs`); **30** and **16** on the branch
+(S12: `Tend`, `Carry`, `Evacuate`, `Reinforce` on the wire; the layout fields are in `S12-log.md`). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
+S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16 (branch). A save, hash or command change
 bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
 BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 
@@ -71,14 +71,14 @@ SAVE 27. Infantry gun leIG 18 and 105 mm M3 take fire missions (`[fire_mission]`
 
 SAVE 28, PROTOCOL 14. Mortar and gun mission bursts hurt own men (`friendly_fire`; own-fire deaths are not kills); infantry-gun rounds leave sound evidence, a marker after 3 rounds (`counter_battery`); the AI lifts fire with own men near (`ff_safe`, `lift_m` 100) and answers a marker no wider than 60 m (`counter_fire`).
 
-## S11b (branch; log `S11b-log.md`; not on main, waits for the owner's OK)
+## S11b (on main 2026-11-20; log `S11b-log.md`)
 
 Built, reviewed and fixed. Field howitzers as AI base guns (`[ai.arty] how`, with a howitzer pot), HE rifle grenades
 (`[items] rifle_grenades`), `buy_pending`, `cb_alternate`. Shipped: howitzers, `buy_pending`, `cb_alternate` and rifle
 grenades on; AI light mortars off (`[ai.arty] light` 0; the cards stay buyable by a human). Measured at `88117de` (480):
 Germany **44.17 %** (45.00 / 43.75 / 43.75; 41.67 before S11b), HE share 26.8 / 26.5 / 26.2 against the cap 26.3.
 
-## B2 second balance pass (branch; log `B2-log.md`; NO default changed)
+## B2 second balance pass (on main 2026-11-20; log `B2-log.md`; NO default changed)
 
 No lever passed the plan's screen rule. `rifle_grenade_gap_s` 15 -> 25 was tried under a separate rule: HE 25.73 on 480,
 Germany unchanged at 44.17 %, but unrelated hard target T121b (USA mines set off) fell 0.45 -> 0.281, so it was reverted
@@ -102,14 +102,24 @@ debug sim tests, simulate, clippy, rustfmt, cargo-deny passed; Windows and THIRD
 - Tank crews bail out. Vehicles before fortifications. Matches 10-40 min, median 15-30.
 - S9 (2026-11-08): vehicle spotting 2x; AT gun optic 250 % inside the arc; T33 counts tanks and TDs only. S9b (2026-11-10): S9b-1 (A) keep `income_max_pct` 30, the US T88 shortfall goes to the S10 AI half; S9b-2, S9b-3 (A).
 
+## S12 wounds and medics (branch `claude/project-thread-aj1tww`; log `S12-log.md`; waits for the owner's merge OK)
+
+SAVE 30, PROTOCOL 16. Hit zones; men go fit / wounded / downed (`EntityKind::Downed`) / dead; bleeding, self and buddy
+bandage, seeded bleed-out; medics stabilise and carry; aid posts (`kind = "aid"`) treat once and evacuate (refund for bought
+men); `Reinforce` refills squads from base. Medic AI `ai/medic.rs` (buy, post, field, staffing, reinforce). Presenter: wound pips,
+downed men, aid menu. All shipped on (`[wounds] enabled`, `reinforce`, `[ai.medic]` 1). Measured at `b89ef42` (480): Germany
+**42.71 %** (45.00 / 42.50 / 40.62; 44.17 with `s12_off`, which equals main 40/40), no match without a winner, HE share of
+casualties 28.1 % against the hard cap 26.3 (known miss S12-16, first item of the next balance pass). Ablations (pooled
+Germany): no_medics 41.04, no_post 44.17, no_reinforce 45.00, head_300 43.54. CI run 47 on `91078e9` green.
+
 ## Known gaps
 
-- Balance: Germany 44.17 % at `88117de` (S11b, branch); HE share sits on the cap 26.3, which stops most levers that help Germany (B2-12). T88 USA open (S9b-1 (A)). T5c, T50e known noise. Not verified: the eliminated-player path; a per-field hash audit beyond the named tests. Windows CI fails (PR 1).
+- Balance: Germany 42.71 % at `b89ef42` (S12, branch; 44.17 % on main); HE share sits on the cap 26.3, which stops most levers that help Germany (B2-12). T88 USA open (S9b-1 (A)). T5c, T50e known noise. Not verified: the eliminated-player path; a per-field hash audit beyond the named tests.
 - Net loopback refuses `DropCrates` at a non-truck. Structures not selectable in the HUD (S6-18). No presenter pass for guns (S11a1-9).
 
 ## Roadmap position
 
-Done on main: S1 to S11a2 and B1 (S10c-ai, S11a1, S11a2 merged 2026-11-19 with the owner's OK). On the branch: S11b and B2, waiting for the owner's merge OK. Next: that merge decision (B2-9 first); PR 1 (checks fix); then the open items (AT guns in cover, preparation fire in matches; S11b-9..11 follow S11a2-10..12).
+Done on main: S1 to S11b, B1 and B2 (S11b and B2 merged 2026-11-20). On the branch: S12, waiting for the owner's merge OK. Next: that merge, then S13 (plan `S13-heavy-wave.md`) and a balance pass starting with S12-16; then the open items (AT guns in cover, preparation fire in matches; S11b-9..11 follow S11a2-10..12).
 
 ## How to check work
 

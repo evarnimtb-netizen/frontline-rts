@@ -1133,6 +1133,8 @@ tuning_table! {
         hq_max: 0..=4 = "d_hq_max",
         /// ... and ammunition dumps.
         dump_max: 0..=16 = "d_dump_max",
+        /// S12 W8: aid posts per player, built or digging.
+        aid_max: 0..=8 = "d_aid_max",
         /// S6: one bomb into a mortar squad inside an HQ or dump radius
         /// per this many seconds (s) ...
         structure_bomb_s: 1..=600 = "d_structure_bomb_s",
@@ -1202,6 +1204,9 @@ fn d_hq_max() -> u32 {
 }
 fn d_dump_max() -> u32 {
     3
+}
+fn d_aid_max() -> u32 {
+    2
 }
 fn d_structure_bomb_s() -> u32 {
     2
@@ -2906,6 +2911,268 @@ impl Default for AiArtyTuning {
     }
 }
 
+tuning_table! {
+    /// `[wounds]` (S12, docs/slices/S12-wounds-medics.md 2, rules W1-W11):
+    /// hit zones, wound states, bleeding, bandages, medics, aid posts and
+    /// reinforcements. The switches `enabled` and `reinforce` are 0 in S12a
+    /// (absent: these values).
+    pub struct WoundsTuning {
+        /// W1-W9 switch: wound states (0: a man at 0 HP dies, as before S12).
+        enabled: 0..=1 = "d_w_zero",
+        /// W1: the top share of a standing or crouched capsule is the head
+        /// (%) ...
+        head_top_pct: 1..=100 = "d_w_head_top_pct",
+        /// ... and the bottom share the legs (%).
+        legs_bottom_pct: 1..=100 = "d_w_legs_bottom_pct",
+        /// W2: a head hit does this share of the weapon's damage (%) ...
+        head_damage_pct: 1..=400 = "d_w_hundred",
+        /// ... a torso hit this share ...
+        torso_damage_pct: 1..=400 = "d_w_hundred",
+        /// ... and a leg hit this share (%).
+        legs_damage_pct: 1..=400 = "d_w_legs_damage_pct",
+        /// W3: a hit that leaves at most this many HP wounds (HP).
+        wounded_hp: 1..=1000 = "d_w_wounded_hp",
+        /// W3: a hit that leaves this many HP or more below 0 kills
+        /// outright (HP).
+        overkill_kill: 0..=1000 = "d_w_overkill_kill",
+        /// W3: a head hit of at least this damage kills outright (0: off).
+        head_kill_dmg: 0..=1000 = "d_w_zero",
+        /// W4: an unbandaged wounded man loses 1 HP this often (ms).
+        bleed_ms_per_hp: 1..=60000 = "d_w_bleed_ms_per_hp",
+        /// W5: a downed man bleeds out after a seeded time from (s) ...
+        down_bleed_min_s: 1..=3600 = "d_w_down_bleed_min_s",
+        /// ... to (s, inclusive).
+        down_bleed_max_s: 1..=3600 = "d_w_down_bleed_max_s",
+        /// W4: a wounded man's spread (% of his normal spread) ...
+        wounded_spread_pct: 1..=400 = "d_w_wounded_spread_pct",
+        /// ... and his reload and aim time (%).
+        wounded_reload_pct: 1..=400 = "d_w_wounded_reload_pct",
+        /// W4: a wounded man walks at this share of his speed (%) ...
+        wounded_speed_pct: 1..=400 = "d_w_wounded_speed_pct",
+        /// ... this share with a leg wound (%).
+        legs_speed_pct: 1..=400 = "d_w_legs_speed_pct",
+        /// W4: a field dressing takes this long (s).
+        bandage_s: 1..=3600 = "d_w_bandage_s",
+        /// W6: a medic stabilises a downed man in this long (s).
+        stabilise_s: 1..=3600 = "d_w_stabilise_s",
+        /// W7: one man drags a casualty at this share of his speed (%) ...
+        drag_speed_pct: 1..=400 = "d_w_drag_speed_pct",
+        /// ... two medics with a stretcher at this share (%).
+        stretcher_speed_pct: 1..=400 = "d_w_stretcher_speed_pct",
+        /// W8: an aid post treats a wounded man in this long (s) ...
+        treat_s: 1..=3600 = "d_w_treat_s",
+        /// ... and he returns with this share of his HP (%).
+        return_hp_pct: 1..=100 = "d_w_return_hp_pct",
+        /// W9: an evacuation takes this long (s) ...
+        evac_s: 1..=3600 = "d_w_evac_s",
+        /// ... and refunds this share of a paid man's price (%).
+        evac_refund_pct: 1..=400 = "d_w_evac_refund_pct",
+        /// W6: a medic with no move order tends own downed men this close
+        /// (m).
+        auto_tend_m: 0..=2000 = "d_w_auto_tend_m",
+        /// W11 switch: `Reinforce` fills an infantry squad from base.
+        reinforce: 0..=1 = "d_w_zero",
+        /// W11: a replacement costs this share of the card's per-man
+        /// price (%).
+        reinforce_cost_pct: 1..=400 = "d_w_hundred",
+    }
+}
+
+fn d_w_zero() -> u32 {
+    0
+}
+fn d_w_hundred() -> u32 {
+    100
+}
+fn d_w_head_top_pct() -> u32 {
+    12
+}
+fn d_w_legs_bottom_pct() -> u32 {
+    45
+}
+fn d_w_legs_damage_pct() -> u32 {
+    60
+}
+fn d_w_wounded_hp() -> u32 {
+    50
+}
+fn d_w_overkill_kill() -> u32 {
+    60
+}
+fn d_w_bleed_ms_per_hp() -> u32 {
+    4000
+}
+fn d_w_down_bleed_min_s() -> u32 {
+    60
+}
+fn d_w_down_bleed_max_s() -> u32 {
+    180
+}
+fn d_w_wounded_spread_pct() -> u32 {
+    130
+}
+fn d_w_wounded_reload_pct() -> u32 {
+    125
+}
+fn d_w_wounded_speed_pct() -> u32 {
+    85
+}
+fn d_w_legs_speed_pct() -> u32 {
+    60
+}
+fn d_w_bandage_s() -> u32 {
+    10
+}
+fn d_w_stabilise_s() -> u32 {
+    15
+}
+fn d_w_drag_speed_pct() -> u32 {
+    30
+}
+fn d_w_stretcher_speed_pct() -> u32 {
+    60
+}
+fn d_w_treat_s() -> u32 {
+    60
+}
+fn d_w_return_hp_pct() -> u32 {
+    75
+}
+fn d_w_evac_s() -> u32 {
+    30
+}
+fn d_w_evac_refund_pct() -> u32 {
+    40
+}
+fn d_w_auto_tend_m() -> u32 {
+    25
+}
+
+impl WoundsTuning {
+    fn check_more(&self, table: &str, out: &mut Vec<Issue>) {
+        check_order(
+            out,
+            table,
+            ("down_bleed_min_s", self.down_bleed_min_s),
+            ("down_bleed_max_s", self.down_bleed_max_s),
+        );
+        // The head band and the leg band must not overlap.
+        check_order(
+            out,
+            table,
+            ("head_top_pct", self.head_top_pct),
+            ("100 - legs_bottom_pct", 100 - self.legs_bottom_pct.min(100)),
+        );
+        // W9: an evacuation pays back no more than a replacement costs (no
+        // manpower gain loop).
+        check_order(
+            out,
+            table,
+            ("evac_refund_pct", self.evac_refund_pct),
+            ("reinforce_cost_pct", self.reinforce_cost_pct),
+        );
+    }
+}
+
+impl Default for WoundsTuning {
+    /// The S12a values (a rules def without `[wounds]`): every switch off.
+    fn default() -> WoundsTuning {
+        WoundsTuning {
+            enabled: 0,
+            head_top_pct: 12,
+            legs_bottom_pct: 45,
+            head_damage_pct: 100,
+            torso_damage_pct: 100,
+            legs_damage_pct: 60,
+            wounded_hp: 50,
+            overkill_kill: 60,
+            head_kill_dmg: 0,
+            bleed_ms_per_hp: 4000,
+            down_bleed_min_s: 60,
+            down_bleed_max_s: 180,
+            wounded_spread_pct: 130,
+            wounded_reload_pct: 125,
+            wounded_speed_pct: 85,
+            legs_speed_pct: 60,
+            bandage_s: 10,
+            stabilise_s: 15,
+            drag_speed_pct: 30,
+            stretcher_speed_pct: 60,
+            treat_s: 60,
+            return_hp_pct: 75,
+            evac_s: 30,
+            evac_refund_pct: 40,
+            auto_tend_m: 25,
+            reinforce: 0,
+            reinforce_cost_pct: 100,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[ai.medic]` (S12b, docs/slices/S12-wounds-medics.md 2, 5, rules
+    /// A1-A5): how the AI buys and uses medic teams, aid posts and
+    /// reinforcements. Every switch 0 in S12a (absent: these values).
+    pub struct AiMedicTuning {
+        /// A1 switch: buy medic teams.
+        buy: 0..=1 = "d_w_zero",
+        /// A3 switch: field medics tend and carry.
+        field: 0..=1 = "d_w_zero",
+        /// A2, A4 switch: build and staff an aid post.
+        post: 0..=1 = "d_w_zero",
+        /// A5 switch: reinforce squads.
+        reinforce: 0..=1 = "d_w_zero",
+        /// A1: medic teams at most ...
+        max_teams: 0..=8 = "d_am_max_teams",
+        /// ... bought only while this many infantry squads live.
+        min_inf_squads: 0..=50 = "d_am_min_inf_squads",
+        /// A3: a field team follows this far behind the lead squad (m) ...
+        front_m: 0..=2000 = "d_am_front_m",
+        /// ... and goes to a downed man only with no spotted enemy this
+        /// close to him (m).
+        enemy_clear_m: 0..=2000 = "d_am_enemy_clear_m",
+        /// A5: reinforce a squad under this share of its card size (%).
+        reinforce_below_pct: 1..=100 = "d_am_reinforce_below_pct",
+    }
+}
+
+fn d_am_max_teams() -> u32 {
+    2
+}
+fn d_am_min_inf_squads() -> u32 {
+    4
+}
+fn d_am_front_m() -> u32 {
+    60
+}
+fn d_am_enemy_clear_m() -> u32 {
+    40
+}
+fn d_am_reinforce_below_pct() -> u32 {
+    60
+}
+
+impl AiMedicTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for AiMedicTuning {
+    /// The S12a values (a rules def without `[ai.medic]`): switches off.
+    fn default() -> AiMedicTuning {
+        AiMedicTuning {
+            buy: 0,
+            field: 0,
+            post: 0,
+            reinforce: 0,
+            max_teams: 2,
+            min_inf_squads: 4,
+            front_m: 60,
+            enemy_clear_m: 40,
+            reinforce_below_pct: 60,
+        }
+    }
+}
+
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
 pub const TABLES: &[(&str, &[TuningKey])] = &[
@@ -2923,6 +3190,8 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("ai.fort", AiFortTuning::KEYS),
     ("ai.obstacles", AiObstacleTuning::KEYS),
     ("ai.arty", AiArtyTuning::KEYS),
+    ("wounds", WoundsTuning::KEYS),
+    ("ai.medic", AiMedicTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -2990,6 +3259,8 @@ pub(crate) struct TuningRefs<'a> {
     pub ai_fort: &'a AiFortTuning,
     pub ai_obstacles: &'a AiObstacleTuning,
     pub ai_arty: &'a AiArtyTuning,
+    pub wounds: &'a WoundsTuning,
+    pub ai_medic: &'a AiMedicTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -3054,6 +3325,8 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.ai_fort.check(&p("ai.fort"), out);
     t.ai_obstacles.check(&p("ai.obstacles"), out);
     t.ai_arty.check(&p("ai.arty"), out);
+    t.wounds.check(&p("wounds"), out);
+    t.ai_medic.check(&p("ai.medic"), out);
 }
 
 #[cfg(test)]

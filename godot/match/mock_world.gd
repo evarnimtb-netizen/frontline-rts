@@ -82,6 +82,11 @@ func update_state(s: Dictionary) -> void:
 				b = Basis().scaled(Vector3(1.0, 0.68, 1.0))
 				lift = 0.6
 		items.append([Transform3D(b, so.pos + Vector3(0, lift, 0)), col])
+	# S12: a downed man lies flat, in a darker coat (the real match draws
+	# him from its corpse layer).
+	for c in s.get("casualties", []):
+		var dcol := Color(0.20, 0.30, 0.42) if int(c.owner) == local else Color(0.42, 0.20, 0.17)
+		items.append([Transform3D(Basis(Vector3.RIGHT, PI * 0.5).rotated(Vector3.UP, float(int(c.id) % 628) * 0.01), c.pos + Vector3(0, 0.2, 0)), dcol])
 	_upload(_soldiers, items, MAX_SOLDIERS)
 	# Smoke: flattened grey spheres, alpha from density.
 	items = []

@@ -449,7 +449,8 @@ fn howitzers_are_inf_guns_with_a_low_angle_table() {
         assert_eq!(wi.id, w);
         assert!(wi.indirect.as_ref().unwrap().low_angle, "{card}");
         let f = &s.factions[t.faction as usize];
-        let n = f.roster.len();
+        // S12 appends the medic team after the light mortar.
+        let n = f.roster.len() - 1;
         assert_eq!(
             s.squad_types[f.roster[n - 2] as usize].id,
             card,

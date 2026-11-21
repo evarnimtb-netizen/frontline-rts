@@ -1,0 +1,12 @@
+# S12 ablation (docs/slices/S12-wounds-medics.md 2, 9): as the default but
+# the AI builds and staffs no aid post (A2, A4): wounded men are only
+# bandaged and evacuated in base.
+[wounds]
+enabled = 1
+reinforce = 1
+
+[ai.medic]
+buy = 1
+field = 1
+post = 0
+reinforce = 1

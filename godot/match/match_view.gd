@@ -80,6 +80,10 @@ const PICK_LIFT := {"stand": 1.0, "crouch": 0.7, "prone": 0.25}
 const BODY_HALF_M := 0.85
 ## Below this HP (of 100) a man shows as wounded.
 const WOUNDED_HP := 60.0
+## S12: a downed man's pick and marker point sits this far above the ground
+## (m), and a click within this many px of it picks him.
+const CASUALTY_LIFT_M := 0.4
+const CASUALTY_PICK_PX := 30.0
 ## Names by squad type and slot when the state gives none.
 const MAN_NAMES := {
 	"rifle": ["Sgt (lead)", "Rifle 2", "Rifle 3", "Rifle 4", "Rifle 5", "Rifle 6", "Rifle 7", "Rifle 8"],
@@ -162,6 +166,12 @@ var pick_screen := PackedVector2Array()
 var pick_depth := PackedFloat32Array()
 var pick_own := PackedByteArray()
 var pick_reach := PackedFloat32Array()
+## S12: downed men by id (own: all; enemy: the seen ones; state `casualties`),
+## their screen points (those in front of the camera) and whether the
+## state shows wounds at all (see s12_on()).
+var casualties_by_id: Dictionary = {}
+var casualty_screen: Dictionary = {}
+var _s12_seen := false
 var paused := false
 var ended := false
 ## Net mode (S2): the state's `net` Dictionary ({} when not networked).
@@ -273,6 +283,7 @@ func update_state(s: Dictionary) -> void:
 		if sp != null and vp.grow(40.0).has_point(sp):
 			squad_screen[id] = sp
 	_index_soldiers(s, vp)
+	_index_casualties(s, vp)
 	_index_vehicles(s, vp)
 	_note_hits(s.get("armour_events", []))
 	selection.prune()
@@ -334,6 +345,130 @@ func _index_soldiers(s: Dictionary, vp: Rect2) -> void:
 	# Lists arrive ascending; keep squad_units ascending even if not.
 	for sid in squad_units:
 		squad_units[sid].sort()
+
+
+## S12: the downed men of the state, with the screen point of each that is
+## in front of the camera (`casualty_screen`, for picking and the overlay).
+func _index_casualties(s: Dictionary, vp: Rect2) -> void:
+	casualties_by_id.clear()
+	casualty_screen.clear()
+	_s12_seen = false
+	for c in s.get("casualties", []):
+		var id: int = c.id
+		casualties_by_id[id] = c
+		_s12_seen = true
+		if camera == null:
+			continue
+		var p: Vector3 = c.pos + Vector3(0, CASUALTY_LIFT_M, 0)
+		if camera.is_position_behind(p):
+			continue
+		var sp := camera.unproject_position(p)
+		if vp.grow(40.0).has_point(sp):
+			casualty_screen[id] = sp
+	if not _s12_seen:
+		for so in s.get("soldiers", []):
+			if so.has("wound"):
+				_s12_seen = true
+				break
+	if not _s12_seen:
+		for st in s.get("structures", []):
+			if st.get("kind", "") == "aid":
+				_s12_seen = true
+				break
+	if not _s12_seen:
+		for sq in s.get("squads", []):
+			if sq.get("tags", PackedStringArray()).has("medic"):
+				_s12_seen = true
+				break
+
+
+## S12: whether the wound layer is on. The rules' `wounds.enabled` says so
+## when the bridge sends it; without it, the state shows it by carrying a
+## wound, a downed man, an aid post or a medic squad. Everything S12 in the
+## HUD (pips, aid menu, Reinforce, medic cards) is hidden while it is off.
+func s12_on() -> bool:
+	var w: Variant = rules().get("wounds")
+	if w is Dictionary and (w as Dictionary).has("enabled"):
+		return bool(w.enabled)
+	return _s12_seen
+
+
+## S12: a wounded man's wound Dictionary ({} when fit).
+func soldier_wound(so: Dictionary) -> Dictionary:
+	var w: Variant = so.get("wound")
+	return w if w is Dictionary else {}
+
+
+## S12: the short word for his state ("Bleeding", "Bandaged", ...), "" when fit.
+func wound_word(so: Dictionary) -> String:
+	var w := soldier_wound(so)
+	if w.is_empty():
+		return ""
+	var word := "Bleeding"
+	if bool(w.get("bandaging", false)):
+		word = "Being bandaged"
+	elif bool(w.get("treated", false)):
+		word = "Treated"
+	elif bool(w.get("bandaged", false)):
+		word = "Bandaged"
+	return word + (", legs" if bool(w.get("legs", false)) else "")
+
+
+## S12: whether squad `sid` has the `medic` tag.
+func squad_is_medic(sid: int) -> bool:
+	return (squads_by_id.get(sid, {}).get("tags", PackedStringArray()) as PackedStringArray).has("medic")
+
+
+## S12 F2 (review R3): whether own wounded man `id` at `p` would be
+## evacuated now: in the own base ring (`map.own_base`), or in the ring of
+## a built own aid post with a free bed and its staff, and not in a bed.
+func can_evacuate_at(id: int, p: Vector3) -> bool:
+	var flat := Vector2(p.x, p.z)
+	var posts: Array = []
+	for st in state.get("structures", []):
+		for b in st.get("beds", []):
+			if int(b.man) == id:
+				return false
+		if int(st.get("owner", -1)) == local_player and st.get("kind", "") == "aid":
+			posts.append(st)
+	var base: Variant = state.get("map", {}).get("own_base")
+	if base is Dictionary:
+		var bp: Vector3 = base.pos
+		if flat.distance_to(Vector2(bp.x, bp.z)) <= float(base.radius):
+			return true
+	for st in posts:
+		var sp: Vector3 = st.pos
+		if bool(st.get("built", false)) \
+				and (st.get("beds", []) as Array).size() < int(st.get("beds_max", 2)) \
+				and int(st.get("staff", 0)) >= int(st.get("staff_min", 2)) \
+				and flat.distance_to(Vector2(sp.x, sp.z)) <= float(st.get("radius", 0.0)):
+			return true
+	return false
+
+
+## S12: own downed men, ascending.
+func own_casualties() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for id in casualties_by_id:
+		if int(casualties_by_id[id].owner) == local_player:
+			out.append(id)
+	out.sort()
+	return out
+
+
+## S12: the own downed man nearest a screen point within CASUALTY_PICK_PX,
+## or -1.
+func pick_casualty(screen: Vector2) -> int:
+	var best := -1
+	var best_d := CASUALTY_PICK_PX
+	for id in casualty_screen:
+		if int(casualties_by_id[id].owner) != local_player:
+			continue
+		var d: float = casualty_screen[id].distance_to(screen)
+		if d <= best_d:
+			best_d = d
+			best = id
+	return best
 
 
 ## One stand-in soldier per squad (id = squad id) for states without
@@ -616,7 +751,7 @@ func soldier_pinned(so: Dictionary) -> bool:
 
 
 func soldier_wounded(so: Dictionary) -> bool:
-	return float(so.get("hp", 100.0)) < WOUNDED_HP
+	return so.has("wound") or float(so.get("hp", 100.0)) < WOUNDED_HP
 
 
 func item_count(so: Dictionary, item: String) -> int:

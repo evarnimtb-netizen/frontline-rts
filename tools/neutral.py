@@ -23,7 +23,10 @@ Compares the CLI JSON files present in both directories:
   off; the S11a2 counters are 0 by the switch tests). S11b (Build C M1):
   a key starting `s11b` that BASE lacks is skipped likewise (its X1
   counters `arty_emplaced`, `arty_crew_lost` count with the switches
-  off). The set header's
+  off). S12b (Build C): a key starting `s12_derived` that BASE lacks is
+  skipped likewise (its HE share over kills plus downs, length and losses
+  read with the switches off; the `s12` counters stay checked as zero).
+  The set header's
   `overrides` list (the `-o` files a run was given) is not part of the
   verdict: when it differs the line gets a note `(note: overrides N -> M
   items)`.
@@ -93,7 +96,7 @@ def diff(base, new, path, out, strict, skip=frozenset()):
             if k not in new:
                 out.append(f"{p}: only in BASE")
             elif k not in base:
-                if k.startswith(("s10c", "s11a2", "s11b")):
+                if k.startswith(("s10c", "s11a2", "s11b", "s12_derived")):
                     continue
                 if k.startswith("s11a1"):
                     if strict and not blank_but_denoms(new[k]):

@@ -38,6 +38,7 @@ pub(super) fn flat_world_with(
     // switch off (shipped on since Build C); the S11b tests turn on what
     // they test.
     setup.s11b_off();
+    setup.s12_off();
     edit(&mut setup);
     World::new_match(setup, threads).unwrap()
 }
@@ -116,6 +117,7 @@ pub(super) fn built(w: &World, p: u8, d: u16, pos: FxVec2, stock_kg: [u32; 3]) -
         box_hp: [hp(0), hp(1), hp(2), hp(3)],
         radio: true,
         stock_g: stock_kg.map(|k| k * 1000),
+        beds: Vec::new(),
     }
 }
 
@@ -1036,6 +1038,7 @@ fn every_s6_field_is_saved_hashed_and_checked_on_load() {
         box_hp: _,
         radio: _,
         stock_g: _,
+        beds: _,
     } = w
         .game()
         .unwrap()

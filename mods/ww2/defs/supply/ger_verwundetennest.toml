@@ -1,0 +1,26 @@
+# Verwundetennest (S12 W8): the company aid post, a tent on a shallow
+# scrape. Built by the Sanitätstrupp (tag "medic"). It works while two own
+# medics stand in its radius with no move order: a stabilised downed man
+# in the radius is evacuated, a detached wounded man not yet treated is
+# treated and returns to the fight; beds fill by ascending id. HE that
+# breaks the tent destroys the post (S6-14). No stock, no cook-off.
+# docs/slices/S12-wounds-medics.md 2, 4 (W8, W9).
+id = "ww2:ger_verwundetennest"
+name = "Verwundetennest"
+faction = "ww2:germany"
+kind = "aid"
+# Plan 2: 40 MP (IS 7.3; the 20 kg tent is not charged, S6-4 precedent).
+cost = 40
+pit = "aid_pit"
+radius_m = 12
+beds = 2
+staff_min = 2
+built_by = ["medic"]
+# The tent: a squad tent pitched over the scrape (verify the size).
+boxes = [
+    { part = "tent", size_cm = [250, 200, 180], offset_cm = [0, 0, 0], hp = 60 },
+]
+sources = [
+    "infantry-structures.md 7.3 (aid post: tent, 2 medics, beds)",
+    "US War Department TM-E 30-451, Handbook on German Military Forces (1945): company casualty collecting point (Verwundetennest)",
+]

@@ -211,6 +211,8 @@ func start(s: Dictionary) -> void:
 	_smokes.clear()
 	recall_cooldown = [{}, {}]
 	veh.reset()
+	s12_enabled = false
+	s12_casualties.clear()
 	_push_event(0, "info", "Skirmish on Kessel Ridge. Hold the points.", null)
 
 
@@ -363,6 +365,8 @@ func handle_intent(kind: StringName, data: Dictionary) -> void:
 			if entry.is_empty():
 				entry = catalog_entry(local_player, String(data.get("type", "")))
 			_call_in_entry(local_player, entry)
+		&"tend_units", &"carry_units", &"evacuate_units", &"reinforce":
+			_s12_intent(kind, data)
 		&"surrender":
 			_end(1 - local_player, "surrender")
 		&"pause":
@@ -867,6 +871,13 @@ func catalog(owner: int) -> Array:
 			e.short = at.short
 			e.cost = int(at.cost)
 		out.append(e)
+	# S12: the medic card, only while the wound layer is staged.
+	if s12_enabled:
+		out.append({
+			"id": "ww2:%s_sanitaetstrupp" % short, "type": "rifle", "name": "Sanitätstrupp", "short": "Sanitäter",
+			"cost": 66, "recall_s": 30.0, "men": 2, "pop": 2, "tags": PackedStringArray(["medic"]),
+			"gloss": "Sanitätstrupp: two medics with a stretcher.",
+		})
 	# The tank first, then (S7) the assault gun or tank destroyer.
 	for vkey in [veh.faction_tank(owner), veh.faction_td(owner)]:
 		var vt: Dictionary = MockVehicles.TYPES[vkey]
@@ -909,6 +920,9 @@ func _call_in_entry(owner: int, def: Dictionary) -> bool:
 			_push_event(owner, "vehicle_arrived", "%s deployed at base." % MockVehicles.TYPES[def.vehicle].short, _v3(at))
 		return true
 	var id := _spawn(owner, type, at, int(def.men))
+	if def.has("tags"):
+		squads[id].tags = Array(def.tags)
+		squads[id].name = def.name
 	if owner == local_player:
 		_push_event(owner, "squad_arrived", "%s deployed at base." % squads[id].name, _v3(at))
 	return true
@@ -1575,6 +1589,8 @@ func _build_state() -> Dictionary:
 		out_players[i].refill_paused = time_s - _refill_paused_t[i] < 1.0
 	var rules: Dictionary = RULES.duplicate()
 	rules.merge(veh.rules())
+	if s12_enabled:
+		rules.wounds = {"enabled": true, "reinforce": true}
 	var vs := veh.export_state(eyes)
 	var smokes: Array = []
 	for c in _smokes:
@@ -1598,6 +1614,7 @@ func _build_state() -> Dictionary:
 		"callin": {"catalog": catalog, "vehicles": veh.count(local_player), "vehicle_limit": veh.limit},
 		"vehicles": vs.vehicles,
 		"structures": s6_structures.duplicate(true),
+		"casualties": s12_casualties.duplicate(true),
 		"fort": s10_fort.duplicate(true),
 		"crates": _s6_crates_out(),
 		"shells": vs.shells,
@@ -1806,6 +1823,9 @@ func _soldier_state(sq: Dictionary, man: Dictionary, own: bool) -> Dictionary:
 		"pinned": man.supp > PINNED,
 		"suppression": man.supp,
 	}
+	# S12 (mock): a wound a test staged ({bandaged, legs, treated, bandaging}).
+	if man.has("wound"):
+		out.wound = man.wound.duplicate()
 	if own:
 		out.stance_override = man.stance_override
 		out.detached = man.detached
@@ -1916,3 +1936,106 @@ func at_volley() -> void:
 		if sq.type == "at":
 			sq.rocket_t = 0.0
 			_at_fire(sq, 0.0)
+
+
+# --- S12 (mock) -----------------------------------------------------------------
+
+## The wound layer is staged (rules.wounds.enabled, the medic card).
+var s12_enabled := false
+## Downed men as the bridge reports them (`casualties[]`, own: all keys).
+var s12_casualties: Array = []
+
+
+## S12 staging: man `man` carries a wound (keys of `soldiers[].wound`).
+func stage_wound(man: int, wound := {"bandaged": false, "legs": false, "treated": false, "bandaging": false}, hp := 35.0) -> void:
+	var m := _man(man)
+	if m.is_empty():
+		return
+	s12_enabled = true
+	m.wound = wound.duplicate()
+	m.hp = hp
+
+
+## S12 staging: man `man` goes down where he stands (he leaves his squad
+## and the soldiers list, and shows as a casualty).
+func stage_downed(man: int, bleed_s := 95.0, stabilised := false) -> void:
+	var m := _man(man)
+	if m.is_empty():
+		return
+	s12_enabled = true
+	var sq: Dictionary = squads[man_squad[man]]
+	sq.men.erase(m)
+	man_squad.erase(man)
+	s12_casualties.append({
+		"id": man, "owner": sq.owner, "pos": _v3(m.pos), "stabilised": stabilised,
+		"bleed_s": 0.0 if stabilised else bleed_s, "tend": -1, "tend_s": 0.0,
+		"carriers": PackedInt32Array(), "evac_s": 0.0,
+	})
+
+
+## S12 staging: a two-man medic squad (card tag `medic`) at `at`; its id.
+func place_medics(at: Vector2) -> int:
+	s12_enabled = true
+	var id := _spawn(local_player, "rifle", at, 2)
+	squads[id].tags = ["medic"]
+	squads[id].name = "Sanitätstrupp"
+	return id
+
+
+## S12 staging: an own aid post at `pos` (`built`: standing, else digging
+## `pct` %), `beds` men in its beds, `staff` medics in its ring.
+func stage_aid_post(pos: Vector3, built := true, beds := 1, staff := 2, pct := 100) -> void:
+	s12_enabled = true
+	var bed_list: Array = []
+	for i in beds:
+		bed_list.append({"man": 9000 + i, "seconds_left": 40.0 - 10.0 * i, "evac": false})
+	s6_structures.append({
+		"id": s6_structures.size(), "owner": local_player, "kind": "aid", "name": "Verwundetennest",
+		"pos": pos, "yaw": 0.0, "radius": 12.0, "built": built, "build_pct": pct if not built else 100, "radio": false,
+		"stock_kg": {}, "cap_kg": {},
+		"boxes": [{"part": "tent", "pct": 100, "size": Vector3(2.5, 1.8, 2.0), "offset": Vector2(0, 0)}],
+		"beds": bed_list, "staff": staff, "beds_max": 2, "staff_min": 2,
+	})
+
+
+## S12 (mock): the four intents act at once, so a test sees their effect.
+func _s12_intent(kind: StringName, data: Dictionary) -> void:
+	var uids: PackedInt32Array = data.get("units", PackedInt32Array())
+	var man := int(data.get("man", -1))
+	match kind:
+		&"tend_units":
+			for c in s12_casualties:
+				if int(c.id) == man:
+					c.stabilised = true
+					c.bleed_s = 0.0
+			var m := _man(man)
+			if not m.is_empty() and m.has("wound"):
+				m.wound.bandaged = true
+		&"carry_units":
+			for c in s12_casualties:
+				if int(c.id) == man:
+					c.carriers = uids.slice(0, 2)
+					c.dest = data.get("target", Vector3.ZERO)
+		&"evacuate_units":
+			for i in range(s12_casualties.size() - 1, -1, -1):
+				if uids.has(int(s12_casualties[i].id)):
+					s12_casualties.remove_at(i)
+			for id in uids:
+				var m := _man(id)
+				if not m.is_empty():
+					m.erase("wound")
+					m.hp = 100.0
+		&"reinforce":
+			var ids: PackedInt32Array = data.get("squads", PackedInt32Array())
+			for sq in _own_squads(ids):
+				while sq.men.size() < int(sq.men_max):
+					var slot: int = sq.men.size()
+					var nm := {
+						"id": _next_man, "slot": slot, "hp": 100.0, "pos": MockMap.BASES[sq.owner], "supp": 0.0,
+						"detached": true, "order": "move", "target": sq.pos, "stance_override": "auto",
+						"items": loadout(sq.type, slot), "throw": {}, "resupply_t": 0.0,
+						"rounds": _rounds_full(sq.type, slot), "fire": "discipline",
+					}
+					_next_man += 1
+					sq.men.append(nm)
+					man_squad[nm.id] = sq.id

@@ -840,7 +840,9 @@ impl FrontlineMatch {
             "sim_late_ticks" => c.late_ticks.load(Relaxed) as i64,
             "commands_sent" => c.commands_sent.load(Relaxed) as i64,
             "soldiers" => f.soldiers.len() as i64,
-            "corpses" => f.corpses.len() as i64,
+            // S12 F2 (review R5): bodies only, not the downed men drawn
+            // as bodies.
+            "corpses" => (f.corpses.len() - f.casualties.len()) as i64,
             "rounds" => f.rounds.len() as i64,
             "soldiers_drawn" => rt.soldier_layers.iter().map(|l| l.count as i64).sum::<i64>(),
             "tracers_drawn" => rt.tracer_layer.count as i64,
@@ -1927,6 +1929,22 @@ impl MatchRuntime {
             "name" => setup.map.name.as_str(),
             "size_m" => setup.map.size_m as f32,
         };
+        // S12 F2 (review R3): the local player's base ring (Evacuate takes
+        // a wounded man off the map there).
+        if let Some(b) = setup
+            .players
+            .get(local)
+            .and_then(|p| setup.map.bases.get(p.base as usize))
+        {
+            let c = frontline_sim::FxVec2::from(b.center).to_f32();
+            map.set(
+                "own_base",
+                &vdict! {
+                    "pos" => self.ground(c),
+                    "radius" => Fx::from(b.radius).to_f32(),
+                },
+            );
+        }
         if let Some(t) = &self.minimap {
             map.set("minimap", &t.to_variant());
         }
@@ -1981,6 +1999,7 @@ impl MatchRuntime {
                 "hq_pit" => &profile(&rules.hq_pit),
                 "dump_pit" => &profile(&rules.dump_pit),
                 "gun_pit" => &profile(&rules.gun_pit),
+                "aid_pit" => &profile(&rules.aid_pit),
             },
             // S6: crate feed distance and the HUD low marker.
             "supply" => &vdict! {
@@ -1990,6 +2009,12 @@ impl MatchRuntime {
             "vehicle_types" => &self.vehicle_types,
             // S10a: blueprints and materials for the build menu.
             "fortify" => &fort_rules(setup, hz),
+            // S12 F2 (bridge gap B1): the wound layer's switches
+            // (`MatchView.s12_on`).
+            "wounds" => &vdict! {
+                "enabled" => rules.wounds.enabled != 0,
+                "reinforce" => rules.wounds.reinforce != 0,
+            },
         };
 
         let mut players = VarArray::new();
@@ -2048,7 +2073,8 @@ impl MatchRuntime {
                 boxes.push(
                     &vdict! {
                         "pos" => self.ground(bxy),
-                        "part" => frontline_content::defs::STOCK_BOX_PARTS[b.part as usize % 3],
+                        "part" => frontline_content::defs::STOCK_BOX_PARTS
+                            [b.part as usize % frontline_content::defs::STOCK_BOX_PARTS.len()],
                         "pct" => st.box_pct.get(k).copied().unwrap_or(0) as i64,
                         "size" => Vector3::new(
                             fx(b.half[0]) * 2.0,
@@ -2066,6 +2092,8 @@ impl MatchRuntime {
                     "owner" => st.owner as i64,
                     "kind" => match d.kind {
                         frontline_content::setup::StockKind::Hq => "hq",
+                        // S12 W8.
+                        frontline_content::setup::StockKind::Aid => "aid",
                         _ => "dump",
                     },
                     "name" => d.name.as_str(),
@@ -2078,9 +2106,60 @@ impl MatchRuntime {
                     "stock_kg" => &stock,
                     "cap_kg" => &cap,
                     "boxes" => &boxes,
+                    // S12 W8 (aid posts).
+                    "beds" => &st.beds.iter().map(|b| vdict! {
+                        "man" => b.man.0 as i64,
+                        "seconds_left" => b.ticks_left as f32 / setup.tick_hz.max(1) as f32,
+                        "evac" => b.evac,
+                    }.to_variant()).collect::<VarArray>(),
+                    "staff" => st.staff as i64,
+                    // S12 F2 (bridge gap B3): the def's beds and the
+                    // medics it needs to work.
+                    "beds_max" => d.beds as i64,
+                    "staff_min" => d.staff_min as i64,
                 }
                 .to_variant(),
             );
+        }
+        // S12: downed men the local player sees (own: all, with their
+        // medic state).
+        let mut casualties = VarArray::new();
+        let hz = setup.tick_hz.max(1) as f32;
+        for c in &f.casualties {
+            if c.owner != self.local && c.seen_by & (1u16 << self.local) == 0 {
+                continue;
+            }
+            let mut d = vdict! {
+                "id" => c.id.0 as i64,
+                "owner" => c.owner as i64,
+                "pos" => self.ground([c.pos[0], c.pos[1]]),
+            };
+            if c.owner == self.local {
+                d.set("stabilised", c.stabilised);
+                d.set("bleed_s", c.bleed_ticks as f32 / hz);
+                d.set(
+                    "tend",
+                    if c.tend == u32::MAX {
+                        -1
+                    } else {
+                        c.tend as i64
+                    },
+                );
+                d.set("tend_s", c.tend_ticks as f32 / hz);
+                d.set(
+                    "carriers",
+                    &c.carriers
+                        .iter()
+                        .filter(|&&m| m != u32::MAX)
+                        .map(|&m| m as i32)
+                        .collect::<PackedInt32Array>(),
+                );
+                if let Some(to) = c.dest {
+                    d.set("dest", self.ground(to));
+                }
+                d.set("evac_s", c.evac_ticks as f32 / hz);
+            }
+            casualties.push(&d.to_variant());
         }
         let mut crates = VarArray::new();
         for c in &f.crates {
@@ -2156,6 +2235,20 @@ impl MatchRuntime {
                 "suppression" => f.suppression[i] as f32 / 100.0,
                 "in_trench" => f.in_trench[i],
             };
+            // S12: his wound (`frontline_sim::wound_bits`; 0: fit).
+            let w = f.wound.get(i).copied().unwrap_or(0);
+            if w != 0 {
+                use frontline_sim::wound_bits as wb;
+                d.set(
+                    "wound",
+                    &vdict! {
+                        "bandaged" => w & wb::BANDAGED != 0,
+                        "legs" => w & wb::LEGS != 0,
+                        "treated" => w & wb::TREATED != 0,
+                        "bandaging" => w & wb::BANDAGING != 0,
+                    },
+                );
+            }
             // S6: the crate he carries (kind and kg), if any.
             if let Some(c) = f.crates.iter().find(|c| c.carrier == id) {
                 d.set(
@@ -2298,6 +2391,10 @@ impl MatchRuntime {
         };
         let mut catalog = VarArray::new();
         for &t in &fac.roster {
+            // S12 F2 (bridge gap B2): no medic cards with wounds off.
+            if rules.wounds.enabled == 0 && setup.type_has_tag(t, "medic") {
+                continue;
+            }
             let ty = &setup.squad_types[t as usize];
             let mut d = entry(t);
             d.set("cost", ty.cost as i64);
@@ -2490,6 +2587,7 @@ impl MatchRuntime {
             },
             "vehicles" => &self.vehicles_state(),
             "structures" => &structures,
+            "casualties" => &casualties,
             "crates" => &crates,
             "fort" => &self.fort_state(),
             "shells" => &shells,
@@ -3466,6 +3564,11 @@ impl MatchRuntime {
             "regroup" => out.extend(own.iter().map(|s| CommandKind::Regroup {
                 squad: SquadId(s.id),
             })),
+            // S12 W11: the selected squads fill up from base (the sim
+            // refuses vehicles, a full squad, too little manpower).
+            "reinforce" => out.extend(own.iter().map(|s| CommandKind::Reinforce {
+                squad: SquadId(s.id),
+            })),
             // S3c: the selected infantry squads re-crew abandoned vehicle
             // `vehicle` (the sim refuses squads that cannot; the feed says
             // why).
@@ -3825,7 +3928,7 @@ impl MatchRuntime {
             "move_units" | "attack_move_units" | "stop_units" | "retreat_units" | "dig_units"
             | "set_stance" | "set_fire" | "throw" | "throw_each" | "reverse_units"
             | "face_units" | "attack_unit" | "set_ammo" | "repair_units" | "follow_units"
-            | "suppress_units" => {
+            | "suppress_units" | "tend_units" | "carry_units" | "evacuate_units" => {
                 let raw = data
                     .get("units")
                     .and_then(|v| v.try_to::<PackedInt32Array>().ok())
@@ -3853,14 +3956,18 @@ impl MatchRuntime {
                         | "set_ammo"
                         | "repair_units"
                         | "follow_units"
+                        | "tend_units"
+                        | "carry_units"
+                        | "evacuate_units"
                 ) {
                     // `attack_unit` names its target vehicle in `target`,
-                    // `follow_units` in `vehicle`.
+                    // `follow_units` in `vehicle`, S12 `tend_units` and
+                    // `carry_units` their man in `man`.
                     let id = data
-                        .get(if kind == "follow_units" {
-                            "vehicle"
-                        } else {
-                            "target"
+                        .get(match kind {
+                            "follow_units" => "vehicle",
+                            "tend_units" | "carry_units" => "man",
+                            _ => "target",
                         })
                         .and_then(|v| v.try_to::<i64>().ok())
                         .filter(|&i| i >= 0)

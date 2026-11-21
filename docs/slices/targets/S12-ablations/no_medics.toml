@@ -1,0 +1,13 @@
+# S12 ablation (docs/slices/S12-wounds-medics.md 2, 9): wounds, posts and
+# reinforcements as in the default, but no medic teams: the AI buys none
+# (A1) and field medics do nothing (A3). Paired with the default on the
+# same seeds (what medics are worth).
+[wounds]
+enabled = 1
+reinforce = 1
+
+[ai.medic]
+buy = 0
+field = 0
+post = 1
+reinforce = 1

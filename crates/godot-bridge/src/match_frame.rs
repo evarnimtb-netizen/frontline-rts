@@ -50,9 +50,9 @@ use frontline_content::{ITEM_KINDS, ItemKind, MatchSetup, WeaponClass};
 use frontline_sim::projectile::{NO_AMMO, SUBSTEP_HZ};
 use frontline_sim::snapshot::{NONE_U8, WRECK_OWNER};
 use frontline_sim::{
-    ArmourEvent, CorpseSnapshot, EntityKind, ExplosionSnapshot, NavPhase, Order, OrderKind,
-    Outcome, PlayerSnapshot, PointSnapshot, ShellSnapshot, UnitOrder, VehicleSnapshot, World,
-    tile_heights_f32, vehicle_flags,
+    ArmourEvent, CasualtySnapshot, CorpseSnapshot, EntityKind, ExplosionSnapshot, NavPhase, Order,
+    OrderKind, Outcome, PlayerSnapshot, PointSnapshot, ShellSnapshot, UnitOrder, VehicleSnapshot,
+    World, tile_heights_f32, vehicle_flags,
 };
 
 /// Enemy thrown items landing or flying this close (m) to one of the local
@@ -316,7 +316,13 @@ pub struct MatchFrame {
     pub units: Vec<UnitView>,
     pub thrown: Vec<ThrownView>,
     pub smoke: Vec<SmokeView>,
+    /// Bodies, and (S12) downed men drawn as bodies (`ticks_left` 0),
+    /// ascending id.
     pub corpses: Vec<CorpseSnapshot>,
+    /// S12: downed men, ascending id.
+    pub casualties: Vec<CasualtySnapshot>,
+    /// S12: per soldier, `frontline_sim::wound_bits`.
+    pub wound: Vec<u8>,
     /// Per corpse: the local player sees the body (own: always).
     pub corpse_visible: Vec<bool>,
     /// Small-arms rounds and mortar shells (main-gun shells and rockets
@@ -389,6 +395,8 @@ impl MatchFrame {
             thrown: Vec::new(),
             smoke: Vec::new(),
             corpses: Vec::new(),
+            casualties: Vec::new(),
+            wound: Vec::new(),
             corpse_visible: Vec::new(),
             rounds: Vec::new(),
             vehicles: Vec::new(),
@@ -458,6 +466,7 @@ impl MatchFrame {
         self.rounds_held.clone_from(&snap.soldier_rounds);
         self.sidearm.clone_from(&snap.soldier_sidearm);
         self.fire.clone_from(&snap.soldier_fire);
+        self.wound.clone_from(&snap.soldier_wound);
         self.throwing.clone_from(&snap.soldier_throwing);
         self.units.clear();
         self.units.extend(
@@ -491,6 +500,41 @@ impl MatchFrame {
         }
         // The sim spots corpses like prone men.
         self.corpses.clone_from(&snap.corpses);
+        // S12 F2 (review R5): a man who lay downed already fell; his body
+        // keeps lying (`ticks_left` 0, the fall's end) instead of falling
+        // again.
+        if !ctx.downed.is_empty() {
+            for c in &mut self.corpses {
+                if ctx.downed.contains(&c.id.0) {
+                    c.ticks_left = 0;
+                }
+            }
+        }
+        // S12: a downed man lies as a body (ascending id kept).
+        self.casualties.clone_from(&snap.casualties);
+        self.corpses
+            .extend(snap.casualties.iter().map(|c| CorpseSnapshot {
+                id: c.id,
+                pos: c.pos,
+                owner: c.owner,
+                ticks_left: 0,
+                seen_by: c.seen_by,
+            }));
+        self.corpses.sort_by_key(|c| c.id);
+        // Downed now, or a body that was (kept while the body lies).
+        ctx.downed = self
+            .corpses
+            .iter()
+            .filter(|c| {
+                c.ticks_left == 0
+                    && (ctx.downed.contains(&c.id.0)
+                        || self
+                            .casualties
+                            .binary_search_by_key(&c.id, |k| k.id)
+                            .is_ok())
+            })
+            .map(|c| c.id.0)
+            .collect();
         self.corpse_visible.clear();
         for c in &self.corpses {
             self.corpse_visible
@@ -970,6 +1014,9 @@ pub struct FrameCtx {
     /// (armour-event fog).
     seen_vehicles: BTreeSet<u32>,
     seen_vehicles_prev: BTreeSet<u32>,
+    /// S12 F2 (review R5): downed men at the last frame and the bodies of
+    /// those who died since (their fall is over).
+    downed: BTreeSet<u32>,
     /// A staged scene's name (`frontline_sim::scenarios::SCENES`): frames
     /// carry whether its condition holds.
     pub scene: Option<String>,

@@ -150,6 +150,9 @@ fn binary_runs_a_skirmish_and_prints_json() {
 fn fortify_test_passes() {
     // S10b-ai: its rows are played by the targets' fortify runs and their
     // one-off tests, not here (they doubled this binary's time).
+    // S12 F2 (review R2): played with the shipped S12 switches; a man
+    // lying downed at the end of a window counts as out of the fight
+    // (`fortify::losses`), as a loss does.
     let r = fortify_test(&FortifyArgs {
         no_s10b_ai: true,
         ..FortifyArgs::default()

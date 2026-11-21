@@ -165,6 +165,8 @@ fn ai_vs_ai_plays_by_the_rules() {
                 // Engineers dig, next to a capture point.
                 // S6: the HQ squad digs its HQ pit behind a point.
                 Order::Dig { .. } if s.type_has_tag(sq.type_idx, "hq") => {}
+                // S12b A2: the medic team digs its aid post's pit.
+                Order::Dig { .. } if s.type_has_tag(sq.type_idx, "medic") => {}
                 Order::Dig { line, .. } if seen.digs.insert(id) => {
                     assert!(s.type_has_tag(sq.type_idx, "engineer"));
                     let mid = (line[0] + line[line.len() - 1]).div_int(2);

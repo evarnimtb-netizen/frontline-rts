@@ -1570,3 +1570,75 @@ and `demolish`; the mock shows only what a test stages (`s10_fort`,
   timber boxes; the bunker's roof earth-brown with a dark slit box under
   its front edge; a demolition charge as a satchel box until it bursts; an
   own sweep lane as a dashed yellow line with a cross at `clear_along`.
+
+## S12: wounds, medics, aid posts, Reinforce (mechanics half)
+
+Design: `docs/slices/S12-wounds-medics.md` 4 (W1-W11). Everything is off
+unless the rules' `[wounds] enabled` is 1 (Reinforce also needs
+`reinforce`). The bridge fills these from `RenderSnapshot::soldier_wound`,
+`casualties` and `StructureSnapshot::beds`, `staff`; the mock shows none of
+it yet. The AI uses none of it yet (S12a Build C).
+
+### State keys
+
+- `soldiers[].wound: {bandaged, legs, treated, bandaging: bool}` — only on
+  a wounded man (absent: fit).
+- `casualties[]: {id, owner, pos}` — downed men the local player sees
+  (own: all); own ones add `stabilised: bool, bleed_s` (seconds to
+  bleed-out, 0 once stabilised), `tend` (the medic, -1: none), `tend_s`,
+  `carriers: PackedInt32Array` (0-2 men), `dest: Vector3` (while carried),
+  `evac_s` (seconds to evacuation in base, 0: none). A downed man is also
+  drawn as a body (he stays in the corpse layer, `corpses` count).
+- `structures[].kind` may be `"aid"`; every structure has `beds[]: {man,
+  seconds_left, evac: bool}` (an aid post's beds in use; the clock pauses
+  while unstaffed) and `staff` (own medics in its radius now; it works at
+  the def's `staff_min`).
+- `squads[].capabilities` / role words: medic cards carry the tag `medic`
+  (`ger_sanitaetstrupp`, `usa_aid_men`, ai_weight 0).
+
+### Intents
+
+- `tend_units {units, man}` — the nearest of the own `units` tends man
+  `man`: a medic stabilises a downed man, anyone bandages a wounded man.
+- `carry_units {units, man, target}` — one or two of `units` (medics
+  first: stretcher pace, else drag pace) carry downed man `man` to
+  `target`.
+- `evacuate_units {units}` — wounded or downed own men at a staffed aid
+  post with a free bed, or in base, leave the map (refund if paid).
+- `reinforce {squads}` — each selected own infantry squad fills its gaps
+  from base (manpower, pop room and the cooldown permitting).
+- `build {what: "aid", ...}` — as the S6 dump: an aid post (`aid_pit`
+  profile, built by `medic`-tagged squads).
+- `events[]` `fort_refused` may carry the S12 refusals (`not_allowed`,
+  `cap`, `manpower`).
+
+### Presenter
+
+Built (S12 Presenter P); it shows wounds only when the state does
+(`MatchView.s12_on()`: `rules.wounds.enabled` when the bridge sends it,
+else a wound, a casualty, an aid post or an own `medic` squad in the
+state).
+
+- `soldiers[].wound` draws a pip above the man (red bleeding, amber being
+  bandaged, white bandaged, green treated; a tan low pip for a leg wound);
+  the detail card says the word; the roster pip reads wounded.
+- `casualties[]` draws a groundsheet and a pip (red bleeding out, white
+  stabilised), a stretcher (two poles) while carried, and an overlay tag
+  (own: seconds to bleed-out, Tending, Stable, Carried, Evac). A man
+  with a `medic` squad tag wears a white armband. No red cross anywhere.
+- Aid posts (`kind: "aid"`) draw the tent box and a cot per bed.
+- Medic cards (tag `medic`) show a stretcher glyph and are hidden while the
+  wound layer is off.
+- Orders grid: an Aid button (Mission slot, or the build menu's third row)
+  opens the aid menu: Tend (click a wounded or downed man: `tend_units`),
+  Carry (click a downed man, then the ground: `carry_units`), Evacuate
+  (selected wounded men go at once, else click a downed man:
+  `evacuate_units`), Reinforce (`reinforce`, squads below `men_max`), Aid
+  post (medic squads; `build {what: "aid"}`). Medic squads get the Build
+  button; the build menu's third row holds Aid post and Aid.
+- The mock stages it: `stage_wound`, `stage_downed`, `stage_aid_post`,
+  `place_medics`; screenshot stage `s12_wounds`.
+
+The bridge does not yet send `rules.wounds {enabled, reinforce}`; until it
+does the medic card stays hidden and the Aid button appears once the first
+wound, casualty or medic squad is in the state.

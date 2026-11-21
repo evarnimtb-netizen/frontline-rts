@@ -259,4 +259,20 @@ pub enum CommandKind {
     /// The nearest man with a satchel in a `demolish` squad lays it against
     /// the nearest piece within `demolish_reach_m` of `at`.
     Demolish { squad: SquadId, at: FxVec2 },
+    // ---- S12 wounds and medics (`crate::wounds`). Declared with their wire
+    // encoding in S12a Build A; the sim refuses each (`FortRefusal::
+    // NotAllowed`, "not built yet") until Build B.
+    /// The nearest of `units` tends `target`: a medic stabilises a downed
+    /// man, anyone bandages a wounded man.
+    Tend { units: Vec<SimId>, target: SimId },
+    /// One or two of `units` carry the downed man `target` to `to`.
+    Carry {
+        units: Vec<SimId>,
+        target: SimId,
+        to: FxVec2,
+    },
+    /// Evacuate `units` (wounded men at a staffed aid post or in base).
+    Evacuate { units: Vec<SimId> },
+    /// Fill infantry squad `squad` to its card size from base.
+    Reinforce { squad: SquadId },
 }

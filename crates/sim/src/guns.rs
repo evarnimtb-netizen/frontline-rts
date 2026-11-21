@@ -528,10 +528,18 @@ impl MatchState {
             struck += 1;
             let dmg = core.damage.min(u16::MAX as u32) as u16;
             let c = &mut ctx.ents.combat[mi];
-            c.hp = c.hp.saturating_sub(dmg);
+            // S12 W3: a gun crewman takes the wound rule.
+            let fell = crate::wounds::deal(
+                c,
+                dmg as u32,
+                crate::wounds::ZONE_TORSO,
+                false,
+                (attacker, class),
+                ctx.wounds.as_ref(),
+            );
             add_suppression(c, self.setup.rules.combat.hit_suppression * 1000);
-            if c.hp == 0 {
-                ctx.fallen.push((m, attacker, class));
+            if let Some(h) = fell {
+                ctx.fallen.push((m, attacker, class, h));
             }
             ctx.hash.mark_entity_chunk(m.chunk());
         }

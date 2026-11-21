@@ -472,7 +472,11 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// setup `ItemKind::RifleGrenade` (`ITEM_KINDS` 7), `ItemSetup::stow_ticks`,
 /// `[items] rifle_grenades, rifle_grenade_gap_s` and the S11b `[ai.arty]`
 /// keys). One bump for the whole slice.
-const SAVE_VERSION: u32 = 29;
+/// 30: S12 (`EntityKind::Downed`, `Combat::wound`, `MatchState::casualties`,
+/// `Structure::beds`, `PlayerState::s12`, six `AiCounters`; in the setup
+/// `[wounds]`, `[ai.medic]`, `[supply] aid_max` and `StockKind::Aid`). One
+/// bump for the whole slice.
+const SAVE_VERSION: u32 = 30;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -499,6 +503,9 @@ pub struct World {
     threads: Arc<rayon::ThreadPool>,
     thread_count: usize,
     spatial: SpatialHash,
+    /// S12: downed men (rebuilt with `spatial` before the Ballistics stage
+    /// while any exist; read by the hit paths only).
+    downed: SpatialHash,
     hash: HashCache,
     snapshot: RenderSnapshot,
     published: Option<(u64, u64)>,
@@ -653,6 +660,7 @@ impl World {
         };
         let mut world = World {
             spatial: SpatialHash::new(state.config.map_size_m),
+            downed: SpatialHash::new(state.config.map_size_m),
             hash: HashCache::new(&state),
             config_bytes,
             setup_bytes,
@@ -858,6 +866,7 @@ impl World {
                     matches!(
                         k,
                         EntityKind::Corpse
+                            | EntityKind::Downed
                             | EntityKind::Vehicle
                             | EntityKind::Wreck
                             | EntityKind::Abandoned
@@ -1074,6 +1083,7 @@ impl World {
                 hash,
                 flags,
                 spatial,
+                downed,
                 planned,
                 armour_events,
                 ..
@@ -1159,6 +1169,10 @@ impl World {
                 g.rebuild_statics(&state.terrain);
                 // Ballistics and blasts test soldiers where they now stand.
                 spatial.rebuild(&state.entities);
+                // S12: and downed men (none with `[wounds] enabled` 0).
+                if !g.casualties.is_empty() {
+                    downed.rebuild_kinds(&state.entities, |k| k == EntityKind::Downed);
+                }
             }
         }
         let t3 = Instant::now();
@@ -1338,6 +1352,7 @@ impl World {
                 box_test_bufs,
                 blows,
                 spatial,
+                downed,
                 ..
             } = self;
             let SimState {
@@ -1378,6 +1393,9 @@ impl World {
                         armour: g.armour(),
                         ammo: &g.setup().ammo,
                         statics: g.static_boxes(),
+                        downed: (!g.casualties.is_empty()).then_some(&*downed),
+                        wounds: (g.setup().rules.wounds.enabled != 0)
+                            .then_some(&g.setup().rules.wounds),
                     };
                     threads.install(|| {
                         projectiles
@@ -1431,6 +1449,7 @@ impl World {
                 state,
                 hash,
                 spatial,
+                downed,
                 blows,
                 explosions,
                 fused,
@@ -1455,6 +1474,11 @@ impl World {
                 fallen: Vec::new(),
                 ff_dead: Vec::new(),
                 ff_hit: Vec::new(),
+                wounds: None,
+                downed: game
+                    .as_ref()
+                    .is_some_and(|g| !g.casualties.is_empty())
+                    .then_some(&*downed),
             };
             game.as_mut().expect("match world").apply_blows(
                 &mut ctx,
@@ -1542,6 +1566,9 @@ impl World {
                 );
                 // S8a: boarding, unloading, forced dismounts.
                 game.transport_status(&mut ctx);
+                // S12 W4, W5: bandages, bleeding, bleed-outs (nothing with
+                // `[wounds] enabled` 0).
+                game.wounds_tick(&mut ctx, &mut self.state.stats, seed);
                 game.update_items(&mut self.state.entities, &mut self.hash);
                 // S5a: crew feed, sharing and the priced base refill.
                 let bombs_before = game.mortar_bombs_by_player(&self.state.entities);
@@ -2533,6 +2560,58 @@ impl World {
         true
     }
 
+    /// S12 staged saves and tests: downs soldier `id` as a hit by `by`
+    /// (player, card) would with `[wounds] enabled` 1 (casualty, seeded
+    /// bleed-out, out of his squad). False for anything but a live soldier
+    /// or with the casualty list full.
+    pub fn down_soldier(&mut self, id: SimId, by: (u8, u16)) -> bool {
+        let tick = self.tick();
+        let seed = self.state.config.seed;
+        let Some(game) = self.state.game.as_mut() else {
+            return false;
+        };
+        if self.state.entities.kind.get(id.index()) != Some(&EntityKind::Soldier)
+            || game.casualties.len() >= crate::wounds::MAX_CASUALTIES
+        {
+            return false;
+        }
+        game.down(
+            &mut self.state.entities,
+            &mut self.hash,
+            Some(&self.state.terrain),
+            id,
+            by,
+            tick,
+            seed,
+        );
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// S12 Build B staged saves and tests: edits downed man `id`'s
+    /// casualty (tend, carriers, destination, evacuation). The caller keeps
+    /// it consistent (own medics and carriers). False if he has none.
+    pub fn edit_casualty(
+        &mut self,
+        id: SimId,
+        f: impl FnOnce(&mut crate::wounds::Casualty),
+    ) -> bool {
+        let Some(c) = self
+            .state
+            .game
+            .as_mut()
+            .and_then(|g| g.casualties.get_mut(&id))
+        else {
+            return false;
+        };
+        f(c);
+        self.hash.mark_entity_chunk(id.chunk());
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
     /// Starts a field repair of vehicle `id` (staged tests; `RepairUnits`
     /// and the AI call `MatchState::start_repair` the same way). False if
     /// nothing is repairable.
@@ -2627,6 +2706,7 @@ impl World {
                 box_hp: [hp(0), hp(1), hp(2), hp(3)],
                 radio: d.boxes.iter().any(|b| b.part == 1),
                 stock_g: [0, 1, 2].map(|k| (stock_kg[k] * 1000).min(d.cap_g[k])),
+                beds: Vec::new(),
             },
         );
         st.accounts[p.0 as usize].structures_built += 1;
@@ -2959,6 +3039,15 @@ mod s11b_ai_tests;
 #[cfg(test)]
 #[path = "s11b_tests.rs"]
 mod s11b_tests;
+#[cfg(test)]
+#[path = "s12_ai_tests.rs"]
+mod s12_ai_tests;
+#[cfg(test)]
+#[path = "s12_tests.rs"]
+mod s12_tests;
+#[cfg(test)]
+#[path = "s12b_tests.rs"]
+mod s12b_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;
@@ -5495,6 +5584,8 @@ mod tests {
             fallen: Vec::new(),
             ff_dead: Vec::new(),
             ff_hit: Vec::new(),
+            wounds: None,
+            downed: None,
         };
         let g = game.as_mut().unwrap();
         g.deal(
@@ -5612,6 +5703,8 @@ mod tests {
                 fallen: Vec::new(),
                 ff_dead: Vec::new(),
                 ff_hit: Vec::new(),
+                wounds: None,
+                downed: None,
             };
             let g = state.game.as_mut().unwrap();
             let ko = g.deal(

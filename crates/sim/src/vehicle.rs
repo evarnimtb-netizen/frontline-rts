@@ -2402,6 +2402,11 @@ impl MatchState {
             vs.burn = 0;
             vs.ammo_fire = 0;
             vs.base_ticks = 0;
+            // S12b Build C fix (found by the shipped-switch save round
+            // trip): no rearm step stays due on a wreck (the load check
+            // wants `supply_due` 0 with `base_ticks` 0; the supply pass
+            // skips wrecks and never clears it).
+            vs.supply_due = 0;
             vs.followers.clear();
             vs.face = None;
             vs.lay_turn = None;

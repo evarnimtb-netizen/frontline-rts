@@ -67,7 +67,7 @@ func bind(v: MatchView) -> void:
 
 ## Column height for a metrics set in one column (S1b).
 func column_height(m: Dictionary) -> float:
-	var n := maxi(view.state.get("callin", {}).get("catalog", []).size(), 1)
+	var n := maxi(_cards(view.state).size(), 1)
 	return _strip_h(m, n, 1)
 
 
@@ -76,7 +76,7 @@ func column_height(m: Dictionary) -> float:
 ## second vehicle card) when fewer would rise above CLEAR_TOP × hud_h.
 ## Sets `columns`. The HUD layout calls this.
 func column_size(m: Dictionary, bottom: float, hud_h: float) -> Vector2:
-	var n := maxi(view.state.get("callin", {}).get("catalog", []).size(), 1)
+	var n := maxi(_cards(view.state).size(), 1)
 	columns = 1
 	var h := _strip_h(m, n, 1)
 	while bottom - h < hud_h * CLEAR_TOP and columns < mini(n, 3):
@@ -90,10 +90,24 @@ func _strip_h(m: Dictionary, n: int, cols := -1) -> float:
 	return float(m.ci_head) + ceili(n / float(c)) * float(m.tile_h)
 
 
+## S12: the catalog without the medic cards while the wound layer is off
+## (`rules.wounds.enabled`; the cards exist at ai_weight 0 until S12b).
+func _cards(s: Dictionary) -> Array:
+	var all: Array = s.get("callin", {}).get("catalog", [])
+	if view.s12_on():
+		return all
+	return all.filter(func(c: Dictionary) -> bool: return not is_medic(c))
+
+
+## S12: a medic card (tag `medic`: the Sanitätstrupp, aid men).
+static func is_medic(c: Dictionary) -> bool:
+	return (c.get("tags", PackedStringArray()) as PackedStringArray).has("medic")
+
+
 func update_state(s: Dictionary) -> void:
 	var ci: Dictionary = s.get("callin", {})
 	var before := _catalog.size()
-	_catalog = ci.get("catalog", [])
+	_catalog = _cards(s)
 	_vehicles = int(ci.get("vehicles", 0))
 	_vehicle_limit = int(ci.get("vehicle_limit", s.get("rules", {}).get("vehicles", {}).get("limit", 4)))
 	if _catalog.size() != before:
@@ -366,6 +380,10 @@ func _draw_men_disc(i: int, c: Dictionary, bold: Font, off: bool) -> float:
 	var men := "%d" % int(c.get("men", 0))
 	HudStyle.text(self, bold, Vector2(ctr.x, ctr.y + 4.5), men, HudStyle.FONT_SMALL, HudStyle.OFF_TEXT if off else HudStyle.TEXT, 0)
 	var w := dr.size.x + 4.0
+	if is_medic(c):
+		# S12: the stretcher glyph (no red cross), left of the disc.
+		UiPalette.draw_glyph(self, "medic", Rect2(dr.position.x - 22.0, ctr.y - 8.0, 18.0, 16.0), Color(HudStyle.TEXT, 0.5 if off else 0.85), 1.5)
+		w += 22.0
 	if bool(c.get("understrength", false)):
 		# Half-filled chevron (a squad below establishment).
 		var cx := dr.position.x - 9.0
@@ -477,6 +495,8 @@ func _get_tooltip(at: Vector2) -> String:
 	var why := refusal_text(c)
 	# S4: the card's gloss ("Grenadiergruppe — rifle squad, 10 men: ...").
 	var head := String(c.get("gloss", "%s: %s" % [c.name, what]))
+	if is_medic(c):
+		head += "\nMedics (white armband, stretcher): stabilise downed men near them, carry them, build and staff the aid post. Tend, Carry and Aid post are in the Aid menu."
 	# S4 review: the chevron's meaning, in words.
 	if bool(c.get("understrength", false)):
 		head += "\nUnderstrength (chevron): fewer men than the full card, cheaper."

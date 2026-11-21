@@ -25,12 +25,16 @@ FORT = ("matches_with_works_pct", "matches_with_wire_pct", "matches_with_gap_pct
 # mistakes (T115), per set from factions.<f>.s10b_ai_derived.
 S10B = ("matches_with_mines_pct", "matches_with_obstacle_pct", "matches_with_bunker_pct",
         "bunker_done_when_started_pct", "sweep_when_wanted_pct", "own_side_mistakes")
+# S12b (Build C): per set from factions.<f>.s12_derived (medic_matches_pct is
+# hard >= 60; T8 reads the set's s12_derived.he_share_casualties_pct).
+S12 = ("medic_matches_pct", "stabilised_pct", "bled_out_pct", "downed_per_match",
+       "reinforced_men_per_match", "he_share_casualties_pct")
 BOUGHT = {"germany": ["ger_sdkfz251_1_squad", "ger_stug3_g_squad", "ger_pz4_h_squad"],
           "usa": ["usa_m3a1_squad", "usa_m10_squad", "usa_m4a3_75_squad"]}
 
 
 def read(d):
-    out = {"dir": d, "sets": [], "n": 0, "ger": 0, "nowin": 0, "he": [], "f": {}}
+    out = {"dir": d, "sets": [], "n": 0, "ger": 0, "nowin": 0, "he": [], "he_cas": [], "f": {}}
     for s in SETS:
         p = os.path.join(d, s + ".json")
         if not os.path.exists(p):
@@ -44,6 +48,8 @@ def read(d):
         out["ger"] += g
         out["nowin"] += sum(1 for m in j["per_match"] if m.get("result") != "won")
         out["he"].append(j["he_share_pct"]["mean"])
+        if "s12_derived" in j:
+            out["he_cas"].append(j["s12_derived"]["he_share_casualties_pct"]["mean"])
         for name, f in j["factions"].items():
             a = out["f"].setdefault(name, {"s9": {}, "bought": {}, "mp": {}, "veh_kills": [], "n": 0})
             a["n"] += n
@@ -64,6 +70,10 @@ def read(d):
             if d10 is not None:
                 for k in FORT:
                     a.setdefault("fort", {}).setdefault(k, []).append(d10.get(k))
+            d12 = f.get("s12_derived")
+            if d12 is not None:
+                for k in S12:
+                    a.setdefault("s12", {}).setdefault(k, []).append(d12.get(k))
             d10b = f.get("s10b_ai_derived")
             if d10b is not None:
                 for k in S10B:
@@ -83,7 +93,8 @@ def show(o, base):
     pool = 100.0 * o["ger"] / o["n"]
     delta = f" ({pool - 100.0 * base['ger'] / base['n']:+.1f} against the baseline)" if base and base["n"] else ""
     print(f"{o['dir']}: Germany pooled {pool:.2f} % of {o['n']}{delta}; sets {fmt(o['sets'], 2)}; "
-          f"no winner {o['nowin']}; HE share {fmt(o['he'])}")
+          f"no winner {o['nowin']}; HE share {fmt(o['he'])}"
+          + (f"; HE share of casualties {fmt(o['he_cas'])} (T8 cap 26.3)" if o["he_cas"] else ""))
     for name, a in sorted(o["f"].items()):
         n = a["n"]
         s = a["s9"]
@@ -109,6 +120,12 @@ def show(o, base):
                   f"{fmt(sb['matches_with_obstacle_pct'], 0)} %, bunker in {fmt(sb['matches_with_bunker_pct'], 0)} % of matches "
                   f"(done when started {fmt(sb['bunker_done_when_started_pct'], 0)} %), sweep when wanted {fmt(sb['sweep_when_wanted_pct'], 0)} %; "
                   f"own-side mistakes {fmt(sb['own_side_mistakes'], 0)} (must be 0)")
+        if a.get("s12"):
+            s12 = a["s12"]
+            print(f"    s12: medic matches {fmt(s12['medic_matches_pct'], 0)} % (floor 60), downs stabilised "
+                  f"{fmt(s12['stabilised_pct'])} %, bled out {fmt(s12['bled_out_pct'])} %, downs per match "
+                  f"{fmt(s12['downed_per_match'])}, replacements per match {fmt(s12['reinforced_men_per_match'])}, "
+                  f"HE share of its casualties {fmt(s12['he_share_casualties_pct'])} %")
     # One line for scripts and stage gates.
     fs = o["f"].values()
     gate = {"pool": round(pool, 2), "nowin": o["nowin"],

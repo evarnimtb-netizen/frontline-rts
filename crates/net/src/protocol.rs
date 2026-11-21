@@ -36,8 +36,10 @@ use serde::{Deserialize, Serialize};
 /// 14 (S10b): `ClearMines`, `Demolish`, `ItemKind::Mine` and the bunker pit
 /// `DigProfile` (the one bump for the S10b slice). 15 (S11b):
 /// `ItemKind::RifleGrenade` (6) in `Throw` / `ThrowEach` (never thrown:
-/// the sim refuses it; the one bump for the S11b slice).
-pub const PROTOCOL_VERSION: u16 = 15;
+/// the sim refuses it; the one bump for the S11b slice). 16 (S12): `Tend`,
+/// `Carry`, `Evacuate`, `Reinforce` (refused by the sim until S12a Build
+/// B) and `StockKind::Aid` in the setup (the one bump for the S12 slice).
+pub const PROTOCOL_VERSION: u16 = 16;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -609,6 +611,10 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         CommandKind::PlaceBangalore { units, .. } => {
             !units.is_empty() && units.len() <= MAX_UNITS
         }
+        // S12: men as units.
+        CommandKind::Tend { units, .. }
+        | CommandKind::Carry { units, .. }
+        | CommandKind::Evacuate { units } => !units.is_empty() && units.len() <= MAX_UNITS,
         // S10b: a lane no longer than the largest `lane_max_m` allowed;
         // the map and the match's own `lane_max_m` are the sim's checks.
         CommandKind::ClearMines { a, b, .. } => {
@@ -642,7 +648,9 @@ pub fn command_in_limits(k: &CommandKind) -> bool {
         | CommandKind::LoadMaterials { .. }
         | CommandKind::CutWire { .. }
         // S10b: a squad and a point.
-        | CommandKind::Demolish { .. } => true,
+        | CommandKind::Demolish { .. }
+        // S12: a squad id.
+        | CommandKind::Reinforce { .. } => true,
     };
     lists && encoded_len(k) <= MAX_TURN_BYTES
 }
@@ -1085,6 +1093,52 @@ mod tests {
             if encode(1, &input(k.clone()), &mut buf).is_ok() {
                 assert_eq!(decode(&buf), Err(DecodeError::Limit), "{k:?}");
             }
+        }
+    }
+
+    /// S12 (version 16): the four wound commands encode and keep their
+    /// unit lists to 1..=`MAX_UNITS` ids. Control: an empty or a 151-id
+    /// list is out of limits.
+    #[test]
+    fn net_s12_commands_in_limits() {
+        assert_eq!(PROTOCOL_VERSION, 16);
+        let input = |k: CommandKind| {
+            Packet::Input(Input {
+                ack: BundleAck::default(),
+                turns: vec![InputTurn {
+                    target: 0,
+                    seq0: 0,
+                    cmds: vec![k],
+                }],
+            })
+        };
+        let ids = |n: u32| (0..n).map(SimId).collect::<Vec<_>>();
+        let tend = |n| CommandKind::Tend {
+            units: ids(n),
+            target: SimId(7),
+        };
+        let carry = |n| CommandKind::Carry {
+            units: ids(n),
+            target: SimId(7),
+            to: FxVec2::from_int(40, -3),
+        };
+        let evac = |n| CommandKind::Evacuate { units: ids(n) };
+        let max = MAX_UNITS as u32;
+        let ok = [
+            tend(1),
+            carry(2),
+            evac(3),
+            evac(max),
+            CommandKind::Reinforce { squad: SquadId(9) },
+        ];
+        for k in ok {
+            assert!(command_in_limits(&k), "{k:?}");
+            if encoded_len(&k) <= 1024 {
+                roundtrip(input(k.clone()));
+            }
+        }
+        for k in [tend(0), carry(0), evac(0), tend(max + 1), evac(max + 1)] {
+            assert!(!command_in_limits(&k), "{k:?}");
         }
     }
 

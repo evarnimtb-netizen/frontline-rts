@@ -185,15 +185,24 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // and eight `[ai.arty]` keys) changed it; the S11a2 values were
 // 0x18b7613e8eea3dff, 0xc344d589b3b09caa, 0x4c0df0133ff2fee8,
 // 0x18b7613e8eea3dff, 0xf13dccae38cc7eb7, 0xf39a3859d272ee2e.
+// S12a Build A (`[wounds]`, `[ai.medic]`, `[supply] aid_max`, every value
+// its default) changed it; the S11b values were 0x79ccac510eab09eb,
+// 0x73d9a8f0c9a270d1, 0x3f839d99d254334a, 0x79ccac510eab09eb,
+// 0x03e74cf024db6338, 0x03f390a41147acdf.
+// S12a Build B (the aid post layout: `StockSetup::{beds, staff_min}`,
+// `DigProfile::AidPit` and `[dig.profiles.aid_pit]`) changed it; the
+// Build A values were 0x2bf48bdb91e667a2, 0xe8c49d61d6601d59,
+// 0xc3b4b96edc130ae4, 0x2bf48bdb91e667a2, 0x513d4a1133982eea,
+// 0x76eb474b3fe36957.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x79ccac510eab09eb),
-    ("skirmish usa-ger seed 7 hard", 0x73d9a8f0c9a270d1),
-    ("test_unlock ger-usa seed 1 normal", 0x3f839d99d254334a),
-    ("example override ger-usa seed 1 normal", 0x79ccac510eab09eb),
-    ("human ger vs ai usa seed 3 easy", 0x03e74cf024db6338),
+    ("skirmish ger-usa seed 1 normal", 0x1e1c4d16624e99e9),
+    ("skirmish usa-ger seed 7 hard", 0xec12abab6c56918f),
+    ("test_unlock ger-usa seed 1 normal", 0x30c12f259a6ed389),
+    ("example override ger-usa seed 1 normal", 0x1e1c4d16624e99e9),
+    ("human ger vs ai usa seed 3 easy", 0x5c3cd09ad6b98d94),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x03f390a41147acdf,
+        0x9959ee9deb0bb7fd,
     ),
 ];
 

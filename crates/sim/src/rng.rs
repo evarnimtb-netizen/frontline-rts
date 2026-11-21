@@ -112,6 +112,9 @@ impl Purpose {
     pub const CB_MARK: Purpose = Purpose(39);
     /// S11b G3: a rifle grenade's spread (tick, firer; two `tri` draws).
     pub const RIFLE_GRENADE: Purpose = Purpose(40);
+    /// S12 W5: a downed man's bleed-out time (tick of the down, the man;
+    /// one draw per down).
+    pub const WOUND_BLEED: Purpose = Purpose(41);
     /// Terrain lattice values; `TERRAIN + octave`.
     pub const TERRAIN: Purpose = Purpose(100);
     /// Match-map lattice values; `MAP_TERRAIN + octave`.

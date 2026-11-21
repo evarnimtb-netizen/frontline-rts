@@ -381,6 +381,21 @@ impl MatchState {
                 None => carrying.push((sid, pct)),
             }
         }
+        // S12 W7: a squad paces to its men carrying a casualty.
+        if self.setup.rules.wounds.enabled != 0 && !self.casualties.is_empty() {
+            for (m, _) in self.carriers() {
+                let Some(pct) = self.carry_pace(ctx.ents, m) else {
+                    continue;
+                };
+                let Some(sid) = ctx.ents.squad.get(m.index()).copied().flatten() else {
+                    continue;
+                };
+                match carrying.iter_mut().find(|(s, _)| *s == sid) {
+                    Some(e) => e.1 = e.1.min(pct),
+                    None => carrying.push((sid, pct)),
+                }
+            }
+        }
         for (&id, sq) in self.squads.iter_mut() {
             // Vehicle squads drive in the Movement stage (`crate::vehicle`).
             if self.setup.squad_types[sq.type_idx as usize]
@@ -407,6 +422,26 @@ impl MatchState {
             }
             if let Some(&(_, pct)) = carrying.iter().find(|(s, _)| *s == id) {
                 speed = speed.mul_int(pct as i32).div_int(100);
+            }
+            // S12 W4: the squad walks at its slowest wounded man's pace.
+            if setup.rules.wounds.enabled != 0 {
+                let wt = &setup.rules.wounds;
+                let slowest = sq
+                    .members
+                    .iter()
+                    .map(|m| ctx.ents.combat[m.index()].wound)
+                    .filter(|w| w.state == crate::wounds::WOUNDED)
+                    .map(|w| {
+                        if w.legs {
+                            wt.legs_speed_pct
+                        } else {
+                            wt.wounded_speed_pct
+                        }
+                    })
+                    .min();
+                if let Some(pct) = slowest {
+                    speed = speed.mul_int(pct as i32).div_int(100);
+                }
             }
             let fast = speed.mul_int(mv.catch_up_speed_pct as i32).div_int(100);
             // A man's own pace (prone men crawl; S10a: inside a wire band

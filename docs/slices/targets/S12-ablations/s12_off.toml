@@ -1,0 +1,12 @@
+# S12 control (docs/slices/S12-wounds-medics.md 2, 9): every S12 switch at its
+# off value. The game must then play exactly as base 1209c99 (target/s12-base40,
+# tools/neutral.py same but for new zero-valued S12 counter keys).
+[wounds]
+enabled = 0
+reinforce = 0
+
+[ai.medic]
+buy = 0
+field = 0
+post = 0
+reinforce = 0

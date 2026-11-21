@@ -38,6 +38,7 @@ use crate::tuning::{
     SupplyTuning, SuppressTuning, SuppressionTuning, ThrowTuning, TransportTuning, TuningRefs,
     VehicleDamageTuning, VehiclePathTuning, check_tuning,
 };
+use crate::tuning::{AiMedicTuning, WoundsTuning};
 use crate::vehicle::{
     AmmoSetup, VehicleSetup, check_ammo, check_vehicle, lower_ammo, lower_vehicle,
 };
@@ -281,7 +282,8 @@ pub use crate::defs::StockKind;
 /// S6: one box of a supply def (lowered `StockBoxDef`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StockBoxSetup {
-    /// Index into `defs::STOCK_BOX_PARTS` (0 stock, 1 radio, 2 crate).
+    /// Index into `defs::STOCK_BOX_PARTS` (0 stock, 1 radio, 2 crate,
+    /// 3 tent).
     pub part: u8,
     /// Half extents (along the facing, across, up).
     pub half: [Fixed; 3],
@@ -313,6 +315,10 @@ pub struct StockSetup {
     /// Index into `MatchSetup::ammo`: the cook-off burst.
     pub cookoff: Option<u16>,
     pub boxes: Vec<StockBoxSetup>,
+    /// S12 W8 aid post: beds (0 for other kinds).
+    pub beds: u8,
+    /// S12 W8 aid post: own medics in its radius it needs to work.
+    pub staff_min: u8,
 }
 
 impl MatchSetup {
@@ -368,6 +374,17 @@ impl MatchSetup {
         let a = &mut self.rules.ai.arty;
         (a.cb_alternate, a.buy_pending, a.how, a.light) = (0, 0, 0, 0);
         self.rifle_grenades_off();
+    }
+
+    /// S12b Build C: every S12 switch 0 on a resolved setup (`[wounds]
+    /// enabled`, `reinforce`, `[ai.medic]` A1-A5): the S12a defaults the
+    /// tests written before Build C assume (the tests of S12 turn on what
+    /// they test).
+    pub fn s12_off(&mut self) {
+        let w = &mut self.rules.wounds;
+        (w.enabled, w.reinforce) = (0, 0);
+        let m = &mut self.rules.ai.medic;
+        (m.buy, m.field, m.post, m.reinforce) = (0, 0, 0, 0);
     }
 
     /// S11b G1: `[items] rifle_grenades` 0 on a resolved setup (the kind
@@ -453,6 +470,8 @@ pub struct RulesSetup {
     pub dugout_pit: DigSetup,
     /// S10b: the bunker's pit.
     pub bunker_pit: DigSetup,
+    /// S12 W8: the aid post's pit.
+    pub aid_pit: DigSetup,
     pub combat: CombatSetup,
     pub items: ItemRulesSetup,
     /// Vehicle rules (S3).
@@ -473,6 +492,8 @@ pub struct RulesSetup {
     pub fire_mission: Option<FireMissionTuning>,
     /// S10a: `[fortify]`; `None`: nothing can be built.
     pub fortify: Option<crate::tuning::FortTuning>,
+    /// S12: `[wounds]` (or the S12a values, every switch off).
+    pub wounds: WoundsTuning,
 }
 
 impl RulesSetup {
@@ -488,6 +509,7 @@ impl RulesSetup {
             DigProfile::MgNestPit => &self.mg_nest_pit,
             DigProfile::DugoutPit => &self.dugout_pit,
             DigProfile::BunkerPit => &self.bunker_pit,
+            DigProfile::AidPit => &self.aid_pit,
         }
     }
 }
@@ -527,6 +549,8 @@ pub enum DigProfile {
     DugoutPit = 7,
     /// S10b: the bunker's pit (engineers only).
     BunkerPit = 8,
+    /// S12 W8: the aid post's shallow pit (medics dig it).
+    AidPit = 9,
 }
 
 impl DigProfile {
@@ -540,6 +564,7 @@ impl DigProfile {
                 | DigProfile::GunPit
                 | DigProfile::MgNestPit
                 | DigProfile::DugoutPit
+                | DigProfile::AidPit
                 | DigProfile::BunkerPit
         )
     }
@@ -661,6 +686,8 @@ pub struct AiSetup {
     pub obstacles: AiObstacleTuning,
     /// S11a1: `[ai.arty]` (or the S11a1 starting values, switches off).
     pub arty: AiArtyTuning,
+    /// S12: `[ai.medic]` (or the S12a values, switches off).
+    pub medic: AiMedicTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1078,17 +1105,22 @@ pub mod member_trait {
     pub const OBSERVER: u8 = 16;
     /// S11a1: carries a radio (the fire-mission radio link, G5).
     pub const RADIO: u8 = 32;
+    /// S12 W6-W8: a medic stabilises downed men, carries them on a
+    /// stretcher with another medic, builds and staffs aid posts.
+    pub const MEDIC: u8 = 64;
     /// Trait names in bit order.
-    pub const NAMES: [(&str, u8); 6] = [
+    pub const NAMES: [(&str, u8); 7] = [
         ("leader", LEADER),
         ("crew_gunner", CREW_GUNNER),
         ("crew_assistant", CREW_ASSISTANT),
         ("ammo_bearer", AMMO_BEARER),
         ("observer", OBSERVER),
         ("radio", RADIO),
+        ("medic", MEDIC),
     ];
     /// Every trait bit.
-    pub const ALL: u8 = LEADER | CREW_GUNNER | CREW_ASSISTANT | AMMO_BEARER | OBSERVER | RADIO;
+    pub const ALL: u8 =
+        LEADER | CREW_GUNNER | CREW_ASSISTANT | AMMO_BEARER | OBSERVER | RADIO | MEDIC;
 }
 
 /// S4 capabilities: what a unit can do; orders and sim rules follow them
@@ -2004,6 +2036,7 @@ impl ModDefs {
                 mg_nest_pit: pit_setup(&rules.dig, |p| p.mg_nest_pit.as_ref()),
                 dugout_pit: pit_setup(&rules.dig, |p| p.dugout_pit.as_ref()),
                 bunker_pit: pit_setup(&rules.dig, |p| p.bunker_pit.as_ref()),
+                aid_pit: pit_setup(&rules.dig, |p| p.aid_pit.as_ref()),
                 combat: {
                     let c = &rules.combat;
                     CombatSetup {
@@ -2133,6 +2166,7 @@ impl ModDefs {
                         fort: a.fort.clone().unwrap_or_default(),
                         obstacles: a.obstacles.clone().unwrap_or_default(),
                         arty: a.arty.clone().unwrap_or_default(),
+                        medic: a.medic.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2148,6 +2182,7 @@ impl ModDefs {
                 supply: rules.supply.clone(),
                 fire_mission: rules.fire_mission.clone(),
                 fortify: rules.fortify.clone(),
+                wounds: rules.wounds.clone().unwrap_or_default(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -2488,6 +2523,8 @@ fn lower_stock(
         supply: d.supply.as_deref().and_then(SupplyKind::from_crate_name),
         g: d.kg.saturating_mul(1000),
         carry_speed_pct: d.carry_speed_pct,
+        beds: d.beds.min(u8::MAX as u32) as u8,
+        staff_min: d.staff_min.min(u8::MAX as u32) as u8,
         cookoff: d.cookoff.as_ref().and_then(|c| index_of(ammo.keys(), c)),
         boxes: d
             .boxes
@@ -2727,6 +2764,7 @@ impl MatchSetup {
             &r.mg_nest_pit,
             &r.dugout_pit,
             &r.bunker_pit,
+            &r.aid_pit,
         ] {
             check(
                 d.pit_line >= Fixed::ZERO && fx_in(d.pit_line, 0, 20),
@@ -2992,6 +3030,8 @@ impl MatchSetup {
                 ai_fort: &a.fort,
                 ai_obstacles: &a.obstacles,
                 ai_arty: &a.arty,
+                wounds: &r.wounds,
+                ai_medic: &a.medic,
             },
         );
         r.at_ditch
@@ -3189,7 +3229,7 @@ impl MatchSetup {
                     && d.built_by.iter().all(|&t| (t as usize) < self.tags.len())
                     && (1..=4).contains(&d.boxes.len())
                     && d.boxes.iter().all(|b| {
-                        b.part < 3
+                        (b.part as usize) < crate::defs::STOCK_BOX_PARTS.len()
                             && (1..=10_000).contains(&b.hp)
                             && b.half.iter().all(|h| *h > Fixed::ZERO && fx_in(*h, 0, 10))
                             && b.offset
@@ -3201,7 +3241,17 @@ impl MatchSetup {
                     && d.cap_g.iter().all(|g| *g <= 10_000_000)
                     && d.g <= 200_000
                     && (10..=100).contains(&d.carry_speed_pct)
-                    && (d.kind != StockKind::Crate || (d.supply.is_some() && d.g > 0)),
+                    && (d.kind != StockKind::Crate || (d.supply.is_some() && d.g > 0))
+                    // S12 W8: an aid post has beds and staff, no stock;
+                    // other kinds have none.
+                    && if d.kind == StockKind::Aid {
+                        (1..=8).contains(&d.beds)
+                            && (1..=8).contains(&d.staff_min)
+                            && d.pit == DigProfile::AidPit
+                            && d.cap_g == [0; 3]
+                    } else {
+                        d.beds == 0 && d.staff_min == 0
+                    },
                 "stocks",
                 "a supply def is out of range",
             );

@@ -37,6 +37,8 @@ roster = [
     "ww2:usa_105mm_m2a1_squad",
     # S11b: the light mortar (appended; ai_weight 0 until the S11b AI stage).
     "ww2:usa_60mm_mortar_squad",
+    # S12: the medic team (appended; ai_weight 0 until S12b).
+    "ww2:usa_aid_men",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

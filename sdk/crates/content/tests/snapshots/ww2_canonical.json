@@ -1249,7 +1249,8 @@
         "ww2:ger_leig18_squad",
         "ww2:ger_vb_trupp",
         "ww2:ger_lefh18_squad",
-        "ww2:ger_kz_grw42_team"
+        "ww2:ger_kz_grw42_team",
+        "ww2:ger_sanitaetstrupp"
       ],
       "start_squads": [
         "ww2:ger_grenadiergruppe",
@@ -1281,7 +1282,8 @@
         "ww2:usa_105mm_m3_squad",
         "ww2:usa_fo_party",
         "ww2:usa_105mm_m2a1_squad",
-        "ww2:usa_60mm_mortar_squad"
+        "ww2:usa_60mm_mortar_squad",
+        "ww2:usa_aid_men"
       ],
       "start_squads": [
         "ww2:usa_rifle_squad",
@@ -2077,6 +2079,17 @@
           "trench_probe_m": 60,
           "trench_probe_step_m": 4
         },
+        "medic": {
+          "buy": 1,
+          "enemy_clear_m": 40,
+          "field": 1,
+          "front_m": 60,
+          "max_teams": 2,
+          "min_inf_squads": 4,
+          "post": 1,
+          "reinforce": 1,
+          "reinforce_below_pct": 60
+        },
         "mix": {
           "at": 20,
           "engineer": 15,
@@ -2334,6 +2347,18 @@
           "spoil_crater_pct": 150
         },
         "profiles": {
+          "aid_pit": {
+            "all_round": true,
+            "depth_cm": 40,
+            "engineers_only": false,
+            "floor_cm": 150,
+            "max_length_m": 5,
+            "parapet_cm": 20,
+            "passes": 2,
+            "pit_length_cm": 250,
+            "wall_cm": 30,
+            "work_per_m": 12000
+          },
           "at_ditch": {
             "all_round": false,
             "depth_cm": 230,
@@ -2582,6 +2607,7 @@
       "pop_cap": 150,
       "projectile_cap": 2048,
       "supply": {
+        "aid_max": 2,
         "arty_base_rearm": 1,
         "base_bomb_after_fire_s": 0,
         "base_bomb_s": 0,
@@ -2758,6 +2784,35 @@
         "unlock_s": 240,
         "wounded_hp": 50,
         "wreck_cap": 32
+      },
+      "wounds": {
+        "auto_tend_m": 25,
+        "bandage_s": 10,
+        "bleed_ms_per_hp": 4000,
+        "down_bleed_max_s": 180,
+        "down_bleed_min_s": 60,
+        "drag_speed_pct": 30,
+        "enabled": 1,
+        "evac_refund_pct": 40,
+        "evac_s": 30,
+        "head_damage_pct": 100,
+        "head_kill_dmg": 0,
+        "head_top_pct": 12,
+        "legs_bottom_pct": 45,
+        "legs_damage_pct": 60,
+        "legs_speed_pct": 60,
+        "overkill_kill": 60,
+        "reinforce": 1,
+        "reinforce_cost_pct": 100,
+        "return_hp_pct": 75,
+        "stabilise_s": 15,
+        "stretcher_speed_pct": 60,
+        "torso_damage_pct": 100,
+        "treat_s": 60,
+        "wounded_hp": 50,
+        "wounded_reload_pct": 125,
+        "wounded_speed_pct": 85,
+        "wounded_spread_pct": 130
       }
     }
   },
@@ -3729,6 +3784,56 @@
       "vehicle": "ww2:ger_pz4_h",
       "weapon": ""
     },
+    "ww2:ger_sanitaetstrupp": {
+      "ai_weight": 10,
+      "capabilities": [
+        "dig_basic"
+      ],
+      "cooldown_s": 30,
+      "cost": 66,
+      "dig_rate_pct": 100,
+      "faction": "ww2:germany",
+      "hp": 100,
+      "id": "ww2:ger_sanitaetstrupp",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "slot": "leader",
+          "traits": [
+            "leader",
+            "medic"
+          ],
+          "weapon": "ww2:p38"
+        },
+        {
+          "count": 1,
+          "slot": "medic",
+          "traits": [
+            "medic"
+          ],
+          "weapon": "ww2:p38"
+        }
+      ],
+      "men": 0,
+      "name": "Sanitätstrupp",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "short_name": "Sanitäter",
+      "sight_m": 150,
+      "sources": [
+        "US War Department TM-E 30-451, Handbook on German Military Forces (1945): company stretcher bearers (Krankenträger) and medical NCOs",
+        "infantry-structures.md 5, 7.3; roster-expansion.md S12 (Sanitätstrupp, 2 men, P 38)"
+      ],
+      "spacing_dm": 30,
+      "speed_cm_s": 290,
+      "steadiness_pct": 100,
+      "tags": [
+        "medic"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
     "ww2:ger_sdkfz11_squad": {
       "ai_weight": 0,
       "cost": 0,
@@ -4592,6 +4697,62 @@
       "steadiness_pct": 100,
       "tags": [
         "gun_crew"
+      ],
+      "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:usa_aid_men": {
+      "ai_weight": 10,
+      "capabilities": [
+        "dig_basic"
+      ],
+      "cooldown_s": 30,
+      "cost": 80,
+      "dig_rate_pct": 100,
+      "faction": "ww2:usa",
+      "hp": 100,
+      "id": "ww2:usa_aid_men",
+      "initial_cooldown_s": 0,
+      "members": [
+        {
+          "count": 1,
+          "rounds": {
+            "ww2:45acp": 0
+          },
+          "slot": "leader",
+          "traits": [
+            "leader",
+            "medic"
+          ],
+          "weapon": "ww2:m1911a1"
+        },
+        {
+          "count": 1,
+          "rounds": {
+            "ww2:45acp": 0
+          },
+          "slot": "aid_man",
+          "traits": [
+            "medic"
+          ],
+          "weapon": "ww2:m1911a1"
+        }
+      ],
+      "men": 0,
+      "name": "Aid Men",
+      "recall_cooldown_s": 0,
+      "role": "rifle",
+      "short_name": "Aid Men",
+      "sight_m": 150,
+      "sources": [
+        "US War Department FM 8-10, Medical Service of Field Units (1942): company aid men of the battalion medical section, unarmed",
+        "infantry-structures.md 5, 7.3; roster-expansion.md S12 (Aid Men, 2 men, unarmed)"
+      ],
+      "spacing_dm": 30,
+      "speed_cm_s": 290,
+      "steadiness_pct": 100,
+      "tags": [
+        "medic"
       ],
       "unlock_s": 0,
       "weapon": ""
