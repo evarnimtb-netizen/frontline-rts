@@ -4,32 +4,23 @@ Branch `claude/project-thread-aj1tww`, base `<BASE>` = `6f7bda0` (main: S12 merg
 Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never `target/`, `.claude/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S13 Fix (after S13-ai Build C) done** (head after this log). Next: Measure (480 with `targets/S13.toml`, ablations
-`heavy_off`, `push_off` on 480). **T155 (T179a-d) still misses on the 40: tuning, not a defect; owner levers below.**
-**Code map** as C's (H1 `ai.rs` `Planner::heavy_plan` and the heavy step in `buy`; H2 `ai/overwatch.rs`; H3 `ai/armour.rs`), plus
-`VehicleSetup::glacis_box` (the hull body's top box: box 0 before S13): the presenter's hull and glacis (V2) and the spotting hull
-point (`Geo::body_top`, V3a). `AmmoMechanism::takes_slope_class` (exhaustive allow-list). HUD badge names the binding card cap.
-**40 sets** (`target/s13-F-40` default; `target/s13-F-off40` = `s13_off`): default Germany 20/40, no winner 0, median 20.6 min
-(C: 20/40, 20.6). Heavy buys (matches with one): Panther 9/40 (22.5 %), Tiger 2/40 (5 %), Jumbo 16/40 (40 %), M36 0, 76 W 0;
-plans/buys/drops Germany 39/11/10, USA 36/16/6. Neutral: `neutral.py target/s13-base40 target/s13-F-off40`: same 40/40.
-**T155 diagnosis (traced per buy, seeds 1-4).** No rule does other than its doc, no S13 card is filtered out: the 76 W and M36 are
-in the vehicle slot's ready list from 6:00 / 8:00. (1) The slot's pick is "fewest buys per weight, ties roster order"
-(`min_by` keeps the first minimum). Every vehicle card has weight 100 and 0 buys until the first tank, so the Sherman (roster 8th)
-wins over the M10 (11th), the M3A1 (12th), the 76 W (22nd) and the M36 (23rd); unaffordable, the slot saves for it ("no cheaper
-card instead"). (2) The AI's budget reaches 590 late: first US tank-slot buys at 16-20 min in the traces (both sides; budget held
-at 100-450 by the other slots, the guns' and arty pots, `tank_reserve_mp`); about one tank-slot buy a match (US 24 in 40, base 37).
-The 76 W is the 4th slot buy of a match, the M36 the 5th. (3) From 10:00, with armour seen, H1 saves for the Jumbo and blocks all
-non-urgent buys (by its doc) for up to 240 s. Germany: H1 picks the Panther first (fewest buys, roster order), so the Tiger comes
-only after a Panther; 10 of 39 plans drop unaffordable (1050 / 1200 MP in 240 s).
-**Smallest lever set (owner; plan 7 order cost, unlock_s, cooldown_s, max_alive, H1 timing):** M36: none of plan 7's levers moves
-it (its rank is weight and roster order, not cost or time): the smallest is `ai_weight` M36 > 100 (101 is enough to win the tie
-with the 0-buy Sherman once ready at 8:00), outside plan 7's list. Panther (22.5 %, one match short; read on 480 first): cost
-1050, then `heavy_save_max_s` 240. Tiger (5 %): cost 1200, then H1 timing; its order behind the Panther is H1's pick rule (a rule).
-**Armour-test 45** is a known miss (T184d `kind = "report"`, TODO S13-F1): the PaK 40's old PzGr 40 is unclassed (S13-1b, balance
-pass). Cases 41-46 otherwise as C's (not re-run; V6 moved Panther/Tiger bins and anchors and the 76 mm reload 6.0 -> 6.5 s).
-**Deviations.** (1) Targets T174-T184 = plan T150-T159 + 24. (2) `heavy_buy` 0 also gates the 76 W and M36 (tag `heavy_wave`).
-(3) A drop forgets the sighting. (4) Cases 41-46 stage their own fights. (5) T156 by type, T157 losses by type, T159: not counted.
-(6) V4a has no own test. (7) T184d reported, not hard (case 45). (8) V6's MG round counts stay (no figure read; comments say so).
+**State: S13 G2 (after S13 Fix) done** (head after this log). Next: Measure (480 with `targets/S13.toml`, ablations `heavy_off`,
+`push_off` on 480), on a binary with G2 (the 480 started during G does not have it). **T155 (T179a-d) still misses on the 40.**
+**Code map** as F's, plus the G2 tie rule in `ai.rs` `buy` (the vehicle slot's `min_by`, `wave_rank`) and
+`Game::card_unlock_ticks` (the unlock `call_in_check` uses). Gate: `[ai.armour] heavy_buy` (0 in `s13_off`, `heavy_off`).
+**40 sets:** `target/s13-H-40` (G2 default): Germany 20/40, no winner 0, median 20.6 min (min 11.25, max 31.68), as F's
+`target/s13-F-40` but one US match (a 76 W instead of a Sherman). Heavy buys (matches with one): Panther 9/40, Tiger 2/40, Jumbo
+16/40, M36 0, 76 W 1/40; plans/buys/drops Germany 38/11/10, USA 36/16/6. Vehicle slot per card (bought), G2 / F: USA Sherman
+18/19, M10 4/4, M3A1 1/1, 76 W 1/0, M36 0/0; Germany Pz IV 27/27, StuG 5/5, Sdkfz 251 1/1 (Panther, Tiger, Jumbo: H1, not the slot).
+`s13_off` is unchanged by G2 (gate 0: roster order), so F's neutral reading stands.
+**T155 after G2.** The tie rule works (tests) but rarely applies: the slot saves for the 0-buy Sherman (590) until the budget
+reaches it, so at the moment of the pick a 690 / 760 wave card is seldom affordable. F's diagnosis otherwise stands: late budget
+(first US slot buy at 16-20 min, about one a match), H1 saving for the Jumbo from 10:00, Panther before Tiger by H1's pick rule.
+**Owner levers:** M36 / 76 W: `ai_weight` > 100 (outside plan 7; it also makes the slot save for them), or a rule change
+(e.g. let a wave card take the tie when the slot would save anyway). Panther: cost 1050, then `heavy_save_max_s` 240. Tiger: cost
+1200, then H1 timing.
+**Armour-test 45** is a known miss (T184d `kind = "report"`, TODO S13-F1): PaK 40's old PzGr 40 is unclassed (balance pass).
+**Deviations** as F's (1)-(8); G2: (9) "affordable" means manpower and pop cap both, at the pick.
 
 ## S13a A (Build A)
 Base 40 `target/s13-base40` (unchanged tree at 6f7bda0; cached from the S12 runs of the same binary and mods): Germany 20/40,
@@ -58,12 +49,11 @@ needs a per-commit build. T155: traced, no defect (above). 40 sets: default `tar
 
 
 ## S13 G (vehicle-slot tie)
-Commit 0439e70: the vehicle slot's pick (fewest buys per weight) breaks a tie by the newer card, the later unlock
-(`Game::card_unlock_ticks`, the rule `call_in_check` uses) then the later in the roster, when `[ai.armour] heavy_buy` is 1; with
-0 (`s13_off`, `heavy_off`, every pre-S13 test via `s13_off()`) roster order as before. No new key, no saved field, no data change.
-Tests `vehicle_tie_goes_to_the_newer_card`, `vehicle_tie_roster_order_with_heavy_buy_off`; `check.sh quick 6f7bda0` all ok (1212).
-**40 set** `target/s13-G-40` (default): Germany 19/40, no winner 0, median 19.65 min (min 11.25, max 31.86; F: 20/40, 20.6).
-Heavy buys (matches with one / bought): Panther 8/9, Tiger 3/5, Jumbo 18/19, M36 3/3, 76 W 1/1; plans/buys/drops Germany
-29/14/4, USA 38/19/6. **Side effect:** the rule applies to every tie in the slot, not only the S13 cards. USA: the slot now
-saves for the M36 (760) over the Sherman (590): US slot buys 4 in 40 (F: 24, Sherman 19, M10 4, M3A1 1). Germany: the StuG III
-(later in the roster) wins over the Pz IV: StuG 30, Pz IV 1 (F: 5, 27). Owner: keep, or narrow the rule to `heavy_wave` cards.
+Commits: 0439e70 G (the tie to the newer card in the vehicle slot, any card); 385dc6c its log; 3fc795c G2 (narrowed); then this
+log. G's 40 set `target/s13-G-40`: Germany 19/40, median 19.65; side effect not acceptable: every tie moved (US slot saved for the
+M36: 4 slot buys in 40, F 24; Germany StuG 30 / Pz IV 1, F 5 / 27). **G2:** with `[ai.armour] heavy_buy` 1, a tie in the vehicle
+slot goes to a `heavy_wave` card only if the AI can pay it now (manpower and pop); among such cards the later unlock, then the later
+in the roster. Any other tie, and an out-of-reach wave card, keeps roster order and its saving, as before. `heavy_buy` 0: as main.
+No new key, no saved field, no data change. `check.sh quick 6f7bda0` all ok (1213). Tests `vehicle_tie_goes_to_the_newer_card`,
+`vehicle_tie_unaffordable_wave_card_keeps_roster_order`, `vehicle_tie_roster_order_with_heavy_buy_off`. 40 set `target/s13-H-40`:
+"For the next stage".
