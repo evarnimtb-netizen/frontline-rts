@@ -2020,8 +2020,21 @@ impl ArmourTally {
             {
                 let pen = k == ArmourEventKind::Penetration as u8;
                 if impact {
-                    let zone = ZONE_NAMES.get(e.zone as usize).copied().unwrap_or("none");
-                    *p.hits_by_zone.entry(zone.into()).or_default() += 1;
+                    // S13 (review V4a): a vehicle with more than two boxes
+                    // (the S13 defs: hull, superstructure, turret) by its own
+                    // zone names; every older def keeps the S3 names.
+                    let zone = match type_of(e.vehicle)
+                        .and_then(|t| s.vehicles.get(t))
+                        .filter(|v| v.boxes.len() > 2)
+                    {
+                        Some(v) => v.zone_name(e.zone),
+                        None => ZONE_NAMES
+                            .get(e.zone as usize)
+                            .copied()
+                            .unwrap_or("none")
+                            .to_string(),
+                    };
+                    *p.hits_by_zone.entry(zone).or_default() += 1;
                     if heat {
                         p.rocket_hits += 1;
                         p.rocket_pens += pen as u32;
