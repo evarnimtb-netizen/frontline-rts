@@ -461,8 +461,21 @@ fn t151h_old_rounds_are_unchanged() {
         },
     );
     assert_eq!(s.rules.armour.obliquity, 1);
-    assert_eq!(on, &off);
-    assert!(on.ammo.iter().all(|t| t.o1.is_none()));
+    // S13a Build B: the seven new AP rounds are classed; every other table
+    // (all the old rounds, the HE rounds) is equal with the rule on and off,
+    // and a classed round is the only difference.
+    let mut on_old = on.clone();
+    for (i, a) in s.ammo.iter().enumerate() {
+        if a.slope_class.is_some() {
+            assert!(on.ammo[i].o1.is_some(), "{}", a.id);
+            assert!(off.ammo[i].o1.is_none(), "{}", a.id);
+            on_old.ammo[i] = off.ammo[i].clone();
+        } else {
+            assert!(on.ammo[i].o1.is_none(), "{}", a.id);
+        }
+    }
+    assert_eq!(on_old, off);
+    assert_eq!(s.ammo.iter().filter(|a| a.slope_class.is_some()).count(), 7);
     let mut a = s.ammo[0].clone();
     a.mechanism = AmmoMechanism::Aphe;
     a.slope_class = Some(SlopeClass::Apcbc);

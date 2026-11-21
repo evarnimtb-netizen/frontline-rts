@@ -218,7 +218,10 @@ fn the_first_vehicle_of_each_role_is_found() {
             // S11a1: the infantry gun, appended.
             VehicleRole::InfGun,
             // S11b: the field howitzer (an `inf_gun` card), appended.
-            VehicleRole::InfGun
+            VehicleRole::InfGun,
+            // S13a: the Panther and the Tiger, appended.
+            VehicleRole::Tank,
+            VehicleRole::Tank
         ]
     );
     assert_eq!(
@@ -232,7 +235,11 @@ fn the_first_vehicle_of_each_role_is_found() {
             VehicleRole::AtGun,
             VehicleRole::InfGun,
             // S11b: the field howitzer, appended.
-            VehicleRole::InfGun
+            VehicleRole::InfGun,
+            // S13a: the 76 mm Sherman, the M36 and the Jumbo, appended.
+            VehicleRole::Tank,
+            VehicleRole::TankDestroyer,
+            VehicleRole::Tank
         ]
     );
 }
