@@ -2448,8 +2448,44 @@ impl MatchRuntime {
                 if unlock > f.tick {
                     d.set("locked_s", (unlock - f.tick) as f32 / hz);
                 }
-            } else if ty.vehicle.is_some() && locked_s > 0.0 {
-                d.set("locked_s", locked_s);
+            } else if ty.vehicle.is_some() {
+                if locked_s > 0.0 {
+                    d.set("locked_s", locked_s);
+                }
+                // S13 (docs/slices/S13-heavy-wave.md 1): an in-limit card
+                // with its own cap (`max_alive`, or its limit group's
+                // `limit`) shows that count beside the vehicle limit: the
+                // one of the two with fewer places left (the sim refuses
+                // at either).
+                let own = |pred: &dyn Fn(u16) -> bool| {
+                    f.squads
+                        .iter()
+                        .filter(|q| q.owner as usize == local && pred(q.type_idx))
+                        .count() as u32
+                };
+                let mut cap: Option<(u32, u32, &str)> =
+                    (ty.max_alive > 0).then(|| (own(&|k| k == t), ty.max_alive as u32, ""));
+                if let Some(g) = ty.limit_group
+                    && let Some(lg) = setup.rules.limit_groups.get(g as usize)
+                {
+                    let n = own(&|k| {
+                        setup
+                            .squad_types
+                            .get(k as usize)
+                            .and_then(|q| q.limit_group)
+                            == Some(g)
+                    });
+                    let left = |c: &(u32, u32, &str)| c.1.saturating_sub(c.0);
+                    let grp = (n, lg.limit, lg.id.as_str());
+                    if cap.is_none_or(|c| left(&grp) < left(&c)) {
+                        cap = Some(grp);
+                    }
+                }
+                if let Some((n, max, group)) = cap {
+                    d.set("card_alive", n as i64);
+                    d.set("card_max", max as i64);
+                    d.set("card_group", short_id(group));
+                }
             }
             catalog.push(&d.to_variant());
         }

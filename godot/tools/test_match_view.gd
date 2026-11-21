@@ -1547,6 +1547,12 @@ func _test_s8b() -> void:
 	_check(ci._badge(card) == "1/2" and not ci._full(card), "a transport tile shows its own cap")
 	card.alive = 2
 	_check(ci._full(card) and ci.blocked_reason(card) == "card", "at its own cap the tile is blocked")
+	# S13: an in-limit card with its own cap (max_alive or a limit group).
+	var heavy := {"type": "vehicle", "vehicle": "x", "card_alive": 0, "card_max": 1, "card_group": "heavy"}
+	_check(ci._badge(heavy).ends_with(" 0/1") and not ci._card_full(heavy), "an in-limit capped tile shows its cap")
+	heavy.card_alive = 1
+	_check(ci._full(heavy) and ci.blocked_reason(heavy) == "card", "at its card cap an in-limit tile is blocked")
+	_check(ci.refusal_text(heavy) == "this card's limit reached (1)", "the card cap's words")
 	var sel: Node = _view.selection
 	_check(sel.DROP_KINDS.size() == 3 and sel.DROP_COUNT == 4, "drop kinds and count")
 
