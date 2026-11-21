@@ -1,0 +1,5 @@
+# S13 ablation (docs/slices/S13-heavy-wave.md 3): rule O1 off (every round
+# on the cosine law, `slope_class` ignored), the rest as the default. What
+# O1 is worth once classed rounds are in play (S13a Build B on).
+[armour]
+obliquity = 0

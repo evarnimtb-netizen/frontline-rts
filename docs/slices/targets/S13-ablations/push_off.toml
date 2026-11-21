@@ -1,0 +1,4 @@
+# S13 ablation (docs/slices/S13-heavy-wave.md 5, H3; S13-10 (A)): no push
+# limit on the rearm trip. H3 stays on only if this is neutral or worse.
+[ai.armour]
+push_limit = 0

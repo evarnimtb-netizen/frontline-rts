@@ -1,0 +1,14 @@
+# S13 neutrality control (docs/slices/S13-heavy-wave.md 3.2, 3.6, 5): every
+# S13 switch at its off value, rule O1 off too (every round on the cosine
+# law). Against the base 40 (NEUTRAL_BASE, target/s13-base40) it must be
+# same match for match.
+[armour]
+obliquity = 0
+
+[vehicles.gunnery]
+special_min_pct = 0
+
+[ai.armour]
+heavy_buy = 0
+heavy_overwatch = 0
+push_limit = 0
