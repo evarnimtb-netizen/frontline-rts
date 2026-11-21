@@ -69,7 +69,7 @@ top = { thickness_mm = 25 }
 [[boxes]]
 id = "superstructure"
 frame = "hull"
-box = { center = [0, 0, 160], half = [250, 126, 30] }
+box = { center = [0, 0, 160], half = [295, 126, 30] }  # S13 review V5: the hull's full length, front face at the nose
 [boxes.armor]
 # Upper glacis 63.5 at 47 deg (the large-hatch welded hull), side 38 at 0, rear 38 at 10, roof 25.
 front = { thickness_mm = 63.5, slope_deg = 47 }

@@ -72,7 +72,7 @@ top = { thickness_mm = 25 }
 [[boxes]]
 id = "superstructure"
 frame = "hull"
-box = { center = [20, 0, 160], half = [200, 160, 30] }
+box = { center = [0, 0, 160], half = [315, 160, 30] }  # S13 review V5: the hull's full length, front face at the nose
 [boxes.armor]
 # Superstructure front 100 at 8 deg, side 80 at 0, rear 80 at 8, roof 25 (Wikipedia Tiger I; slopes verify).
 front = { thickness_mm = 100, slope_deg = 8 }

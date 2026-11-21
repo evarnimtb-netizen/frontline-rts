@@ -68,7 +68,7 @@ top = { thickness_mm = 25 }
 [[boxes]]
 id = "superstructure"
 frame = "hull"
-box = { center = [0, 0, 160], half = [250, 126, 30] }
+box = { center = [0, 0, 160], half = [295, 126, 30] }  # S13 review V5: the hull's full length, front face at the nose
 [boxes.armor]
 # Glacis 101.6 mm (4 in, 64 plus 38 applied) at 47 deg (verify), upper side 76 at 0 (the weak point, TE-Jumbo), rear 38 at 10.
 front = { thickness_mm = 101.6, slope_deg = 47 }

@@ -72,7 +72,7 @@ top = { thickness_mm = 16 }
 [[boxes]]
 id = "superstructure"
 frame = "hull"
-box = { center = [30, 0, 160], half = [200, 150, 30] }
+box = { center = [0, 0, 160], half = [340, 150, 30] }  # S13 review V5: the hull's full length, front face at the nose
 [boxes.armor]
 # Glacis 80 at 55 deg, upper side 50 at 30 (the G thickened it), rear 40 at 30, crew deck 40 (WWT 174; Isigny measured 57 deg).
 front = { thickness_mm = 80, slope_deg = 55 }

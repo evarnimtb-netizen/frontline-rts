@@ -969,3 +969,27 @@ fn s13_track_band_keeps_the_s3_height() {
         assert!(want - box0 * 0.45 >= 25.0, "control {id}");
     }
 }
+
+/// Review V5: each S13 superstructure runs the hull's full length (its
+/// front face at the nose's), so no strip of box 0's roof shows in front
+/// of the glacis. Control: box 0's length is the reference.
+#[test]
+fn s13_superstructure_spans_the_hull() {
+    let w = flat_world_with(1, |_| {});
+    let s = &w.game().unwrap().setup;
+    for id in S13_VEHICLES {
+        let v = s.vehicles.iter().find(|v| v.id == id).unwrap();
+        let sup = &v.boxes[1].bounds;
+        assert!(v.hull.half.x.0 > 0);
+        assert_eq!(
+            sup.center.x.0 + sup.half.x.0,
+            v.hull.center.x.0 + v.hull.half.x.0,
+            "{id} front"
+        );
+        assert_eq!(
+            sup.center.x.0 - sup.half.x.0,
+            v.hull.center.x.0 - v.hull.half.x.0,
+            "{id} rear"
+        );
+    }
+}
