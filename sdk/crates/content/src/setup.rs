@@ -494,6 +494,8 @@ pub struct RulesSetup {
     pub fortify: Option<crate::tuning::FortTuning>,
     /// S12: `[wounds]` (or the S12a values, every switch off).
     pub wounds: WoundsTuning,
+    /// S13: `[armour]` (rule O1; or the S13 values).
+    pub armour: crate::tuning::ArmourTuning,
 }
 
 impl RulesSetup {
@@ -1328,6 +1330,8 @@ pub struct SquadTypeSetup {
     pub limit_group: Option<u16>,
     /// S4: the AI's weight among ready cards of the same mix tag.
     pub ai_weight: u32,
+    /// S13 H1: a heavy card (see [`crate::defs::SquadDef::ai_heavy`]).
+    pub ai_heavy: bool,
     /// S5a: the distinct feeds the men use (at most [`MAX_FEEDS`], in
     /// first-use order over the members: weapon, sidearm, then the rest of
     /// the slot's `rounds`).
@@ -1790,6 +1794,7 @@ impl ModDefs {
                         max_alive: s.max_alive,
                         limit_group: s.limit_group.as_deref().and_then(limit_idx),
                         ai_weight: s.ai_weight.unwrap_or(crate::variant::DEFAULT_AI_WEIGHT),
+                        ai_heavy: s.ai_heavy,
                         feeds: Vec::new(),
                         feed_cap: [0; MAX_FEEDS],
                     };
@@ -1895,6 +1900,7 @@ impl ModDefs {
                     max_alive: s.max_alive,
                     limit_group: s.limit_group.as_deref().and_then(limit_idx),
                     ai_weight: s.ai_weight.unwrap_or(crate::variant::DEFAULT_AI_WEIGHT),
+                    ai_heavy: s.ai_heavy,
                     feeds,
                     feed_cap,
                 }
@@ -2183,6 +2189,7 @@ impl ModDefs {
                 fire_mission: rules.fire_mission.clone(),
                 fortify: rules.fortify.clone(),
                 wounds: rules.wounds.clone().unwrap_or_default(),
+                armour: rules.armour.clone().unwrap_or_default(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -3032,6 +3039,7 @@ impl MatchSetup {
                 ai_arty: &a.arty,
                 wounds: &r.wounds,
                 ai_medic: &a.medic,
+                armour: &r.armour,
             },
         );
         r.at_ditch
@@ -3403,6 +3411,7 @@ impl MatchSetup {
                     && s.limit_group
                         .is_none_or(|g| (g as usize) < r.limit_groups.len())
                     && s.ai_weight <= 10_000
+                    && (!s.ai_heavy || s.vehicle.is_some())
                     && !s.short_name.is_empty(),
                 "squad_types.card",
                 "capabilities, training, tags, card limits or weight out of range",

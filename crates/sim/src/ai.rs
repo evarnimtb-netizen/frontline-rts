@@ -396,6 +396,13 @@ pub struct AiState {
     pub fo: BTreeMap<SquadId, AiFo>,
     /// S11a1 A3: tick the last observer team was lost (0: none).
     pub fo_lost_at: u64,
+    /// S13 H1 (docs/slices/S13-heavy-wave.md 5; S13-ai fills it): tick an
+    /// enemy tank, TD or assault gun was last seen (0: never). Unlike the
+    /// `enemy_vehicle_seen` latch, role-filtered and dated.
+    pub armour_seen_at: u64,
+    /// S13 H1: tick the current heavy plan (saving for an `ai_heavy` card)
+    /// started (0: no plan).
+    pub heavy_plan_since: u64,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -749,6 +756,13 @@ pub struct AiCounters {
     pub post_builds: u32,
     pub reinforce_orders: u32,
     pub medic_holds: u32,
+    /// S13 H1, H3 (S13-ai): heavy plans started, heavies bought, plans
+    /// dropped after `heavy_save_max_s`; tanks turned back at the push
+    /// limit.
+    pub heavy_plans: u32,
+    pub heavy_buys: u32,
+    pub heavy_drops: u32,
+    pub push_turnbacks: u32,
 }
 
 impl AiState {
@@ -797,6 +811,8 @@ impl AiState {
             arty: BTreeMap::new(),
             fo: BTreeMap::new(),
             fo_lost_at: 0,
+            armour_seen_at: 0,
+            heavy_plan_since: 0,
         }
     }
 
@@ -950,6 +966,9 @@ impl AiState {
             || !self.validate_s10b(g, player, tick, ents_len)
             // S11a1.
             || !arty::validate_arty(g, player, tick, &self.arty, &self.fo, self.fo_lost_at)
+            // S13.
+            || self.armour_seen_at > tick
+            || self.heavy_plan_since > tick
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             // Due one reaction delay after its plan at most (the save fuzz).
             || self.pending.last().is_some_and(|c| {

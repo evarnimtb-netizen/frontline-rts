@@ -44,9 +44,9 @@ in the AI, HE for the 57 mm.
 
 ## Versions
 
-`SAVE_VERSION` **29** and `PROTOCOL_VERSION` **15** on main (`world.rs`, `protocol.rs`); **30** and **16** on the branch
-(S12: `Tend`, `Carry`, `Evacuate`, `Reinforce` on the wire; the layout fields are in `S12-log.md`). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
-S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16 (branch). A save, hash or command change
+`SAVE_VERSION` **30** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **31** and **16** on the branch
+(S13: no new command; the layout fields are in `S13-log.md`). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
+S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16 (branch). A save, hash or command change
 bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
 BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 

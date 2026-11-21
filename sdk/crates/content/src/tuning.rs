@@ -508,7 +508,42 @@ tuning_table! {
         /// ... and an open-topped vehicle with known enemy infantry this
         /// close reverses away (m).
         open_top_infantry_m: 0..=500 = "default_open_top_infantry_m",
+        /// S13 H1 switch (docs/slices/S13-heavy-wave.md 5): a card with
+        /// `ai_heavy` is bought by its own path once enemy armour was seen
+        /// (0: off; S13a: 0).
+        heavy_buy: 0..=1 = "d_s13_zero",
+        /// H1: an enemy tank, TD or assault gun seen this recently starts
+        /// a heavy plan (s) ...
+        heavy_seen_s: 0..=3600 = "d_s13_heavy_seen_s",
+        /// ... and the AI saves for the heavy at most this long (s).
+        heavy_save_max_s: 0..=3600 = "d_s13_heavy_save_max_s",
+        /// S13 H2 switch: a vehicle def with `ai_overwatch` joins the TD/AG
+        /// overwatch habit (0: off; S13a: 0).
+        heavy_overwatch: 0..=1 = "d_s13_zero",
+        /// S13 H3 switch: the push limit extends the rearm trip (0: off;
+        /// S13a: 0) ...
+        push_limit: 0..=1 = "d_s13_zero",
+        /// ... a tank this far from the nearest rearm source (m) ...
+        push_without_supply_m: 0..=5000 = "d_s13_push_without_supply_m",
+        /// ... holding at most this many main-gun rounds goes back.
+        tank_reserve_rounds: 0..=200 = "d_s13_tank_reserve_rounds",
     }
+}
+
+fn d_s13_zero() -> u32 {
+    0
+}
+fn d_s13_heavy_seen_s() -> u32 {
+    300
+}
+fn d_s13_heavy_save_max_s() -> u32 {
+    240
+}
+fn d_s13_push_without_supply_m() -> u32 {
+    300
+}
+fn d_s13_tank_reserve_rounds() -> u32 {
+    10
 }
 
 fn default_overwatch_back_m() -> u32 {
@@ -743,6 +778,10 @@ tuning_table! {
         /// S8a: a small-arms round meeting a plate more obliquely than
         /// this glances off (deg from the normal; default 70).
         small_arms_ricochet_deg: 30..=89 = "default_small_arms_ricochet_deg",
+        /// S13 (docs/slices/S13-heavy-wave.md 3.6): `Auto` loads the
+        /// special round only when its chance is at least this (%; 0: any
+        /// higher chance, as before S13).
+        special_min_pct: 0..=100 = "d_s13_zero",
     }
 }
 
@@ -3173,6 +3212,75 @@ impl Default for AiMedicTuning {
     }
 }
 
+tuning_table! {
+    /// `[armour]` (S13, docs/slices/S13-heavy-wave.md 3, rule O1):
+    /// obliquity by plate-to-calibre ratio for rounds with a
+    /// `slope_class`. Absent: these values. With no classed round the
+    /// rule changes nothing.
+    pub struct ArmourTuning {
+        /// O1 switch (0: every round on the cosine law, `slope_class`
+        /// ignored).
+        obliquity: 0..=1 = "d_ar_obliquity",
+        /// The O1 weight ramps from 0 at this plate-to-calibre ratio (% of
+        /// the calibre) ...
+        td_lo_pct: 0..=300 = "d_ar_td_lo_pct",
+        /// ... to its class's full weight at this one (%).
+        td_hi_pct: 0..=300 = "d_ar_td_hi_pct",
+        /// Full weight of class `apcbc` (AP, APC, APCBC: `c^1.5` at 100 %)
+        /// (%) ...
+        apcbc_w_pct: 0..=100 = "d_ar_hundred",
+        /// ... and of class `apcr` (APCR, HVAP: `c^2` at 100 %) (%).
+        apcr_w_pct: 0..=100 = "d_ar_hundred",
+    }
+}
+
+fn d_ar_obliquity() -> u32 {
+    1
+}
+fn d_ar_td_lo_pct() -> u32 {
+    40
+}
+fn d_ar_td_hi_pct() -> u32 {
+    90
+}
+fn d_ar_hundred() -> u32 {
+    100
+}
+
+impl ArmourTuning {
+    fn check_more(&self, table: &str, out: &mut Vec<Issue>) {
+        // The ramp needs lo < hi (no division by zero in the weight).
+        if self.td_lo_pct >= self.td_hi_pct {
+            out.push(
+                Issue::new(
+                    format!("{table}.td_lo_pct"),
+                    format!(
+                        "must be below td_hi_pct ({} >= {})",
+                        self.td_lo_pct, self.td_hi_pct
+                    ),
+                )
+                .with_hint(format!(
+                    "[{table}] td_lo_pct = {}",
+                    self.td_hi_pct.saturating_sub(1)
+                )),
+            );
+        }
+    }
+}
+
+impl Default for ArmourTuning {
+    /// The S13 values (a rules def without `[armour]`).
+    fn default() -> ArmourTuning {
+        ArmourTuning {
+            obliquity: 1,
+            td_lo_pct: 40,
+            td_hi_pct: 90,
+            apcbc_w_pct: 100,
+            apcr_w_pct: 100,
+        }
+    }
+}
+
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
 pub const TABLES: &[(&str, &[TuningKey])] = &[
@@ -3192,6 +3300,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("ai.arty", AiArtyTuning::KEYS),
     ("wounds", WoundsTuning::KEYS),
     ("ai.medic", AiMedicTuning::KEYS),
+    ("armour", ArmourTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -3261,6 +3370,7 @@ pub(crate) struct TuningRefs<'a> {
     pub ai_arty: &'a AiArtyTuning,
     pub wounds: &'a WoundsTuning,
     pub ai_medic: &'a AiMedicTuning,
+    pub armour: &'a ArmourTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -3327,6 +3437,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.ai_arty.check(&p("ai.arty"), out);
     t.wounds.check(&p("wounds"), out);
     t.ai_medic.check(&p("ai.medic"), out);
+    t.armour.check(&p("armour"), out);
 }
 
 #[cfg(test)]

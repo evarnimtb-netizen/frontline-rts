@@ -1901,10 +1901,16 @@
           "face_range_m": 600,
           "face_slack_deg": 20,
           "halted_mm_s": 300,
+          "heavy_buy": 0,
+          "heavy_overwatch": 0,
+          "heavy_save_max_s": 240,
+          "heavy_seen_s": 300,
           "open_top_infantry_m": 60,
           "overwatch_back_m": 35,
           "overwatch_candidates": 8,
           "overwatch_ring_m": 30,
+          "push_limit": 0,
+          "push_without_supply_m": 300,
           "rearm_ap_below": 3,
           "rearm_full_pct": 90,
           "rearm_max_s": 120,
@@ -1914,6 +1920,7 @@
           "relocate_m": 40,
           "retreat_engine_pct": 30,
           "tank_reserve_mp": 200,
+          "tank_reserve_rounds": 10,
           "td_hunt_m": 300,
           "td_infantry_standoff_m": 120,
           "threat_m": 300
@@ -2222,6 +2229,13 @@
           "repath_s": 8,
           "return_below_pct": 20
         }
+      },
+      "armour": {
+        "apcbc_w_pct": 100,
+        "apcr_w_pct": 100,
+        "obliquity": 1,
+        "td_hi_pct": 90,
+        "td_lo_pct": 40
       },
       "call_in": {
         "spawn_clear_m": 10,
@@ -2730,7 +2744,8 @@
           "open_top_item_cone_deg": 90,
           "small_arms_ricochet_deg": 70,
           "spall_reach_m": 3,
-          "special_below_pct": 50
+          "special_below_pct": 50,
+          "special_min_pct": 0
         },
         "guns": {
           "abandon_s": 10,

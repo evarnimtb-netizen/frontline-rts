@@ -343,6 +343,21 @@ impl AmmoMechanism {
     }
 }
 
+/// S13 (docs/slices/S13-heavy-wave.md 3, rule O1): how a round's
+/// penetration falls with the plate's slope beyond the cosine law, by
+/// plate-to-calibre ratio. A round without a class keeps the cosine law.
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum SlopeClass {
+    /// Full-calibre AP, APC, APCBC: `c^1.5` at full weight.
+    Apcbc = 0,
+    /// APCR, HVAP: `c^2` at full weight.
+    Apcr = 1,
+}
+
 /// S11a1: the highest main-gun elevation a vehicle def may name (deg).
 pub const LOW_ANGLE_TOP_DEG: i32 = 89;
 /// S11a1, one rule for the def cross-check and the setup check: a main gun
@@ -657,6 +672,11 @@ pub struct VehicleDef {
     /// S9: what this vehicle can tow.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tow: Option<TowDef>,
+    /// S13 H2 (docs/slices/S13-heavy-wave.md 5): the AI keeps this vehicle
+    /// on overwatch like a TD or assault gun (with `[ai.armour]
+    /// heavy_overwatch` on). Default false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ai_overwatch: bool,
 }
 
 /// S9: one `[[service]]` entry (`count` slots at the same spot).
@@ -1256,6 +1276,10 @@ pub struct AmmoDef {
     /// weapon's only feed.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub rare: bool,
+    /// S13 (rule O1): `apcbc` or `apcr`; absent: the cosine law. Not on
+    /// `he` or `heat` rounds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slope_class: Option<SlopeClass>,
 }
 
 /// The core (or HEAT jet) after penetration.
@@ -2660,6 +2684,20 @@ impl AmmoDef {
             out.push(Issue::new("name", "must not be empty"));
         }
         range(&mut out, "caliber_mm", self.caliber_mm as i64, 1, 500);
+        if self.slope_class.is_some()
+            && !matches!(self.mechanism, AmmoMechanism::Ap | AmmoMechanism::Aphe)
+        {
+            out.push(
+                Issue::new(
+                    "slope_class",
+                    format!(
+                        "only `ap` and `aphe` rounds have a slope class, not `{}`",
+                        self.mechanism.name()
+                    ),
+                )
+                .with_hint("remove slope_class"),
+            );
+        }
         range(
             &mut out,
             "muzzle_velocity_m_s",
@@ -3176,6 +3214,8 @@ pub struct VehicleSetup {
     pub optic_sight_pct: u32,
     /// S9: what it can tow.
     pub tow: Option<TowSetup>,
+    /// S13 H2: the AI's overwatch habit (see [`VehicleDef::ai_overwatch`]).
+    pub ai_overwatch: bool,
 }
 
 /// S8b: a resolved `[supply]` (see [`TruckSupplyDef`]). Arrays are by
@@ -3341,6 +3381,8 @@ pub struct AmmoSetup {
     pub supply: Option<crate::setup::SupplySetup>,
     /// S5a: a rare round (D3).
     pub rare: bool,
+    /// S13: rule O1's class (`None`: the cosine law).
+    pub slope_class: Option<SlopeClass>,
 }
 
 // ------------------------------------------------------------- lowering --
@@ -3387,6 +3429,7 @@ pub(crate) fn lower_ammo(a: &AmmoDef) -> AmmoSetup {
             g: sp.g,
         }),
         rare: a.rare,
+        slope_class: a.slope_class,
     }
 }
 
@@ -3654,6 +3697,7 @@ pub(crate) fn lower_vehicle(
             max_kg: t.max_kg,
             towed_speed_pct: t.towed_speed_pct,
         }),
+        ai_overwatch: v.ai_overwatch,
         shields: v
             .shields
             .iter()
@@ -3849,6 +3893,10 @@ pub(crate) fn check_ammo(a: &AmmoSetup) -> Option<&'static str> {
         || a.blast.is_some() != a.mechanism.bursts()
     {
         return Some("ammo.mechanism: parts disagree with the mechanism");
+    }
+    // S13 (O1): a slope class only on a full-bore or sub-calibre AP round.
+    if a.slope_class.is_some() && !matches!(a.mechanism, AmmoMechanism::Ap | AmmoMechanism::Aphe) {
+        return Some("ammo.slope_class: only on `ap` and `aphe` rounds");
     }
     if let Some(c) = &a.core
         && (c.damage > 1000 || !fx_in(c.length, 0, 5) || !(1..=3).contains(&c.max_boxes))

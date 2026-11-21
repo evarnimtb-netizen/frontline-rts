@@ -706,6 +706,10 @@ lead_error_pct = 40
 # when the special round's chance is higher (%). 50: the spec's rule
 # (docs/slices/S3b-balance.md P1 (c)).
 special_below_pct = 50
+# S13 (docs/slices/S13-heavy-wave.md 3.6): the special round also needs at
+# least this chance (%). 0: any higher chance, as before S13 (S13-ai sets 25
+# if T156 shows rare rounds wasted on hopeless shots).
+special_min_pct = 0
 # S7 casemate gunnery (docs/slices/S7-casemate-td.md 3): a casemate gun lays
 # only within its traverse arc; when the target's bearing lies outside the
 # arc less this margin (deg), the driver pivots the hull toward it, then
@@ -1059,6 +1063,14 @@ relocate_m = 40
 td_hunt_m = 300
 td_infantry_standoff_m = 120
 open_top_infantry_m = 60
+# S13 heavies (docs/slices/S13-heavy-wave.md 5, rules H1-H3); every switch 0 in S13a.
+heavy_buy = 0                # switch H1: buy an ai_heavy card once enemy armour was seen
+heavy_seen_s = 300           # H1: an enemy tank, TD or assault gun seen this recently (s)
+heavy_save_max_s = 240       # H1: save for the heavy at most this long (s)
+heavy_overwatch = 0          # switch H2: ai_overwatch vehicles join the TD/AG overwatch
+push_limit = 0               # switch H3: the push limit extends the rearm trip
+push_without_supply_m = 300  # H3: this far from the nearest rearm source (m; vehicles.md 7.5) ...
+tank_reserve_rounds = 10     # H3: ... with at most this many main-gun rounds: go back
 
 # The AI's fire-and-move, AT-team hunts and satchel hunts (S3b,
 # docs/slices/S3b-balance.md B3-B5). Starting values for the Tune stage.
@@ -1771,3 +1783,16 @@ min_inf_squads = 4           # A1: only while this many infantry squads live
 front_m = 60                 # A3: a field team follows this far behind the lead squad (m; IS 7.3)
 enemy_clear_m = 40           # A3: no spotted enemy this close to the downed man (m; IS 7.3)
 reinforce_below_pct = 60     # A5: reinforce a squad under this share of its card size
+
+# S13 rule O1 (docs/slices/S13-heavy-wave.md 3): obliquity by plate-to-calibre ratio, only for
+# rounds with a `slope_class` (none before S13a Build B: the cosine law everywhere). The impact
+# cosine on the penetration side becomes c * ((1 - w) + w * s(c)), s = sqrt(c) for apcbc, c for
+# apcr; w ramps from 0 at T/d = td_lo_pct to the class weight at td_hi_pct (T after face
+# hardening, d the round's caliber_mm). Every (lo, hi) in {25,30,40,50} x {75,80,90,100} passes
+# the calibration T151a-g (US trials, plan 3.4); 40 / 90 is the middle of that window.
+[armour]
+obliquity = 1                # switch O1 (0: slope_class ignored, the cosine law everywhere)
+td_lo_pct = 40               # w is 0 at or below this plate-to-calibre ratio (%) ...
+td_hi_pct = 90               # ... and full at or above this one (%)
+apcbc_w_pct = 100            # full weight of class apcbc (%; c^1.5)
+apcr_w_pct = 100             # full weight of class apcr (%; c^2)

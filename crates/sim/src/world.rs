@@ -476,7 +476,12 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `Structure::beds`, `PlayerState::s12`, six `AiCounters`; in the setup
 /// `[wounds]`, `[ai.medic]`, `[supply] aid_max` and `StockKind::Aid`). One
 /// bump for the whole slice.
-const SAVE_VERSION: u32 = 30;
+/// 31: S13 (`AiState::{armour_seen_at, heavy_plan_since}`, four
+/// `AiCounters`; in the setup `[armour]`, `[vehicles.gunnery]
+/// special_min_pct`, the S13 `[ai.armour]` keys, `AmmoSetup::slope_class`,
+/// `SquadSetup::ai_heavy` and `VehicleSetup::ai_overwatch`). One bump for
+/// the whole slice.
+const SAVE_VERSION: u32 = 31;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -3048,6 +3053,9 @@ mod s12_tests;
 #[cfg(test)]
 #[path = "s12b_tests.rs"]
 mod s12b_tests;
+#[cfg(test)]
+#[path = "s13_tests.rs"]
+mod s13_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;

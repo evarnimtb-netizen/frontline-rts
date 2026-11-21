@@ -194,15 +194,21 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // Build A values were 0x2bf48bdb91e667a2, 0xe8c49d61d6601d59,
 // 0xc3b4b96edc130ae4, 0x2bf48bdb91e667a2, 0x513d4a1133982eea,
 // 0x76eb474b3fe36957.
+// S13a Build A (`[armour]`, `[vehicles.gunnery] special_min_pct`, seven
+// `[ai.armour]` keys, `AmmoSetup::slope_class`, `SquadSetup::ai_heavy`,
+// `VehicleSetup::ai_overwatch`, every value its default) changed it; the
+// S12 values were 0x1e1c4d16624e99e9, 0xec12abab6c56918f,
+// 0x30c12f259a6ed389, 0x1e1c4d16624e99e9, 0x5c3cd09ad6b98d94,
+// 0x9959ee9deb0bb7fd.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x1e1c4d16624e99e9),
-    ("skirmish usa-ger seed 7 hard", 0xec12abab6c56918f),
-    ("test_unlock ger-usa seed 1 normal", 0x30c12f259a6ed389),
-    ("example override ger-usa seed 1 normal", 0x1e1c4d16624e99e9),
-    ("human ger vs ai usa seed 3 easy", 0x5c3cd09ad6b98d94),
+    ("skirmish ger-usa seed 1 normal", 0x3c7f492027baa0f3),
+    ("skirmish usa-ger seed 7 hard", 0x82dc14c3d6b5a508),
+    ("test_unlock ger-usa seed 1 normal", 0x45645832ee66f654),
+    ("example override ger-usa seed 1 normal", 0x3c7f492027baa0f3),
+    ("human ger vs ai usa seed 3 easy", 0x10c9494db95d1aee),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x9959ee9deb0bb7fd,
+        0xc9418ead8da4807e,
     ),
 ];
 

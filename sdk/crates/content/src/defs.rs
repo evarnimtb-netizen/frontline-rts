@@ -196,6 +196,11 @@ pub struct SquadDef {
     /// (default 100). S7: 0 = the AI never buys the card.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_weight: Option<u32>,
+    /// S13 H1 (docs/slices/S13-heavy-wave.md 5): a heavy card the AI buys
+    /// by its own path once enemy armour was seen (with `[ai.armour]
+    /// heavy_buy` on), not by weight. Vehicle cards only; default false.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub ai_heavy: bool,
     /// S9: the vehicle card that comes with this gun card: its price adds
     /// to the card's and the tow arrives hitched with the crew riding.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1685,6 +1690,10 @@ pub struct RulesDef {
     /// Without it: the S12a values, every switch off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wounds: Option<WoundsTuning>,
+    /// S13: rule O1, obliquity by plate-to-calibre ratio (`[armour]`).
+    /// Without it: the S13 values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub armour: Option<crate::tuning::ArmourTuning>,
     /// S10a: fortification rules (`[fortify]`). Without it no blueprint
     /// can be built.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2397,6 +2406,12 @@ impl SquadDef {
         }
         if let Some(w) = self.ai_weight {
             range(out, "ai_weight", w, 0, 1000);
+        }
+        if self.ai_heavy && self.vehicle.is_none() {
+            out.push(
+                Issue::new("ai_heavy", "only a vehicle card can be a heavy card")
+                    .with_hint("remove ai_heavy"),
+            );
         }
         if let Some(n) = &self.short_name {
             let len = n.chars().count();
@@ -3334,6 +3349,7 @@ impl RulesDef {
                 ai_arty: &a.arty.clone().unwrap_or_default(),
                 wounds: &self.wounds.clone().unwrap_or_default(),
                 ai_medic: &a.medic.clone().unwrap_or_default(),
+                armour: &self.armour.clone().unwrap_or_default(),
             },
         );
         match (a.barrage_rounds, &a.mortar) {
