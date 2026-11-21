@@ -1,0 +1,5099 @@
+# S13 targets (docs/slices/S13-heavy-wave.md 7), machine-checkable part.
+# Written by S13-ai Build C. A copy of S12.toml at c665072 (T4-T173 unchanged
+# in value and kind) except:
+#   - name changed;
+#   - one more control run: skirmish40_s13_off (every S13 switch 0, O1 off:
+#     must equal the reference set target/s13-base40, tools/neutral.py);
+#   - new rows T174-T184. The plan numbers them T150-T159, but S11b's rows
+#     already hold T150-T158 and S12's T159-T173 (ids must be unique), so
+#     each plan number is shifted by 24: plan T150 = T174, T150a = T174a,
+#     T151 = T175, T152 = T176, T155 = T179, T156 = T180, T157 = T181,
+#     T158 = T182, T159 = T183 (plan T153-T154 do not exist); T184 holds
+#     plan 7's armour-test bounds (cases 42-46; no plan number).
+#   tools/measure.sh OUTDIR docs/slices/targets/S13.toml
+# Seeds, ROW HONESTY and three_parts_from as in S11b.toml.
+name = "S13: heavy wave (S12 targets plus T174-T184)"
+three_parts_from = "T109"
+
+[runs.skirmish40]
+kind = "skirmish"
+seeds = 20            # seeds 1-20 x both bases = 40 matches
+both_bases = true
+minutes = 45
+
+[runs.timing40]       # the same 40 matches, run alone at 3 at a time
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+jobs = 3
+
+[runs.skirmish160]
+kind = "skirmish"
+seeds = 80            # seeds 1-80
+both_bases = true
+minutes = 45
+
+[runs.skirmish160_oos]
+kind = "skirmish"
+seeds = 80
+first_seed = 101      # out of sample: seeds 101-180
+both_bases = true
+minutes = 45
+
+[runs.skirmish160_s201]
+seeds = 80
+first_seed = 201      # second out-of-sample set: seeds 201-280 (pooled band)
+kind = "skirmish"
+both_bases = true
+minutes = 45
+
+[runs.skirmish160_h301]   # B1 held-out set: played once on the frozen change set
+seeds = 80
+first_seed = 301      # seeds 301-380, never used to choose a value
+kind = "skirmish"
+both_bases = true
+minutes = 45
+
+[runs.skirmish40_off]      # control: every new S10b-ai switch 0 (must equal main)
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S10b-ai-ablations/all_off.toml"]
+
+[runs.skirmish40_loose]    # control: materials_max_pct 100, refused_s 0, job_max_s 36000
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S10b-ai-ablations/loose.toml"]
+
+[runs.skirmish40_c_off]    # control: every S10c-ai key off (must equal main 54009f6)
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S10c-ai-ablations/c_off.toml"]
+
+[runs.skirmish40_a_off]    # control: every S11a1, S11a2 and S11b switch off (must equal base 730e67f but for the X1 counter keys)
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S11a1-ablations/a_off.toml", "docs/slices/targets/S11a2-ablations/b_off.toml", "docs/slices/targets/S11b-ablations/s11b_off.toml"]
+
+[runs.skirmish40_b_off]    # control: every S11a2 switch off, the S11b switches as shipped (not the S11a1 result since S11b)
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S11a2-ablations/b_off.toml"]
+
+[runs.skirmish40_ff_off]   # control: friendly_fire 0 and ff_safe 0 (counter-battery and the S11b switches as shipped)
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S11a2-ablations/ff_off.toml"]
+
+[runs.skirmish40_ff_safe_off]   # control: friendly fire on, the AI's own-men rule off
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S11a2-ablations/ff_safe_off.toml"]
+
+[runs.skirmish40_s12_off]   # control: every S12 switch 0 ([wounds] enabled, reinforce, [ai.medic] 0: must equal the reference set)
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S12-ablations/s12_off.toml"]
+
+[runs.skirmish40_s11b_off]   # control: every S11b switch off (cb_alternate, buy_pending, how, light, rifle_grenades 0: must equal the reference set)
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S11b-ablations/s11b_off.toml"]
+
+[runs.skirmish40_a0_off]   # control: cb_alternate 0: an AI gun may counter-fire twice in a row (as S11a2)
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S11b-ablations/a0_off.toml"]
+
+[runs.skirmish40_how_off]   # control: the AI buys no field howitzer
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S11b-ablations/how_off.toml"]
+
+[runs.skirmish40_light_off]   # control: the AI buys no light mortar
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S11b-ablations/light_off.toml"]
+
+[runs.skirmish40_rg_off]   # control: no rifle grenades are issued
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S11b-ablations/rg_off.toml"]
+
+[runs.skirmish40_s13_off]   # control: every S13 switch 0 and O1 off (must equal the reference set target/s13-base40)
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+rules_override = ["docs/slices/targets/S13-ablations/s13_off.toml"]
+
+[runs.armour5]
+kind = "armour-test"
+seeds = 5
+
+[runs.armour_stress10]
+kind = "armour-test"
+seeds = 10
+stress = true
+
+[runs.fortify10]
+kind = "fortify-test"
+seeds = 10
+
+# --- T4: no AI fire-mission order refused (40 set) -------------------------
+[[target]]
+id = "T4a"
+metric = "skirmish40.factions.germany.s5b_derived.refused_total"
+max = 0
+[[target]]
+id = "T4b"
+metric = "skirmish40.factions.usa.s5b_derived.refused_total"
+max = 0
+
+# --- T5: each faction 35-65 % on 40; 45-55 % on both 160 sets -------------
+[[target]]
+id = "T5a"
+metric = "skirmish40.wins.germany_pct"
+min = 35
+max = 65
+[[target]]
+id = "T5b"
+metric = "skirmish40.wins.usa_pct"
+min = 35
+max = 65
+[[target]]
+id = "T5c"
+note = "guard band 35-65, owner 2026-11-11 (rule 1)"
+metric = "skirmish160.wins.germany_pct"
+min = 35
+max = 65
+[[target]]
+id = "T5d"
+note = "guard band 35-65, owner 2026-11-11 (rule 1)"
+metric = "skirmish160_oos.wins.germany_pct"
+min = 35
+max = 65
+
+# --- T6: no base side above 62 % ------------------------------------------
+[[target]]
+id = "T6a"
+metric = "skirmish40.wins.base_max_pct"
+max = 62
+[[target]]
+id = "T6b"
+metric = "skirmish160.wins.base_max_pct"
+max = 62
+[[target]]
+id = "T6c"
+metric = "skirmish160_oos.wins.base_max_pct"
+max = 62
+
+# --- T7: no match under 10 or over 40 min; median 15-30 --------------------
+[[target]]
+id = "T7a"
+metric = "skirmish40.length_min.min"
+min = 10
+[[target]]
+id = "T7b"
+metric = "skirmish40.length_min.max"
+max = 40
+[[target]]
+id = "T7c"
+metric = "skirmish40.length_min.median"
+min = 15
+max = 30
+[[target]]
+id = "T7d"
+metric = "skirmish160.length_min.median"
+min = 15
+max = 30
+
+# --- T8: HE share of kills 20-25 % (S5b-17), hard cap 26.3 % -----------------
+# S12b Build C (S12-15 (A)): T8a-T8c read the HE share over casualties
+# (`s12_derived.he_share_casualties_pct`; S12 F2: one per man, by the class
+# that first took him out); T8d stays on kills (report).
+[[target]]
+id = "T8a"
+metric = "skirmish160.s12_derived.he_share_casualties_pct.mean"
+min = 20
+max = 26.3
+[[target]]
+id = "T8b"
+metric = "skirmish160_oos.s12_derived.he_share_casualties_pct.mean"
+min = 20
+max = 26.3
+[[target]]
+id = "T8c"
+metric = "skirmish40.s12_derived.he_share_casualties_pct.mean"
+max = 26.3
+[[target]]
+id = "T8d"
+metric = "skirmish160.he_share_pct.mean"
+min = 20
+max = 25
+kind = "report"
+note = "owner band; the hard limit is T8a"
+
+# --- T9: mortars 10-15 % of each side's kills (S5b-17; S5b ended at ~5 %) ----
+[[target]]
+id = "T9a"
+metric = "skirmish160.factions.germany.kills_by_source_pct.mortar"
+min = 10
+max = 15
+[[target]]
+id = "T9b"
+metric = "skirmish160.factions.usa.kills_by_source_pct.mortar"
+min = 10
+max = 15
+
+# --- T10: reported: bombs fired and MP on ammo per kind (160 set) ------------
+[[target]]
+id = "T10a"
+metric = "skirmish160.factions.germany.s5b_derived.bombs_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10b"
+metric = "skirmish160.factions.usa.s5b_derived.bombs_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10c"
+metric = "skirmish160.factions.germany.ammo.spend_mp.per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10d"
+metric = "skirmish160.factions.usa.ammo.spend_mp.per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T10e"
+metric = "skirmish160.factions.germany.ammo.spend_mp.shells"
+min = 0
+kind = "report"
+note = "total over 160 matches; small_arms and explosives in the same JSON"
+[[target]]
+id = "T10f"
+metric = "skirmish160.factions.usa.ammo.spend_mp.shells"
+min = 0
+kind = "report"
+[[target]]
+id = "T10g"
+metric = "skirmish160.factions.germany.s6_derived.crate_mp_per_match"
+min = 0
+kind = "report"
+note = "MP paid for crates at base (part of spend_mp)"
+[[target]]
+id = "T10h"
+metric = "skirmish160.factions.usa.s6_derived.crate_mp_per_match"
+min = 0
+kind = "report"
+
+# --- T11: AI fires through observers (40 set), as S5b ------------------------
+[[target]]
+id = "T11a"
+metric = "skirmish40.factions.germany.s5b_derived.ai_observed_direct_pct"
+min = 70
+[[target]]
+id = "T11b"
+metric = "skirmish40.factions.usa.s5b_derived.ai_observed_direct_pct"
+min = 70
+
+# --- T13: fortify-test and armour-test hard checks ----------------------------
+[[target]]
+id = "T13a"
+metric = "fortify10.pass"
+min = 1
+[[target]]
+id = "T13b"
+metric = "armour5.pass"
+min = 1
+[[target]]
+id = "T13c"
+metric = "armour_stress10.pass"
+min = 1
+
+# --- T14: tick p99 peak under 1.5 ms (jobs = 3, alone); stress case under 10 ms
+[[target]]
+id = "T14a"
+metric = "timing40.tick_p99_ms.peak"
+max = 1.5
+[[target]]
+id = "T14b"
+metric = "armour_stress10.cases.case14.checks.sim_tick_p99_10_ms_on_3_threads.value"
+max = 10
+
+# --- T15: stall guard: every match has a winner (no 45 min limit hit) ---------
+[[target]]
+id = "T15a"
+metric = "skirmish40.wins.no_winner"
+max = 0
+[[target]]
+id = "T15b"
+metric = "skirmish160.wins.no_winner"
+max = 0
+[[target]]
+id = "T15c"
+metric = "skirmish160_oos.wins.no_winner"
+max = 0
+
+# --- T20: the base refills no mortar bombs (owner Q4, S5a-42) -----------------
+[[target]]
+id = "T20a"
+metric = "skirmish160.factions.germany.s6_derived.base_bomb_refills"
+max = 0
+[[target]]
+id = "T20b"
+metric = "skirmish160.factions.usa.s6_derived.base_bomb_refills"
+max = 0
+# A bomb refill with no crate within crate_feed_m and no HQ or dump radius.
+[[target]]
+id = "T20c"
+metric = "skirmish160.factions.germany.s6_derived.bomb_refills_unsourced"
+max = 0
+[[target]]
+id = "T20d"
+metric = "skirmish160.factions.usa.s6_derived.bomb_refills_unsourced"
+max = 0
+
+# --- T22: HQ and dump stock fills only from carried crates (owner Q2 C) -------
+[[target]]
+id = "T22a"
+metric = "skirmish160.factions.germany.s6_derived.stock_in_not_crate_kg"
+max = 0
+[[target]]
+id = "T22b"
+metric = "skirmish160.factions.usa.s6_derived.stock_in_not_crate_kg"
+max = 0
+
+# --- T23: crate and stock cook-offs happen in play (reported) -----------------
+[[target]]
+id = "T23a"
+metric = "skirmish160.s6.cookoffs_per_match"
+min = 0
+kind = "report"
+
+# --- T24: tank rearm forward (HQ and dumps, D3 rates; reported) ---------------
+[[target]]
+id = "T24a"
+metric = "skirmish160.factions.germany.s6_derived.tank_rounds_forward_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T24b"
+metric = "skirmish160.factions.usa.s6_derived.tank_rounds_forward_per_match"
+min = 0
+kind = "report"
+
+# --- T27: the AI builds an HQ in most matches and runs crates -----------------
+[[target]]
+id = "T27a"
+metric = "skirmish160.factions.germany.s6_derived.hq_built_pct"
+min = 70
+[[target]]
+id = "T27b"
+metric = "skirmish160.factions.usa.s6_derived.hq_built_pct"
+min = 70
+[[target]]
+id = "T27c"
+metric = "skirmish160.factions.germany.s6_derived.crates_delivered_per_match"
+min = 3
+[[target]]
+id = "T27d"
+metric = "skirmish160.factions.usa.s6_derived.crates_delivered_per_match"
+min = 3
+[[target]]
+id = "T27e"
+metric = "skirmish160.factions.germany.s6_derived.tank_crate_runs_per_match"
+min = 0
+kind = "report"
+note = "owner 2026-11-01: crates carried to stranded tanks"
+[[target]]
+id = "T27f"
+metric = "skirmish160.factions.usa.s6_derived.tank_crate_runs_per_match"
+min = 0
+kind = "report"
+
+# ============================ S7 ============================================
+# Card and vehicle keys are the def ids without the namespace.
+
+# --- T30: the AI buys the new cards in most matches ---------------------------
+[[target]]
+id = "T30a"
+metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
+min = 60
+[[target]]
+id = "T30b"
+metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
+min = 60
+[[target]]
+id = "T30c"
+metric = "skirmish160_oos.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
+min = 60
+[[target]]
+id = "T30d"
+metric = "skirmish160_oos.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
+min = 60
+
+# --- T31: vehicles do not take over: all vehicles' share of a side's kills ----
+# Baseline (one tank type, tank_ap + tank_he + vehicle_mg): Germany 23.5 /
+# 25.7 %, USA 21.2 / 20.7 % (160 / oos).
+[[target]]
+id = "T31a"
+metric = "skirmish160.factions.germany.s7_derived.vehicle_kills_pct"
+max = 30
+kind = "report"
+note = "until the balance pass (owner rule 1, 2026-11-11)"
+[[target]]
+id = "T31b"
+metric = "skirmish160.factions.usa.s7_derived.vehicle_kills_pct"
+max = 30
+kind = "report"
+note = "until the balance pass (owner rule 1, 2026-11-11)"
+[[target]]
+id = "T31c"
+metric = "skirmish160_oos.factions.germany.s7_derived.vehicle_kills_pct"
+max = 30
+kind = "report"
+note = "until the balance pass (owner rule 1, 2026-11-11)"
+[[target]]
+id = "T31d"
+metric = "skirmish160_oos.factions.usa.s7_derived.vehicle_kills_pct"
+max = 30
+kind = "report"
+note = "until the balance pass (owner rule 1, 2026-11-11)"
+
+# --- T32: no single vehicle type above 18 % of its side's kills ---------------
+# (Before S7 the one tank type held all of T31's share, 21-26 %.)
+[[target]]
+id = "T32a"
+metric = "skirmish160.factions.germany.s7_derived.kills_by_vehicle_max_pct"
+max = 18
+[[target]]
+id = "T32b"
+metric = "skirmish160.factions.usa.s7_derived.kills_by_vehicle_max_pct"
+max = 18
+
+# --- T33: share of each side's AI manpower spent on cards ---------------------
+# S9: T33a/b count tanks and tank destroyers/assault guns only (owner, S8b-26);
+# recon cars, trucks, half-tracks and guns are outside the cap. The old
+# vehicle_mp_pct stays in the JSON as a report.
+# Baseline vehicle share of card manpower: Germany 28.5 / 28.3 %, USA 27.0 /
+# 26.0 % (160 / oos); about 3.1 vehicles bought per match per side.
+[[target]]
+id = "T33a"
+metric = "skirmish160.factions.germany.s7_derived.tank_td_mp_pct"
+max = 35
+[[target]]
+id = "T33b"
+metric = "skirmish160.factions.usa.s7_derived.tank_td_mp_pct"
+max = 35
+[[target]]
+id = "T33c"
+metric = "skirmish160.factions.germany.s7_derived.mp_share_pct.ger_pz4_h_squad"
+min = 0
+kind = "report"
+[[target]]
+id = "T33d"
+metric = "skirmish160.factions.germany.s7_derived.mp_share_pct.ger_stug3_g_squad"
+min = 0
+kind = "report"
+[[target]]
+id = "T33e"
+metric = "skirmish160.factions.usa.s7_derived.mp_share_pct.usa_m4a3_75_squad"
+min = 0
+kind = "report"
+[[target]]
+id = "T33f"
+metric = "skirmish160.factions.usa.s7_derived.mp_share_pct.usa_m10_squad"
+min = 0
+kind = "report"
+# Each vehicle type's share of its side's kills (men killed by its rounds).
+[[target]]
+id = "T33g"
+metric = "skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_pz4_h"
+min = 0
+kind = "report"
+[[target]]
+id = "T33h"
+metric = "skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_stug3_g"
+min = 0
+kind = "report"
+[[target]]
+id = "T33i"
+metric = "skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m4a3_75"
+min = 0
+kind = "report"
+[[target]]
+id = "T33j"
+metric = "skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m10"
+min = 0
+kind = "report"
+# Enemy vehicles knocked out per vehicle bought, per type (TDs hunt tanks).
+[[target]]
+id = "T33k"
+metric = "skirmish160.factions.germany.s7_derived.kos_per_bought.ger_stug3_g"
+min = 0
+kind = "report"
+[[target]]
+id = "T33l"
+metric = "skirmish160.factions.usa.s7_derived.kos_per_bought.usa_m10"
+min = 0
+kind = "report"
+[[target]]
+id = "T33m"
+metric = "skirmish160.factions.germany.s7_derived.kos_per_bought.ger_pz4_h"
+min = 0
+kind = "report"
+[[target]]
+id = "T33n"
+metric = "skirmish160.factions.usa.s7_derived.kos_per_bought.usa_m4a3_75"
+min = 0
+kind = "report"
+
+# --- T34: casemate duel (armour-test case 17, 18; vehicles.md 10) -------------
+# 17: StuG frontal vs Sherman frontal at 300 m. The StuG's 80 mm / 10°
+# front against the M61 (about 50 % pen at 300 m) vs the Sherman's glacis
+# against the PzGr 39 (pens): the StuG should win most.
+[[target]]
+id = "T34a"
+metric = "armour5.cases.case17.checks.stug_wins_pct.value"
+min = 55
+[[target]]
+id = "T34b"
+metric = "armour5.cases.case17.checks.first_hit_s_stug.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T34c"
+metric = "armour5.cases.case17.checks.first_hit_s_sherman.value"
+min = 0
+kind = "report"
+# 18: a Sherman 45° off the StuG's nose at 200 m: the StuG must pivot its
+# hull before it can lay; the Sherman's turret is on it first.
+[[target]]
+id = "T34d"
+metric = "armour5.cases.case18.checks.sherman_wins_pct.value"
+min = 50
+[[target]]
+id = "T34e"
+# A report (S7-11 (A)): the Sherman starts laid and wins the first hit;
+# the spec's 80 % is kept here as the reference value.
+metric = "armour5.cases.case18.checks.stug_fired_pct.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T34f"
+metric = "armour5.cases.case18.checks.first_hit_s_stug.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T34g"
+metric = "armour5.cases.case18.checks.first_hit_s_sherman.value"
+min = 0
+kind = "report"
+
+# --- T35: grenades into an M10 (case 19) --------------------------------------
+[[target]]
+id = "T35a"
+metric = "armour5.cases.case19.checks.stopped_inside_pct.value"
+min = 50
+[[target]]
+id = "T35b"
+metric = "armour5.cases.case19.checks.stopped_crew_hit_pct.value"
+min = 50
+[[target]]
+id = "T35c"
+metric = "armour5.cases.case19.checks.moving_inside_pct.value"
+max = 20
+
+# --- T36: 81 mm near-miss on an M10 wounds crew; a closed Sherman's do not ----
+[[target]]
+id = "T36a"
+# A report (S7-12 (A)): the rim shadows ground-burst fragments; the spec's
+# 20 % is kept here as the reference value.
+metric = "armour5.cases.case20.checks.m10_crew_hit_pct.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T36b"
+metric = "armour5.cases.case20.checks.sherman_crew_hit_pct.value"
+max = 0
+
+# --- T37: AI infantry throws into stopped open-top vehicles (reported) --------
+[[target]]
+id = "T37a"
+metric = "skirmish160.factions.germany.s7_derived.open_top_throws_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T37b"
+metric = "skirmish160.factions.usa.s7_derived.open_top_throws_per_match"
+min = 0
+kind = "report"
+
+# --- T38: pooled German win share (owner band 45-55 %; computed in the log) ---
+# The CLI cannot pool runs: T5c, T5d and T5e check each set; the log reports
+# (wins 160 + oos + s201) / 480. S7 baseline (verify-s7fix): (77 + 71 + 77)
+# / 480 = 46.9 %. The S6b-era note (84 + 81) / 320 = 51.6 % is history.
+[[target]]
+id = "T5e"
+metric = "skirmish160_s201.wins.germany_pct"
+min = 0
+kind = "report"
+note = "S7 baseline 48.1; pooled with T5c/T5d in the log (band 45-55)"
+
+[[target]]
+id = "T5f"
+metric = "skirmish160_h301.wins.germany_pct"
+min = 40
+max = 60
+kind = "report"
+note = "B1 held-out set (seeds 301-380); pooled with T5c-T5e in the log (640, band 45-55)"
+
+# ============================ S8a ===========================================
+# Card and vehicle keys are the def ids without the namespace:
+# cards ger_sdkfz251_1_squad, usa_m3a1_squad; vehicles ger_sdkfz251_1, usa_m3a1.
+
+# --- T40: the AI buys the half-tracks in most matches -------------------------
+[[target]]
+id = "T40a"
+metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_sdkfz251_1_squad"
+min = 60
+[[target]]
+id = "T40b"
+metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
+min = 60
+[[target]]
+id = "T40c"
+metric = "skirmish160_oos.factions.germany.s7_derived.bought_matches_pct.ger_sdkfz251_1_squad"
+min = 60
+[[target]]
+id = "T40d"
+metric = "skirmish160_oos.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
+min = 60
+
+# --- T41: squads transported per match, time saved per ride --------------------
+# A transported squad = one that boarded at least `[ai.transport] min_ride_m`
+# away from where it got off. Saved time per ride (Fix, review M2): (straight
+# walk from where the squad stood at the Embark order to the capture radius of
+# the point it rode for) - (order to its lead inside that radius); it counts
+# the walk to the door, the boarding wait and the last stretch on foot.
+# Negative = slower. T41g/h keep the Build B vehicle-trip figure (an upper
+# bound: boarding to the last man out, straight line from the door).
+[[target]]
+id = "T41a"
+metric = "skirmish160.factions.germany.s8a_derived.transported_per_match"
+min = 1
+[[target]]
+id = "T41b"
+metric = "skirmish160.factions.usa.s8a_derived.transported_per_match"
+min = 1
+[[target]]
+id = "T41c"
+metric = "skirmish160.factions.germany.s8a_derived.obj_saved_s_per_ride"
+min = 0
+kind = "report"
+note = "walk-to-the-front exploit check (vehicles.md 6.6); compare with the match median"
+[[target]]
+id = "T41d"
+metric = "skirmish160.factions.usa.s8a_derived.obj_saved_s_per_ride"
+min = 0
+kind = "report"
+[[target]]
+id = "T41e"
+metric = "skirmish160.factions.germany.s8a_derived.obj_saved_s_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T41f"
+metric = "skirmish160.factions.usa.s8a_derived.obj_saved_s_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T41g"
+metric = "skirmish160.factions.germany.s8a_derived.ride_saved_s_per_ride"
+min = 0
+kind = "report"
+note = "Build B vehicle-trip measure (upper bound)"
+[[target]]
+id = "T41h"
+metric = "skirmish160.factions.usa.s8a_derived.ride_saved_s_per_ride"
+min = 0
+kind = "report"
+
+# --- T42: half-track MG kills (share of the side's kills) ----------------------
+# All vehicle MGs took 8.5 / 6.6 % of kills in S7 (vehicle_mg). A transport
+# supports; it must not become the main killer. T32 (18 %) still caps it.
+[[target]]
+id = "T42a"
+metric = "skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_sdkfz251_1"
+max = 10
+[[target]]
+id = "T42b"
+metric = "skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m3a1"
+max = 10
+[[target]]
+id = "T42c"
+metric = "skirmish160_oos.factions.germany.s7_derived.kills_by_vehicle_max_pct"
+min = 0
+kind = "report"
+note = "S7-15 recheck out of sample (S7: 17.4); T32a/b stay hard on 1-80"
+[[target]]
+id = "T42d"
+metric = "skirmish160_oos.factions.usa.s7_derived.kills_by_vehicle_max_pct"
+min = 0
+kind = "report"
+
+# --- T43: passengers lost while riding, small-arms penetrations (reported) ----
+[[target]]
+id = "T43a"
+metric = "skirmish160.factions.germany.s8a_derived.riders_lost_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T43b"
+metric = "skirmish160.factions.usa.s8a_derived.riders_lost_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T43c"
+metric = "skirmish160.factions.germany.s8a_derived.small_arms_pens_per_match"
+min = 0
+kind = "report"
+note = "penetrations BY German small arms (budget check: armour_box_tests)"
+[[target]]
+id = "T43d"
+metric = "skirmish160.factions.usa.s8a_derived.small_arms_pens_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T43e"
+metric = "skirmish160.factions.germany.s8a_derived.dismounts_under_fire_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T43f"
+metric = "skirmish160.factions.usa.s8a_derived.dismounts_under_fire_pct"
+min = 0
+kind = "report"
+
+# --- T44: small arms vs half-tracks (armour-test case 21; vehicles.md 10) ------
+# MG 42 (SmK table) at the M3A1's 6.35 mm face-hardened side, .50 M2 AP at
+# the 251's 8 mm sloped side, 50 / 150 / 300 m, 0 deg; rifles at the fronts.
+[[target]]
+id = "T44a"
+metric = "armour5.cases.case21.checks.mg42_m3a1_side_50_pen_pct.value"
+min = 80
+[[target]]
+id = "T44b"
+metric = "armour5.cases.case21.checks.mg42_m3a1_side_150_pen_pct.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T44c"
+metric = "armour5.cases.case21.checks.mg42_m3a1_side_300_pen_pct.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T44d"
+metric = "armour5.cases.case21.checks.m2hb_251_side_50_pen_pct.value"
+min = 80
+[[target]]
+id = "T44e"
+metric = "armour5.cases.case21.checks.m2hb_251_side_150_pen_pct.value"
+min = 80
+[[target]]
+id = "T44f"
+metric = "armour5.cases.case21.checks.m2hb_251_side_300_pen_pct.value"
+min = 80
+[[target]]
+id = "T44g"
+metric = "armour5.cases.case21.checks.rifle_251_front_pen_pct.value"
+max = 0
+[[target]]
+id = "T44h"
+metric = "armour5.cases.case21.checks.rifle_m3a1_front_pen_pct.value"
+max = 0
+
+# --- T45: one bazooka rocket into a loaded 251 (case 22) ----------------------
+[[target]]
+id = "T45a"
+metric = "armour5.cases.case22.checks.passenger_hit_pct.value"
+min = 50
+[[target]]
+id = "T45b"
+metric = "armour5.cases.case22.checks.passengers_lost_mean.value"
+min = 0
+kind = "report"
+
+# --- T46: a grenade into a loaded 251, stopped vs moving (case 23) ------------
+[[target]]
+id = "T46a"
+metric = "armour5.cases.case23.checks.stopped_passengers_lost_pct.value"
+min = 50
+[[target]]
+id = "T46b"
+metric = "armour5.cases.case23.checks.moving_inside_pct.value"
+max = 20
+
+# --- T47: disembark under MG fire, rear door vs over the sides (case 24) ------
+[[target]]
+id = "T47a"
+metric = "armour5.cases.case24.checks.sides_faster.value"
+min = 1
+[[target]]
+id = "T47b"
+metric = "armour5.cases.case24.checks.door_men_hit_mean.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T47c"
+metric = "armour5.cases.case24.checks.sides_men_hit_mean.value"
+min = 0
+kind = "report"
+
+# --- T48: half-tracks reach a fight (AI moves do not loop; S7 tick fix) -------
+[[target]]
+id = "T48a"
+metric = "skirmish160.factions.germany.s8a_derived.transport_trips_per_bought"
+min = 1
+[[target]]
+id = "T48b"
+metric = "skirmish160.factions.usa.s8a_derived.transport_trips_per_bought"
+min = 1
+
+# --- T49: pooled German win share over 480 and tick time (computed in the log) -
+# Band 45-55 % over skirmish160 + _oos + _s201 (T5c-e). T14a timing40 peak:
+# S7 after the fix 0.38 all / 0.56 peak ms; the log reports both.
+
+# =============================================================================
+# S8b targets
+# =============================================================================
+
+# --- T50: rides pay (S8a-28): saved time per ride above 0, HARD ---------------
+# AiRideMeas: Embark order to the squad's lead inside the capture radius of the
+# point it rode for, against a straight walk from where it stood at the order.
+# Baseline -29.4 / -26.3 / -21.0 (Germany), -14.4 / -15.4 / -5.9 (USA). The
+# S8a T41c-f stay as reports. min 0.1: "above 0".
+[[target]]
+id = "T50a"
+metric = "skirmish160.factions.germany.s8a_derived.obj_saved_s_per_ride"
+min = 0.1
+[[target]]
+id = "T50b"
+metric = "skirmish160.factions.usa.s8a_derived.obj_saved_s_per_ride"
+min = 0.1
+[[target]]
+id = "T50c"
+metric = "skirmish160_oos.factions.germany.s8a_derived.obj_saved_s_per_ride"
+min = 0.1
+[[target]]
+id = "T50d"
+metric = "skirmish160_oos.factions.usa.s8a_derived.obj_saved_s_per_ride"
+min = 0.1
+[[target]]
+id = "T50e"
+metric = "skirmish160_s201.factions.germany.s8a_derived.obj_saved_s_per_ride"
+min = 0.1
+[[target]]
+id = "T50f"
+metric = "skirmish160_s201.factions.usa.s8a_derived.obj_saved_s_per_ride"
+min = 0.1
+
+# --- T51: rides that end at their point: lost rides fall ----------------------
+# obj_rides against obj_lost: about half never reach their point in S8a
+# (Germany 80 of 156, USA 68 of 113 on 1-80). Report: the fix is S8a-28.
+[[target]]
+id = "T51a"
+metric = "skirmish160.factions.germany.s8a_derived.obj_lost_per_match"
+min = 0
+kind = "report"
+note = "S8a baseline 0.475 (rides that reached the point 0.5 per match)"
+[[target]]
+id = "T51b"
+metric = "skirmish160.factions.usa.s8a_derived.obj_lost_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T51c"
+metric = "skirmish160.factions.germany.s8b_derived.unload_exposed_pct"
+min = 0
+kind = "report"
+note = "share of unloads caused by dismount_sight_m (S8b Build C counter)"
+[[target]]
+id = "T51d"
+metric = "skirmish160.factions.usa.s8b_derived.unload_exposed_pct"
+min = 0
+kind = "report"
+
+# --- T52: the AI buys recon cars in most matches -------------------------------
+[[target]]
+id = "T52a"
+metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_sdkfz234_1_squad"
+min = 60
+[[target]]
+id = "T52b"
+metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m8_squad"
+min = 60
+
+# --- T53: the AI buys trucks in most matches -----------------------------------
+[[target]]
+id = "T53a"
+metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_opel_blitz_squad"
+min = 60
+[[target]]
+id = "T53b"
+metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_cckw_squad"
+min = 60
+
+# --- T54: tanks keep their place (S8a: half-tracks displaced tanks) ------------
+# Each tank card bought in most matches and its manpower share not collapsed.
+# Baseline: Pz IV 15.9 %, Sherman 14.8 % of manpower; bought in 99-100 %.
+[[target]]
+id = "T54a"
+metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_pz4_h_squad"
+min = 90
+[[target]]
+id = "T54b"
+metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m4a3_75_squad"
+min = 90
+[[target]]
+id = "T54c"
+metric = "skirmish160.factions.germany.s7_derived.mp_share_pct.ger_pz4_h_squad"
+min = 11
+[[target]]
+id = "T54d"
+metric = "skirmish160.factions.usa.s7_derived.mp_share_pct.usa_m4a3_75_squad"
+min = 10
+[[target]]
+id = "T54e"
+metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
+min = 80
+[[target]]
+id = "T54f"
+metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
+min = 75
+
+# --- T55: each new type's share of kills (T32 18 % cap stays) ------------------
+[[target]]
+id = "T55a"
+metric = "skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_sdkfz234_1"
+max = 10
+kind = "report"
+note = "until the balance pass (owner rule 1, 2026-11-11)"
+[[target]]
+id = "T55b"
+metric = "skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m8"
+max = 10
+kind = "report"
+note = "until the balance pass (owner rule 1, 2026-11-11)"
+[[target]]
+id = "T55c"
+metric = "skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_sdkfz234_1"
+min = 0.3
+kind = "report"
+note = "a recon car that never fires is not doing its job either"
+[[target]]
+id = "T55d"
+metric = "skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m8"
+min = 0.3
+kind = "report"
+
+# --- T56: each new type's share of manpower ------------------------------------
+# Own-budget caps [ai.recon] / [ai.truck] (spec, AI). Baseline half-tracks 5.1 %.
+[[target]]
+id = "T56a"
+metric = "skirmish160.factions.germany.s7_derived.mp_share_pct.ger_sdkfz234_1_squad"
+max = 8
+[[target]]
+id = "T56b"
+metric = "skirmish160.factions.usa.s7_derived.mp_share_pct.usa_m8_squad"
+max = 8
+[[target]]
+id = "T56c"
+metric = "skirmish160.factions.germany.s7_derived.mp_share_pct.ger_opel_blitz_squad"
+max = 5
+[[target]]
+id = "T56d"
+metric = "skirmish160.factions.usa.s7_derived.mp_share_pct.usa_cckw_squad"
+max = 5
+
+# --- T57: trucks at work per match (spec, Targets) -----------------------------
+# Tank demand is low: baseline AI tanks fire 6.4-6.9 main-gun rounds per tank
+# bought and start 0-4 rearm trips in 160 matches (S8b-14), so the tank-round
+# counts are reports; crates dropped have real demand (6.5 shell crates issued
+# by hand per match, 40 bombs from crates).
+[[target]]
+id = "T57a"
+metric = "skirmish160.factions.germany.s8b_derived.truck_crates_dropped_per_match"
+min = 1
+[[target]]
+id = "T57b"
+metric = "skirmish160.factions.usa.s8b_derived.truck_crates_dropped_per_match"
+min = 1
+[[target]]
+id = "T57c"
+metric = "skirmish160.factions.germany.s8b_derived.truck_tank_rounds_per_match"
+min = 0
+kind = "report"
+note = "baseline tank_rounds_forward_per_match 0.66 from every forward source"
+[[target]]
+id = "T57d"
+metric = "skirmish160.factions.usa.s8b_derived.truck_tank_rounds_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T57e"
+metric = "skirmish160.factions.germany.s8b_derived.truck_men_rounds_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T57f"
+metric = "skirmish160.factions.usa.s8b_derived.truck_men_rounds_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T57g"
+metric = "skirmish160.factions.germany.s8b_derived.cargo_detonations_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T57h"
+metric = "skirmish160.factions.usa.s8b_derived.cargo_detonations_per_match"
+min = 0
+kind = "report"
+
+# --- T58: stranded tanks served by a truck (owner request 2026-11-01) ----------
+# Live matches report; the hard check is armour-test case 32 (T68).
+[[target]]
+id = "T58a"
+metric = "skirmish160.factions.germany.s8b_derived.stranded_served_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T58b"
+metric = "skirmish160.factions.usa.s8b_derived.stranded_served_per_match"
+min = 0
+kind = "report"
+
+# --- T59: trucks do not bleed the side (spec, AI) ------------------------------
+# Loaded kg per match, paid at base; report only, the budget is shell_mp_max_pct.
+[[target]]
+id = "T59a"
+metric = "skirmish160.factions.germany.s8b_derived.truck_loaded_kg_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T59b"
+metric = "skirmish160.factions.usa.s8b_derived.truck_loaded_kg_per_match"
+min = 0
+kind = "report"
+
+# --- T60: wheels against a trench line (armour-test case 25; 6.8) --------------
+# A 234/1 ordered across a closed trench line stops short or finds the gap:
+# it never ends up across. With a 10 m gap it drives through it.
+[[target]]
+id = "T60a"
+metric = "armour5.cases.case25.checks.crossings_closed_line.value"
+max = 0
+[[target]]
+id = "T60b"
+metric = "armour5.cases.case25.checks.reached_through_gap_pct.value"
+min = 80
+[[target]]
+id = "T60c"
+metric = "armour5.cases.case25.checks.tank_crosses_same_line_pct.value"
+min = 80
+note = "the same trench line: a tank still crosses it (wheel layer only)"
+
+# --- T61: bicycle model and wheel parts (case 26) ------------------------------
+[[target]]
+id = "T61a"
+metric = "armour5.cases.case26.checks.no_neutral_pivot.value"
+min = 1
+[[target]]
+id = "T61b"
+metric = "armour5.cases.case26.checks.turn_radius_within_pct.value"
+max = 15
+[[target]]
+id = "T61c"
+metric = "armour5.cases.case26.checks.reverse_speed_234_cm_s.value"
+min = 900
+[[target]]
+id = "T61d"
+metric = "armour5.cases.case26.checks.wheel_blast_disables_pct.value"
+min = 50
+
+# --- T62: truck rearm rate and stock (case 27; vehicles.md 10) -----------------
+# A tank at 10 % ammo, a truck at 15 m: 1 round per 4 s; the truck's stock
+# falls by exactly the kg of the rounds taken.
+[[target]]
+id = "T62a"
+metric = "armour5.cases.case27.checks.seconds_per_round.value"
+min = 3.9
+max = 4.1
+[[target]]
+id = "T62b"
+metric = "armour5.cases.case27.checks.stock_error_g.value"
+max = 0
+[[target]]
+id = "T62c"
+metric = "armour5.cases.case27.checks.no_mp_charged.value"
+min = 1
+
+# --- T63: cargo detonation when the truck is penetrated (case 28) --------------
+[[target]]
+id = "T63a"
+metric = "armour5.cases.case28.checks.detonated_loaded_pct.value"
+min = 50
+[[target]]
+id = "T63b"
+metric = "armour5.cases.case28.checks.detonated_empty_pct.value"
+max = 0
+
+# --- T64: no stacking (case 29): a tank between an HQ and two trucks -----------
+[[target]]
+id = "T64a"
+metric = "armour5.cases.case29.checks.seconds_per_round.value"
+min = 3.9
+max = 4.1
+[[target]]
+id = "T64b"
+metric = "armour5.cases.case29.checks.sources_drawn.value"
+max = 1
+
+# --- T65: grenade screen (case 30; 6.5) ----------------------------------------
+[[target]]
+id = "T65a"
+metric = "armour5.cases.case30.checks.screened_inside_pct.value"
+max = 0
+[[target]]
+id = "T65b"
+metric = "armour5.cases.case30.checks.screened_crew_lost.value"
+max = 0
+[[target]]
+id = "T65c"
+metric = "armour5.cases.case30.checks.landed_beside_pct.value"
+min = 80
+[[target]]
+id = "T65d"
+metric = "armour5.cases.case30.checks.unscreened_m8_inside_pct.value"
+min = 30
+note = "the same stick grenade into the M8's open turret (no screen)"
+[[target]]
+id = "T65e"
+metric = "armour5.cases.case30.checks.bullets_pass_screen.value"
+min = 1
+
+# --- T66: MG 42 against a truck (case 31; 7.3) ---------------------------------
+[[target]]
+id = "T66a"
+metric = "armour5.cases.case31.checks.mg42_truck_pen_pct.value"
+min = 90
+[[target]]
+id = "T66b"
+metric = "armour5.cases.case31.checks.mg42_stops_truck_s.value"
+min = 0
+max = 60
+note = "seconds of fire to kill the driver or the engine at 150 m"
+
+# --- T67: guns and optics (case 31 continued) ----------------------------------
+[[target]]
+id = "T67a"
+metric = "armour5.cases.case31.checks.pen_2cm_m3a1_front_100_pct.value"
+min = 80
+[[target]]
+id = "T67b"
+metric = "armour5.cases.case31.checks.pen_37mm_pz4_front_pct.value"
+max = 5
+[[target]]
+id = "T67c"
+metric = "armour5.cases.case31.checks.rifle_m8_front_pen_pct.value"
+max = 0
+[[target]]
+id = "T67d"
+metric = "armour5.cases.case31.checks.stationary_sight_gain_pct.value"
+min = 30
+
+# --- T68: an AI truck brings supply to a stranded tank (case 32; owner 2026-11-01)
+[[target]]
+id = "T68a"
+metric = "armour5.cases.case32.checks.stranded_served_pct.value"
+min = 80
+[[target]]
+id = "T68b"
+metric = "armour5.cases.case32.checks.rounds_gained_mean.value"
+min = 5
+
+# --- T69: recon cars do their job (Build C) ------------------------------------
+[[target]]
+id = "T69a"
+metric = "skirmish160.factions.germany.s8b_derived.recon_stops_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T69b"
+metric = "skirmish160.factions.usa.s8b_derived.recon_stops_per_match"
+min = 0
+kind = "report"
+
+# --- T70: the ride also carries somebody (T41, T48 on the other two sets) ------
+# Reports: T41b and T48b above are the hard floors on seeds 1-80.
+[[target]]
+id = "T70a"
+metric = "skirmish160_oos.factions.usa.s8a_derived.transported_per_match"
+min = 1
+kind = "report"
+[[target]]
+id = "T70b"
+metric = "skirmish160_s201.factions.usa.s8a_derived.transported_per_match"
+min = 1
+kind = "report"
+[[target]]
+id = "T70c"
+metric = "skirmish160_oos.factions.usa.s8a_derived.transport_trips_per_bought"
+min = 1
+kind = "report"
+[[target]]
+id = "T70d"
+metric = "skirmish160_s201.factions.usa.s8a_derived.transport_trips_per_bought"
+min = 1
+kind = "report"
+
+# --- T71: no AI move loops with wheels (S7 tick fix) ---------------------------
+[[target]]
+id = "T71a"
+metric = "skirmish160.factions.germany.s8b_derived.ai_move_fails_per_match"
+max = 5
+[[target]]
+id = "T71b"
+metric = "skirmish160.factions.usa.s8b_derived.ai_move_fails_per_match"
+max = 5
+
+# --- T72: the half-track's numbers stay put (S8a T40, T42 stay) ----------------
+# Tick time: T14a keeps its S8a band; the log reports both timing40 figures
+# against S8a after Fix (0.488 all / 0.621 peak; profile a rise above 25 %).
+[[target]]
+id = "T72a"
+metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_sdkfz251_1_squad"
+min = 60
+[[target]]
+id = "T72b"
+metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
+min = 60
+
+# --- T73: Done-when: MG against a shielded crew (case 33, Build A) ---------
+# MG at 200 m: the same 6-man crew with and without a gun in front of them.
+[[target]]
+id = "T73a"
+metric = "armour5.cases.case33.checks.front_losses_pct_of_open.value"
+max = 30
+[[target]]
+id = "T73b"
+metric = "armour5.cases.case33.checks.flank45_over_front.value"
+min = 3
+[[target]]
+id = "T73c"
+metric = "armour5.cases.case33.checks.front_shield_stops_pct.value"
+min = 0
+kind = "report"
+
+# --- T74: Done-when: the ambush (case 34, Build A; 57 mm in case 35) -------
+[[target]]
+id = "T74a"
+metric = "armour5.cases.case34.checks.fires_first_pct.value"
+min = 80
+[[target]]
+id = "T74b"
+metric = "armour5.cases.case34.checks.disabled_pct.value"
+min = 60
+[[target]]
+id = "T74c"
+metric = "armour5.cases.case34.checks.hits_per_disable.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T74d"
+metric = "armour5.cases.case35.checks.fires_first_pct.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T74e"
+metric = "armour5.cases.case35.checks.disabled_pct.value"
+min = 0
+kind = "report"
+
+# --- T75: tanks fire HE at the crew of a spotted gun (case 36, Build C) ----
+[[target]]
+id = "T75a"
+metric = "armour5.cases.case36.checks.he_at_crew_pct.value"
+min = 80
+[[target]]
+id = "T75b"
+metric = "armour5.cases.case36.checks.silence_s_mean.value"
+min = 0
+kind = "report"
+[[target]]
+id = "T75c"
+metric = "armour5.cases.case36.checks.gun_parts_hit_mean.value"
+min = 0
+kind = "report"
+
+# --- T76: the gun optic inside the arc (case 37, Build A) ------------------
+# Owner question 12 (A): the optic counts inside the arc against vehicles.
+[[target]]
+id = "T76a"
+metric = "armour5.cases.case37.checks.sees_tank_in_arc_m.value"
+min = 400
+[[target]]
+id = "T76b"
+metric = "armour5.cases.case37.checks.sees_tank_out_arc_m.value"
+# Build A fix: outside the arc the gun sees a stationary tank at
+# sight_m x its 200 % size factor = 350 m (spec 7, owner question 12 (A));
+# the Plan's 175 m forgot the size factor. The check is that the optic
+# (437 m) is absent outside the arc.
+max = 350
+
+# --- T77: recrew, abandon, capture (case 38, Build B) ----------------------
+[[target]]
+id = "T77a"
+metric = "armour5.cases.case38.checks.slot_swap_s.value"
+min = 2.5
+max = 3.5
+[[target]]
+id = "T77b"
+metric = "armour5.cases.case38.checks.neutral_after_s.value"
+min = 9
+max = 12
+[[target]]
+id = "T77c"
+metric = "armour5.cases.case38.checks.enemy_serves_pct.value"
+min = 100
+[[target]]
+id = "T77d"
+metric = "armour5.cases.case38.checks.own_crate_rounds.value"
+max = 0
+[[target]]
+id = "T77e"
+metric = "armour5.cases.case38.checks.gun_faction_crate_rounds.value"
+min = 1
+[[target]]
+id = "T77f"
+metric = "armour5.cases.case38.checks.left_rounds_fired_pct.value"
+min = 100
+
+# --- T78: mobility and tow (case 39, Build B) ------------------------------
+[[target]]
+id = "T78a"
+metric = "armour5.cases.case39.checks.emplace_s.value"
+min = 27
+max = 33
+[[target]]
+id = "T78b"
+metric = "armour5.cases.case39.checks.pack_s.value"
+min = 15
+max = 21
+[[target]]
+id = "T78c"
+metric = "armour5.cases.case39.checks.pushed_cm_s_full_crew.value"
+min = 30
+max = 40
+[[target]]
+id = "T78d"
+metric = "armour5.cases.case39.checks.hitched_tow_cm_s.value"
+min = 400
+[[target]]
+id = "T78e"
+metric = "armour5.cases.case39.checks.relay_trail_s.value"
+min = 12
+max = 18
+[[target]]
+id = "T78f"
+metric = "armour5.cases.case39.checks.crew_ride_tow_pct.value"
+min = 100
+
+# --- T79: the AT gun pit (case 40, Build B) --------------------------------
+[[target]]
+id = "T79a"
+metric = "armour5.cases.case40.checks.pit_carriage_hits_pct.value"
+max = 20
+[[target]]
+id = "T79b"
+metric = "armour5.cases.case40.checks.pit_crew_losses_pct_of_open.value"
+min = 0
+kind = "report"
+
+# --- T80: Done-when: AI siting and firing (Build C; 160 set, 6 of 10 = 60 %) ---
+[[target]]
+id = "T80a"
+metric = "skirmish160.factions.germany.s9_derived.gun_fired_matches_pct"
+min = 60
+[[target]]
+id = "T80b"
+metric = "skirmish160.factions.usa.s9_derived.gun_fired_matches_pct"
+min = 60
+[[target]]
+id = "T81a"
+metric = "skirmish160.factions.germany.s9_derived.gun_in_cover_pct"
+min = 60
+[[target]]
+id = "T81b"
+metric = "skirmish160.factions.usa.s9_derived.gun_in_cover_pct"
+min = 60
+
+# --- T82: AI purchases and budget (report; T32, T54 stay the hard limits) ---
+[[target]]
+id = "T82a"
+metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_pak40_squad"
+min = 0
+kind = "report"
+[[target]]
+id = "T82b"
+metric = "skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_57mm_m1_squad"
+min = 0
+kind = "report"
+[[target]]
+id = "T82c"
+metric = "skirmish160.factions.germany.s9_derived.guns_bought_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T82d"
+metric = "skirmish160.factions.usa.s9_derived.guns_bought_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T82e"
+metric = "skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_pak38_squad"
+max = 0
+
+# --- T83: guns keep their own budget (Build C) -----------------------------
+[[target]]
+id = "T83a"
+metric = "skirmish160.factions.germany.s9_derived.gun_mp_pct"
+max = 20
+[[target]]
+id = "T83b"
+metric = "skirmish160.factions.usa.s9_derived.gun_mp_pct"
+max = 20
+
+# --- T84: gun fire and kills (report; T32 cap reads kills_by_vehicle_max_pct) ---
+[[target]]
+id = "T84a"
+metric = "skirmish160.factions.germany.s9_derived.gun_rounds_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T84b"
+metric = "skirmish160.factions.usa.s9_derived.gun_rounds_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T84c"
+metric = "skirmish160.factions.germany.s9_derived.gun_ko_tanks_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T84d"
+metric = "skirmish160.factions.usa.s9_derived.gun_ko_tanks_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T84e"
+metric = "skirmish160.factions.germany.s7_derived.kos_per_bought.ger_pak40"
+min = 0
+kind = "report"
+[[target]]
+id = "T84f"
+metric = "skirmish160.factions.usa.s7_derived.kos_per_bought.usa_57mm_m1"
+min = 0
+kind = "report"
+
+# --- T85: each new type's share of kills and of manpower (report) ----------
+[[target]]
+id = "T85a"
+metric = "skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_pak40"
+min = 0
+kind = "report"
+[[target]]
+id = "T85c"
+metric = "skirmish160.factions.germany.s7_derived.mp_share_pct.ger_pak40_squad"
+min = 0
+kind = "report"
+[[target]]
+id = "T85b"
+metric = "skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_57mm_m1"
+min = 0
+kind = "report"
+[[target]]
+id = "T85d"
+metric = "skirmish160.factions.usa.s7_derived.mp_share_pct.usa_57mm_m1_squad"
+min = 0
+kind = "report"
+[[target]]
+id = "T85e"
+metric = "skirmish160.factions.germany.s7_derived.mp_share_pct.ger_sdkfz11_squad"
+min = 0
+kind = "report"
+[[target]]
+id = "T85f"
+metric = "skirmish160.factions.germany.s7_derived.mp_share_pct.ger_pak38_squad"
+min = 0
+kind = "report"
+
+# --- T86: crews, capture, tows (report) ------------------------------------
+[[target]]
+id = "T86a"
+metric = "skirmish160.factions.germany.s9_derived.gun_crew_lost_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T86b"
+metric = "skirmish160.factions.usa.s9_derived.gun_crew_lost_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T86c"
+metric = "skirmish160.factions.germany.s9_derived.guns_neutral_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T86d"
+metric = "skirmish160.factions.usa.s9_derived.guns_neutral_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T86e"
+metric = "skirmish160.factions.germany.s9_derived.guns_captured_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T86f"
+metric = "skirmish160.factions.usa.s9_derived.guns_captured_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T86g"
+metric = "skirmish160.factions.germany.s9.tows_lost"
+min = 0
+kind = "report"
+[[target]]
+id = "T86h"
+metric = "skirmish160.factions.usa.s9.tows_lost"
+min = 0
+kind = "report"
+
+# --- T87: no AI move loops with guns (Build C) -----------------------------
+# T71 covers wheels; guns are rated by the S9 job counters.
+[[target]]
+id = "T87a"
+metric = "skirmish160.factions.germany.s9.gun_ai_fails"
+min = 0
+kind = "report"
+[[target]]
+id = "T87b"
+metric = "skirmish160.factions.usa.s9.gun_ai_fails"
+min = 0
+kind = "report"
+
+# --- T88: guns put enemy armour out of action (S9b done-when) ---------------
+# Baseline on the S9 build, traced over 80 matches (seeds 1-40, both bases):
+# Germany 0.41, USA 0.33 per match. The bar is "clearly above the baseline".
+# Those are distinct vehicles per match, and so is the measure since S9b Fix.
+[[target]]
+id = "T88a"
+metric = "skirmish160.factions.germany.s9_derived.gun_armour_out_per_match"
+min = 0.55
+[[target]]
+id = "T88b"
+metric = "skirmish160.factions.usa.s9_derived.gun_armour_out_per_match"
+min = 0.45
+kind = "report"
+note = "report row (owner Q4, B1): the only lever is [ai.guns], which the pass does not move"
+[[target]]
+id = "T88c"
+metric = "skirmish160_oos.factions.germany.s9_derived.gun_armour_out_per_match"
+min = 0.55
+[[target]]
+id = "T88d"
+metric = "skirmish160_oos.factions.usa.s9_derived.gun_armour_out_per_match"
+min = 0.45
+kind = "report"
+note = "report row (owner Q4, B1): the only lever is [ai.guns], which the pass does not move"
+
+# --- T89: fortification works started (report; was max 0 in the mechanics half) --
+# Retired by S10a-ai: the AI now builds (T94-T95 are the hard floors).
+# Source: owner rule 2026-11-09 (mechanics slice), spec section 8.
+[[target]]
+id = "T89a"
+metric = "skirmish160.factions.germany.s10.works_started"
+min = 0
+kind = "report"
+[[target]]
+id = "T89b"
+metric = "skirmish160.factions.usa.s10.works_started"
+min = 0
+kind = "report"
+[[target]]
+id = "T89c"
+metric = "skirmish160_oos.factions.germany.s10.works_started"
+min = 0
+kind = "report"
+[[target]]
+id = "T89d"
+metric = "skirmish160_oos.factions.usa.s10.works_started"
+min = 0
+kind = "report"
+[[target]]
+id = "T89e"
+metric = "skirmish160_s201.factions.germany.s10.works_started"
+min = 0
+kind = "report"
+[[target]]
+id = "T89f"
+metric = "skirmish160_s201.factions.usa.s10.works_started"
+min = 0
+kind = "report"
+
+# --- T90: buys of the three S10a cards (report; was max 0 in the mechanics half) --
+# Retired by S10a-ai: the cards now carry ai_weight above 0 (T100 is the floor).
+# Source: owner rule 2026-11-09; spec 3.4 (all three cards ai_weight 0).
+[[target]]
+id = "T90a"
+metric = "skirmish160.factions.germany.s10.new_cards_bought"
+min = 0
+kind = "report"
+[[target]]
+id = "T90b"
+metric = "skirmish160.factions.usa.s10.new_cards_bought"
+min = 0
+kind = "report"
+[[target]]
+id = "T90c"
+metric = "skirmish160_oos.factions.germany.s10.new_cards_bought"
+min = 0
+kind = "report"
+[[target]]
+id = "T90d"
+metric = "skirmish160_oos.factions.usa.s10.new_cards_bought"
+min = 0
+kind = "report"
+[[target]]
+id = "T90e"
+metric = "skirmish160_s201.factions.germany.s10.new_cards_bought"
+min = 0
+kind = "report"
+[[target]]
+id = "T90f"
+metric = "skirmish160_s201.factions.usa.s10.new_cards_bought"
+min = 0
+kind = "report"
+
+# --- T91: wire slows infantry to 20 % until cut or blown (fortify-test) -----
+# Source: roster-expansion.md S10 done-when; infantry-structures.md 7.6;
+# [fortify] wire_speed_pct = 20. Band 19-21 allows the leader's tick rounding.
+[[target]]
+id = "T91a"
+metric = "fortify10.s10a.wire.inside_speed_pct"
+min = 19
+max = 21
+# Through a cut or blown gap the leader walks at full pace (a 5 % margin for
+# the turn into the gap).
+[[target]]
+id = "T91b"
+metric = "fortify10.s10a.wire.cut_gap_speed_pct"
+min = 95
+[[target]]
+id = "T91c"
+metric = "fortify10.s10a.wire.blown_gap_speed_pct"
+min = 95
+
+# --- T92: a dugout roof survives an 81 mm hit, breaks under heavier HE -------
+# Source: roster-expansion.md S10 done-when; roof hp 250 between the 81 mm
+# damage 150 and the satchel's 300 (spec 3.1). Every run, both factions.
+[[target]]
+id = "T92a"
+metric = "fortify10.s10a.roof.survived_81mm_pct"
+min = 100
+[[target]]
+id = "T92b"
+metric = "fortify10.s10a.roof.sheltered_losses"
+max = 0
+[[target]]
+id = "T92c"
+metric = "fortify10.s10a.roof.broken_heavy_pct"
+min = 100
+
+# --- T93: breach assault vs trench + wire + MG nest, against the S3b bar -----
+# Source: roster-expansion.md S10 done-when (reported against the S3b bar);
+# S3b T10: with MG support defenders lose >= 75 %, attackers <= 50 %.
+# Reports in the mechanics half; the AI half balances them.
+[[target]]
+id = "T93a"
+metric = "fortify10.s10a.breach.defender_loss_pct"
+min = 75
+kind = "report"
+[[target]]
+id = "T93b"
+metric = "fortify10.s10a.breach.attacker_loss_pct"
+max = 50
+kind = "report"
+[[target]]
+id = "T93c"
+metric = "fortify10.s10a.breach.gap_opened_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T93d"
+metric = "fortify10.s10a.breach.control.defender_loss_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T93e"
+metric = "fortify10.s10a.breach.control.attacker_loss_pct"
+min = 0
+kind = "report"
+
+# --- T93f-j: the breach row driven by the AI's breach job (spec 6) ------------
+# Source: roster-expansion.md S10 done-when ("engineers cut or blow enemy wire
+# ... in at least 6 of 10"), and the S3c two-bases row of this fortify-test
+# (attackers 41.4 / 40.8 % with MG + rifle squad suppressing, no wire). The
+# S3b bar (T93a/b, defenders >= 75 %) stays a report: the S3b row itself reads
+# 2.7 % / 71.5 % and the two-bases row 0-15 % defenders, so no AI work reaches
+# it before S11 artillery. 20 runs (10 seeds x both factions).
+[[target]]
+id = "T93f"
+metric = "fortify10.s10a.breach_ai.gap_opened_pct"
+min = 30
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
+# Owner 2026-11-11 (stage D, "fix smoke, lower bar"): one assault squad and two
+# bases against a trench, an MG nest and 100 m of wire open it in 3 of 10.
+[[target]]
+id = "T93g"
+metric = "fortify10.s10a.breach_ai.attacker_loss_pct"
+max = 60
+kind = "report"
+note = "owner 2026-11-11: a report (16 defenders in range from 150 m out)"
+# A carrier sent, the charge laid or the cut done, in 3 of 10 (owner 2026-11-11).
+[[target]]
+id = "T93h"
+metric = "fortify10.s10a.breach_ai.placed_pct"
+min = 30
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
+[[target]]
+id = "T93i"
+metric = "fortify10.s10a.breach_ai.defender_loss_pct"
+min = 0
+kind = "report"
+note = "S3b bar 75 is out of reach (spec 6)"
+[[target]]
+id = "T93j"
+metric = "fortify10.s10a.breach_ai.control.attacker_loss_pct"
+min = 0
+kind = "report"
+note = "same force, no wire or nest"
+
+# --- T94: the AI completes a work (MG nest, sandbags, dugout, roof) ----------
+# Source: roster-expansion.md S10 done-when "the AI wires and sandbags a held
+# point ... in at least 6 of 10 matches".
+[[target]]
+id = "T94a"
+metric = "skirmish160.factions.germany.s10_derived.matches_with_works_pct"
+min = 60
+[[target]]
+id = "T94b"
+metric = "skirmish160.factions.usa.s10_derived.matches_with_works_pct"
+min = 60
+[[target]]
+id = "T94c"
+metric = "skirmish160_oos.factions.germany.s10_derived.matches_with_works_pct"
+min = 60
+[[target]]
+id = "T94d"
+metric = "skirmish160_oos.factions.usa.s10_derived.matches_with_works_pct"
+min = 60
+
+# --- T95: the AI lays wire in front of a held point (same done-when line) -----
+[[target]]
+id = "T95a"
+metric = "skirmish160.factions.germany.s10_derived.matches_with_wire_pct"
+min = 60
+[[target]]
+id = "T95b"
+metric = "skirmish160.factions.usa.s10_derived.matches_with_wire_pct"
+min = 60
+kind = "report"
+note = "until the balance pass (owner rule 1, 2026-11-11)"
+[[target]]
+id = "T95c"
+metric = "skirmish160_oos.factions.germany.s10_derived.matches_with_wire_pct"
+min = 60
+[[target]]
+id = "T95d"
+metric = "skirmish160_oos.factions.usa.s10_derived.matches_with_wire_pct"
+min = 60
+kind = "report"
+note = "until the balance pass (owner rule 1, 2026-11-11)"
+
+# --- T96: its engineers open enemy wire before an assault -------------------
+# Source: same done-when line. Read only over matches where the enemy laid
+# wire (a faction cannot breach wire that is not there); T96e-h report the
+# unconditional share.
+[[target]]
+id = "T96a"
+metric = "skirmish160.factions.germany.s10_derived.breach_when_enemy_wire_pct"
+min = 60
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
+[[target]]
+id = "T96b"
+metric = "skirmish160.factions.usa.s10_derived.breach_when_enemy_wire_pct"
+min = 60
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
+[[target]]
+id = "T96c"
+metric = "skirmish160_oos.factions.germany.s10_derived.breach_when_enemy_wire_pct"
+min = 60
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
+[[target]]
+id = "T96d"
+metric = "skirmish160_oos.factions.usa.s10_derived.breach_when_enemy_wire_pct"
+min = 60
+kind = "report"
+note = "owner 2026-11-11 (S10a-20): a report until S11 combined arms"
+[[target]]
+id = "T96e"
+metric = "skirmish160.factions.germany.s10_derived.matches_with_gap_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T96f"
+metric = "skirmish160.factions.usa.s10_derived.matches_with_gap_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T96g"
+metric = "skirmish160_oos.factions.germany.s10_derived.matches_with_gap_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T96h"
+metric = "skirmish160_oos.factions.usa.s10_derived.matches_with_gap_pct"
+min = 0
+kind = "report"
+
+# --- T97: builders do not strip the front ------------------------------------
+# Share of the AI's infantry squad-plans spent on a fort job. Source: the
+# engineer mix weight 15 of 175 (8.6 % of buys) plus the new cards; 12 % caps
+# it so a weight tune cannot turn line infantry into builders.
+[[target]]
+id = "T97a"
+metric = "skirmish160.factions.germany.s10_derived.builder_share_pct"
+max = 12
+[[target]]
+id = "T97b"
+metric = "skirmish160.factions.usa.s10_derived.builder_share_pct"
+max = 12
+[[target]]
+id = "T97c"
+metric = "skirmish160_oos.factions.germany.s10_derived.builder_share_pct"
+max = 12
+[[target]]
+id = "T97d"
+metric = "skirmish160_oos.factions.usa.s10_derived.builder_share_pct"
+max = 12
+
+# --- T98: materials do not starve the economy --------------------------------
+# Source: S10a-18 (A): materials at most [ai.fort] materials_max_pct (3) of the
+# income earned. T98e-h report kg loaded per match.
+[[target]]
+id = "T98a"
+metric = "skirmish160.factions.germany.s10_derived.materials_mp_pct"
+max = 3
+[[target]]
+id = "T98b"
+metric = "skirmish160.factions.usa.s10_derived.materials_mp_pct"
+max = 3
+[[target]]
+id = "T98c"
+metric = "skirmish160_oos.factions.germany.s10_derived.materials_mp_pct"
+max = 3
+[[target]]
+id = "T98d"
+metric = "skirmish160_oos.factions.usa.s10_derived.materials_mp_pct"
+max = 3
+[[target]]
+id = "T98e"
+metric = "skirmish160.factions.germany.s10_derived.materials_loaded_kg_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T98f"
+metric = "skirmish160.factions.usa.s10_derived.materials_loaded_kg_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T98g"
+metric = "skirmish160_oos.factions.germany.s10_derived.materials_loaded_kg_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T98h"
+metric = "skirmish160_oos.factions.usa.s10_derived.materials_loaded_kg_per_match"
+min = 0
+kind = "report"
+
+# --- T99: no fort order loops (T4/T87 rule: the AI's orders are accepted) -----
+# Refused Fortify, LoadMaterials, CutWire and PlaceBangalore per match.
+[[target]]
+id = "T99a"
+metric = "skirmish160.factions.germany.s10_derived.fort_refused_per_match"
+max = 1
+[[target]]
+id = "T99b"
+metric = "skirmish160.factions.usa.s10_derived.fort_refused_per_match"
+max = 1
+[[target]]
+id = "T99c"
+metric = "skirmish160_oos.factions.germany.s10_derived.fort_refused_per_match"
+max = 1
+[[target]]
+id = "T99d"
+metric = "skirmish160_oos.factions.usa.s10_derived.fort_refused_per_match"
+max = 1
+
+# --- T100: the new cards are bought (ai_weight above 0, spec 3.1) -------------
+# 0.3 per match. Owner 2026-11-11 (stage D, "Germany by weight, USA report"):
+# Baupioniere are Germany's default builder by ai_weight (floor); the USA has
+# no construction card (only the 380 MP Assault Section), so its line is a report.
+[[target]]
+id = "T100a"
+metric = "skirmish160.factions.germany.s10_derived.new_cards_per_match"
+min = 0.3
+[[target]]
+id = "T100b"
+metric = "skirmish160.factions.usa.s10_derived.new_cards_per_match"
+min = 0.3
+kind = "report"
+note = "owner 2026-11-11: the US Engineer Squad stays the US builder"
+[[target]]
+id = "T100c"
+metric = "skirmish160_oos.factions.germany.s10_derived.new_cards_per_match"
+min = 0.3
+[[target]]
+id = "T100d"
+metric = "skirmish160_oos.factions.usa.s10_derived.new_cards_per_match"
+min = 0.3
+kind = "report"
+note = "owner 2026-11-11: the US Engineer Squad stays the US builder"
+
+# --- T101: what the fortification AI did (reports; spec 5) --------------------
+[[target]]
+id = "T101a"
+metric = "skirmish160.factions.germany.s10_derived.works_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101b"
+metric = "skirmish160.factions.usa.s10_derived.works_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101c"
+metric = "skirmish160.factions.germany.s10_derived.wire_sections_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101d"
+metric = "skirmish160.factions.usa.s10_derived.wire_sections_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101e"
+metric = "skirmish160.factions.germany.s10_derived.breaches_started_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101f"
+metric = "skirmish160.factions.usa.s10_derived.breaches_started_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101g"
+metric = "skirmish160.factions.germany.s10_derived.breach_opened_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T101h"
+metric = "skirmish160.factions.usa.s10_derived.breach_opened_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T101i"
+metric = "skirmish160.factions.germany.s10_derived.men_lost_in_wire_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101j"
+metric = "skirmish160.factions.usa.s10_derived.men_lost_in_wire_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101k"
+metric = "skirmish160.factions.germany.s10_derived.materials_lost_kg_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101l"
+metric = "skirmish160.factions.usa.s10_derived.materials_lost_kg_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101m"
+metric = "skirmish160.factions.germany.s10_derived.hq_roofed_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T101n"
+metric = "skirmish160.factions.usa.s10_derived.hq_roofed_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T101o"
+metric = "skirmish160.factions.germany.s10_derived.shelter_moves_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101p"
+metric = "skirmish160.factions.usa.s10_derived.shelter_moves_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101q"
+metric = "skirmish160.factions.germany.s10_derived.wire_bypassed_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101r"
+metric = "skirmish160.factions.usa.s10_derived.wire_bypassed_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101s"
+metric = "skirmish160.factions.germany.s10_derived.material_runs_per_match"
+min = 0
+kind = "report"
+[[target]]
+id = "T101t"
+metric = "skirmish160.factions.usa.s10_derived.material_runs_per_match"
+min = 0
+kind = "report"
+
+# ===========================================================================
+# S10b targets. Sources: roster-expansion.md S10 done-when and scope;
+# infantry-structures.md 7.6 (times, kg, effects, detection rule), 7.7 (who
+# builds what); spec rules R1-R30 (docs/slices/S10b-obstacles.md). Rows run
+# 10 seeds x both factions (20 runs) unless stated. "verify" = a starting
+# value without a design figure; the measure that first reads it is logged.
+# ===========================================================================
+
+# --- T102: an AT mine stops a tank (R4, R5; done-when 1) --------------------
+# A tank (Pz IV H / M4A3(75)W) driven so one track crosses one AT mine.
+[[target]]
+id = "T102a"
+metric = "fortify10.s10b.atmine.direct_immobilised_pct"
+min = 100
+# The same tank driven straight through a three-row AT field (R2: rows 4 m
+# apart, mines every 4 m, staggered by a third); lateral offset varied by seed.
+# 75 is a geometry estimate (spec R5 note), verify.
+[[target]]
+id = "T102b"
+metric = "fortify10.s10b.atmine.field_immobilised_pct"
+min = 75
+[[target]]
+id = "T102c"
+metric = "fortify10.s10b.atmine.field_knocked_out_pct"
+min = 0
+kind = "report"
+note = "running gear only (S10b-3 (A)): expected 0"
+# A rifle squad walking over the same AT field sets off nothing (R4).
+[[target]]
+id = "T102d"
+metric = "fortify10.s10b.atmine.infantry_triggered"
+max = 0
+# T102d means something only if men came within trigger range of an AT mine
+# (review R8): pairs of man and mine closer than trigger_cm, all runs.
+[[target]]
+id = "T102e"
+metric = "fortify10.s10b.atmine.infantry_close_passes"
+min = 1
+
+# --- T103: an AP mine goes off only on contact (R3; done-when 2) -------------
+# A man passing 50 cm from an AP mine never sets it off; one stepping within
+# 30 cm always does.
+[[target]]
+id = "T103a"
+metric = "fortify10.s10b.apmine.near_miss_triggered"
+max = 0
+[[target]]
+id = "T103b"
+metric = "fortify10.s10b.apmine.contact_triggered_pct"
+min = 100
+# A vehicle driven over an AP field sets off nothing (R3: foot only).
+[[target]]
+id = "T103c"
+metric = "fortify10.s10b.apmine.vehicle_triggered"
+max = 0
+# A rifle squad crossing a two-row AP field (30 m, mines every 2 m).
+[[target]]
+id = "T103d"
+metric = "fortify10.s10b.apmine.crossing_losses_pct"
+min = 0
+kind = "report"
+
+# --- T104: a sweep finds mines at the expected rate (R8-R11; done-when 3) ----
+# One clear_mines squad sweeps a 30 m lane with 10 enemy AP mines at known
+# offsets. expected_pct = mean over mines of 1 - (1 - p)^n_i, p the per-tick
+# chance (detect_pct_per_s / 100 / 30), n_i the ticks a sweeper was within
+# 1.5 m (computed by the row from the run itself).
+[[target]]
+id = "T104a"
+metric = "fortify10.s10b.sweep.found_vs_expected_pts"
+max = 10
+[[target]]
+id = "T104b"
+metric = "fortify10.s10b.sweep.lifted_of_found_pct"
+min = 90
+[[target]]
+id = "T104c"
+metric = "fortify10.s10b.sweep.found_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T104d"
+metric = "fortify10.s10b.sweep.sweeper_losses"
+min = 0
+kind = "report"
+# A Bangalore laid across the lane sets off the mines within its blast (R12).
+[[target]]
+id = "T104e"
+metric = "fortify10.s10b.sweep.bangalore_cleared_pct"
+min = 0
+kind = "report"
+
+# --- T105: AT obstacles block vehicles, not infantry (R14-R18; done-when 4) --
+# A tank ordered to a point 60 m behind a 30 m line never drives through the
+# line (it may go round an end).
+[[target]]
+id = "T105a"
+metric = "fortify10.s10b.obstacle.hedgehog_crossed_pct"
+max = 0
+[[target]]
+id = "T105b"
+metric = "fortify10.s10b.obstacle.log_crossed_pct"
+max = 0
+# A rifle squad crosses both lines at its own pace (S10a-2 (A)).
+[[target]]
+id = "T105c"
+metric = "fortify10.s10b.obstacle.infantry_speed_pct"
+min = 95
+[[target]]
+id = "T105d"
+metric = "fortify10.s10b.obstacle.tank_reached_pct"
+min = 0
+kind = "report"
+note = "goes round the line's end or stops at a partial path"
+# Review R5: T105a/b mean something only if the tank came to the line and,
+# with no line staged, drives through the same band.
+[[target]]
+id = "T105e"
+metric = "fortify10.s10b.obstacle.approached_pct"
+min = 100
+[[target]]
+id = "T105f"
+metric = "fortify10.s10b.obstacle.control_crossed_pct"
+min = 100
+
+# --- T106: demolition opens an obstacle line (R19-R21; done-when 5) ----------
+[[target]]
+id = "T106a"
+metric = "fortify10.s10b.demolish.destroyed_pct"
+min = 100
+# After the charge the tank is ordered through the gap; 80 verify.
+[[target]]
+id = "T106b"
+metric = "fortify10.s10b.demolish.gap_crossed_pct"
+min = 80
+kind = "report"
+note = "S10b-5 (A): one charge opens no tank gap in a hedgehog line; AI form: T114"
+[[target]]
+id = "T106c"
+metric = "fortify10.s10b.demolish.charge_laid_s"
+min = 0
+kind = "report"
+[[target]]
+id = "T106d"
+metric = "fortify10.s10b.demolish.approached_pct"
+min = 0
+kind = "report"
+note = "review R5: tanks that came within 8 m of the line after the charge"
+
+# --- T107: the bunker's protection against named weapons (R22-R26; done-when 6)
+# Five men inside a built bunker. 300 staged rifle and MG rounds (Kar98k and
+# MG 42 / M1 Garand and M1919) from 20 m at the front walls and slit: no hp
+# lost by any piece (armour 100 > every small-arms pen, S10a 3.1). T107i is
+# its control (review R6).
+[[target]]
+id = "T107a"
+metric = "fortify10.s10b.bunker.small_arms_hp_lost"
+max = 0
+# Three 81 mm bombs (GrW 34 / M1, damage 150) on the roof centre: it stands
+# (roof hp 1000) and nobody under it dies.
+[[target]]
+id = "T107b"
+metric = "fortify10.s10b.bunker.survived_81mm_x3_pct"
+min = 100
+[[target]]
+id = "T107c"
+metric = "fortify10.s10b.bunker.sheltered_losses"
+max = 0
+# A satchel laid at the slit (design 7.6 "satchel against the slit") kills
+# men inside through the opening; 40 verify. Since review R7 it is a real
+# Demolish order clicked at the slit (the charge where Demolish lays it,
+# bunker facing down the slope); T107k (facing up) and T107l (the same at
+# the back wall, no opening) are reports beside it.
+[[target]]
+id = "T107d"
+metric = "fortify10.s10b.bunker.slit_satchel_losses_pct"
+min = 40
+# The same satchel on the roof kills nobody inside.
+[[target]]
+id = "T107e"
+metric = "fortify10.s10b.bunker.roof_satchel_losses"
+max = 0
+[[target]]
+id = "T107f"
+metric = "fortify10.s10b.bunker.ap_shots_to_break"
+min = 0
+kind = "report"
+note = "75 mm AP at the roof, shot_piece_damage 150 each: 7 expected"
+[[target]]
+id = "T107g"
+metric = "fortify10.s10b.bunker.mg_losses_pct"
+min = 0
+kind = "report"
+note = "men lost to the 60 s MG fire through the slit; open-pit control below"
+[[target]]
+id = "T107h"
+metric = "fortify10.s10b.bunker.control.mg_losses_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T107k"
+metric = "fortify10.s10b.bunker.slit_satchel_uphill_losses_pct"
+min = 0
+kind = "report"
+[[target]]
+id = "T107l"
+metric = "fortify10.s10b.bunker.back_satchel_losses_pct"
+min = 0
+kind = "report"
+note = "the slit's control: equal to T107d means the opening does not matter"
+[[target]]
+id = "T107m"
+metric = "fortify10.s10b.bunker.slit_charge_laid_pct"
+min = 100
+# Review R6: the controls that show the rounds and the MG reach the spot.
+[[target]]
+id = "T107i"
+metric = "fortify10.s10b.bunker.control.small_arms_hp_lost"
+min = 1
+[[target]]
+id = "T107j"
+metric = "fortify10.s10b.bunker.control.open_mg_losses_pct"
+min = 1
+
+# --- T108: with every new switch off the AI uses none of it (all-off control)
+# s10b.used = mines laid + obstacles and bunkers built + sweeps + demolitions
+# + ordered. T108c-f (the 160 sets) are dropped: with the switches on the AI uses them.
+[[target]]
+id = "T108a"
+metric = "skirmish40_off.factions.germany.s10b.used"
+max = 0
+[[target]]
+id = "T108b"
+metric = "skirmish40_off.factions.usa.s10b.used"
+max = 0
+
+# ===========================================================================
+# S10b-ai targets (T109 on): the AI's use of the S10b things. Sources: spec
+# S10b-ai.md rules R1-R14, L1-L5; roster-expansion.md S10 done-when; owner brief
+# 2026-11-12 ("new things used per match" with real floors). Skirmish rows on
+# skirmish160 and skirmish160_oos, Germany and USA (a-d = 160 GER, 160 USA,
+# oos GER, oos USA). Exposure counts are matches out of 160 unless named.
+# ===========================================================================
+
+# --- T109: the AI lays minefields at held points (R1, R4) -------------------
+[[target]]
+id = "T109a"
+metric = "skirmish160.factions.germany.s10b_ai_derived.matches_with_mines_pct"
+min = 45
+exposure = "skirmish160.factions.germany.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.germany.s10b_ai_derived.matches_with_mines_pct"
+note = "S10c-5 (A): 45 % (was 50); verify: 50 % of matches; exposure = matches with a laying chance"
+[[target]]
+id = "T109b"
+metric = "skirmish160.factions.usa.s10b_ai_derived.matches_with_mines_pct"
+min = 45
+exposure = "skirmish160.factions.usa.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.usa.s10b_ai_derived.matches_with_mines_pct"
+note = "S10c-5 (A): 45 % (was 50); verify: 50 % of matches; exposure = matches with a laying chance"
+[[target]]
+id = "T109c"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.matches_with_mines_pct"
+min = 45
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.germany.s10b_ai_derived.matches_with_mines_pct"
+note = "S10c-5 (A): 45 % (was 50); verify: 50 % of matches; exposure = matches with a laying chance"
+[[target]]
+id = "T109d"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.matches_with_mines_pct"
+min = 45
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.usa.s10b_ai_derived.matches_with_mines_pct"
+note = "S10c-5 (A): 45 % (was 50); verify: 50 % of matches; exposure = matches with a laying chance"
+[[target]]
+id = "T109e"
+metric = "skirmish160.factions.germany.s10b_ai_derived.mines_laid_per_match"
+min = 10
+exposure = "skirmish160.factions.germany.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.germany.s10b_ai_derived.mines_laid_per_match"
+note = "verify: one AP field is 15 mines"
+[[target]]
+id = "T109f"
+metric = "skirmish160.factions.usa.s10b_ai_derived.mines_laid_per_match"
+min = 10
+exposure = "skirmish160.factions.usa.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.usa.s10b_ai_derived.mines_laid_per_match"
+note = "verify: one AP field is 15 mines"
+[[target]]
+id = "T109g"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.mines_laid_per_match"
+min = 10
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.germany.s10b_ai_derived.mines_laid_per_match"
+note = "verify: one AP field is 15 mines"
+[[target]]
+id = "T109h"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.mines_laid_per_match"
+min = 10
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.usa.s10b_ai_derived.mines_laid_per_match"
+note = "verify: one AP field is 15 mines"
+
+# --- T110: AI AT fields stop enemy tanks (R2, R3) -----------------------------
+[[target]]
+id = "T110a"
+metric = "skirmish160.factions.germany.s10b_ai_derived.at_fields_per_match"
+min = 0.5
+exposure = "skirmish160.factions.germany.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.germany.s10b_ai_derived.at_fields_per_match"
+note = "verify"
+[[target]]
+id = "T110b"
+metric = "skirmish160.factions.usa.s10b_ai_derived.at_fields_per_match"
+min = 0.5
+exposure = "skirmish160.factions.usa.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.usa.s10b_ai_derived.at_fields_per_match"
+note = "verify"
+[[target]]
+id = "T110c"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.at_fields_per_match"
+min = 0.5
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.germany.s10b_ai_derived.at_fields_per_match"
+note = "verify"
+[[target]]
+id = "T110d"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.at_fields_per_match"
+min = 0.5
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.lay_chance_matches"
+exposure_min = 40
+control = "skirmish40_off.factions.usa.s10b_ai_derived.at_fields_per_match"
+note = "verify"
+[[target]]
+id = "T110e"
+metric = "skirmish160.factions.germany.s10b_ai_derived.tanks_stopped_per_match"
+min = 0.1
+exposure = "skirmish160.factions.germany.s10b_ai_derived.at_exposure_s_per_match"
+exposure_min = 5
+control = "skirmish40_off.factions.germany.s10b_ai_derived.tanks_stopped_per_match"
+note = "verify; exposure = enemy vehicle-seconds within 5 m of AI AT mines per match"
+[[target]]
+id = "T110f"
+metric = "skirmish160.factions.usa.s10b_ai_derived.tanks_stopped_per_match"
+min = 0.1
+exposure = "skirmish160.factions.usa.s10b_ai_derived.at_exposure_s_per_match"
+exposure_min = 5
+control = "skirmish40_off.factions.usa.s10b_ai_derived.tanks_stopped_per_match"
+note = "verify; exposure = enemy vehicle-seconds within 5 m of AI AT mines per match"
+[[target]]
+id = "T110g"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.tanks_stopped_per_match"
+min = 0.1
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.at_exposure_s_per_match"
+exposure_min = 5
+control = "skirmish40_off.factions.germany.s10b_ai_derived.tanks_stopped_per_match"
+note = "verify; exposure = enemy vehicle-seconds within 5 m of AI AT mines per match"
+[[target]]
+id = "T110h"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.tanks_stopped_per_match"
+min = 0.1
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.at_exposure_s_per_match"
+exposure_min = 5
+control = "skirmish40_off.factions.usa.s10b_ai_derived.tanks_stopped_per_match"
+note = "verify; exposure = enemy vehicle-seconds within 5 m of AI AT mines per match"
+[[target]]
+id = "T110i"
+metric = "fortify10.s10b_ai.mines.tank_stopped_pct"
+min = 60
+exposure = "fortify10.s10b_ai.mines.tank_reached_field_pct"
+exposure_min = 80
+control = "fortify10.s10b_ai.mines.control.tank_stopped_pct"
+note = "verify"
+[[target]]
+id = "T110j"
+metric = "fortify10.s10b_ai.mines.field_laid_pct"
+min = 90
+exposure = "fortify10.s10b_ai.mines.builder_alive_pct"
+exposure_min = 80
+control = "fortify10.s10b_ai.mines.control.field_laid_pct"
+[[target]]
+id = "T110k"
+metric = "fortify10.s10b_ai.mines.tank_stopped_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s10b_ai.mines.two_rows_pct"
+exposure_min = 80
+control = "fortify10.s10b_ai.mines.rows1.tank_stopped_pct"
+note = "at_rows 2 vs 1, report only (review finding 7): the tank paths on the 4 m grid and the AT mine step is 4 m, so row 1 alone stops it on every lane (100 = 100); an honest crossing off the lattice (straight scripted drive or a diagonal approach) is not built"
+
+# --- T111: the AI sweeps known or suspected mines on its attack lines (R9, R10)
+[[target]]
+id = "T111a"
+metric = "skirmish160.factions.germany.s10b_ai_derived.sweep_when_wanted_pct"
+min = 50
+exposure = "skirmish160.factions.germany.s10b_ai_derived.sweep_wanted_matches"
+exposure_min = 10
+control = "skirmish40_off.factions.germany.s10b_ai_derived.sweep_when_wanted_pct"
+note = "verify; null (SKIP) with no want"
+[[target]]
+id = "T111b"
+metric = "skirmish160.factions.usa.s10b_ai_derived.sweep_when_wanted_pct"
+min = 50
+exposure = "skirmish160.factions.usa.s10b_ai_derived.sweep_wanted_matches"
+exposure_min = 10
+control = "skirmish40_off.factions.usa.s10b_ai_derived.sweep_when_wanted_pct"
+note = "verify; null (SKIP) with no want"
+[[target]]
+id = "T111c"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.sweep_when_wanted_pct"
+min = 50
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.sweep_wanted_matches"
+exposure_min = 10
+control = "skirmish40_off.factions.germany.s10b_ai_derived.sweep_when_wanted_pct"
+note = "verify; null (SKIP) with no want"
+[[target]]
+id = "T111d"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.sweep_when_wanted_pct"
+min = 50
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.sweep_wanted_matches"
+exposure_min = 10
+control = "skirmish40_off.factions.usa.s10b_ai_derived.sweep_when_wanted_pct"
+note = "verify; null (SKIP) with no want"
+[[target]]
+id = "T111e"
+metric = "skirmish160.factions.germany.s10b_ai_derived.mines_swept_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s10b_ai_derived.sweep_wanted_matches"
+exposure_min = 10
+control = "skirmish40_off.factions.germany.s10b_ai_derived.mines_swept_per_match"
+[[target]]
+id = "T111f"
+metric = "skirmish160.factions.usa.s10b_ai_derived.mines_swept_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s10b_ai_derived.sweep_wanted_matches"
+exposure_min = 10
+control = "skirmish40_off.factions.usa.s10b_ai_derived.mines_swept_per_match"
+[[target]]
+id = "T111g"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.mines_swept_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.sweep_wanted_matches"
+exposure_min = 10
+control = "skirmish40_off.factions.germany.s10b_ai_derived.mines_swept_per_match"
+[[target]]
+id = "T111h"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.mines_swept_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.sweep_wanted_matches"
+exposure_min = 10
+control = "skirmish40_off.factions.usa.s10b_ai_derived.mines_swept_per_match"
+[[target]]
+id = "T111i"
+metric = "fortify10.s10b_ai.sweep.lane_swept_pct"
+min = 80
+exposure = "fortify10.s10b_ai.sweep.sweep_wanted_pct"
+exposure_min = 100
+control = "fortify10.s10b_ai.sweep.control.lane_swept_pct"
+[[target]]
+id = "T111j"
+metric = "fortify10.s10b_ai.sweep.attacker_mine_losses"
+max = 1
+exposure = "fortify10.s10b_ai.sweep.sweep_wanted_pct"
+exposure_min = 100
+control = "fortify10.s10b_ai.sweep.control.attacker_mine_losses"
+note = "verify; men per run; control (no sweep) must lose more than 1"
+
+# --- T112: the AI builds obstacles in front of guns and works (R5, R6) -------
+[[target]]
+id = "T112a"
+metric = "skirmish160.factions.germany.s10b_ai_derived.matches_with_obstacle_pct"
+min = 30
+exposure = "skirmish160.factions.germany.s10b_ai_derived.obst_chance_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.germany.s10b_ai_derived.matches_with_obstacle_pct"
+note = "verify; exposure = matches with an own gun in Hold or a built nest or bunker"
+[[target]]
+id = "T112b"
+metric = "skirmish160.factions.usa.s10b_ai_derived.matches_with_obstacle_pct"
+min = 30
+exposure = "skirmish160.factions.usa.s10b_ai_derived.obst_chance_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.usa.s10b_ai_derived.matches_with_obstacle_pct"
+note = "verify; exposure = matches with an own gun in Hold or a built nest or bunker"
+[[target]]
+id = "T112c"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.matches_with_obstacle_pct"
+min = 30
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.obst_chance_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.germany.s10b_ai_derived.matches_with_obstacle_pct"
+note = "verify; exposure = matches with an own gun in Hold or a built nest or bunker"
+[[target]]
+id = "T112d"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.matches_with_obstacle_pct"
+min = 30
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.obst_chance_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.usa.s10b_ai_derived.matches_with_obstacle_pct"
+note = "verify; exposure = matches with an own gun in Hold or a built nest or bunker"
+[[target]]
+id = "T112e"
+metric = "skirmish160.factions.germany.s10b_ai_derived.obstacles_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s10b_ai_derived.obst_chance_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.germany.s10b_ai_derived.obstacles_per_match"
+[[target]]
+id = "T112f"
+metric = "skirmish160.factions.usa.s10b_ai_derived.obstacles_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s10b_ai_derived.obst_chance_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.usa.s10b_ai_derived.obstacles_per_match"
+[[target]]
+id = "T112g"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.obstacles_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.obst_chance_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.germany.s10b_ai_derived.obstacles_per_match"
+[[target]]
+id = "T112h"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.obstacles_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.obst_chance_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.usa.s10b_ai_derived.obstacles_per_match"
+[[target]]
+id = "T112i"
+metric = "fortify10.s10b_ai.obstacle.barrier_built_pct"
+min = 80
+exposure = "fortify10.s10b_ai.obstacle.builder_alive_pct"
+exposure_min = 80
+control = "fortify10.s10b_ai.obstacle.control.barrier_built_pct"
+[[target]]
+id = "T112j"
+metric = "fortify10.s10b_ai.obstacle.enemy_time_in_arc_s"
+min = 0
+kind = "report"
+exposure = "fortify10.s10b_ai.obstacle.enemy_tank_reached_barrier_pct"
+exposure_min = 50
+control = "fortify10.s10b_ai.obstacle.control.enemy_time_in_arc_s"
+
+# --- T113: the AI builds and mans one bunker (R7) ----------------------------
+[[target]]
+id = "T113a"
+metric = "skirmish160.factions.germany.s10b_ai_derived.matches_with_bunker_pct"
+min = 10
+exposure = "skirmish160.factions.germany.s10b_ai_derived.bunker_ready_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.germany.s10b_ai_derived.matches_with_bunker_pct"
+note = "S10b-ai-E8 (A): 10 % of all matches (was 20); verify; share of all matches (fix 8; before: of matches with a bunker job, control null); exposure: matches whose bunker plans passed the point checks; control reads 0"
+[[target]]
+id = "T113b"
+metric = "skirmish160.factions.usa.s10b_ai_derived.matches_with_bunker_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s10b_ai_derived.bunker_ready_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.usa.s10b_ai_derived.matches_with_bunker_pct"
+note = "USA builds at 50 % (no build_heavy card): report"
+[[target]]
+id = "T113c"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.matches_with_bunker_pct"
+min = 10
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.bunker_ready_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.germany.s10b_ai_derived.matches_with_bunker_pct"
+note = "S10b-ai-E8 (A): 10 % of all matches (was 20); verify; share of all matches (fix 8; before: of matches with a bunker job, control null); exposure: matches whose bunker plans passed the point checks; control reads 0"
+[[target]]
+id = "T113d"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.matches_with_bunker_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.bunker_ready_matches"
+exposure_min = 20
+control = "skirmish40_off.factions.usa.s10b_ai_derived.matches_with_bunker_pct"
+note = "USA builds at 50 % (no build_heavy card): report"
+[[target]]
+id = "T113e"
+metric = "fortify10.s10b_ai.bunker.built_pct"
+min = 80
+exposure = "fortify10.s10b_ai.bunker.builder_alive_pct"
+exposure_min = 80
+control = "fortify10.s10b_ai.bunker.control.built_pct"
+note = "Baupioniere set"
+[[target]]
+id = "T113f"
+metric = "fortify10.s10b_ai.bunker.manned_pct"
+min = 80
+exposure = "fortify10.s10b_ai.bunker.built_pct"
+exposure_min = 80
+control = "fortify10.s10b_ai.bunker.control.manned_pct"
+[[target]]
+id = "T113g"
+metric = "fortify10.s10b_ai.bunker.us_built_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s10b_ai.bunker.us_builder_alive_pct"
+exposure_min = 80
+control = "fortify10.s10b_ai.bunker.control.built_pct"
+note = "US engineers at 50 %"
+
+# --- T114: the AI demolishes obstacles that leave a vehicle no way round (R13, R14)
+[[target]]
+id = "T114a"
+metric = "skirmish160.factions.germany.s10b_ai_derived.demolish_when_wanted_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s10b_ai_derived.demolish_wanted_matches"
+exposure_min = 5
+control = "skirmish40_off.factions.germany.s10b_ai_derived.demolish_when_wanted_pct"
+note = "rare: vehicles route round first"
+[[target]]
+id = "T114b"
+metric = "skirmish160.factions.usa.s10b_ai_derived.demolish_when_wanted_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s10b_ai_derived.demolish_wanted_matches"
+exposure_min = 5
+control = "skirmish40_off.factions.usa.s10b_ai_derived.demolish_when_wanted_pct"
+note = "rare: vehicles route round first"
+[[target]]
+id = "T114c"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.demolish_when_wanted_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.demolish_wanted_matches"
+exposure_min = 5
+control = "skirmish40_off.factions.germany.s10b_ai_derived.demolish_when_wanted_pct"
+note = "rare: vehicles route round first"
+[[target]]
+id = "T114d"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.demolish_when_wanted_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.demolish_wanted_matches"
+exposure_min = 5
+control = "skirmish40_off.factions.usa.s10b_ai_derived.demolish_when_wanted_pct"
+note = "rare: vehicles route round first"
+[[target]]
+id = "T114e"
+metric = "fortify10.s10b_ai.demolish.gap_opened_pct"
+min = 60
+exposure = "fortify10.s10b_ai.demolish.tank_blocked_pct"
+exposure_min = 100
+control = "fortify10.s10b_ai.demolish.control.gap_opened_pct"
+note = "verify; up to 3 pieces (T106b)"
+[[target]]
+id = "T114f"
+metric = "fortify10.s10b_ai.demolish.tank_passed_pct"
+min = 60
+exposure = "fortify10.s10b_ai.demolish.tank_blocked_pct"
+exposure_min = 100
+control = "fortify10.s10b_ai.demolish.control.tank_passed_pct"
+note = "verify"
+[[target]]
+id = "T114g"
+metric = "fortify10.s10b_ai.demolish.pieces_used"
+min = 0
+kind = "report"
+exposure = "fortify10.s10b_ai.demolish.tank_blocked_pct"
+exposure_min = 100
+control = "fortify10.s10b_ai.demolish.control.pieces_used"
+[[target]]
+id = "T114h"
+metric = "fortify10.s10b_ai.demolish.handover0.gap_opened_pct"
+max = 0
+kind = "report"
+exposure = "fortify10.s10b_ai.demolish.tank_blocked_pct"
+exposure_min = 100
+control = "fortify10.s10b_ai.demolish.handover0.gap_opened_pct"
+note = "B1-0 control: demolish_handover 0, one satchel per card squad, the ring stays closed (pieces_used 1)"
+
+# --- T115: own units lost or blocked by own-side mistakes = 0 (R3, R6) --------
+[[target]]
+id = "T115a"
+metric = "skirmish160.factions.germany.s10b_ai_derived.own_side_mistakes"
+max = 0
+exposure = "skirmish160.factions.germany.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "fortify10.s10b_ai.obstacle.control.own_blocked"
+note = "own_blocked + own_mine_losses + own_pieces_demolished; control: fortify R6 pair, gun on the axis, own_route_m 0 builds across the own way out and blocks the own tank (fix 5)"
+[[target]]
+id = "T115b"
+metric = "skirmish160.factions.usa.s10b_ai_derived.own_side_mistakes"
+max = 0
+exposure = "skirmish160.factions.usa.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "fortify10.s10b_ai.obstacle.control.own_blocked"
+note = "own_blocked + own_mine_losses + own_pieces_demolished; control: fortify R6 pair, gun on the axis, own_route_m 0 builds across the own way out and blocks the own tank (fix 5)"
+[[target]]
+id = "T115c"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.own_side_mistakes"
+max = 0
+exposure = "skirmish160_oos.factions.germany.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "fortify10.s10b_ai.obstacle.control.own_blocked"
+note = "own_blocked + own_mine_losses + own_pieces_demolished; control: fortify R6 pair, gun on the axis, own_route_m 0 builds across the own way out and blocks the own tank (fix 5)"
+[[target]]
+id = "T115d"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.own_side_mistakes"
+max = 0
+exposure = "skirmish160_oos.factions.usa.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "fortify10.s10b_ai.obstacle.control.own_blocked"
+note = "own_blocked + own_mine_losses + own_pieces_demolished; control: fortify R6 pair, gun on the axis, own_route_m 0 builds across the own way out and blocks the own tank (fix 5)"
+[[target]]
+id = "T115e"
+metric = "fortify10.s10b_ai.obstacle.own_blocked"
+max = 0
+exposure = "fortify10.s10b_ai.obstacle.own_tank_drove_pct"
+exposure_min = 100
+control = "fortify10.s10b_ai.obstacle.control.own_blocked"
+note = "R6 pair: gun on the point's axis, no enemy tank; the own tank drives to the spot where the control's barrier crosses the way out (fix 5)"
+
+# --- T116: paths avoid enemy mines the player knows (R11, R12) -------------
+[[target]]
+id = "T116a"
+metric = "fortify10.s10b_ai.paths.tank_immobilised_pct"
+max = 10
+exposure = "fortify10.s10b_ai.paths.priced_pct"
+exposure_min = 90
+control = "fortify10.s10b_ai.paths.control.tank_immobilised_pct"
+note = "control: mine_paths 0"
+[[target]]
+id = "T116b"
+metric = "fortify10.s10b_ai.paths.foot_mine_losses_pct"
+max = 10
+exposure = "fortify10.s10b_ai.paths.priced_pct"
+exposure_min = 90
+control = "fortify10.s10b_ai.paths.control.foot_mine_losses_pct"
+note = "verify; R12: formation men off the lead path"
+[[target]]
+id = "T116c"
+metric = "skirmish160.factions.germany.s10b_ai_derived.lost_on_known_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s10b_ai_derived.matches_with_mines_pct"
+exposure_min = 30
+control = "skirmish40_off.factions.germany.s10b_ai_derived.lost_on_known_per_match"
+note = "R12 limit (S10b-ai-2 (A)); exposure: the enemy laid mines (the other faction's matches_with_mines_pct; fix 9)"
+[[target]]
+id = "T116d"
+metric = "skirmish160.factions.usa.s10b_ai_derived.lost_on_known_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s10b_ai_derived.matches_with_mines_pct"
+exposure_min = 30
+control = "skirmish40_off.factions.usa.s10b_ai_derived.lost_on_known_per_match"
+note = "R12 limit (S10b-ai-2 (A)); exposure: the enemy laid mines (the other faction's matches_with_mines_pct; fix 9)"
+
+# --- T117: budgets and caps (R4, R8) --------------------------------------------
+[[target]]
+id = "T117a"
+metric = "skirmish160.factions.germany.s10b_ai_derived.s10b_materials_mp_pct"
+max = 3
+kind = "report"
+exposure = "skirmish160.factions.germany.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.germany.s10b_ai_derived.s10b_materials_mp_pct"
+note = "own 3 % budget; report only (review finding 11): the budget never binds in a match, so the row cannot show it; control loose (materials_max_pct 100)"
+[[target]]
+id = "T117b"
+metric = "skirmish160.factions.usa.s10b_ai_derived.s10b_materials_mp_pct"
+max = 3
+kind = "report"
+exposure = "skirmish160.factions.usa.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.usa.s10b_ai_derived.s10b_materials_mp_pct"
+note = "own 3 % budget; report only (review finding 11): the budget never binds in a match, so the row cannot show it; control loose (materials_max_pct 100)"
+[[target]]
+id = "T117c"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.s10b_materials_mp_pct"
+max = 3
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.germany.s10b_ai_derived.s10b_materials_mp_pct"
+note = "own 3 % budget; report only (review finding 11): the budget never binds in a match, so the row cannot show it; control loose (materials_max_pct 100)"
+[[target]]
+id = "T117d"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.s10b_materials_mp_pct"
+max = 3
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.usa.s10b_ai_derived.s10b_materials_mp_pct"
+note = "own 3 % budget; report only (review finding 11): the budget never binds in a match, so the row cannot show it; control loose (materials_max_pct 100)"
+[[target]]
+id = "T117e"
+metric = "skirmish160.factions.germany.s10_derived.builder_share_pct"
+max = 12
+kind = "report"
+exposure = "skirmish160.factions.germany.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.germany.s10_derived.builder_share_pct"
+note = "T97 with the S10b jobs inside builders_max; hard in T97"
+[[target]]
+id = "T117f"
+metric = "skirmish160.factions.usa.s10_derived.builder_share_pct"
+max = 12
+kind = "report"
+exposure = "skirmish160.factions.usa.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.usa.s10_derived.builder_share_pct"
+note = "T97 with the S10b jobs inside builders_max; hard in T97"
+[[target]]
+id = "T117g"
+metric = "skirmish160_oos.factions.germany.s10_derived.builder_share_pct"
+max = 12
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.germany.s10_derived.builder_share_pct"
+note = "T97 with the S10b jobs inside builders_max; hard in T97"
+[[target]]
+id = "T117h"
+metric = "skirmish160_oos.factions.usa.s10_derived.builder_share_pct"
+max = 12
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.usa.s10_derived.builder_share_pct"
+note = "T97 with the S10b jobs inside builders_max; hard in T97"
+
+# --- T118: job liveness (L1-L5) --------------------------------------------
+[[target]]
+id = "T118a"
+metric = "skirmish160.factions.germany.s10b_ai_derived.refused_reorders"
+max = 0
+exposure = "skirmish160.factions.germany.s10b_ai.s10b_refused"
+exposure_min = 5
+control = "skirmish40_loose.factions.germany.s10b_ai_derived.refused_reorders"
+note = "a start or command within refused_m of a goal failed in the last 300 s (fixed window); control refused_s 0"
+[[target]]
+id = "T118b"
+metric = "skirmish160.factions.usa.s10b_ai_derived.refused_reorders"
+max = 0
+exposure = "skirmish160.factions.usa.s10b_ai.s10b_refused"
+exposure_min = 5
+control = "skirmish40_loose.factions.usa.s10b_ai_derived.refused_reorders"
+note = "a start or command within refused_m of a goal failed in the last 300 s (fixed window); control refused_s 0"
+[[target]]
+id = "T118c"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.refused_reorders"
+max = 0
+exposure = "skirmish160_oos.factions.germany.s10b_ai.s10b_refused"
+exposure_min = 5
+control = "skirmish40_loose.factions.germany.s10b_ai_derived.refused_reorders"
+note = "a start or command within refused_m of a goal failed in the last 300 s (fixed window); control refused_s 0"
+[[target]]
+id = "T118d"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.refused_reorders"
+max = 0
+exposure = "skirmish160_oos.factions.usa.s10b_ai.s10b_refused"
+exposure_min = 5
+control = "skirmish40_loose.factions.usa.s10b_ai_derived.refused_reorders"
+note = "a start or command within refused_m of a goal failed in the last 300 s (fixed window); control refused_s 0"
+[[target]]
+id = "T118e"
+metric = "skirmish160.factions.germany.s10b_ai_derived.jobs_overdue"
+max = 0
+exposure = "skirmish160.factions.germany.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.germany.s10b_ai_derived.jobs_overdue"
+note = "a job alive longer than 900 s (fixed); control job_max_s and barrier_job_max_s 36000 (fix 14)"
+[[target]]
+id = "T118f"
+metric = "skirmish160.factions.usa.s10b_ai_derived.jobs_overdue"
+max = 0
+exposure = "skirmish160.factions.usa.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.usa.s10b_ai_derived.jobs_overdue"
+note = "a job alive longer than 900 s (fixed); control job_max_s and barrier_job_max_s 36000 (fix 14)"
+[[target]]
+id = "T118g"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.jobs_overdue"
+max = 0
+exposure = "skirmish160_oos.factions.germany.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.germany.s10b_ai_derived.jobs_overdue"
+note = "a job alive longer than 900 s (fixed); control job_max_s and barrier_job_max_s 36000 (fix 14)"
+[[target]]
+id = "T118h"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.jobs_overdue"
+max = 0
+exposure = "skirmish160_oos.factions.usa.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_loose.factions.usa.s10b_ai_derived.jobs_overdue"
+note = "a job alive longer than 900 s (fixed); control job_max_s and barrier_job_max_s 36000 (fix 14)"
+
+# --- T119: mines go to the front, not the home point (F1-F4) -------------------
+[[target]]
+id = "T119a"
+metric = "skirmish160.factions.germany.s10c_derived.front_mines_share_pct"
+min = 40
+exposure = "skirmish160.factions.germany.s10c_derived.matches_with_front_field_pct"
+exposure_min = 20
+control = "skirmish40_c_off.factions.germany.s10c_derived.front_mines_share_pct"
+note = "share of mines laid whose nearest map point is not the layer's home point; exposure: % of matches with a front field; control front 0 (about 0 on main)"
+[[target]]
+id = "T119b"
+metric = "skirmish160.factions.usa.s10c_derived.front_mines_share_pct"
+min = 40
+exposure = "skirmish160.factions.usa.s10c_derived.matches_with_front_field_pct"
+exposure_min = 20
+control = "skirmish40_c_off.factions.usa.s10c_derived.front_mines_share_pct"
+note = "share of mines laid whose nearest map point is not the layer's home point; exposure: % of matches with a front field; control front 0 (about 0 on main)"
+[[target]]
+id = "T119c"
+metric = "skirmish160_oos.factions.germany.s10c_derived.front_mines_share_pct"
+min = 40
+exposure = "skirmish160_oos.factions.germany.s10c_derived.matches_with_front_field_pct"
+exposure_min = 20
+control = "skirmish40_c_off.factions.germany.s10c_derived.front_mines_share_pct"
+note = "share of mines laid whose nearest map point is not the layer's home point; exposure: % of matches with a front field; control front 0 (about 0 on main)"
+[[target]]
+id = "T119d"
+metric = "skirmish160_oos.factions.usa.s10c_derived.front_mines_share_pct"
+min = 40
+exposure = "skirmish160_oos.factions.usa.s10c_derived.matches_with_front_field_pct"
+exposure_min = 20
+control = "skirmish40_c_off.factions.usa.s10c_derived.front_mines_share_pct"
+note = "share of mines laid whose nearest map point is not the layer's home point; exposure: % of matches with a front field; control front 0 (about 0 on main)"
+
+# --- T120: the enemy meets the mines (F2, F3) ----------------------------------
+[[target]]
+id = "T120a"
+metric = "skirmish160.factions.germany.s10c_derived.matches_mines_approached_pct"
+min = 30
+exposure = "skirmish160.factions.germany.s10b_ai_derived.matches_with_mines_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.germany.s10c_derived.matches_mines_approached_pct"
+note = "of matches with mines: an enemy soldier (AP) or vehicle (AT) came within 30 m of one; main: 0 of 221 traced mines; control front 0"
+[[target]]
+id = "T120b"
+metric = "skirmish160.factions.usa.s10c_derived.matches_mines_approached_pct"
+min = 30
+exposure = "skirmish160.factions.usa.s10b_ai_derived.matches_with_mines_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.usa.s10c_derived.matches_mines_approached_pct"
+note = "of matches with mines: an enemy soldier (AP) or vehicle (AT) came within 30 m of one; main: 0 of 221 traced mines; control front 0"
+[[target]]
+id = "T120c"
+metric = "skirmish160_oos.factions.germany.s10c_derived.matches_mines_approached_pct"
+min = 30
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.matches_with_mines_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.germany.s10c_derived.matches_mines_approached_pct"
+note = "of matches with mines: an enemy soldier (AP) or vehicle (AT) came within 30 m of one; main: 0 of 221 traced mines; control front 0"
+[[target]]
+id = "T120d"
+metric = "skirmish160_oos.factions.usa.s10c_derived.matches_mines_approached_pct"
+min = 30
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.matches_with_mines_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.usa.s10c_derived.matches_mines_approached_pct"
+note = "of matches with mines: an enemy soldier (AP) or vehicle (AT) came within 30 m of one; main: 0 of 221 traced mines; control front 0"
+
+# --- T121: mines are set off ---------------------------------------------------
+[[target]]
+id = "T121a"
+metric = "skirmish160.factions.germany.s10c_derived.mines_set_off_per_match"
+min = 0.3
+exposure = "skirmish160.factions.germany.s10b_ai_derived.matches_with_mines_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.germany.s10c_derived.mines_set_off_per_match"
+note = "own mines set off by the enemy per match; main 0 in 80 matches; control front 0"
+[[target]]
+id = "T121b"
+metric = "skirmish160.factions.usa.s10c_derived.mines_set_off_per_match"
+min = 0.3
+exposure = "skirmish160.factions.usa.s10b_ai_derived.matches_with_mines_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.usa.s10c_derived.mines_set_off_per_match"
+note = "own mines set off by the enemy per match; main 0 in 80 matches; control front 0"
+[[target]]
+id = "T121c"
+metric = "skirmish160_oos.factions.germany.s10c_derived.mines_set_off_per_match"
+min = 0.3
+exposure = "skirmish160_oos.factions.germany.s10b_ai_derived.matches_with_mines_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.germany.s10c_derived.mines_set_off_per_match"
+note = "own mines set off by the enemy per match; main 0 in 80 matches; control front 0"
+[[target]]
+id = "T121d"
+metric = "skirmish160_oos.factions.usa.s10c_derived.mines_set_off_per_match"
+min = 0.3
+exposure = "skirmish160_oos.factions.usa.s10b_ai_derived.matches_with_mines_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.usa.s10c_derived.mines_set_off_per_match"
+note = "own mines set off by the enemy per match; main 0 in 80 matches; control front 0"
+
+# --- T122: the enemy AI sees the wire (F3, F9) ---------------------------------
+[[target]]
+id = "T122a"
+metric = "skirmish160.factions.germany.s10c_derived.wire_seen_by_enemy_pct"
+min = 50
+exposure = "skirmish160.factions.germany.s10c_derived.matches_with_wire"
+exposure_min = 40
+control = "skirmish40_c_off.factions.germany.s10c_derived.wire_seen_by_enemy_pct"
+note = "of matches where this side's wire stood: the enemy AI knew a section (wire_known); main 0 of 39,500 checks; control front 0"
+[[target]]
+id = "T122b"
+metric = "skirmish160.factions.usa.s10c_derived.wire_seen_by_enemy_pct"
+min = 50
+exposure = "skirmish160.factions.usa.s10c_derived.matches_with_wire"
+exposure_min = 40
+control = "skirmish40_c_off.factions.usa.s10c_derived.wire_seen_by_enemy_pct"
+note = "of matches where this side's wire stood: the enemy AI knew a section (wire_known); main 0 of 39,500 checks; control front 0"
+[[target]]
+id = "T122c"
+metric = "skirmish160_oos.factions.germany.s10c_derived.wire_seen_by_enemy_pct"
+min = 50
+exposure = "skirmish160_oos.factions.germany.s10c_derived.matches_with_wire"
+exposure_min = 40
+control = "skirmish40_c_off.factions.germany.s10c_derived.wire_seen_by_enemy_pct"
+note = "of matches where this side's wire stood: the enemy AI knew a section (wire_known); main 0 of 39,500 checks; control front 0"
+[[target]]
+id = "T122d"
+metric = "skirmish160_oos.factions.usa.s10c_derived.wire_seen_by_enemy_pct"
+min = 50
+exposure = "skirmish160_oos.factions.usa.s10c_derived.matches_with_wire"
+exposure_min = 40
+control = "skirmish40_c_off.factions.usa.s10c_derived.wire_seen_by_enemy_pct"
+note = "of matches where this side's wire stood: the enemy AI knew a section (wire_known); main 0 of 39,500 checks; control front 0"
+
+# --- T123: breaches start once wire is met (existing breach job; S11 adds covering fire) ---
+[[target]]
+id = "T123a"
+metric = "skirmish160.factions.germany.s10_derived.breaches_started_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160.factions.germany.s10c_derived.knew_enemy_wire_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.germany.s10_derived.breaches_started_per_match"
+note = "report (plan review): a 20 m front line is rounded, not cut; exposure: matches where this side knew enemy wire; sweep_wanted_matches is logged beside it; control front 0 (0 on main)"
+[[target]]
+id = "T123b"
+metric = "skirmish160.factions.usa.s10_derived.breaches_started_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160.factions.usa.s10c_derived.knew_enemy_wire_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.usa.s10_derived.breaches_started_per_match"
+note = "report (plan review): a 20 m front line is rounded, not cut; exposure: matches where this side knew enemy wire; sweep_wanted_matches is logged beside it; control front 0 (0 on main)"
+[[target]]
+id = "T123c"
+metric = "skirmish160_oos.factions.germany.s10_derived.breaches_started_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s10c_derived.knew_enemy_wire_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.germany.s10_derived.breaches_started_per_match"
+note = "report (plan review): a 20 m front line is rounded, not cut; exposure: matches where this side knew enemy wire; sweep_wanted_matches is logged beside it; control front 0 (0 on main)"
+[[target]]
+id = "T123d"
+metric = "skirmish160_oos.factions.usa.s10_derived.breaches_started_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10c_derived.knew_enemy_wire_pct"
+exposure_min = 30
+control = "skirmish40_c_off.factions.usa.s10_derived.breaches_started_per_match"
+note = "report (plan review): a 20 m front line is rounded, not cut; exposure: matches where this side knew enemy wire; sweep_wanted_matches is logged beside it; control front 0 (0 on main)"
+
+# --- T124: defence jobs mostly succeed (the honest split of s10b_refused) ------
+[[target]]
+id = "T124a"
+metric = "skirmish160.factions.germany.s10c_derived.defence_job_fail_pct"
+max = 30
+kind = "report"
+exposure = "skirmish160.factions.germany.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_c_off.factions.germany.s10c_derived.defence_job_fail_pct"
+note = "report with an orchestrator bound of 30 (a hard row would be CONTROL-SAME: c_off reads about 22 %); fort_job_fails / s10b_jobs"
+[[target]]
+id = "T124b"
+metric = "skirmish160.factions.usa.s10c_derived.defence_job_fail_pct"
+max = 30
+kind = "report"
+exposure = "skirmish160.factions.usa.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_c_off.factions.usa.s10c_derived.defence_job_fail_pct"
+note = "report with an orchestrator bound of 30 (a hard row would be CONTROL-SAME: c_off reads about 22 %); fort_job_fails / s10b_jobs"
+[[target]]
+id = "T124c"
+metric = "skirmish160_oos.factions.germany.s10c_derived.defence_job_fail_pct"
+max = 30
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_c_off.factions.germany.s10c_derived.defence_job_fail_pct"
+note = "report with an orchestrator bound of 30 (a hard row would be CONTROL-SAME: c_off reads about 22 %); fort_job_fails / s10b_jobs"
+[[target]]
+id = "T124d"
+metric = "skirmish160_oos.factions.usa.s10c_derived.defence_job_fail_pct"
+max = 30
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10b_ai.s10b_jobs"
+exposure_min = 20
+control = "skirmish40_c_off.factions.usa.s10c_derived.defence_job_fail_pct"
+note = "report with an orchestrator bound of 30 (a hard row would be CONTROL-SAME: c_off reads about 22 %); fort_job_fails / s10b_jobs"
+
+# --- T125: front builders are not thrown away (F5, S10c-1) ---------------------
+[[target]]
+id = "T125a"
+metric = "skirmish160.factions.germany.s10c_derived.front_builders_lost_per_match"
+max = 0.5
+kind = "report"
+exposure = "skirmish160.factions.germany.s10c_derived.front_jobs_per_match"
+exposure_min = 0.5
+control = "skirmish40_c_off.factions.germany.s10c_derived.front_builders_lost_per_match"
+note = "report with an orchestrator bound of 0.5 (a hard row would be CONTROL-SAME: c_off reads 0); front jobs ended by the squad gone or under 60 %, per match; over the bound: S10c-1 back to the owner"
+[[target]]
+id = "T125b"
+metric = "skirmish160.factions.usa.s10c_derived.front_builders_lost_per_match"
+max = 0.5
+kind = "report"
+exposure = "skirmish160.factions.usa.s10c_derived.front_jobs_per_match"
+exposure_min = 0.5
+control = "skirmish40_c_off.factions.usa.s10c_derived.front_builders_lost_per_match"
+note = "report with an orchestrator bound of 0.5 (a hard row would be CONTROL-SAME: c_off reads 0); front jobs ended by the squad gone or under 60 %, per match; over the bound: S10c-1 back to the owner"
+[[target]]
+id = "T125c"
+metric = "skirmish160_oos.factions.germany.s10c_derived.front_builders_lost_per_match"
+max = 0.5
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s10c_derived.front_jobs_per_match"
+exposure_min = 0.5
+control = "skirmish40_c_off.factions.germany.s10c_derived.front_builders_lost_per_match"
+note = "report with an orchestrator bound of 0.5 (a hard row would be CONTROL-SAME: c_off reads 0); front jobs ended by the squad gone or under 60 %, per match; over the bound: S10c-1 back to the owner"
+[[target]]
+id = "T125d"
+metric = "skirmish160_oos.factions.usa.s10c_derived.front_builders_lost_per_match"
+max = 0.5
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10c_derived.front_jobs_per_match"
+exposure_min = 0.5
+control = "skirmish40_c_off.factions.usa.s10c_derived.front_builders_lost_per_match"
+note = "report with an orchestrator bound of 0.5 (a hard row would be CONTROL-SAME: c_off reads 0); front jobs ended by the squad gone or under 60 %, per match; over the bound: S10c-1 back to the owner"
+
+# --- T126: demolition (report; S10c-3 (A): only with no way round) -------------
+[[target]]
+id = "T126a"
+metric = "skirmish160.factions.germany.s10b_ai_derived.demolish_wanted_matches"
+min = 8
+kind = "report"
+exposure = "skirmish160.factions.germany.s10c_derived.matches_obstacle_approached_pct"
+exposure_min = 5
+control = "skirmish40_c_off.factions.germany.s10b_ai_derived.demolish_wanted_matches"
+note = "report: matches with a demolition wanted (plan: 5 % of matches = 8 of 160); exposure: % of matches where an enemy vehicle came within 30 m of an own blocking piece"
+[[target]]
+id = "T126b"
+metric = "skirmish160.factions.usa.s10b_ai_derived.demolish_wanted_matches"
+min = 8
+kind = "report"
+exposure = "skirmish160.factions.usa.s10c_derived.matches_obstacle_approached_pct"
+exposure_min = 5
+control = "skirmish40_c_off.factions.usa.s10b_ai_derived.demolish_wanted_matches"
+note = "report: matches with a demolition wanted (plan: 5 % of matches = 8 of 160); exposure: % of matches where an enemy vehicle came within 30 m of an own blocking piece"
+[[target]]
+id = "T126c"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.demolish_wanted_matches"
+min = 8
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s10c_derived.matches_obstacle_approached_pct"
+exposure_min = 5
+control = "skirmish40_c_off.factions.germany.s10b_ai_derived.demolish_wanted_matches"
+note = "report: matches with a demolition wanted (plan: 5 % of matches = 8 of 160); exposure: % of matches where an enemy vehicle came within 30 m of an own blocking piece"
+[[target]]
+id = "T126d"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.demolish_wanted_matches"
+min = 8
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10c_derived.matches_obstacle_approached_pct"
+exposure_min = 5
+control = "skirmish40_c_off.factions.usa.s10b_ai_derived.demolish_wanted_matches"
+note = "report: matches with a demolition wanted (plan: 5 % of matches = 8 of 160); exposure: % of matches where an enemy vehicle came within 30 m of an own blocking piece"
+
+# --- T127: belts and AT fields meet vehicles (report) --------------------------
+[[target]]
+id = "T127a"
+metric = "skirmish160.factions.germany.s10b_ai_derived.at_exposure_s_per_match"
+min = 1
+kind = "report"
+exposure = "skirmish160.factions.germany.s10c_derived.matches_with_belt_pct"
+exposure_min = 5
+control = "skirmish40_c_off.factions.germany.s10b_ai_derived.at_exposure_s_per_match"
+note = "report: enemy vehicle seconds within 5 m of an own AT mine per match (main 0); exposure: % of matches with a belt"
+[[target]]
+id = "T127b"
+metric = "skirmish160.factions.usa.s10b_ai_derived.at_exposure_s_per_match"
+min = 1
+kind = "report"
+exposure = "skirmish160.factions.usa.s10c_derived.matches_with_belt_pct"
+exposure_min = 5
+control = "skirmish40_c_off.factions.usa.s10b_ai_derived.at_exposure_s_per_match"
+note = "report: enemy vehicle seconds within 5 m of an own AT mine per match (main 0); exposure: % of matches with a belt"
+[[target]]
+id = "T127c"
+metric = "skirmish160_oos.factions.germany.s10b_ai_derived.at_exposure_s_per_match"
+min = 1
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s10c_derived.matches_with_belt_pct"
+exposure_min = 5
+control = "skirmish40_c_off.factions.germany.s10b_ai_derived.at_exposure_s_per_match"
+note = "report: enemy vehicle seconds within 5 m of an own AT mine per match (main 0); exposure: % of matches with a belt"
+[[target]]
+id = "T127d"
+metric = "skirmish160_oos.factions.usa.s10b_ai_derived.at_exposure_s_per_match"
+min = 1
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10c_derived.matches_with_belt_pct"
+exposure_min = 5
+control = "skirmish40_c_off.factions.usa.s10b_ai_derived.at_exposure_s_per_match"
+note = "report: enemy vehicle seconds within 5 m of an own AT mine per match (main 0); exposure: % of matches with a belt"
+
+# --- T128: an observer is worth it: map fire misses twice as far (fortify row gun_fm) ---
+# Source: artillery-on-map.md 10 test 1 (map fire about 2x an observed first round);
+# 4.1 fire modes table (3 % floor 25 m against 6 % floor 50 m). leIG 18 at 600 m,
+# VB-Trupp linked by radio, 8 rounds, 10 seeds x 2 guns.
+[[target]]
+id = "T128a"
+metric = "fortify10.s11a1.gun_fm.ratio_pct"
+min = 200
+exposure = "fortify10.s11a1.gun_fm.rounds_fired"
+exposure_min = 120
+control = "fortify10.s11a1.gun_fm.control.ratio_pct"
+note = "map-fire mean miss as % of the observed mean miss; exposure: rounds fired; control: the observer's radio man removed (both missions map fire, about 100)"
+[[target]]
+id = "T128b"
+metric = "fortify10.s11a1.gun_fm.observed_miss_m"
+max = 15
+kind = "report"
+exposure = "fortify10.s11a1.gun_fm.rounds_fired"
+exposure_min = 120
+control = "fortify10.s11a1.gun_fm.control.observed_miss_m"
+note = "report: derived bound: floor 25 m halved per seen round over 8 rounds plus 8 mrad at 600 m; control: no radio (map fire)"
+
+# --- T129: masks: the flat gun is refused behind a crest, the high-angle gun fires (row mask) ---
+# Source: artillery-on-map.md 4.5 (mask check), 10 test 3. Scene: gun 300 m behind a 25 m crest,
+# target 80 m beyond it.
+[[target]]
+id = "T129a"
+metric = "fortify10.s11a1.mask.m3_refused_pct"
+min = 100
+exposure = "fortify10.s11a1.mask.orders"
+exposure_min = 10
+control = "fortify10.s11a1.mask.control.m3_refused_pct"
+note = "the 105 mm M3 (max +30 deg) is refused 'masked'; exposure: orders given; control: flat ground (0)"
+[[target]]
+id = "T129b"
+metric = "fortify10.s11a1.mask.leig_fired_pct"
+min = 100
+kind = "report"
+exposure = "fortify10.s11a1.mask.orders"
+exposure_min = 10
+control = "fortify10.s11a1.mask.control.leig_fired_pct"
+note = "report: the leIG 18 (max +73 deg) fires over the same crest and lands within 10 m; control: flat ground (also 100, so a report)"
+
+# --- T130: a barrage pins a trench, it does not empty it (row barrage) ---
+# Source: artillery-on-map.md 6.1, 6.2 table (trench losses at most 40 % of open-ground
+# losses under a 105 mm barrage; owner Q16 A). 12 M1 HE, observed, 500 m.
+[[target]]
+id = "T130a"
+metric = "fortify10.s11a1.barrage.trench_vs_open_pct"
+max = 40
+exposure = "fortify10.s11a1.barrage.open_loss_pct"
+exposure_min = 20
+control = "fortify10.s11a1.barrage.control.trench_vs_open_pct"
+note = "losses of the squad in the trench as % of the squad in the open; exposure: the open squad's losses (%); control: both squads in the open (about 100)"
+[[target]]
+id = "T130b"
+metric = "fortify10.s11a1.barrage.trench_suppressed_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s11a1.barrage.open_loss_pct"
+exposure_min = 20
+control = "fortify10.s11a1.barrage.control.trench_suppressed_pct"
+note = "report: share of the trench squad's men ducked or pinned at the last burst (the barrage should pin: 6.1); no sourced bound"
+
+# --- T131: the AI breach row with preparation fire (row breach_prep; Build C) ---
+# Source: TODO S10a-16 (A) (gap and placed >= 60 %, attackers <= 60 %); the base breach_ai
+# row reads 0 % without preparation fire (review C-7; not 30 %). Owner question S11a1-7 (A): hard. 20 runs.
+[[target]]
+id = "T131a"
+metric = "fortify10.s11a1.breach_prep.gap_opened_pct"
+min = 60
+kind = "report"
+exposure = "fortify10.s11a1.breach_prep.prep_fired_pct"
+exposure_min = 80
+control = "fortify10.s11a1.breach_prep.control.gap_opened_pct"
+note = "report until owner question S11a1-10 (review C-7); the breach_ai force plus one mortar team; exposure: runs where a prep mission fired prep_rounds_min rounds before the carrier left; control: prep 0"
+[[target]]
+id = "T131b"
+metric = "fortify10.s11a1.breach_prep.placed_pct"
+min = 60
+kind = "report"
+exposure = "fortify10.s11a1.breach_prep.prep_fired_pct"
+exposure_min = 80
+control = "fortify10.s11a1.breach_prep.control.placed_pct"
+note = "report until S11a1-10 (review C-7); a charge laid or the cut done; exposure and control as T131a"
+[[target]]
+id = "T131c"
+metric = "fortify10.s11a1.breach_prep.attacker_loss_pct"
+max = 60
+kind = "report"
+exposure = "fortify10.s11a1.breach_prep.prep_fired_pct"
+exposure_min = 80
+control = "fortify10.s11a1.breach_prep.control.attacker_loss_pct"
+note = "report: S10a-16 (A) bar 60; a cap row"
+[[target]]
+id = "T131d"
+metric = "fortify10.s11a1.breach_prep_gun.gap_opened_pct"
+min = 60
+kind = "report"
+exposure = "fortify10.s11a1.breach_prep_gun.prep_fired_pct"
+exposure_min = 80
+control = "fortify10.s11a1.breach_prep_gun.control.gap_opened_pct"
+note = "report: the same row with a leIG 18 in base and a VB-Trupp instead of the mortar"
+
+# --- T132: the AI buys an infantry gun -------------------------------------
+# Source: S11a1.md 8.3; S3 lesson (a feature the AI ignores is never balanced). Floor 40 %:
+# under T80's 60 % for AT guns, because the pot is half theirs (income_max_pct 15).
+[[target]]
+id = "T132a"
+metric = "skirmish160.factions.germany.s11a1_derived.gun_bought_matches_pct"
+min = 40
+exposure = "skirmish160.length_min.median"
+exposure_min = 10
+control = "skirmish40_a_off.factions.germany.s11a1_derived.gun_bought_matches_pct"
+note = "exposure: median match length in minutes (the cards unlock at 3:00 / 4:00, the AI buys from 4:00); control: a_off (0)"
+[[target]]
+id = "T132b"
+metric = "skirmish160.factions.usa.s11a1_derived.gun_bought_matches_pct"
+min = 40
+exposure = "skirmish160.length_min.median"
+exposure_min = 10
+control = "skirmish40_a_off.factions.usa.s11a1_derived.gun_bought_matches_pct"
+note = "exposure: median match length in minutes (the cards unlock at 3:00 / 4:00, the AI buys from 4:00); control: a_off (0)"
+[[target]]
+id = "T132c"
+metric = "skirmish160_oos.factions.germany.s11a1_derived.gun_bought_matches_pct"
+min = 40
+exposure = "skirmish160_oos.length_min.median"
+exposure_min = 10
+control = "skirmish40_a_off.factions.germany.s11a1_derived.gun_bought_matches_pct"
+note = "exposure: median match length in minutes (the cards unlock at 3:00 / 4:00, the AI buys from 4:00); control: a_off (0)"
+[[target]]
+id = "T132d"
+metric = "skirmish160_oos.factions.usa.s11a1_derived.gun_bought_matches_pct"
+min = 40
+exposure = "skirmish160_oos.length_min.median"
+exposure_min = 10
+control = "skirmish40_a_off.factions.usa.s11a1_derived.gun_bought_matches_pct"
+note = "exposure: median match length in minutes (the cards unlock at 3:00 / 4:00, the AI buys from 4:00); control: a_off (0)"
+
+# --- T133: a bought gun fires missions -------------------------------------
+# Source: T80 (AT guns fired in >= 60 % of matches).
+[[target]]
+id = "T133a"
+metric = "skirmish160.factions.germany.s11a1_derived.gun_fired_matches_pct"
+min = 60
+exposure = "skirmish160.factions.germany.s11a1_derived.gun_bought_matches_pct"
+exposure_min = 40
+control = "skirmish40_a_off.factions.germany.s11a1_derived.gun_fired_matches_pct"
+note = "of the matches with a gun; exposure: matches with a gun (%); control: a_off (null)"
+[[target]]
+id = "T133b"
+metric = "skirmish160.factions.usa.s11a1_derived.gun_fired_matches_pct"
+min = 60
+exposure = "skirmish160.factions.usa.s11a1_derived.gun_bought_matches_pct"
+exposure_min = 40
+control = "skirmish40_a_off.factions.usa.s11a1_derived.gun_fired_matches_pct"
+note = "of the matches with a gun; exposure: matches with a gun (%); control: a_off (null)"
+[[target]]
+id = "T133c"
+metric = "skirmish160_oos.factions.germany.s11a1_derived.gun_fired_matches_pct"
+min = 60
+exposure = "skirmish160_oos.factions.germany.s11a1_derived.gun_bought_matches_pct"
+exposure_min = 40
+control = "skirmish40_a_off.factions.germany.s11a1_derived.gun_fired_matches_pct"
+note = "of the matches with a gun; exposure: matches with a gun (%); control: a_off (null)"
+[[target]]
+id = "T133d"
+metric = "skirmish160_oos.factions.usa.s11a1_derived.gun_fired_matches_pct"
+min = 60
+exposure = "skirmish160_oos.factions.usa.s11a1_derived.gun_bought_matches_pct"
+exposure_min = 40
+control = "skirmish40_a_off.factions.usa.s11a1_derived.gun_fired_matches_pct"
+note = "of the matches with a gun; exposure: matches with a gun (%); control: a_off (null)"
+
+# --- T134: its rounds are observed, not map fire ----------------------------
+# S11a2: counter-fire rounds (map fire on a sound marker, D 4.3, D 10 test 12) count with the
+# observed ones (S11a2-7 (A)); every other unobserved round still counts against the row. The metric
+# is (direct + observed + counter-fire rounds fired as map fire) / all: no round counts twice.
+# Source: T11 (AI mortar rounds observed or direct >= 80 %); artillery-on-map.md 4.1.
+[[target]]
+id = "T134a"
+metric = "skirmish160.factions.germany.s11a2_derived.gun_observed_or_cb_pct"
+min = 80
+exposure = "skirmish160.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.germany.s11a2_derived.gun_observed_or_cb_pct"
+note = "gun mission rounds fired Observed, Direct or as counter-fire; exposure: gun mission rounds a match; control: a_off + b_off (null)"
+[[target]]
+id = "T134b"
+metric = "skirmish160.factions.usa.s11a2_derived.gun_observed_or_cb_pct"
+min = 80
+exposure = "skirmish160.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.usa.s11a2_derived.gun_observed_or_cb_pct"
+note = "gun mission rounds fired Observed, Direct or as counter-fire; exposure: gun mission rounds a match; control: a_off + b_off (null)"
+[[target]]
+id = "T134c"
+metric = "skirmish160_oos.factions.germany.s11a2_derived.gun_observed_or_cb_pct"
+min = 80
+exposure = "skirmish160_oos.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.germany.s11a2_derived.gun_observed_or_cb_pct"
+note = "gun mission rounds fired Observed, Direct or as counter-fire; exposure: gun mission rounds a match; control: a_off + b_off (null)"
+[[target]]
+id = "T134d"
+metric = "skirmish160_oos.factions.usa.s11a2_derived.gun_observed_or_cb_pct"
+min = 80
+exposure = "skirmish160_oos.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.usa.s11a2_derived.gun_observed_or_cb_pct"
+note = "gun mission rounds fired Observed, Direct or as counter-fire; exposure: gun mission rounds a match; control: a_off + b_off (null)"
+
+# --- T135: guns do not take over the killing (report with a bound) ----------
+# Source: artillery-on-map.md 6.2 table (kills by infantry guns and howitzers <= 10 %).
+[[target]]
+id = "T135a"
+metric = "skirmish160.factions.germany.s11a1_derived.gun_kill_share_pct"
+max = 10
+kind = "report"
+exposure = "skirmish160.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.germany.s11a1_derived.gun_kill_share_pct"
+note = "report (cap row): share of the faction's kills made by infantry guns; T8 stays the hard HE limit"
+[[target]]
+id = "T135b"
+metric = "skirmish160.factions.usa.s11a1_derived.gun_kill_share_pct"
+max = 10
+kind = "report"
+exposure = "skirmish160.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.usa.s11a1_derived.gun_kill_share_pct"
+note = "report (cap row): share of the faction's kills made by infantry guns; T8 stays the hard HE limit"
+[[target]]
+id = "T135c"
+metric = "skirmish160_oos.factions.germany.s11a1_derived.gun_kill_share_pct"
+max = 10
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.germany.s11a1_derived.gun_kill_share_pct"
+note = "report (cap row): share of the faction's kills made by infantry guns; T8 stays the hard HE limit"
+[[target]]
+id = "T135d"
+metric = "skirmish160_oos.factions.usa.s11a1_derived.gun_kill_share_pct"
+max = 10
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.usa.s11a1_derived.gun_kill_share_pct"
+note = "report (cap row): share of the faction's kills made by infantry guns; T8 stays the hard HE limit"
+
+# --- T136: shells inside the budget (report) --------------------------------
+# Source: artillery-on-map.md 6.4 ai.shell_mp_max_pct 25.
+[[target]]
+id = "T136a"
+metric = "skirmish160.factions.germany.s11a1_derived.gun_shell_mp_pct"
+max = 25
+kind = "report"
+exposure = "skirmish160.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.germany.s11a1_derived.gun_shell_mp_pct"
+note = "report (cap row): manpower paid for infantry-gun shells as % of income"
+[[target]]
+id = "T136b"
+metric = "skirmish160.factions.usa.s11a1_derived.gun_shell_mp_pct"
+max = 25
+kind = "report"
+exposure = "skirmish160.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.usa.s11a1_derived.gun_shell_mp_pct"
+note = "report (cap row): manpower paid for infantry-gun shells as % of income"
+[[target]]
+id = "T136c"
+metric = "skirmish160_oos.factions.germany.s11a1_derived.gun_shell_mp_pct"
+max = 25
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.germany.s11a1_derived.gun_shell_mp_pct"
+note = "report (cap row): manpower paid for infantry-gun shells as % of income"
+[[target]]
+id = "T136d"
+metric = "skirmish160_oos.factions.usa.s11a1_derived.gun_shell_mp_pct"
+max = 25
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.usa.s11a1_derived.gun_shell_mp_pct"
+note = "report (cap row): manpower paid for infantry-gun shells as % of income"
+
+# --- T137: no burst near own men, no refused order (reports, bound 0) -------
+# Source: artillery-on-map.md 4.5 danger close (the AI never fires within 50 m of own men); T4.
+[[target]]
+id = "T137a"
+metric = "skirmish160.factions.germany.s11a1_derived.near_own_bursts_per_match"
+max = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.germany.s11a1_derived.near_own_bursts_per_match"
+note = "report (cap row): gun mission bursts with an own man within danger_close_m, a match"
+[[target]]
+id = "T137b"
+metric = "skirmish160.factions.usa.s11a1_derived.near_own_bursts_per_match"
+max = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.usa.s11a1_derived.near_own_bursts_per_match"
+note = "report (cap row): gun mission bursts with an own man within danger_close_m, a match"
+[[target]]
+id = "T137c"
+metric = "skirmish160_oos.factions.germany.s11a1_derived.near_own_bursts_per_match"
+max = 0
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.germany.s11a1_derived.near_own_bursts_per_match"
+note = "report (cap row): gun mission bursts with an own man within danger_close_m, a match"
+[[target]]
+id = "T137d"
+metric = "skirmish160_oos.factions.usa.s11a1_derived.near_own_bursts_per_match"
+max = 0
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.usa.s11a1_derived.near_own_bursts_per_match"
+note = "report (cap row): gun mission bursts with an own man within danger_close_m, a match"
+[[target]]
+id = "T137e"
+metric = "skirmish40.factions.germany.s11a1_derived.gun_refused_total"
+max = 0
+kind = "report"
+exposure = "skirmish40.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.germany.s11a1_derived.gun_refused_total"
+note = "report (cap row): AI gun fire-mission orders the sim refused (as T4 for mortars)"
+[[target]]
+id = "T137f"
+metric = "skirmish40.factions.usa.s11a1_derived.gun_refused_total"
+max = 0
+kind = "report"
+exposure = "skirmish40.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a_off.factions.usa.s11a1_derived.gun_refused_total"
+note = "report (cap row): AI gun fire-mission orders the sim refused (as T4 for mortars)"
+
+# --- T138: preparation fire and observers in matches (reports) --------------
+# Breach jobs do not start in matches (T123, S10c-6), so prep missions are expected near 0
+# there: the exposure says so. Observer losses: S11a1.md 8.4.
+[[target]]
+id = "T138a"
+metric = "skirmish160.factions.germany.s11a1_derived.prep_missions_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160.factions.germany.s10_derived.breaches_started_per_match"
+exposure_min = 0.05
+control = "skirmish40_a_off.factions.germany.s11a1_derived.prep_missions_per_match"
+note = "report: prep missions (guns + mortars) a match; exposure: breach jobs started a match"
+[[target]]
+id = "T138b"
+metric = "skirmish160.factions.usa.s11a1_derived.prep_missions_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160.factions.usa.s10_derived.breaches_started_per_match"
+exposure_min = 0.05
+control = "skirmish40_a_off.factions.usa.s11a1_derived.prep_missions_per_match"
+note = "report: prep missions (guns + mortars) a match; exposure: breach jobs started a match"
+[[target]]
+id = "T138c"
+metric = "skirmish160_oos.factions.germany.s11a1_derived.prep_missions_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s10_derived.breaches_started_per_match"
+exposure_min = 0.05
+control = "skirmish40_a_off.factions.germany.s11a1_derived.prep_missions_per_match"
+note = "report: prep missions (guns + mortars) a match; exposure: breach jobs started a match"
+[[target]]
+id = "T138d"
+metric = "skirmish160_oos.factions.usa.s11a1_derived.prep_missions_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s10_derived.breaches_started_per_match"
+exposure_min = 0.05
+control = "skirmish40_a_off.factions.usa.s11a1_derived.prep_missions_per_match"
+note = "report: prep missions (guns + mortars) a match; exposure: breach jobs started a match"
+[[target]]
+id = "T138e"
+metric = "skirmish160.factions.germany.s11a1_derived.fo_lost_per_match"
+max = 1
+kind = "report"
+exposure = "skirmish160.factions.germany.s11a1_derived.fo_bought_matches_pct"
+exposure_min = 30
+control = "skirmish40_a_off.factions.germany.s11a1_derived.fo_lost_per_match"
+note = "report (cap row): observer teams lost a match; exposure: matches with an observer team (%)"
+[[target]]
+id = "T138f"
+metric = "skirmish160.factions.usa.s11a1_derived.fo_lost_per_match"
+max = 1
+kind = "report"
+exposure = "skirmish160.factions.usa.s11a1_derived.fo_bought_matches_pct"
+exposure_min = 30
+control = "skirmish40_a_off.factions.usa.s11a1_derived.fo_lost_per_match"
+note = "report (cap row): observer teams lost a match; exposure: matches with an observer team (%)"
+
+# --- T139: own indirect HE hurts own men (fortify row ff) -------------------------------
+# Source: owner decision Q22 (2026-11-01); artillery-on-map.md 6.3, 10 test 10 ("own men inside a
+# mortar, gun or launcher burst take fragments and blast"). A mortar team fires 8 bombs Direct at a
+# point 300 m off; a rifle squad stands on it, once owned by the firing player, once by the enemy.
+# The floor 50 is a plan bound, not a design figure: the same men under the same bursts; only the
+# RNG keys differ.
+[[target]]
+id = "T139a"
+metric = "fortify10.s11a2.ff.own_vs_enemy_pct"
+min = 50
+exposure = "fortify10.s11a2.ff.enemy_loss_pct"
+exposure_min = 10
+control = "fortify10.s11a2.ff.control.own_vs_enemy_pct"
+note = "own squad's losses as % of the enemy squad's in the same scene; exposure: the enemy squad's losses (%); control: friendly_fire 0 (0)"
+[[target]]
+id = "T139b"
+metric = "fortify10.s11a2.ff.own_loss_pct"
+min = 10
+kind = "report"
+exposure = "fortify10.s11a2.ff.rounds_fired"
+exposure_min = 120
+control = "fortify10.s11a2.ff.control.own_loss_pct"
+note = "report: the own squad's losses (%); exposure: bombs fired (10 seeds x 2 factions x 8); control: friendly_fire 0 (0)"
+
+# --- T140: a gun is found by sound (fortify row cb) ---------------------------------------
+# Source: artillery-on-map.md 4.3 (cb_rounds_to_mark 3, cb_delay_s 15, cb_error_pct 15, step 80,
+# floor 5), 10 test 5. A leIG 18 and a 105 mm M3 (10 seeds each) fire 8 rounds; the nearest enemy
+# man stands 800 m from the gun.
+[[target]]
+id = "T140a"
+metric = "fortify10.s11a2.cb.marked_pct"
+min = 100
+exposure = "fortify10.s11a2.cb.rounds_fired"
+exposure_min = 160
+control = "fortify10.s11a2.cb.control.marked_pct"
+note = "seeds where the enemy holds a marker 15 s after the third round; exposure: rounds fired; control: counter_battery 0 (0)"
+[[target]]
+id = "T140b"
+metric = "fortify10.s11a2.cb.mean_error_pct"
+min = 3
+max = 12
+exposure = "fortify10.s11a2.cb.marked_pct"
+exposure_min = 100
+control = "fortify10.s11a2.cb.control.mean_error_pct"
+note = "mean first marker miss as % of the listener distance the sim used (CbSpot heard_mm), 20 markers; a uniform length to 15 % gives 7.5 +- 1; a fixed-length draw gives 15, a marker on the gun 0: both fail; exposure: seeds marked (%); control: counter_battery 0 (null)"
+[[target]]
+id = "T140d"
+metric = "fortify10.s11a2.cb.worst_error_pct"
+max = 15
+kind = "report"
+exposure = "fortify10.s11a2.cb.marked_pct"
+exposure_min = 100
+control = "fortify10.s11a2.cb.control.worst_error_pct"
+note = "report: the worst first marker miss (%); holds by construction (the draw is bounded by the error), so not a hard row; control: counter_battery 0 (null)"
+[[target]]
+id = "T140c"
+metric = "fortify10.s11a2.cb.last_error_m"
+max = 45
+kind = "report"
+exposure = "fortify10.s11a2.cb.rounds_fired"
+exposure_min = 160
+control = "fortify10.s11a2.cb.control.last_error_m"
+note = "report: mean marker miss after 8 rounds (derived: 15 % x 0.8^5 is under the 5 % floor, 40 m at 800 m); control: counter_battery 0 (null)"
+
+# --- T141: the answer: counter-fire on the marker (reports; row cb, part answer) -----------
+# Source: artillery-on-map.md 4.3 ("counter-battery needs several rounds"); no design figure for the
+# effect. An enemy leIG 18 800 m off fires 8 rounds of map fire at the marker.
+[[target]]
+id = "T141a"
+metric = "fortify10.s11a2.cb.answer.near_burst_pct"
+min = 10
+kind = "report"
+exposure = "fortify10.s11a2.cb.answer.rounds_fired"
+exposure_min = 80
+control = "fortify10.s11a2.cb.control.answer.near_burst_pct"
+note = "report (plan bound): counter-fire bursts within cb_near_m 20 of the gun; exposure: answering rounds fired; control: counter_battery 0 (the order is refused: null)"
+[[target]]
+id = "T141b"
+metric = "fortify10.s11a2.cb.answer.crew_loss_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s11a2.cb.answer.rounds_fired"
+exposure_min = 80
+control = "fortify10.s11a2.cb.control.answer.crew_loss_pct"
+note = "report: crew men of the marked gun lost to the answer (%); no sourced bound"
+
+# --- T142: the AI lifts its fire before own men walk into it (fortify row ff_lift; Build B chunk 2) ---
+# Source: artillery-on-map.md 10 test 10 ("the AI lifts fire in time in >= 9 of 10 staged
+# assaults"). Owner question S11a2-9 (A): hard. 10 seeds x 2 factions; 12 bombs, the own squad starts
+# 130 m beyond the point (outside lift_m 100; S11a2 fix B-5, was 90) and walks onto it (S11a2.md 4 M3).
+# T142c keeps the row honest.
+[[target]]
+id = "T142a"
+metric = "fortify10.s11a2.ff_lift.clean_runs_pct"
+min = 90
+exposure = "fortify10.s11a2.ff_lift.rounds_fired"
+exposure_min = 20
+control = "fortify10.s11a2.ff_lift.control.clean_runs_pct"
+note = "runs with no own man hurt by own fire; exposure: bombs fired before the lift, all runs; control: ff_safe 0 (the mission runs out)"
+[[target]]
+id = "T142b"
+metric = "fortify10.s11a2.ff_lift.lifted_pct"
+min = 90
+kind = "report"
+exposure = "fortify10.s11a2.ff_lift.rounds_fired"
+exposure_min = 20
+control = "fortify10.s11a2.ff_lift.control.lifted_pct"
+note = "report: runs where the mission was stopped by the AI; control: ff_safe 0 (0)"
+[[target]]
+id = "T142c"
+metric = "fortify10.s11a2.ff_lift.control.clean_runs_pct"
+max = 50
+exposure = "fortify10.s11a2.ff_lift.control.rounds_fired"
+exposure_min = 120
+control = "fortify10.s11a2.ff_lift.clean_runs_pct"
+note = "the control must bite: without the rule (ff_safe 0) the squad walks into its own bombs in at least half of the runs, else T142a passes by construction; exposure: bombs the control fired (20 runs, 12 a mission); control: the row with the rule"
+
+# --- T143: own-fire deaths in AI matches (report with a bound) --------------------------------
+# Source: Q22; S11a2.md 8.3. The bound 1 a match is a plan bound (as T138e), not a design figure.
+[[target]]
+id = "T143a"
+metric = "skirmish160.factions.germany.s11a2_derived.ff_kills_per_match"
+max = 1
+kind = "report"
+exposure = "skirmish160.factions.germany.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_ff_off.factions.germany.s11a2_derived.ff_kills_per_match"
+note = "report (cap row): own men killed by own mortar or gun missions, a match; exposure: mortar bombs fired a match; control: ff_off (0)"
+[[target]]
+id = "T143b"
+metric = "skirmish160.factions.usa.s11a2_derived.ff_kills_per_match"
+max = 1
+kind = "report"
+exposure = "skirmish160.factions.usa.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_ff_off.factions.usa.s11a2_derived.ff_kills_per_match"
+note = "report (cap row): own men killed by own mortar or gun missions, a match; exposure: mortar bombs fired a match; control: ff_off (0)"
+[[target]]
+id = "T143c"
+metric = "skirmish160_oos.factions.germany.s11a2_derived.ff_kills_per_match"
+max = 1
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_ff_off.factions.germany.s11a2_derived.ff_kills_per_match"
+note = "report (cap row): own men killed by own mortar or gun missions, a match; exposure: mortar bombs fired a match; control: ff_off (0)"
+[[target]]
+id = "T143d"
+metric = "skirmish160_oos.factions.usa.s11a2_derived.ff_kills_per_match"
+max = 1
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_ff_off.factions.usa.s11a2_derived.ff_kills_per_match"
+note = "report (cap row): own men killed by own mortar or gun missions, a match; exposure: mortar bombs fired a match; control: ff_off (0)"
+
+# --- T144: the AI lifts in matches (report) -----------------------------------------------------
+# Source: artillery-on-map.md 6.3 ("the AI keeps ai.lift_fire_m and danger_close_m"); no figure.
+[[target]]
+id = "T144a"
+metric = "skirmish160.factions.germany.s11a2_derived.ff_lifts_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160.factions.germany.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_ff_safe_off.factions.germany.s11a2_derived.ff_lifts_per_match"
+note = "report: missions the AI stopped for own men (S3), a match; exposure: mortar bombs fired a match; control: ff_safe_off (0)"
+[[target]]
+id = "T144b"
+metric = "skirmish160.factions.usa.s11a2_derived.ff_lifts_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160.factions.usa.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_ff_safe_off.factions.usa.s11a2_derived.ff_lifts_per_match"
+note = "report: missions the AI stopped for own men (S3), a match; exposure: mortar bombs fired a match; control: ff_safe_off (0)"
+[[target]]
+id = "T144c"
+metric = "skirmish160_oos.factions.germany.s11a2_derived.ff_lifts_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_ff_safe_off.factions.germany.s11a2_derived.ff_lifts_per_match"
+note = "report: missions the AI stopped for own men (S3), a match; exposure: mortar bombs fired a match; control: ff_safe_off (0)"
+[[target]]
+id = "T144d"
+metric = "skirmish160_oos.factions.usa.s11a2_derived.ff_lifts_per_match"
+min = 0.05
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_ff_safe_off.factions.usa.s11a2_derived.ff_lifts_per_match"
+note = "report: missions the AI stopped for own men (S3), a match; exposure: mortar bombs fired a match; control: ff_safe_off (0)"
+
+# --- T145: mortars still fire under the safety rule (report; 40 set against ff_off, same seeds) ---
+# Source: S11a2.md 10 risk 2. No bound: the value is read beside its control.
+[[target]]
+id = "T145a"
+metric = "skirmish40.factions.germany.s5b_derived.bombs_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.length_min.median"
+exposure_min = 10
+control = "skirmish40_ff_off.factions.germany.s5b_derived.bombs_per_match"
+note = "report: mortar bombs a match with friendly fire and the safety rule; exposure: median match length (min); control: ff_off on the same seeds"
+[[target]]
+id = "T145b"
+metric = "skirmish40.factions.usa.s5b_derived.bombs_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.length_min.median"
+exposure_min = 10
+control = "skirmish40_ff_off.factions.usa.s5b_derived.bombs_per_match"
+note = "report: mortar bombs a match with friendly fire and the safety rule; exposure: median match length (min); control: ff_off on the same seeds"
+[[target]]
+id = "T145c"
+metric = "skirmish40.factions.germany.s11a2_derived.ff_kills_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.germany.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_ff_safe_off.factions.germany.s11a2_derived.ff_kills_per_match"
+note = "report: own-fire deaths a match with the safety rule; control: ff_safe_off on the same seeds (what the rule buys)"
+[[target]]
+id = "T145d"
+metric = "skirmish40.factions.usa.s11a2_derived.ff_kills_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.usa.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_ff_safe_off.factions.usa.s11a2_derived.ff_kills_per_match"
+note = "report: own-fire deaths a match with the safety rule; control: ff_safe_off on the same seeds (what the rule buys)"
+
+# --- T146: guns are heard in matches (report) -----------------------------------------------------
+# Source: artillery-on-map.md 4.3. A side can only mark a gun the other side fires: the exposure
+# is the enemy's gun mission rounds.
+[[target]]
+id = "T146a"
+metric = "skirmish160.factions.germany.s11a2_derived.cb_marks_per_match"
+min = 0.3
+kind = "report"
+exposure = "skirmish160.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_b_off.factions.germany.s11a2_derived.cb_marks_per_match"
+note = "report (plan bound): markers made on enemy guns, a match; exposure: the enemy's gun mission rounds a match; control: b_off (0)"
+[[target]]
+id = "T146b"
+metric = "skirmish160.factions.usa.s11a2_derived.cb_marks_per_match"
+min = 0.3
+kind = "report"
+exposure = "skirmish160.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_b_off.factions.usa.s11a2_derived.cb_marks_per_match"
+note = "report (plan bound): markers made on enemy guns, a match; exposure: the enemy's gun mission rounds a match; control: b_off (0)"
+[[target]]
+id = "T146c"
+metric = "skirmish160_oos.factions.germany.s11a2_derived.cb_marks_per_match"
+min = 0.3
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_b_off.factions.germany.s11a2_derived.cb_marks_per_match"
+note = "report (plan bound): markers made on enemy guns, a match; exposure: the enemy's gun mission rounds a match; control: b_off (0)"
+[[target]]
+id = "T146d"
+metric = "skirmish160_oos.factions.usa.s11a2_derived.cb_marks_per_match"
+min = 0.3
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_b_off.factions.usa.s11a2_derived.cb_marks_per_match"
+note = "report (plan bound): markers made on enemy guns, a match; exposure: the enemy's gun mission rounds a match; control: b_off (0)"
+
+# --- T147: the AI answers a marker (report) -------------------------------------------------------
+# Source: artillery-on-map.md 6.4 Fire (c), 10 test 12; no figure for how often.
+[[target]]
+id = "T147a"
+metric = "skirmish160.factions.germany.s11a2_derived.cb_fired_matches_pct"
+min = 50
+kind = "report"
+exposure = "skirmish160.factions.germany.s11a2_derived.cb_marks_per_match"
+exposure_min = 0.3
+control = "skirmish40_b_off.factions.germany.s11a2_derived.cb_fired_matches_pct"
+note = "report (plan bound): of the matches where the faction made a marker, those with a counter-fire mission; exposure: markers a match; control: b_off (null)"
+[[target]]
+id = "T147b"
+metric = "skirmish160.factions.usa.s11a2_derived.cb_fired_matches_pct"
+min = 50
+kind = "report"
+exposure = "skirmish160.factions.usa.s11a2_derived.cb_marks_per_match"
+exposure_min = 0.3
+control = "skirmish40_b_off.factions.usa.s11a2_derived.cb_fired_matches_pct"
+note = "report (plan bound): of the matches where the faction made a marker, those with a counter-fire mission; exposure: markers a match; control: b_off (null)"
+[[target]]
+id = "T147c"
+metric = "skirmish160_oos.factions.germany.s11a2_derived.cb_fired_matches_pct"
+min = 50
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s11a2_derived.cb_marks_per_match"
+exposure_min = 0.3
+control = "skirmish40_b_off.factions.germany.s11a2_derived.cb_fired_matches_pct"
+note = "report (plan bound): of the matches where the faction made a marker, those with a counter-fire mission; exposure: markers a match; control: b_off (null)"
+[[target]]
+id = "T147d"
+metric = "skirmish160_oos.factions.usa.s11a2_derived.cb_fired_matches_pct"
+min = 50
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s11a2_derived.cb_marks_per_match"
+exposure_min = 0.3
+control = "skirmish40_b_off.factions.usa.s11a2_derived.cb_fired_matches_pct"
+note = "report (plan bound): of the matches where the faction made a marker, those with a counter-fire mission; exposure: markers a match; control: b_off (null)"
+
+# --- T148: what counter-fire costs and hits (reports) ---------------------------------------------
+# Source: artillery-on-map.md 6.2 table ("share of gun shells fired at guns ... reported"), 4.3
+# honest notes; S11a2.md 10 risks 3 and 6.
+[[target]]
+id = "T148a"
+metric = "skirmish160.factions.germany.s11a2_derived.cb_near_burst_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s11a2_derived.cb_rounds_per_match"
+exposure_min = 1
+control = "skirmish40_b_off.factions.germany.s11a2_derived.cb_near_burst_pct"
+note = "report: counter-fire bursts within 20 m of a living enemy infantry gun (%); exposure: counter-fire rounds a match; control: b_off (null)"
+[[target]]
+id = "T148b"
+metric = "skirmish160.factions.usa.s11a2_derived.cb_near_burst_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s11a2_derived.cb_rounds_per_match"
+exposure_min = 1
+control = "skirmish40_b_off.factions.usa.s11a2_derived.cb_near_burst_pct"
+note = "report: counter-fire bursts within 20 m of a living enemy infantry gun (%); exposure: counter-fire rounds a match; control: b_off (null)"
+[[target]]
+id = "T148c"
+metric = "skirmish160.factions.germany.s11a2_derived.cb_shell_share_pct"
+max = 50
+kind = "report"
+exposure = "skirmish160.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_b_off.factions.germany.s11a2_derived.cb_shell_share_pct"
+note = "report (plan bound, S11a2.md 10 risk 6): counter-fire rounds as % of all gun mission rounds; exposure: gun mission rounds a match; control: b_off (0)"
+[[target]]
+id = "T148d"
+metric = "skirmish160.factions.usa.s11a2_derived.cb_shell_share_pct"
+max = 50
+kind = "report"
+exposure = "skirmish160.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_b_off.factions.usa.s11a2_derived.cb_shell_share_pct"
+note = "report (plan bound, S11a2.md 10 risk 6): counter-fire rounds as % of all gun mission rounds; exposure: gun mission rounds a match; control: b_off (0)"
+[[target]]
+id = "T148e"
+metric = "skirmish160.factions.germany.s11a2_derived.cb_masked_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s11a2_derived.cb_marks_per_match"
+exposure_min = 0.3
+control = "skirmish40_b_off.factions.germany.s11a2_derived.cb_masked_per_match"
+note = "report: counter-fire the AI did not order because the sim would refuse it (the flat M3 behind the ridge); exposure: markers a match; control: b_off (0)"
+[[target]]
+id = "T148f"
+metric = "skirmish160.factions.usa.s11a2_derived.cb_masked_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s11a2_derived.cb_marks_per_match"
+exposure_min = 0.3
+control = "skirmish40_b_off.factions.usa.s11a2_derived.cb_masked_per_match"
+note = "report: counter-fire the AI did not order because the sim would refuse it (the flat M3 behind the ridge); exposure: markers a match; control: b_off (0)"
+
+# --- T149: counter-fire alternates with ordinary missions (A0 fix X3; reports) --------------------
+# Source: S11b.md 4 X3 (measured by the diagnosis: USA 62.3 -> 47.3 % on a 40 set, counter-fire still in
+# 97 % of matches); owner question S11a2-10 (A); T148c/d keep the 480 bound of 50, T147 the answer rate.
+[[target]]
+id = "T149a"
+metric = "skirmish160.factions.germany.s11b_derived.cb_alt_holds_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s11a2_derived.cb_marks_per_match"
+exposure_min = 0.3
+control = "skirmish40_a0_off.factions.germany.s11b_derived.cb_alt_holds_per_match"
+note = "report: plans in which an AI gun passed a marker over because its last mission was counter-fire, a match; exposure: markers a match; control: a0_off (0)"
+[[target]]
+id = "T149b"
+metric = "skirmish160.factions.usa.s11b_derived.cb_alt_holds_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s11a2_derived.cb_marks_per_match"
+exposure_min = 0.3
+control = "skirmish40_a0_off.factions.usa.s11b_derived.cb_alt_holds_per_match"
+note = "report: plans in which an AI gun passed a marker over because its last mission was counter-fire, a match; exposure: markers a match; control: a0_off (0)"
+[[target]]
+id = "T149c"
+metric = "skirmish40.factions.germany.s11a2_derived.cb_shell_share_pct"
+max = 50
+kind = "report"
+exposure = "skirmish40.factions.germany.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a0_off.factions.germany.s11a2_derived.cb_shell_share_pct"
+note = "report (plan bound 50, as T148): counter-fire rounds as % of gun mission rounds with cb_alternate; control: a0_off on the same seeds (what the rule takes off)"
+[[target]]
+id = "T149d"
+metric = "skirmish40.factions.usa.s11a2_derived.cb_shell_share_pct"
+max = 50
+kind = "report"
+exposure = "skirmish40.factions.usa.s11a1_derived.gun_rounds_per_match"
+exposure_min = 4
+control = "skirmish40_a0_off.factions.usa.s11a2_derived.cb_shell_share_pct"
+note = "report (plan bound 50, as T148): counter-fire rounds as % of gun mission rounds with cb_alternate; control: a0_off on the same seeds (what the rule takes off)"
+
+# --- T150: masks: both field howitzers are refused behind a crest (fortify row how_mask) -----------
+# Source: artillery-on-map.md line 1492 (test 3: "A leFH 18 and an M3 ... report masked"), lines 750-753
+# (no high angle for the leFH 18; the M2A1's starts at 3,300 m). Scene: the gun 600 m from a trench 80 m behind the crest
+# (the design's distance; T129's S11a1 row stays at 530 m).
+[[target]]
+id = "T150a"
+metric = "fortify10.s11b.how_mask.lefh_masked_pct"
+min = 100
+exposure = "fortify10.s11b.how_mask.orders"
+exposure_min = 20
+control = "fortify10.s11b.how_mask.control.lefh_masked_pct"
+note = "orders refused Masked behind the crest (%); exposure: orders given; control: the same scene on flat ground (0)"
+[[target]]
+id = "T150b"
+metric = "fortify10.s11b.how_mask.m2a1_masked_pct"
+min = 100
+exposure = "fortify10.s11b.how_mask.orders"
+exposure_min = 20
+control = "fortify10.s11b.how_mask.control.m2a1_masked_pct"
+note = "orders refused Masked behind the crest (%); exposure: orders given; control: the same scene on flat ground (0)"
+
+# --- T151: a howitzer barrage pins a trench, it does not empty it (fortify row how_barrage) --------
+# Source: artillery-on-map.md line 1138 (trench losses under a 105 mm barrage <= 40 % of open-ground losses).
+# T151a is the new shell (FH Gr 38); T151b fires the M1 HE that T130 already measures: a report.
+[[target]]
+id = "T151a"
+metric = "fortify10.s11b.how_barrage.lefh.trench_vs_open_pct"
+max = 40
+exposure = "fortify10.s11b.how_barrage.lefh.open_loss_pct"
+exposure_min = 20
+control = "fortify10.s11b.how_barrage.lefh.control.trench_vs_open_pct"
+note = "losses of the squad in the trench as % of the squad in the open, leFH 18; exposure: the open squad's losses (%); control: both squads in the open (about 100)"
+[[target]]
+id = "T151b"
+metric = "fortify10.s11b.how_barrage.m2a1.trench_vs_open_pct"
+max = 40
+kind = "report"
+exposure = "fortify10.s11b.how_barrage.m2a1.open_loss_pct"
+exposure_min = 20
+control = "fortify10.s11b.how_barrage.m2a1.control.trench_vs_open_pct"
+note = "report: the same for the M2A1 (the M1 HE of T130); exposure: the open squad's losses (%); control: both squads in the open"
+
+# --- T152: rifle grenadiers fire by rule (fortify row rg) -----------------------------------------
+# Source: S11b.md 4 G1-G3; artillery-on-map.md lines 1705-1707 (the launcher mode). No design figure for
+# effect: T152a/b only ask that the rule works and that the switch stops it; T152c/d are reports.
+[[target]]
+id = "T152a"
+metric = "fortify10.s11b.rg.germany.fired_per_run"
+min = 1
+exposure = "fortify10.s11b.rg.germany.grenades_carried"
+exposure_min = 3
+control = "fortify10.s11b.rg.germany.control.fired_per_run"
+note = "grenades fired by a full squad halted 100 m from an enemy squad in the open, in 60 s; exposure: grenades the squad carries; control: rifle_grenades 0 (0)"
+[[target]]
+id = "T152b"
+metric = "fortify10.s11b.rg.usa.fired_per_run"
+min = 1
+exposure = "fortify10.s11b.rg.usa.grenades_carried"
+exposure_min = 3
+control = "fortify10.s11b.rg.usa.control.fired_per_run"
+note = "grenades fired by a full squad halted 100 m from an enemy squad in the open, in 60 s; exposure: grenades the squad carries; control: rifle_grenades 0 (0)"
+[[target]]
+id = "T152c"
+metric = "fortify10.s11b.rg.germany.trench_vs_open_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s11b.rg.germany.open_loss_pct"
+exposure_min = 1
+control = "fortify10.s11b.rg.germany.control.open_loss_pct"
+note = "report: the target squad's losses in a trench as % of its losses in the open, grenades on; exposure: its losses in the open (%); control: the open losses with rifle_grenades 0 (the rifles' share)"
+[[target]]
+id = "T152d"
+metric = "fortify10.s11b.rg.usa.trench_vs_open_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s11b.rg.usa.open_loss_pct"
+exposure_min = 1
+control = "fortify10.s11b.rg.usa.control.open_loss_pct"
+note = "report: the target squad's losses in a trench as % of its losses in the open, grenades on; exposure: its losses in the open (%); control: the open losses with rifle_grenades 0 (the rifles' share)"
+
+# --- T153: the AI buys a field howitzer (report) ---------------------------------------------------
+# Source: S11b.md 4 H1; artillery-on-map.md lines 837-838 (unlock 8:00, one alive). The howitzer's own
+# 15 % income share admits it at minute 11 (480 / 0.15 = 3,200 MP of 600 + 240 a minute) and minute 12
+# (500 MP card). Bound 20 % of all matches (plan review 4); the exposure is the share of matches that
+# lasted 14 minutes or more (long enough to buy and emplace it), at least half of them.
+[[target]]
+id = "T153a"
+metric = "skirmish160.factions.germany.s11b_derived.how_bought_matches_pct"
+min = 20
+kind = "report"
+exposure = "skirmish160.factions.germany.s11b_derived.how_window_matches_pct"
+exposure_min = 50
+control = "skirmish40_s11b_off.factions.germany.s11b_derived.how_bought_matches_pct"
+note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: matches that lasted 14 minutes or more (%); control: s11b_off (0)"
+[[target]]
+id = "T153b"
+metric = "skirmish160.factions.usa.s11b_derived.how_bought_matches_pct"
+min = 20
+kind = "report"
+exposure = "skirmish160.factions.usa.s11b_derived.how_window_matches_pct"
+exposure_min = 50
+control = "skirmish40_s11b_off.factions.usa.s11b_derived.how_bought_matches_pct"
+note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: matches that lasted 14 minutes or more (%); control: s11b_off (0)"
+[[target]]
+id = "T153c"
+metric = "skirmish160_oos.factions.germany.s11b_derived.how_bought_matches_pct"
+min = 20
+kind = "report"
+exposure = "skirmish160_oos.factions.germany.s11b_derived.how_window_matches_pct"
+exposure_min = 50
+control = "skirmish40_s11b_off.factions.germany.s11b_derived.how_bought_matches_pct"
+note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: matches that lasted 14 minutes or more (%); control: s11b_off (0)"
+[[target]]
+id = "T153d"
+metric = "skirmish160_oos.factions.usa.s11b_derived.how_bought_matches_pct"
+min = 20
+kind = "report"
+exposure = "skirmish160_oos.factions.usa.s11b_derived.how_window_matches_pct"
+exposure_min = 50
+control = "skirmish40_s11b_off.factions.usa.s11b_derived.how_bought_matches_pct"
+note = "report (plan bound): matches in which the AI called in a field howitzer (%); exposure: matches that lasted 14 minutes or more (%); control: s11b_off (0)"
+
+# --- T154: a bought howitzer fires, and does not take over the killing (reports) -------------------
+# Source: S11b.md 0 (a base gun behind its mask); artillery-on-map.md line 1137 (kills by infantry guns
+# and howitzers <= 10 % of all kills; T135 holds the hard reading for all inf_gun types together).
+[[target]]
+id = "T154a"
+metric = "skirmish160.factions.germany.s11b_derived.how_fired_matches_pct"
+min = 50
+kind = "report"
+exposure = "skirmish160.factions.germany.s11b_derived.how_bought_matches_pct"
+exposure_min = 10
+control = "skirmish40_how_off.factions.germany.s11b_derived.how_fired_matches_pct"
+note = "report (plan bound): of the matches with a howitzer, those in which it fired a mission round (%); exposure: matches with a howitzer (%); control: how_off (null)"
+[[target]]
+id = "T154b"
+metric = "skirmish160.factions.usa.s11b_derived.how_fired_matches_pct"
+min = 50
+kind = "report"
+exposure = "skirmish160.factions.usa.s11b_derived.how_bought_matches_pct"
+exposure_min = 10
+control = "skirmish40_how_off.factions.usa.s11b_derived.how_fired_matches_pct"
+note = "report (plan bound): of the matches with a howitzer, those in which it fired a mission round (%); exposure: matches with a howitzer (%); control: how_off (null)"
+[[target]]
+id = "T154c"
+metric = "skirmish160.factions.germany.s11b_derived.how_kill_share_pct"
+max = 10
+kind = "report"
+exposure = "skirmish160.factions.germany.s11b_derived.how_rounds_per_match"
+exposure_min = 1
+control = "skirmish40_how_off.factions.germany.s11b_derived.how_kill_share_pct"
+note = "report (cap row): share of the faction's kills made by its field howitzer; exposure: howitzer mission rounds a match; control: how_off (0)"
+[[target]]
+id = "T154d"
+metric = "skirmish160.factions.usa.s11b_derived.how_kill_share_pct"
+max = 10
+kind = "report"
+exposure = "skirmish160.factions.usa.s11b_derived.how_rounds_per_match"
+exposure_min = 1
+control = "skirmish40_how_off.factions.usa.s11b_derived.how_kill_share_pct"
+note = "report (cap row): share of the faction's kills made by its field howitzer; exposure: howitzer mission rounds a match; control: how_off (0)"
+
+# --- T155: the AI buys light mortars (reports) ----------------------------------------------------
+# Source: S11b.md 4 L1 (about one light team in three mortar buys); roster-expansion.md lines 135, 179.
+[[target]]
+id = "T155a"
+metric = "skirmish160.factions.germany.s11b_derived.light_bought_matches_pct"
+min = 30
+kind = "report"
+exposure = "skirmish160.length_min.median"
+exposure_min = 10
+control = "skirmish40_light_off.factions.germany.s11b_derived.light_bought_matches_pct"
+note = "report (plan bound): matches in which the AI bought a light mortar (%); exposure: median match length in minutes; control: light_off (0)"
+[[target]]
+id = "T155b"
+metric = "skirmish160.factions.usa.s11b_derived.light_bought_matches_pct"
+min = 30
+kind = "report"
+exposure = "skirmish160.length_min.median"
+exposure_min = 10
+control = "skirmish40_light_off.factions.usa.s11b_derived.light_bought_matches_pct"
+note = "report (plan bound): matches in which the AI bought a light mortar (%); exposure: median match length in minutes; control: light_off (0)"
+[[target]]
+id = "T155c"
+metric = "skirmish160.factions.germany.s11b_derived.light_buy_share_pct"
+min = 15
+max = 50
+kind = "report"
+exposure = "skirmish160.factions.germany.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_light_off.factions.germany.s11b_derived.light_buy_share_pct"
+note = "report (plan band): light mortar cards as % of all mortar cards bought; exposure: mortar bombs a match; control: light_off (0)"
+[[target]]
+id = "T155d"
+metric = "skirmish160.factions.usa.s11b_derived.light_buy_share_pct"
+min = 15
+max = 50
+kind = "report"
+exposure = "skirmish160.factions.usa.s5b_derived.bombs_per_match"
+exposure_min = 20
+control = "skirmish40_light_off.factions.usa.s11b_derived.light_buy_share_pct"
+note = "report (plan band): light mortar cards as % of all mortar cards bought; exposure: mortar bombs a match; control: light_off (0)"
+
+# --- T156: rifle grenades in matches (reports) ----------------------------------------------------
+# Source: artillery-on-map.md lines 1161-1163 (new HE carried by riflemen, counted in the HE share). No
+# design figure for use or effect; 5 % is a plan bound (half the gun cap of line 1137).
+[[target]]
+id = "T156a"
+metric = "skirmish160.factions.germany.s11b_derived.rg_fired_per_match"
+min = 1
+kind = "report"
+exposure = "skirmish160.length_min.median"
+exposure_min = 10
+control = "skirmish40_rg_off.factions.germany.s11b_derived.rg_fired_per_match"
+note = "report (plan bound): rifle grenades fired a match; exposure: median match length in minutes; control: rg_off (0)"
+[[target]]
+id = "T156b"
+metric = "skirmish160.factions.usa.s11b_derived.rg_fired_per_match"
+min = 1
+kind = "report"
+exposure = "skirmish160.length_min.median"
+exposure_min = 10
+control = "skirmish40_rg_off.factions.usa.s11b_derived.rg_fired_per_match"
+note = "report (plan bound): rifle grenades fired a match; exposure: median match length in minutes; control: rg_off (0)"
+[[target]]
+id = "T156c"
+metric = "skirmish160.factions.germany.s11b_derived.rg_kill_share_pct"
+max = 5
+kind = "report"
+exposure = "skirmish160.factions.germany.s11b_derived.rg_fired_per_match"
+exposure_min = 1
+control = "skirmish40_rg_off.factions.germany.s11b_derived.rg_kill_share_pct"
+note = "report (plan bound): share of the faction's kills made by rifle grenades; exposure: grenades fired a match; control: rg_off (0)"
+[[target]]
+id = "T156d"
+metric = "skirmish160.factions.usa.s11b_derived.rg_kill_share_pct"
+max = 5
+kind = "report"
+exposure = "skirmish160.factions.usa.s11b_derived.rg_fired_per_match"
+exposure_min = 1
+control = "skirmish40_rg_off.factions.usa.s11b_derived.rg_kill_share_pct"
+note = "report (plan bound): share of the faction's kills made by rifle grenades; exposure: grenades fired a match; control: rg_off (0)"
+
+# --- T157: what the new HE does to the share and the balance (reports; 40 set, same seeds) --------
+# Source: S11b.md 8 "Balance reading". T8 and T5 stay the hard rows on the 160 sets; a 40 set's noise is
+# 11-15 points, so these are read beside their controls, not judged alone.
+[[target]]
+id = "T157a"
+metric = "skirmish40.he_share_pct.mean"
+max = 26.3
+kind = "report"
+exposure = "skirmish40.length_min.median"
+exposure_min = 10
+control = "skirmish40_s11b_off.he_share_pct.mean"
+note = "report: HE share of kills (mortar + tank HE + rifle grenade) with S11b on; exposure: median match length; control: s11b_off on the same seeds"
+[[target]]
+id = "T157b"
+metric = "skirmish40.wins.germany_pct"
+min = 35
+max = 65
+kind = "report"
+exposure = "skirmish40.length_min.median"
+exposure_min = 10
+control = "skirmish40_s11b_off.wins.germany_pct"
+note = "report: Germany's wins with S11b on; exposure: median match length; control: s11b_off on the same seeds"
+[[target]]
+id = "T157c"
+metric = "skirmish40_rg_off.wins.germany_pct"
+min = 35
+max = 65
+kind = "report"
+exposure = "skirmish40.factions.usa.s11b_derived.rg_fired_per_match"
+exposure_min = 1
+control = "skirmish40.wins.germany_pct"
+note = "report: Germany's wins without rifle grenades (two US launchers a squad against one German); exposure: US grenades fired a match with them on; control: the default set"
+
+# --- T158: vehicle buys beside the artillery (reports; no fix: diagnosis X2) -----------------------
+# Source: docs/STATE.md "Balance and checks" (M10 bought 32 % of matches, 56 % at S10c-ai; M3A1 16 %, 36 %);
+# the diagnosis: the gun and observer cards themselves take the manpower (USA about 500 MP a match). Owner
+# question S11b-10 (A): accepted, T30 / T40 / T54 re-based in the balance pass. No bound: read beside how_off.
+[[target]]
+id = "T158a"
+metric = "skirmish40.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.usa.s11b_derived.how_bought_matches_pct"
+exposure_min = 10
+control = "skirmish40_how_off.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad"
+note = "report: matches in which the AI bought the card (%), howitzer buy on; exposure: matches with a howitzer (%); control: how_off on the same seeds (what the second gun costs the armour)"
+[[target]]
+id = "T158b"
+metric = "skirmish40.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.usa.s11b_derived.how_bought_matches_pct"
+exposure_min = 10
+control = "skirmish40_how_off.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad"
+note = "report: matches in which the AI bought the card (%), howitzer buy on; exposure: matches with a howitzer (%); control: how_off on the same seeds (what the second gun costs the armour)"
+[[target]]
+id = "T158c"
+metric = "skirmish40.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.germany.s11b_derived.how_bought_matches_pct"
+exposure_min = 10
+control = "skirmish40_how_off.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad"
+note = "report: matches in which the AI bought the card (%), howitzer buy on; exposure: matches with a howitzer (%); control: how_off on the same seeds (what the second gun costs the armour)"
+[[target]]
+id = "T158d"
+metric = "skirmish40.factions.germany.s7_derived.bought_matches_pct.ger_pz4_h_squad"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.germany.s11b_derived.how_bought_matches_pct"
+exposure_min = 10
+control = "skirmish40_how_off.factions.germany.s7_derived.bought_matches_pct.ger_pz4_h_squad"
+note = "report: matches in which the AI bought the card (%), howitzer buy on; exposure: matches with a howitzer (%); control: how_off on the same seeds (what the second gun costs the armour)"
+
+# --- T159: R7 (hard) trench men under rifles lose no more than the base + 10 % -----------------
+# Source: S12-wounds-medics.md 9 R7, S12-3 (A) (head 100 %, R7 hard). Scene (fortify10.s12.trench): each
+# faction's line squad in a dug trench under the other's line squad's rifles, 100 m, 300 s, rifle grenades off;
+# men out = dead or downed. Value: men out with wounds on as % of the base's (enabled 0).
+[[target]]
+id = "T159"
+metric = "fortify10.s12.trench.vs_base_pct"
+max = 110
+exposure = "fortify10.s12.trench.men"
+exposure_min = 200
+control = "fortify10.s12.trench.control.out_pct"
+note = "trench men out with wounds on, % of the base's (max 110); exposure: men under fire; control: the base's men out (%)"
+[[target]]
+id = "T160"
+metric = "fortify10.s12.trench.head_300.out_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s12.trench.men"
+exposure_min = 200
+control = "fortify10.s12.trench.control.out_pct"
+note = "report: trench men out (%) with head_damage_pct 300 (S12-3 (B)); exposure: men under fire; control: the base's men out (%)"
+
+# --- T161: R8 prone men under MG fire die no faster than the base ---------------------------------
+# Source: S12-wounds-medics.md 9 R8, S12-4 (prone = torso). Scene (fortify10.s12.prone): each faction's line
+# squad prone in the open under the other's MG (roster card tagged mg, called in), 100 m, 300 s.
+[[target]]
+id = "T161"
+metric = "fortify10.s12.prone.vs_base_pct"
+max = 100
+kind = "report"
+exposure = "fortify10.s12.prone.men"
+exposure_min = 200
+control = "fortify10.s12.prone.control.out_pct"
+note = "report until the base loses men in the scene: prone men out with wounds on, % of the base's (R8: at most 100); exposure: men under fire; control: the base's men out (%)"
+
+# --- T162, T163: plan-8 counts that exist after Build A (reports; 0 with every S12 switch 0) -------
+[[target]]
+id = "T162a"
+metric = "skirmish40.factions.germany.s12.downed"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.germany.losses"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12.downed"
+note = "report: enemy-caused downs of German men, 40 matches; exposure: the faction's losses; control: s12_off (0)"
+[[target]]
+id = "T162b"
+metric = "skirmish40.factions.usa.s12.downed"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.usa.losses"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12.downed"
+note = "report: downs of US men, 40 matches; exposure: the faction's losses; control: s12_off (0)"
+[[target]]
+id = "T163a"
+metric = "skirmish40.factions.germany.s12.bled_out"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.germany.s12.downed"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12.bled_out"
+note = "report: German downed men who bled out, 40 matches; exposure: downs; control: s12_off (0)"
+[[target]]
+id = "T163b"
+metric = "skirmish40.factions.usa.s12.bled_out"
+min = 0
+kind = "report"
+exposure = "skirmish40.factions.usa.s12.downed"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12.bled_out"
+note = "report: US downed men who bled out, 40 matches; exposure: downs; control: s12_off (0)"
+
+# --- T164-T169: R1-R6 (Build B), the wounds scene's medic rows (fortify10.s12) -----------------
+# Source: S12-wounds-medics.md 9 R1-R6. Switches on in the row only; player commands, no AI.
+# R1/R2 scene (fortify10.s12.mg300, .medics): each faction's line squad in the open under two of the
+# other's mg cards at 100 m (the plan's 300 m is past the cards' 150 m sight) for 30 s, then the MGs
+# leave; 300 s in all. R2 adds a medic team 60 m back that moves up when the fire lifts (auto-tend).
+[[target]]
+id = "T164"
+metric = "fortify10.s12.mg300.outright_pct"
+min = 20
+max = 45
+kind = "report"
+exposure = "fortify10.s12.mg300.downed"
+exposure_min = 50
+control = "fortify10.s12.medics.outright_pct"
+note = "report (R1): killed outright of killed outright plus downed (%), 20-45 (WW2 about 1:3); exposure: downs; control: the R2 scene"
+[[target]]
+id = "T165"
+metric = "fortify10.s12.medics.drop_pts"
+min = 30
+exposure = "fortify10.s12.medics.downed"
+exposure_min = 50
+control = "fortify10.s12.mg300.stabilised_pct"
+note = "R2: bled-out share (% of downs) with a medic team, points under R1's; exposure: downs; control: R1's stabilised share (no medics: 0)"
+# R3/R4 scene (fortify10.s12.post): a built aid post with a medic team; a wounded man (40 HP) walks in.
+[[target]]
+id = "T166a"
+metric = "fortify10.s12.post.treated_pct"
+min = 100
+exposure = "fortify10.s12.post.runs"
+exposure_min = 20
+control = "fortify10.s12.post.unstaffed_treated_pct"
+note = "R3: runs in which the staffed post treats him in treat_s + 60 s (%); exposure: runs; control: runs treated once its medics left (the post stops: 0)"
+[[target]]
+id = "T166b"
+metric = "fortify10.s12.post.hp"
+min = 75
+max = 75
+exposure = "fortify10.s12.post.runs"
+exposure_min = 20
+control = "fortify10.s12.post.treated_pct"
+note = "R3: his HP after treatment (return_hp_pct 75); exposure: runs; control: treated runs (%)"
+[[target]]
+id = "T167"
+metric = "fortify10.s12.post.second_pct"
+max = 0
+exposure = "fortify10.s12.post.runs"
+exposure_min = 20
+control = "fortify10.s12.post.treated_pct"
+note = "R4: runs in which a treated man wounded again was treated twice (%); exposure: runs; control: first treatments (%)"
+# R5 scene (fortify10.s12.refund): Evacuate in base of a called-in (paid) man, a start squad's
+# (unpaid) man, and the paid man again.
+[[target]]
+id = "T168a"
+metric = "fortify10.s12.refund.paid_ok_pct"
+min = 100
+exposure = "fortify10.s12.refund.runs"
+exposure_min = 20
+control = "fortify10.s12.refund.unpaid_mp"
+note = "R5: runs in which the paid man refunds evac_refund_pct of his price once (%); exposure: runs; control: the unpaid man's refund (MP)"
+[[target]]
+id = "T168b"
+metric = "fortify10.s12.refund.unpaid_mp"
+max = 0
+exposure = "fortify10.s12.refund.runs"
+exposure_min = 20
+control = "fortify10.s12.refund.paid_ok_pct"
+note = "R5: MP refunded for unpaid men; exposure: runs; control: paid refunds right (%)"
+[[target]]
+id = "T168c"
+metric = "fortify10.s12.refund.repeat_mp"
+max = 0
+exposure = "fortify10.s12.refund.runs"
+exposure_min = 20
+control = "fortify10.s12.refund.paid_ok_pct"
+note = "R5: MP refunded by a second Evacuate of the gone man; exposure: runs; control: paid refunds right (%)"
+# R6 scene (fortify10.s12.reinforce, reinforce 1): a line squad in base loses three men to Evacuate,
+# then Reinforce.
+[[target]]
+id = "T169a"
+metric = "fortify10.s12.reinforce.filled_pct"
+min = 100
+exposure = "fortify10.s12.reinforce.runs"
+exposure_min = 20
+control = "fortify10.s12.reinforce.control_filled_pct"
+note = "R6: runs in which Reinforce brings the squad back to card size (%); exposure: runs; control: the same with the reinforce switch 0"
+[[target]]
+id = "T169b"
+metric = "fortify10.s12.reinforce.rifle_kit_pct"
+min = 100
+exposure = "fortify10.s12.reinforce.runs"
+exposure_min = 20
+control = "fortify10.s12.reinforce.control_filled_pct"
+note = "R6: runs in which every new man carries the card's plain rifle kit (%); exposure: runs; control: filled runs with the reinforce switch 0 (%)"
+
+# --- T170-T173: S12b Build C, `s12_derived` per faction (docs/slices/S12-wounds-medics.md 8, 9) ---------
+# Source: plan 9 S12b ("medic_matches_pct >= 60", RE "6 of 10"): matches in which a medic stabilised or a post
+# treated an own man. Hard. Exposure: matches; control: s12_off (no medics: 0).
+[[target]]
+id = "T170a"
+metric = "skirmish160.factions.germany.s12_derived.medic_matches_pct"
+min = 60
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 20
+control = "skirmish40_s12_off.factions.germany.s12_derived.medic_matches_pct"
+note = "plan 9: share of matches in which a germany medic stabilised or a post treated an own man (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T170b"
+metric = "skirmish160.factions.usa.s12_derived.medic_matches_pct"
+min = 60
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 20
+control = "skirmish40_s12_off.factions.usa.s12_derived.medic_matches_pct"
+note = "plan 9: share of matches in which a usa medic stabilised or a post treated an own man (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T170c"
+metric = "skirmish160_oos.factions.germany.s12_derived.medic_matches_pct"
+min = 60
+exposure = "skirmish160_oos.factions.germany.s12_derived.matches"
+exposure_min = 20
+control = "skirmish40_s12_off.factions.germany.s12_derived.medic_matches_pct"
+note = "plan 9: share of matches in which a germany medic stabilised or a post treated an own man (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T170d"
+metric = "skirmish160_oos.factions.usa.s12_derived.medic_matches_pct"
+min = 60
+exposure = "skirmish160_oos.factions.usa.s12_derived.matches"
+exposure_min = 20
+control = "skirmish40_s12_off.factions.usa.s12_derived.medic_matches_pct"
+note = "plan 9: share of matches in which a usa medic stabilised or a post treated an own man (%); exposure: matches; control: s12_off"
+# Reports (plan 8; no design figure): per faction on skirmish160, control s12_off.
+[[target]]
+id = "T171a"
+metric = "skirmish160.factions.germany.s12_derived.downed_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.downed_per_match"
+note = "report: germany, own men downed per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171b"
+metric = "skirmish160.factions.usa.s12_derived.downed_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.downed_per_match"
+note = "report: usa, own men downed per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T172a"
+metric = "skirmish160.factions.germany.s12_derived.stabilised_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.stabilised_pct"
+note = "report: germany, share of own downs stabilised (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T172b"
+metric = "skirmish160.factions.usa.s12_derived.stabilised_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.stabilised_pct"
+note = "report: usa, share of own downs stabilised (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T173a"
+metric = "skirmish160.factions.germany.s12_derived.bled_out_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.bled_out_pct"
+note = "report: germany, share of own downs that bled out (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T173b"
+metric = "skirmish160.factions.usa.s12_derived.bled_out_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.bled_out_pct"
+note = "report: usa, share of own downs that bled out (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T171c"
+metric = "skirmish160.factions.germany.s12_derived.treated_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.treated_per_match"
+note = "report: germany, own wounded treated at a post per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171d"
+metric = "skirmish160.factions.usa.s12_derived.treated_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.treated_per_match"
+note = "report: usa, own wounded treated at a post per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171e"
+metric = "skirmish160.factions.germany.s12_derived.evac_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.evac_per_match"
+note = "report: germany, own men evacuated per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171f"
+metric = "skirmish160.factions.usa.s12_derived.evac_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.evac_per_match"
+note = "report: usa, own men evacuated per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171g"
+metric = "skirmish160.factions.germany.s12_derived.reinforced_men_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.reinforced_men_per_match"
+note = "report: germany, replacements per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171h"
+metric = "skirmish160.factions.usa.s12_derived.reinforced_men_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.reinforced_men_per_match"
+note = "report: usa, replacements per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171i"
+metric = "skirmish160.factions.germany.s12_derived.pop_downed_peak.mean"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.pop_downed_peak.mean"
+note = "report: germany, mean per-match peak of own downed men lying at once; exposure: matches; control: s12_off"
+[[target]]
+id = "T171j"
+metric = "skirmish160.factions.usa.s12_derived.pop_downed_peak.mean"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.pop_downed_peak.mean"
+note = "report: usa, mean per-match peak of own downed men lying at once; exposure: matches; control: s12_off"
+[[target]]
+id = "T171k"
+metric = "skirmish160.factions.germany.s12_derived.outright_kill_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.outright_kill_pct"
+note = "report: germany, killed outright over killed outright plus downed (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T171l"
+metric = "skirmish160.factions.usa.s12_derived.outright_kill_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.outright_kill_pct"
+note = "report: usa, killed outright over killed outright plus downed (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T171m"
+metric = "skirmish160.factions.germany.s12_derived.losses_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.losses_per_match"
+note = "report: germany, own losses per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171n"
+metric = "skirmish160.factions.usa.s12_derived.losses_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.losses_per_match"
+note = "report: usa, own losses per match; exposure: matches; control: s12_off"
+[[target]]
+id = "T171o"
+metric = "skirmish160.factions.germany.s12_derived.team_matches_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.germany.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.germany.s12_derived.team_matches_pct"
+note = "report: germany, matches with a medic team bought (%); exposure: matches; control: s12_off"
+[[target]]
+id = "T171p"
+metric = "skirmish160.factions.usa.s12_derived.team_matches_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.factions.usa.s12_derived.matches"
+exposure_min = 0
+control = "skirmish40_s12_off.factions.usa.s12_derived.team_matches_pct"
+note = "report: usa, matches with a medic team bought (%); exposure: matches; control: s12_off"
+
+# --- S13 (plan 7; plan numbers + 24) -------------------------------------------
+# T174a (plan T150a): S13a neutrality. The verdict is tools/neutral.py on skirmish40_s13_off
+# against target/s13-base40 (same 40/40); this row only reads its Germany share.
+[[target]]
+id = "T174a"
+metric = "skirmish40_s13_off.wins.germany_pct"
+min = 0
+max = 100
+kind = "report"
+exposure = "skirmish40_s13_off.wins.matches"
+exposure_min = 40
+control = "skirmish40.wins.germany_pct"
+note = "plan T150a: s13_off = base, match for match (neutral.py); here its Germany share"
+[[target]]
+id = "T174b"
+metric = "skirmish160.wins.germany_pct"
+min = 35
+max = 65
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.wins.germany_pct"
+note = "plan T150: Germany 35-65 % (skirmish160); control s13_off"
+[[target]]
+id = "T174c"
+metric = "skirmish160_oos.wins.germany_pct"
+min = 35
+max = 65
+exposure = "skirmish160_oos.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.wins.germany_pct"
+note = "plan T150: Germany 35-65 % (skirmish160_oos); control s13_off"
+[[target]]
+id = "T174d"
+metric = "skirmish160_s201.wins.germany_pct"
+min = 35
+max = 65
+exposure = "skirmish160_s201.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.wins.germany_pct"
+note = "plan T150: Germany 35-65 % (skirmish160_s201); control s13_off"
+# T175 (plan T151a-h) are ballistics checks: crates/sim/src/s13_tests.rs t151_* (cargo test).
+[[target]]
+id = "T176a"
+metric = "skirmish160.wins.no_winner"
+max = 0
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.wins.no_winner"
+note = "plan T152: no match without a winner"
+[[target]]
+id = "T176b"
+metric = "skirmish160.length_min.median"
+min = 15
+max = 30
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.length_min.median"
+note = "plan T152: match median 15-30 min"
+[[target]]
+id = "T179a"
+metric = "skirmish160.factions.germany.s13.cards.ger_panther_g_squad.matches_pct"
+min = 25
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.germany.s13.cards.ger_panther_g_squad.matches_pct"
+note = "plan T155: ger_panther_g_squad bought in >= 25 % of matches; else the T174 reading says nothing on heavy balance"
+[[target]]
+id = "T179b"
+metric = "skirmish160.factions.usa.s13.cards.usa_m36_squad.matches_pct"
+min = 25
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.usa.s13.cards.usa_m36_squad.matches_pct"
+note = "plan T155: usa_m36_squad bought in >= 25 % of matches; else the T174 reading says nothing on heavy balance"
+[[target]]
+id = "T179c"
+metric = "skirmish160.factions.germany.s13.cards.ger_tiger_1_squad.matches_pct"
+min = 10
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.germany.s13.cards.ger_tiger_1_squad.matches_pct"
+note = "plan T155: ger_tiger_1_squad bought in >= 10 % of matches; else the T174 reading says nothing on heavy balance"
+[[target]]
+id = "T179d"
+metric = "skirmish160.factions.usa.s13.cards.usa_m4a3e2_squad.matches_pct"
+min = 10
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.usa.s13.cards.usa_m4a3e2_squad.matches_pct"
+note = "plan T155: usa_m4a3e2_squad bought in >= 10 % of matches; else the T174 reading says nothing on heavy balance"
+[[target]]
+id = "T179e"
+metric = "skirmish160.factions.usa.s13.cards.usa_m4a3_76w_squad.matches_pct"
+min = 0
+kind = "report"
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.usa.s13.cards.usa_m4a3_76w_squad.matches_pct"
+note = "report: the 76 W bought (% of matches)"
+[[target]]
+id = "T180a"
+metric = "skirmish160.factions.germany.s5a.fired.9"
+min = 0
+kind = "report"
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.germany.s5a.fired.9"
+note = "plan T156 (part): rare tank rounds fired, germany (all types; by type not split)"
+[[target]]
+id = "T180b"
+metric = "skirmish160.factions.usa.s5a.fired.9"
+min = 0
+kind = "report"
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.usa.s5a.fired.9"
+note = "plan T156 (part): rare tank rounds fired, usa (all types; by type not split)"
+[[target]]
+id = "T181a"
+metric = "skirmish160.factions.germany.s13.kills.ger_panther_g"
+min = 0
+kind = "report"
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.germany.s13.kills.ger_panther_g"
+note = "plan T157 (part): men killed by the ger_panther_g"
+[[target]]
+id = "T181b"
+metric = "skirmish160.factions.germany.s13.kills.ger_tiger_1"
+min = 0
+kind = "report"
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.germany.s13.kills.ger_tiger_1"
+note = "plan T157 (part): men killed by the ger_tiger_1"
+[[target]]
+id = "T181c"
+metric = "skirmish160.factions.usa.s13.kills.usa_m4a3_76w"
+min = 0
+kind = "report"
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.usa.s13.kills.usa_m4a3_76w"
+note = "plan T157 (part): men killed by the usa_m4a3_76w"
+[[target]]
+id = "T181d"
+metric = "skirmish160.factions.usa.s13.kills.usa_m36"
+min = 0
+kind = "report"
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.usa.s13.kills.usa_m36"
+note = "plan T157 (part): men killed by the usa_m36"
+[[target]]
+id = "T181e"
+metric = "skirmish160.factions.usa.s13.kills.usa_m4a3e2"
+min = 0
+kind = "report"
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.usa.s13.kills.usa_m4a3e2"
+note = "plan T157 (part): men killed by the usa_m4a3e2"
+[[target]]
+id = "T182a"
+metric = "skirmish160.factions.germany.s13.push_turnbacks"
+min = 0
+kind = "report"
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.germany.s13.push_turnbacks"
+note = "plan T158: H3 turn-backs, germany"
+[[target]]
+id = "T182b"
+metric = "skirmish160.factions.usa.s13.push_turnbacks"
+min = 0
+kind = "report"
+exposure = "skirmish160.wins.matches"
+exposure_min = 100
+control = "skirmish40_s13_off.factions.usa.s13.push_turnbacks"
+note = "plan T158: H3 turn-backs, usa"
+# T183 (plan T159, rack-dry tanks): no counter yet (Build C did not add one); left to the Measure stage.
+[[target]]
+id = "T184a"
+metric = "armour5.cases.case42.checks.glacis_pens.value"
+max = 0
+exposure = "armour5.cases.case42.runs"
+exposure_min = 10
+control = "armour5.cases.case42.checks.glacis_pens_o1_off.value"
+note = "plan 7 case 42: M36 glacis pens 0 (control: the o1_off run)"
+[[target]]
+id = "T184b"
+metric = "armour5.cases.case43.checks.glacis_pens.value"
+max = 0
+exposure = "armour5.cases.case43.runs"
+exposure_min = 10
+control = "armour5.cases.case43.checks.glacis_pens_o1_off.value"
+note = "plan 7 case 43: 76 W glacis pens 0 (control: the o1_off run)"
+[[target]]
+id = "T184c"
+metric = "armour5.cases.case44.checks.tiger_wins.value"
+min = 6
+exposure = "armour5.cases.case44.runs"
+exposure_min = 10
+control = "armour5.cases.case44.checks.tiger_wins_o1_off.value"
+note = "plan 7 case 44: Tiger wins >= 6 of 10 (control: the o1_off run)"
+[[target]]
+id = "T184d"
+metric = "armour5.cases.case45.checks.jumbo_survives.value"
+min = 6
+exposure = "armour5.cases.case45.runs"
+exposure_min = 10
+control = "armour5.cases.case45.checks.jumbo_survives_o1_off.value"
+note = "plan 7 case 45: Jumbo survives 3 hits in >= 6 of 10 (control: the o1_off run)"
+[[target]]
+id = "T184e"
+metric = "armour5.cases.case46.checks.panther_out.value"
+min = 7
+exposure = "armour5.cases.case46.runs"
+exposure_min = 10
+control = "armour5.cases.case46.checks.panther_out_o1_off.value"
+note = "plan 7 case 46: 76 W kills the flanked Panther in >= 7 of 10 (control: the o1_off run)"
