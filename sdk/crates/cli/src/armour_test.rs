@@ -192,6 +192,7 @@ pub struct ArmourTestReport {
 }
 
 /// Loaded defs and the run options.
+mod s13;
 mod s8b;
 mod s9;
 
@@ -3883,7 +3884,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         crossings: args.crossings,
         verbose: args.verbose,
     };
-    let all: [(u32, CaseFn); 40] = [
+    let all: [(u32, CaseFn); 46] = [
         (1, case1),
         (2, case2),
         (3, case3),
@@ -3924,6 +3925,12 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         (38, s9::case38),
         (39, s9::case39),
         (40, s9::case40),
+        (41, s13::case41),
+        (42, s13::case42),
+        (43, s13::case43),
+        (44, s13::case44),
+        (45, s13::case45),
+        (46, s13::case46),
     ];
     let start = Instant::now();
     let mut cases = Vec::new();
