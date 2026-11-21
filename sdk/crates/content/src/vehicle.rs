@@ -3319,6 +3319,62 @@ impl VehicleSetup {
         best
     }
 
+    /// S13 (review V3): the indices of the hull body's armour boxes. For a
+    /// tank, TD or assault gun every hull-frame box but the upper box (a
+    /// casemate's stays out, as a turret does); for every other role box 0
+    /// alone. Every pre-S13 def gets `[0]`; the S13 defs `hull` and
+    /// `superstructure`.
+    pub fn hull_body_boxes(&self) -> Vec<usize> {
+        if !matches!(
+            self.role,
+            VehicleRole::Tank | VehicleRole::AssaultGun | VehicleRole::TankDestroyer
+        ) || self.boxes.is_empty()
+        {
+            return vec![0];
+        }
+        let up = self.upper_box();
+        self.boxes
+            .iter()
+            .enumerate()
+            .filter(|&(k, b)| k == 0 || (b.frame == Frame::Hull && k != up))
+            .map(|(k, _)| k)
+            .collect()
+    }
+
+    /// S13 (review V3): the bounds of [`Self::hull_body_boxes`]: `hull`
+    /// (box 0) exactly when that is box 0 alone.
+    pub fn hull_body(&self) -> BoxSetup {
+        let ks = self.hull_body_boxes();
+        if ks.len() <= 1 {
+            return self.hull;
+        }
+        let body = ks.iter().map(|&k| &self.boxes[k]);
+        let mut lo = [i64::MAX; 3];
+        let mut hi = [i64::MIN; 3];
+        for b in body {
+            let c = [b.bounds.center.x, b.bounds.center.y, b.bounds.center.z];
+            let h = [b.bounds.half.x, b.bounds.half.y, b.bounds.half.z];
+            for a in 0..3 {
+                lo[a] = lo[a].min(c[a].0 as i64 - h[a].0 as i64);
+                hi[a] = hi[a].max(c[a].0 as i64 + h[a].0 as i64);
+            }
+        }
+        let ctr = |a: usize| Fixed(((lo[a] + hi[a]).div_euclid(2)) as i32);
+        let half = |a: usize| Fixed(((hi[a] - lo[a] + 1) / 2) as i32);
+        BoxSetup {
+            center: FixedVec3 {
+                x: ctr(0),
+                y: ctr(1),
+                z: ctr(2),
+            },
+            half: FixedVec3 {
+                x: half(0),
+                y: half(1),
+                z: half(2),
+            },
+        }
+    }
+
     /// The seat for `role`, if this vehicle has one.
     pub fn seat(&self, role: SeatRole) -> Option<&SeatSetup> {
         self.seats.iter().find(|s| s.role == role)

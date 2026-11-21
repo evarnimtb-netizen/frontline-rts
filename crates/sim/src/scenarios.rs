@@ -290,7 +290,9 @@ pub fn hull_down(mut setup: MatchSetup, threads: usize, p: u8) -> Result<Staged,
     staging(&mut setup, true);
     let ty = type_of_setup(&setup, p, SquadRole::Vehicle);
     let v = &setup.vehicles[need(ty, "hull-down tank")? as usize];
-    let hull_top = Fx::from(v.hull.center.z) + Fx::from(v.hull.half.z);
+    // S13 (review V3d): the hull body's top (an S13 superstructure's).
+    let body = v.hull_body();
+    let hull_top = Fx::from(body.center.z) + Fx::from(body.half.z);
     // S7: the upper box's top (the turret's, a casemate's).
     let up = &v.boxes[v.upper_box()];
     let turret_top = Fx::from(up.bounds.center.z)

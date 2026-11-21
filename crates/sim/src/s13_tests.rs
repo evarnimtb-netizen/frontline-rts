@@ -949,6 +949,35 @@ const S13_VEHICLES: [&str; 5] = [
     "ww2:usa_m4a3e2",
 ];
 
+/// Review V3: `hull_body` is box 0 exactly for every pre-S13 def (casemates
+/// included: their upper box stays out); for the S13 defs it spans box 0
+/// and the superstructure (its top is the superstructure's). Control: the
+/// S13 bodies differ from box 0.
+#[test]
+fn hull_body_is_box_0_before_s13() {
+    let w = flat_world_with(1, |_| {});
+    let s = &w.game().unwrap().setup;
+    for v in &s.vehicles {
+        let body = v.hull_body();
+        if S13_VEHICLES.contains(&v.id.as_str()) {
+            assert_ne!(body, v.hull, "{}", v.id);
+            let sup = &v.boxes[1].bounds;
+            assert_eq!(v.boxes[1].id, "superstructure");
+            // Within one raw unit (the half extent rounds up).
+            let top = (body.center.z.0 + body.half.z.0) - (sup.center.z.0 + sup.half.z.0);
+            let bottom = (body.center.z.0 - body.half.z.0) - (v.hull.center.z.0 - v.hull.half.z.0);
+            assert!(
+                top.abs() <= 1 && bottom.abs() <= 1,
+                "{}: {top} {bottom}",
+                v.id
+            );
+        } else {
+            assert_eq!(body, v.hull, "{}", v.id);
+            assert_eq!(v.hull_body_boxes(), vec![0], "{}", v.id);
+        }
+    }
+}
+
 /// Review V1: the S13 defs' track band (a share of box 0, the lower hull)
 /// is within 10 cm of the S3 band (45 % of the whole hull side). Control:
 /// at the old 45 % of box 0 it is 25 cm or more short.
@@ -992,4 +1021,55 @@ fn s13_superstructure_spans_the_hull() {
             "{id} rear"
         );
     }
+}
+
+/// Review V3c: `Auto` judges the special round on the hull body's worst
+/// plate. A Panther facing a Jumbo at 300 m (PzGr 39/42 under 50 % on the
+/// glacis, while the nose would pass it) loads PzGr 40/42 first. Control:
+/// facing a 76 W (glacis 63.5 mm: the standard round) it fires PzGr 39/42.
+#[test]
+fn special_round_judged_on_the_glacis() {
+    let first_rare = |target: &str| {
+        let mut w = flat_world_with(1, |s| {
+            for v in &mut s.vehicles {
+                v.sight = frontline_content::Fixed::from_int(1000);
+            }
+        });
+        let ty = |w: &World, id: &str| w.match_setup().unwrap().squad_type_index(id).unwrap();
+        let (pz, tg) = (ty(&w, PANTHER), ty(&w, target));
+        w.spawn_squad_at(
+            PlayerId(0),
+            pz,
+            FxVec2::from_int(300, 300),
+            FxVec2::new(Fx::ONE, Fx::ZERO),
+        )
+        .unwrap();
+        let t = w
+            .spawn_squad_at(
+                PlayerId(1),
+                tg,
+                FxVec2::from_int(600, 300),
+                FxVec2::new(-Fx::ONE, Fx::ZERO),
+            )
+            .unwrap();
+        // The target holds fire (no rounds): only the Panther shoots.
+        let v = w.game().unwrap().squads[&t].members[0];
+        w.edit_vehicle(v, |vs| {
+            vs.ammo.iter_mut().for_each(|n| *n = 0);
+            vs.loaded = None;
+        });
+        w.enable_hit_log();
+        for _ in 0..(60 * 30) {
+            w.step(&[]);
+            if let Some(h) = w.take_hit_log().into_iter().find(|h| h.player == 0) {
+                return w.match_setup().unwrap().ammo[h.ammo as usize].rare;
+            }
+        }
+        panic!("the Panther hit nothing at {target}");
+    };
+    assert!(first_rare(JUMBO), "PzGr 40/42 at the Jumbo");
+    assert!(
+        !first_rare("ww2:usa_m4a3_76w_squad"),
+        "control: PzGr 39/42 at the 76 W"
+    );
 }

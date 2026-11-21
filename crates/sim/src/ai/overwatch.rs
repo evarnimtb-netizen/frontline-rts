@@ -427,8 +427,17 @@ impl super::Planner<'_> {
     ) -> FxVec2 {
         let g = self.g;
         let r = &g.setup.rules.ai.armour;
+        // S13 (review V3b): the hull line at the hull body's centre (box 0
+        // and an S13 superstructure; box 0 alone for every pre-S13 def).
+        let body_dz = g.vehicles.get(&t.id).map_or(Fx::ZERO, |vs| {
+            let v = &g.setup.vehicles[vs.type_idx as usize];
+            Fx::from(v.hull_body().center.z) - Fx::from(v.hull.center.z)
+        });
         let (gun_h, hull_h) = match g.vderived.frame(t.id) {
-            Some(f) => (f.pivot.z - f.origin.z, f.hull.center.z - f.origin.z),
+            Some(f) => (
+                f.pivot.z - f.origin.z,
+                f.hull.center.z - f.origin.z + body_dz,
+            ),
             None => (Fx::from_int(2), Fx::ONE),
         };
         let threat = axis.extend(self.terrain.height_at(axis) + Fx::from_milli(THREAT_EYE_MM));

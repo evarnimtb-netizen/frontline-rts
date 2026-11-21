@@ -1199,49 +1199,68 @@ impl MatchState {
         ) else {
             return false;
         };
-        let part = if turret {
-            BoxPart(tf.upper)
+        // S13 (review V3c): at the hull, every box of the hull body (the
+        // S13 defs' nose box and superstructure; box 0 alone before S13),
+        // judged on the one the standard round does worst against.
+        let vdef = &self.setup.vehicles[tf.type_idx as usize];
+        let parts: Vec<usize> = if turret {
+            vec![tf.upper as usize]
         } else {
-            BoxPart::HULL
-        };
-        let b = if turret { tf.upper_box() } else { &tf.hull };
-        let from = f.turret.center;
-        let rel = b.center - from;
-        let range = rel.length();
-        let dir = rel.normalize_or_zero();
-        let l = crate::armour::to_local(b, -dir);
-        let face = if l.x.abs() >= l.y.abs() {
-            if l.x >= Fx::ZERO {
-                Face::Front
-            } else {
-                Face::Rear
-            }
-        } else if l.y >= Fx::ZERO {
-            Face::Left
-        } else {
-            Face::Right
+            vdef.hull_body_boxes()
+                .into_iter()
+                .filter(|&k| k == 0 || k < tf.n_boxes as usize)
+                .collect()
         };
         let plates = &self.armour.vehicles[tf.type_idx as usize];
-        let plate = plates.face(part, face);
-        let c = crate::armour::impact_cos(dir, b.axes.apply(plate.normal));
-        // S13 rule O1: each round's own `c_pen` (its class, if any).
-        let chance = |a: &crate::armour::AmmoTable| {
-            crate::armour::pen_chance_ppm_at(
-                a.pen0(range),
-                c,
-                a.c_pen(c, plate.thickness),
-                plate.thickness,
-                Fx::ZERO,
-                a.cos_ricochet,
-            )
+        let from = f.turret.center;
+        let mut best: Option<(u32, u32)> = None;
+        for k in parts {
+            let b = if turret {
+                tf.upper_box()
+            } else if k == 0 {
+                &tf.hull
+            } else {
+                &tf.boxes[k]
+            };
+            let part = BoxPart(k as u8);
+            let rel = b.center - from;
+            let range = rel.length();
+            let dir = rel.normalize_or_zero();
+            let l = crate::armour::to_local(b, -dir);
+            let face = if l.x.abs() >= l.y.abs() {
+                if l.x >= Fx::ZERO {
+                    Face::Front
+                } else {
+                    Face::Rear
+                }
+            } else if l.y >= Fx::ZERO {
+                Face::Left
+            } else {
+                Face::Right
+            };
+            let plate = plates.face(part, face);
+            let c = crate::armour::impact_cos(dir, b.axes.apply(plate.normal));
+            // S13 rule O1: each round's own `c_pen` (its class, if any).
+            let chance = |a: &crate::armour::AmmoTable| {
+                crate::armour::pen_chance_ppm_at(
+                    a.pen0(range),
+                    c,
+                    a.c_pen(c, plate.thickness),
+                    plate.thickness,
+                    Fx::ZERO,
+                    a.cos_ricochet,
+                )
+            };
+            let pair = (chance(ap), chance(sp));
+            if best.is_none_or(|b| pair.0 < b.0) {
+                best = Some(pair);
+            }
+        }
+        let Some((std_ppm, sp_ppm)) = best else {
+            return false;
         };
         let g = &self.setup.rules.vehicles.gunnery;
-        special_pick(
-            chance(ap),
-            chance(sp),
-            g.special_below_pct,
-            g.special_min_pct,
-        )
+        special_pick(std_ppm, sp_ppm, g.special_below_pct, g.special_min_pct)
     }
 
     /// Whether `t` is still a valid main-gun target of a vehicle of `owner`
