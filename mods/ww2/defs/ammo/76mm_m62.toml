@@ -1,0 +1,39 @@
+# 76 mm M62A1 APC-T for the 76 mm M1A1 (S13a): the same projectile as the M10's 3-inch M62 (own def: it carries the O1 class; S13-1b). 65 g Explosive D.
+id = "ww2:76mm_m62"
+name = "76 mm M62 APC"
+mechanism = "aphe"
+# S13: priced refill ([supply] shell_mp_per_t per tonne): complete round 11.14 kg.
+supply = { kind = "shells", g = 11100 }
+caliber_mm = 76
+muzzle_velocity_m_s = 792
+drag_coeff = 0
+# [range_m, mm] against rolled homogeneous plate at 0 degrees, 50 % criterion; 76 mm M1A1.
+penetration = [[100, 125], [500, 116], [1000, 106], [1500, 97], [2000, 89]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# S13 O1 (docs/slices/S13-heavy-wave.md 3): the slope penalty beyond 1/cos, class "apcbc".
+slope_class = "apcbc"
+nonpen_damage = 40
+track_damage = 60
+sources = [
+  "Bird & Livingston, WWII Ballistics: Armor and Gunnery (2001) p. 61, via the Wikipedia calculated-penetration table (90 degrees, US/UK 50 % criterion) of the gun (76 mm M1; the 500 m and 1500 m entries are interpolated)",
+  "Wikipedia, 76 mm gun M1 (792 m/s, round 11.14 kg, 65 g filler)",
+  "Hunnicutt, Sherman (1978), 76 mm ammunition",
+]
+
+[core]
+damage = 100
+length_cm = 150
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25
+
+[filler]
+offset_cm = 100
+rays = 12
+cone_deg = 60
+damage = 60
+reach_cm = 300

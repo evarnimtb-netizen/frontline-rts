@@ -1273,6 +1273,8 @@ default = "ww2:training_regular"
 # (mortars have their own caps). The AI holds at most [ai.arty] max_guns 1
 # + how_max 1, so no AI buy changes.
 "ww2:artillery" = 2
+# S13a B (docs/slices/S13-heavy-wave.md 4.3, S13-7 (A)): one heavy tank alive a player: the Tiger I or the Jumbo (the Panther has its own cap 2).
+"ww2:heavy" = 1
 
 [supply]
 # S5a (owner decision D1, 2026-11-01): no free ammunition anywhere, the base

@@ -1,0 +1,33 @@
+# 7.5 cm PzGr 40/42: APCR (tungsten core) for the KwK 42 L/70 (S13a). Rare: tungsten was scarce (S13-6 (A): Panther 2, Tiger 2 here). No filler.
+id = "ww2:75mm_pzgr4042"
+name = "7.5 cm PzGr 40/42"
+mechanism = "ap"
+# S13: priced refill ([supply] shell_mp_per_t per tonne): complete round 11.6 kg.
+supply = { kind = "shells", g = 11600 }
+caliber_mm = 75
+muzzle_velocity_m_s = 1120
+drag_coeff = 0
+# [range_m, mm] against rolled homogeneous plate at 0 degrees, 50 % criterion; 7.5 cm KwK 42 L/70.
+penetration = [[100, 265], [500, 234], [1000, 199], [1500, 170], [2000, 145]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# S13 O1 (docs/slices/S13-heavy-wave.md 3): the slope penalty beyond 1/cos, class "apcr".
+slope_class = "apcr"
+nonpen_damage = 40
+track_damage = 60
+sources = [
+  "Bird & Livingston, WWII Ballistics: Armor and Gunnery (2001) p. 61, via the Wikipedia calculated-penetration table (90 degrees, US/UK 50 % criterion) of the gun (7.5 cm KwK 42)",
+  "Wikipedia, 7.5 cm KwK 42 (1,120 m/s, round 11.55 kg)",
+]
+# S5a (D3): a rare round: refilled one per supply.rare_rearm_base_s up to the vehicle's rare_cap, never a weapon's only feed.
+rare = true
+
+[core]
+damage = 100
+length_cm = 120
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25

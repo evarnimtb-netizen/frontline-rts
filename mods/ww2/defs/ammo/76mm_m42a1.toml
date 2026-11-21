@@ -1,0 +1,34 @@
+# 76 mm M42A1 HE for the 76 mm M1A1 (S13a). 0.39 kg explosive.
+id = "ww2:76mm_m42a1"
+name = "76 mm M42A1 HE"
+mechanism = "he"
+supply = { kind = "shells", g = 10000 }  # complete round 10.03 kg
+caliber_mm = 76
+muzzle_velocity_m_s = 820
+drag_coeff = 0
+penetration = [[0, 10]]
+ricochet_angle_deg = 80
+track_damage = 40
+sources = [
+  "Wikipedia, 76 mm gun M1 (M42A1: 820 m/s, round 10.03 kg, 0.39 kg filler; TM 9-1901)",
+]
+
+[he]
+damage = 150
+suppression = 40
+blast_radius_cm = 100
+frag_count = 70
+frag_reach_cm = 1200
+frag_damage = 70
+frag_far_pct = 30
+frag_elev_deg = [2, 45]
+frag_track_damage = 1
+suppression_radius_m = 12
+crater_radius_cm = 60
+crater_depth_cm = 30
+pen_mm = 10
+frag_pen_mm = 12
+inside_damage = 150
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 40

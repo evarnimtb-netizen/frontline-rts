@@ -43,6 +43,9 @@ roster = [
     "ww2:ger_kz_grw42_team",
     # S12: the medic team (appended; ai_weight 0 until S12b).
     "ww2:ger_sanitaetstrupp",
+    # S13a: the Panther G and the Tiger I (appended; ai_weight 0 until S13-ai).
+    "ww2:ger_panther_g_squad",
+    "ww2:ger_tiger_1_squad",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

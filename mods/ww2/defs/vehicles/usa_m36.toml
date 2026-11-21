@@ -1,0 +1,211 @@
+# 90 mm Gun Motor Carriage M36 (S13a Build B, docs/slices/S13-heavy-wave.md 4.2): the 90 mm M3 in a large open-topped turret on the M10A1 hull.
+# Plates: afvdatabase.com (M36), Wikipedia M36. Powered traverse up to 24 deg/s (afvdatabase), not the hand traverse of the M10. Frames as usa_m10.toml (cm).
+id = "ww2:usa_m36"
+name = "90 mm GMC M36"
+short_name = "M36"
+faction = "ww2:usa"
+role = "tank_destroyer"
+cost = 760
+pop = 12
+# Card cooldown 180 s, unlock 8:00 (docs/slices/S13-heavy-wave.md 4.3); a gameplay value, not a price.
+recall_cooldown_s = 180
+initial_cooldown_s = 480
+sight_m = 175
+spot_size_pct = 200
+eye_height_cm = 270
+sources = [
+  "afvdatabase.com, 90 mm Gun Motor Carriage M36",
+  "Zaloga, M10 and M36 Tank Destroyers 1942-53 (Osprey New Vanguard 57)",
+  "Wikipedia, M36 tank destroyer",
+  "docs/slices/S13-research-history.md 1.4",
+]
+crew_squad = "ww2:usa_tank_crew"
+rare_cap = 0
+# S13-6 (A): no HVAP (the 90 mm T30E16 came Jan-Feb 1945 in tiny numbers).
+
+[mobility]
+type = "tracked"
+# 30 mph (48 km/h) road (Hunnicutt) on the game's road-speed scale
+# (Sherman 42 km/h -> 650 cm/s): 740 cm/s.
+# 42 km/h (plan 4.2) on the game's scale (Sherman 42 km/h = 650 cm/s).
+speed_cm_s = 650
+reverse_cm_s = 250
+turn_deg_s = 32
+accel_cm_s2 = 150
+brake_cm_s2 = 400
+max_slope_pct = 50
+ditch_block_dm = 19
+bog_pct = 7
+unbog_s = [20, 40]
+# No gyrostabiliser on the M7 gun: x4 on the move.
+moving_spread_pct = 400
+
+[hull]
+# As the Sherman's (the M4A2 lower hull).
+track_band_pct = 45
+track_mm = 20
+
+# The open-topped turret: hand traverse, slow (vehicles.md 4.4: a full turn
+# about 80 s, 4.5 deg/s; whole degrees here: 5, 72 s, S7-10).
+[turret]
+pivot = [-20, 0, 190]
+# Powered, up to 24 deg/s (afvdatabase.com; verify).
+traverse_deg_s = 24
+# Main gun elevation (deg/s): a starting value (as the other tanks).
+elevate_deg_s = 6
+
+# S13a Build B: armour boxes (docs/slices/S13-heavy-wave.md 4.2). Box 0 the
+# lower hull (nose, lower sides, engine deck), box 1 the superstructure
+# (glacis, upper sides, crew deck), then the turret. Mantlets are not
+# modelled (S13-2 (A)): the turret front is the published face plate.
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 85], half = [290, 150, 35] }
+[boxes.armor]
+# Lower hull: nose 51 at 30 deg, lower side 25 at 0, rear 19 at 38, deck 19 (afvdatabase.com).
+front = { thickness_mm = 51, slope_deg = 30 }
+side = { thickness_mm = 25 }
+rear = { thickness_mm = 19, slope_deg = 38 }
+top = { thickness_mm = 19 }
+
+[[boxes]]
+id = "superstructure"
+frame = "hull"
+box = { center = [0, 0, 155], half = [290, 140, 35] }
+[boxes.armor]
+# Upper glacis 38 at 55 deg, upper side 19 at 38, rear 19 at 38, deck 19 over the crew (afvdatabase.com).
+front = { thickness_mm = 38, slope_deg = 55 }
+side = { thickness_mm = 19, slope_deg = 38 }
+rear = { thickness_mm = 19, slope_deg = 38 }
+top = { thickness_mm = 19 }
+
+[[boxes]]
+id = "turret"
+frame = "turret"
+box = { center = [0, 0, 33], half = [130, 110, 33] }
+open = ["top"]
+floor_cm = 0
+[boxes.armor]
+# Gun shield and face 76 at 0, side 32 at 5, rear (counterweight bustle) 127; open top (no roof).
+front = { thickness_mm = 76 }
+side = { thickness_mm = 32, slope_deg = 5 }
+rear = { thickness_mm = 127 }
+
+# Crew seats, MGs, components and hatches as usa m10 (S13a Build B: the nearest def; positions approximate).
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [200, 60, 130], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "asst_driver"
+role = "radio_mg"
+box = { frame = "hull", center = [200, -60, 130], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "turret", center = [20, 45, 20], half = [30, 25, 60] }
+in = "turret"
+
+[[seats]]
+id = "loader"
+role = "loader"
+box = { frame = "turret", center = [0, -45, 15], half = [30, 25, 70] }
+in = "turret"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "turret", center = [-60, 40, 25], half = [30, 30, 65] }
+in = "turret"
+
+[[weapons]]
+def = "ww2:m3_90mm"
+mount = "turret_main"
+muzzle = [450, 0, 35]
+# -10° / +19° (Hunnicutt).
+elevation_deg = [-10, 20]
+# Stowage 54 rounds (Hunnicutt): 36 M62 APC, 18 M42A1 HE (the split is a
+# starting value, verify).
+# 47 rounds (11 ready in the turret, 36 in the sponsons; Wikipedia M36): 20 M82 APC, 27 M71 HE (the split is a starting value, verify).
+ammo = [{ id = "ww2:90mm_m82", count = 20 }, { id = "ww2:90mm_m71", count = 27 }]
+# The exposed barrel from the muzzle back to the turret front; a round must strike it to damage the gun.
+barrel = { length_cm = 340, radius_cm = 9 }
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [-210, 0, 115], half = [65, 100, 45] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [250, 130, 45] }, { pos = [0, 130, 45] }, { pos = [-250, 130, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [250, -130, 45] }, { pos = [0, -130, 45] }, { pos = [-250, -130, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "turret", center = [40, 0, 30], half = [45, 20, 20] }
+
+[[components]]
+type = "turret_ring"
+hp = 80
+box = { frame = "hull", center = [-20, 0, 182], half = [90, 90, 8] }
+repair = { to_hp = 50, time_s = 40 }
+
+# Stowage (Hunnicutt; positions approximate): sponson racks both sides of
+# the hull and ready rounds in the turret bustle (count verify).
+[[components]]
+type = "ammo_rack"
+hp = 60
+boxes = [
+  { frame = "hull", center = [20, 120, 150], half = [60, 25, 30] },
+  { frame = "hull", center = [20, -120, 150], half = [60, 25, 30] },
+  { frame = "turret", center = [-90, 0, 30], half = [15, 60, 20] },
+]
+
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [230, 0, 90], half = [55, 30, 40] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+# Hatches: the driver's and assistant driver's in the hull roof; the turret
+# crew climb out over the open top (quicker, 2.5 s each; starting values).
+[[hatches]]
+seats = ["commander", "gunner", "loader"]
+frame = "turret"
+pos = [0, 0, 66]
+exit_ms = 2500
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [200, 60, 190]
+exit_ms = 4000
+
+[[hatches]]
+seats = ["radio_mg"]
+frame = "hull"
+pos = [200, -60, 190]
+exit_ms = 4000

@@ -1,0 +1,34 @@
+# 76 mm M93 HVAP-T for the 76 mm M1A1 (S13a). Rare (S13-6 (A): 76 W 2 per tank; 'about 2 or 3 rounds per tank' from Sep 1944). No filler.
+id = "ww2:76mm_m93"
+name = "76 mm M93 HVAP"
+mechanism = "ap"
+# S13: priced refill ([supply] shell_mp_per_t per tonne): complete round about 8.4 kg (verify, from memory).
+supply = { kind = "shells", g = 8400 }
+caliber_mm = 76
+muzzle_velocity_m_s = 1036
+drag_coeff = 0
+# [range_m, mm] against rolled homogeneous plate at 0 degrees, 50 % criterion; 76 mm M1A1.
+penetration = [[100, 239], [500, 208], [1000, 175], [1500, 147], [2000, 124]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# S13 O1 (docs/slices/S13-heavy-wave.md 3): the slope penalty beyond 1/cos, class "apcr".
+slope_class = "apcr"
+nonpen_damage = 40
+track_damage = 60
+sources = [
+  "Bird & Livingston, WWII Ballistics: Armor and Gunnery (2001) p. 61, via the Wikipedia calculated-penetration table (90 degrees, US/UK 50 % criterion) of the gun (76 mm M1)",
+  "Wikipedia, 76 mm gun M1 (HVAP 3.4 kg shot, 1,000-1,036 m/s); complete round mass from memory (verify)",
+  "The Chieftain's Hatch: US guns vs German armour, part 2 (supply of HVAP)",
+]
+# S5a (D3): a rare round: refilled one per supply.rare_rearm_base_s up to the vehicle's rare_cap, never a weapon's only feed.
+rare = true
+
+[core]
+damage = 100
+length_cm = 120
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25

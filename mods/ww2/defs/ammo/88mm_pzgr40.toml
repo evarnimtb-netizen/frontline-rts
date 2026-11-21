@@ -1,0 +1,33 @@
+# 8.8 cm PzGr 40: APCR for the KwK 36 (S13a). Rare (S13-6 (A): Tiger 2). No filler.
+id = "ww2:88mm_pzgr40"
+name = "8.8 cm PzGr 40"
+mechanism = "ap"
+# S13: priced refill ([supply] shell_mp_per_t per tonne): complete round about 12.4 kg (verify: projectile 7.3 kg plus the PzGr 39's case, derived).
+supply = { kind = "shells", g = 12400 }
+caliber_mm = 88
+muzzle_velocity_m_s = 930
+drag_coeff = 0
+# [range_m, mm] against rolled homogeneous plate at 0 degrees, 50 % criterion; 8.8 cm KwK 36 L/56.
+penetration = [[100, 219], [500, 200], [1000, 179], [1500, 160], [2000, 143]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# S13 O1 (docs/slices/S13-heavy-wave.md 3): the slope penalty beyond 1/cos, class "apcr".
+slope_class = "apcr"
+nonpen_damage = 40
+track_damage = 60
+sources = [
+  "Bird & Livingston, WWII Ballistics: Armor and Gunnery (2001) p. 61, via the Wikipedia calculated-penetration table (90 degrees, US/UK 50 % criterion) of the gun (8.8 cm KwK 36)",
+  "Wikipedia, 8.8 cm KwK 36 (PzGr 40: 7.3 kg, 930 m/s); complete round mass derived (verify)",
+]
+# S5a (D3): a rare round: refilled one per supply.rare_rearm_base_s up to the vehicle's rare_cap, never a weapon's only feed.
+rare = true
+
+[core]
+damage = 100
+length_cm = 130
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25

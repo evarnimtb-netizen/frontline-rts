@@ -1,0 +1,269 @@
+# Panzerkampfwagen V Panther Ausf. G (S13a Build B, docs/slices/S13-heavy-wave.md 4.2): the 7.5 cm KwK 42 L/70, 80 mm glacis at 55 degrees.
+# Plates are the published figures (WWT 174, Wikipedia Panther, Jentz); the mantlet is not modelled (S13-2 (A)). Frames as ger_pz4_h.toml (cm).
+id = "ww2:ger_panther_g"
+name = "Panzerkampfwagen V Panther Ausf. G"
+short_name = "Panther"
+faction = "ww2:germany"
+role = "tank"
+cost = 1050
+pop = 16
+# Card cooldown 240 s, unlock 8:00 (docs/slices/S13-heavy-wave.md 4.3); a gameplay value, not a price.
+recall_cooldown_s = 240
+initial_cooldown_s = 480
+sight_m = 175
+spot_size_pct = 200
+eye_height_cm = 290
+sources = [
+  "Jentz, Germany's Panther Tank: The Quest for Combat Supremacy (1995)",
+  "wwiitanks.co.uk, Panther Ausf. G (tank data 174)",
+  "Wikipedia, Panther tank (production Mar 1944 to Apr 1945; 5 mm skirts not modelled)",
+  "docs/slices/S13-research-history.md 1.1",
+]
+crew_squad = "ww2:ger_tank_crew"
+rare_cap = 2
+# S13-6 (A): 2 PzGr 40/42 rounds (APCR, rare); tungsten was nearly unobtainable in 1944-45.
+# S13 H2: the AI keeps it back as overwatch (read only once [ai.armour] heavy_overwatch is on).
+ai_overwatch = true
+
+[mobility]
+type = "tracked"
+# 46 km/h road (plan 4.2) on the game's scale (Sherman 42 km/h = 650 cm/s).
+speed_cm_s = 710
+reverse_cm_s = 200
+turn_deg_s = 30
+accel_cm_s2 = 150
+brake_cm_s2 = 400
+# 27°: under the 30° pitch clamp.
+max_slope_pct = 50
+# AT-ditch ground at least 1.9 m deep blocks it.
+ditch_block_dm = 19
+bog_pct = 8
+unbog_s = [20, 40]
+moving_spread_pct = 400
+
+[hull]
+# S7: the hull box and its plates moved to [[boxes]] "hull" (box 0).
+# The lower 45 % of each side is running gear (track hits, +20 mm).
+track_band_pct = 45
+track_mm = 20
+
+[turret]
+pivot = [20, 0, 190]
+# 12 deg/s: a midpoint between the idle (6) and high-rev (19) figures, not a sourced point value (S13-3 (A)).
+traverse_deg_s = 12
+# Main gun elevation (deg/s): a starting value (as the other tanks).
+elevate_deg_s = 6
+
+# S13a Build B: armour boxes (docs/slices/S13-heavy-wave.md 4.2). Box 0 the
+# lower hull (nose, lower sides, engine deck), box 1 the superstructure
+# (glacis, upper sides, crew deck), then the turret. Mantlets are not
+# modelled (S13-2 (A)): the turret front is the published face plate.
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 85], half = [340, 160, 45] }
+[boxes.armor]
+# Lower hull: nose 60 mm at 55 deg, lower side 40 at 0, rear 40 at 30, engine deck 16 (WWT 174).
+front = { thickness_mm = 60, slope_deg = 55 }
+side = { thickness_mm = 40 }
+rear = { thickness_mm = 40, slope_deg = 30 }
+top = { thickness_mm = 16 }
+
+[[boxes]]
+id = "superstructure"
+frame = "hull"
+box = { center = [30, 0, 160], half = [200, 150, 30] }
+[boxes.armor]
+# Glacis 80 at 55 deg, upper side 50 at 30 (the G thickened it), rear 40 at 30, crew deck 40 (WWT 174; Isigny measured 57 deg).
+front = { thickness_mm = 80, slope_deg = 55 }
+side = { thickness_mm = 50, slope_deg = 30 }
+rear = { thickness_mm = 40, slope_deg = 30 }
+top = { thickness_mm = 40 }
+
+[[boxes]]
+id = "turret"
+frame = "turret"
+box = { center = [0, 0, 45], half = [135, 105, 45] }
+[boxes.armor]
+# Turret face 100 at 12 deg, side and rear 45 at 25, roof 16.
+front = { thickness_mm = 100, slope_deg = 12 }
+side = { thickness_mm = 45, slope_deg = 25 }
+rear = { thickness_mm = 45, slope_deg = 25 }
+top = { thickness_mm = 16 }
+
+# Crew seats, MGs, components and hatches as ger pz4_h (S13a Build B: the nearest def; positions approximate).
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [190, 60, 115], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "turret", center = [10, 45, 0], half = [30, 25, 70] }
+in = "turret"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "turret", center = [-70, 0, 22], half = [30, 30, 63] }
+in = "turret"
+
+[[seats]]
+id = "loader"
+role = "loader"
+box = { frame = "turret", center = [10, -45, -25], half = [30, 25, 95] }
+in = "turret"
+
+[[seats]]
+id = "radio_mg"
+role = "radio_mg"
+box = { frame = "hull", center = [190, -60, 115], half = [35, 30, 40] }
+in = "hull"
+
+[[weapons]]
+def = "ww2:kwk42_l70"
+mount = "turret_main"
+# From the turret pivot.
+muzzle = [550, 0, 45]
+elevation_deg = [-8, 18]
+# S5a (owner question S5a-10 (A)): stowage restored to the historical 87
+# rounds of the Ausf. H (Jentz & Doyle, Panzer Tracts 4-3; Panzer Tracts 23
+# as quoted by armedconflicts.com, "Pz.Kpfw. IV Ausf. H"; it was 66 in S3).
+# Split half PzGr 39, half Sprgr 34 (starting value: no loading list
+# read, verify), and 3 PzGr 40 APCR (S5a-9 (A): tungsten rationed from
+# 1943, vehicles.md 6.11; it was 6, owner question S3b-7 (A)). Auto loads
+# the APCR only against a target the PzGr 39 likely fails on
+# ([vehicles.gunnery] special_below_pct). Each round is priced in base at
+# its weight x [supply] shell_mp_per_t x the rack factor (53 % here: a full
+# rack 877 kg costs at most 75 % of the 620 card, D4).
+# 82 rounds (Wikipedia Panther: 82 for the G): 40 PzGr 39/42, 40 Sprgr 42, 2 PzGr 40/42 (S13-6 (A)); the split is a starting value (verify).
+ammo = [
+  { id = "ww2:75mm_pzgr3942", count = 40 },
+  { id = "ww2:75mm_sprgr42", count = 40 },
+  { id = "ww2:75mm_pzgr4042", count = 2 },
+]
+# The exposed barrel from the muzzle back to the turret front; a round must strike it to damage the gun.
+barrel = { length_cm = 415, radius_cm = 9 }
+
+# S3b Fix (review M4): MG rounds stowed per mount. The Ausf. H carried
+# 3,150 rounds of 7.92 mm in belt bags for its two MG 34 (Jentz & Doyle,
+# Panzer Tracts 4-3, specification table); split evenly between the
+# mounts. Spent rounds refill one 150-round belt per base rearm step
+# (vehicles.base_rearm_s). Suppressive fire now spends real ammunition.
+[[weapons]]
+def = "ww2:mg34"
+mount = "coax"
+muzzle = [120, 25, 45]
+rounds = 2550
+
+[[weapons]]
+def = "ww2:mg34"
+mount = "hull"
+# Hull frame.
+muzzle = [295, -60, 140]
+arc_deg = 15
+seat = "radio_mg"
+rounds = 2550
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [-200, 0, 100], half = [70, 100, 45] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [250, 125, 45] }, { pos = [0, 125, 45] }, { pos = [-250, 125, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [250, -125, 45] }, { pos = [0, -125, 45] }, { pos = [-250, -125, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+# The breech inside the turret; S3b: the barrel is the main-gun mount's
+# barrel box, damaged only by rounds that strike it. No field repair.
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "turret", center = [50, 0, 45], half = [45, 20, 20] }
+
+[[components]]
+type = "turret_ring"
+hp = 80
+box = { frame = "hull", center = [20, 0, 166], half = [80, 80, 10] }
+repair = { to_hp = 50, time_s = 40 }
+
+# S3b (rack geometry): the Ausf. H stowed its 87 rounds in bins low along
+# both hull sides of the fighting compartment and beside the radio operator,
+# none in the turret (Jentz & Doyle, Panzer Tracts 4-3). Three bins, one HP
+# pool, instead of one slab 2.2 m wide across the whole hull that every
+# core and spall ray crossed. Positions approximate within the box model.
+[[components]]
+type = "ammo_rack"
+hp = 60
+boxes = [
+  { frame = "hull", center = [-20, 95, 70], half = [55, 30, 25] },
+  { frame = "hull", center = [-20, -95, 70], half = [55, 30, 25] },
+  { frame = "hull", center = [110, -95, 80], half = [25, 25, 30] },
+]
+
+# S3b: the gearbox and final-drive train in the nose between the driver and
+# the radio operator (front sprockets; Panzer Tracts 4-3). Damaged: half
+# speed; destroyed: immobilised. Values as the engine's (100 HP, field
+# repair to 50 in 60 s); no fire. A starting value for tuning.
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [200, 0, 85], half = [60, 30, 40] }
+repair = { to_hp = 50, time_s = 60 }
+
+# Direct control (§5.12), unused until M5.
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+# S3c hatches (docs/slices/S3c-armour.md "History"): the commander's cupola
+# (a single hatch on the H), a two-piece side door each side of the turret
+# (gunner left, loader right), and the driver's and radio operator's hatches
+# in the superstructure roof (Jentz & Doyle, Panzer Tracts 4-3; Lone Sentry).
+# Positions in cm (hull frame, or turret frame from the pivot); exit times
+# are starting values: about 3 s out of a turret hatch, 4 s out of a hull
+# hatch past the gun and the hull MG.
+[[hatches]]
+seats = ["commander"]
+frame = "turret"
+pos = [-70, 0, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["gunner"]
+frame = "turret"
+pos = [10, 95, 45]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["loader"]
+frame = "turret"
+pos = [10, -95, 45]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [190, 60, 176]
+exit_ms = 4000
+
+[[hatches]]
+seats = ["radio_mg"]
+frame = "hull"
+pos = [190, -60, 176]
+exit_ms = 4000

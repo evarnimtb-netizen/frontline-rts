@@ -73,10 +73,60 @@ fn load_rejects_bad_s13_keys() {
         ),
         (0, 300, 10)
     );
-    // S13a: no round is classed, no card heavy, no vehicle on H2 overwatch.
-    assert!(s.ammo.iter().all(|x| x.slope_class.is_none()));
-    assert!(s.squad_types.iter().all(|t| !t.ai_heavy));
-    assert!(s.vehicles.iter().all(|v| !v.ai_overwatch));
+    // S13a Build B: exactly the seven AP / APCBC / APCR rounds of the eleven
+    // new ones carry a class (the four HE rounds refuse one); no old round.
+    let mut classed: Vec<(&str, SlopeClass)> = s
+        .ammo
+        .iter()
+        .filter_map(|x| x.slope_class.map(|c| (x.id.as_str(), c)))
+        .collect();
+    classed.sort_by_key(|&(id, _)| id);
+    assert_eq!(
+        classed,
+        [
+            ("ww2:75mm_pzgr3942", SlopeClass::Apcbc),
+            ("ww2:75mm_pzgr4042", SlopeClass::Apcr),
+            ("ww2:76mm_m62", SlopeClass::Apcbc),
+            ("ww2:76mm_m93", SlopeClass::Apcr),
+            ("ww2:88mm_pzgr39", SlopeClass::Apcbc),
+            ("ww2:88mm_pzgr40", SlopeClass::Apcr),
+            ("ww2:90mm_m82", SlopeClass::Apcbc),
+        ][..]
+    );
+    let mut heavy: Vec<&str> = s
+        .squad_types
+        .iter()
+        .filter(|t| t.ai_heavy)
+        .map(|t| t.id.as_str())
+        .collect();
+    heavy.sort();
+    assert_eq!(
+        heavy,
+        [
+            "ww2:ger_panther_g_squad",
+            "ww2:ger_tiger_1_squad",
+            "ww2:usa_m4a3e2_squad"
+        ]
+    );
+    let mut watch: Vec<&str> = s
+        .vehicles
+        .iter()
+        .filter(|v| v.ai_overwatch)
+        .map(|v| v.id.as_str())
+        .collect();
+    watch.sort();
+    assert_eq!(watch, ["ww2:ger_panther_g", "ww2:ger_tiger_1"]);
+    // Every new card is at weight 0; the heavy slot is one place.
+    for id in [
+        "ww2:ger_panther_g_squad",
+        "ww2:ger_tiger_1_squad",
+        "ww2:usa_m4a3_76w_squad",
+        "ww2:usa_m36_squad",
+        "ww2:usa_m4a3e2_squad",
+    ] {
+        let t = s.squad_types.iter().find(|t| t.id == id).unwrap();
+        assert_eq!(t.ai_weight, 0, "{id}");
+    }
     // The ablation files apply.
     for f in ["s13_off", "o1_off", "heavy_off", "push_off"] {
         let mut d = defs0.clone();

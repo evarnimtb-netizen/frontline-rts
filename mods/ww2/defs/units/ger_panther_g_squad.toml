@@ -1,0 +1,12 @@
+# The Panzerkampfwagen V Panther Ausf. G as a buyable squad of one (S13a Build B): Panther outside the heavy slot with its own cap 2 (S13-7 (A)); unlock 8:00 on the def. Cost, pop, cooldown and unlock are on the vehicle def (docs/slices/S13-heavy-wave.md 4.3).
+# ai_weight 0: the AI does not buy it until the S13-ai stage (H1 buys it by its own path via ai_heavy).
+id = "ww2:ger_panther_g_squad"
+name = "Panzerkampfwagen V Panther Ausf. G"
+short_name = "Panther"
+faction = "ww2:germany"
+tags = ["vehicle"]
+vehicle = "ww2:ger_panther_g"
+ai_weight = 0
+ai_heavy = true
+max_alive = 2
+available_from = "1944-03"

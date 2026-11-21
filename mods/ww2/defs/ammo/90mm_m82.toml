@@ -1,0 +1,39 @@
+# 90 mm M82 APC-T for the 90 mm M3 (S13a). 0.14 kg Explosive D. Velocity 808 m/s (Wikipedia); the Jan 1945 Ordnance pamphlet's 853 m/s is the T33 loading (verify).
+id = "ww2:90mm_m82"
+name = "90 mm M82 APC"
+mechanism = "aphe"
+# S13: priced refill ([supply] shell_mp_per_t per tonne): complete round 19.39 kg.
+supply = { kind = "shells", g = 19400 }
+caliber_mm = 90
+muzzle_velocity_m_s = 808
+drag_coeff = 0
+# [range_m, mm] against rolled homogeneous plate at 0 degrees, 50 % criterion; 90 mm M3.
+penetration = [[100, 164], [500, 152], [1000, 137], [1500, 126], [2000, 114]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# S13 O1 (docs/slices/S13-heavy-wave.md 3): the slope penalty beyond 1/cos, class "apcbc".
+slope_class = "apcbc"
+nonpen_damage = 40
+track_damage = 60
+sources = [
+  "Bird & Livingston, WWII Ballistics: Armor and Gunnery (2001) p. 61, via the Wikipedia calculated-penetration table (90 degrees, US/UK 50 % criterion) of the gun (90 mm M3)",
+  "Wikipedia, 90 mm gun M1/M2/M3 (M82: 808-810 m/s, round 19.39 kg, 0.14 kg filler)",
+  "Ordnance pamphlet on 90 mm ammunition, Jan 1945 (lonesentry.com)",
+]
+
+[core]
+damage = 100
+length_cm = 170
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25
+
+[filler]
+offset_cm = 100
+rays = 14
+cone_deg = 60
+damage = 60
+reach_cm = 300

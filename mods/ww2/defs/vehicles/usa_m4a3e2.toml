@@ -1,0 +1,246 @@
+# M4A3E2 Sherman Jumbo (S13a Build B, docs/slices/S13-heavy-wave.md 4.2): the assault tank with the 75 mm M3 as delivered Sep-Nov 1944 (S13-5 (A)); 101.6 mm glacis, 152 mm turret.
+# 254 built. Plates: tanks-encyclopedia.com (M4A3E2); slopes and the nose figure are from memory (verify). Frames as usa_m4a3_75.toml (cm).
+id = "ww2:usa_m4a3e2"
+name = "M4A3E2 Sherman Jumbo"
+short_name = "Jumbo"
+faction = "ww2:usa"
+role = "tank"
+cost = 900
+pop = 14
+# Card cooldown 240 s, unlock 10:00 (docs/slices/S13-heavy-wave.md 4.3); a gameplay value, not a price.
+recall_cooldown_s = 240
+initial_cooldown_s = 600
+sight_m = 175
+spot_size_pct = 200
+eye_height_cm = 250
+sources = [
+  "Hunnicutt, Sherman: A History of the American Medium Tank (1978), M4A3E2",
+  "tanks-encyclopedia.com, M4A3E2 Jumbo assault tank",
+  "Zaloga, Sherman Jumbo (Osprey)",
+  "docs/slices/S13-research-history.md 1.5",
+]
+crew_squad = "ww2:usa_tank_crew"
+rare_cap = 0
+# No HVAP for the 75 mm M3 (rare_cap 0). It leads the assault, so no ai_overwatch (S13 H2).
+
+[mobility]
+type = "tracked"
+# 35 km/h (plan 4.2) on the game's scale (Sherman 42 km/h = 650 cm/s).
+speed_cm_s = 540
+reverse_cm_s = 250
+turn_deg_s = 28
+accel_cm_s2 = 150
+brake_cm_s2 = 400
+max_slope_pct = 50
+ditch_block_dm = 19
+bog_pct = 9
+unbog_s = [20, 40]
+# The gyrostabiliser: ×3 on the move instead of ×4.
+moving_spread_pct = 300
+
+[hull]
+# S7: the hull box and its plates moved to [[boxes]] "hull" (box 0).
+track_band_pct = 45
+track_mm = 20
+
+[turret]
+pivot = [-10, 0, 190]
+# 18 deg/s (verify; from memory): powered, slower than the Sherman for the extra weight.
+traverse_deg_s = 18
+# Main gun elevation (deg/s): a starting value (as the other tanks).
+elevate_deg_s = 6
+
+# S13a Build B: armour boxes (docs/slices/S13-heavy-wave.md 4.2). Box 0 the
+# lower hull (nose, lower sides, engine deck), box 1 the superstructure
+# (glacis, upper sides, crew deck), then the turret. Mantlets are not
+# modelled (S13-2 (A)): the turret front is the published face plate.
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 85], half = [295, 131, 45] }
+[boxes.armor]
+# Lower hull: nose / final-drive cover 114 at 30 deg (verify), lower side 38 at 0, rear 38 at 10, deck 25.
+front = { thickness_mm = 114, slope_deg = 30 }
+side = { thickness_mm = 38 }
+rear = { thickness_mm = 38, slope_deg = 10 }
+top = { thickness_mm = 25 }
+
+[[boxes]]
+id = "superstructure"
+frame = "hull"
+box = { center = [0, 0, 160], half = [250, 126, 30] }
+[boxes.armor]
+# Glacis 101.6 mm (4 in, 64 plus 38 applied) at 47 deg (verify), upper side 76 at 0 (the weak point, TE-Jumbo), rear 38 at 10.
+front = { thickness_mm = 101.6, slope_deg = 47 }
+side = { thickness_mm = 76 }
+rear = { thickness_mm = 38, slope_deg = 10 }
+top = { thickness_mm = 25 }
+
+[[boxes]]
+id = "turret"
+frame = "turret"
+box = { center = [0, 0, 45], half = [120, 105, 45] }
+[boxes.armor]
+# New T23-type casting, about 152 mm all round (the mantlet 178 is not modelled, S13-2 (A)), roof 25.
+front = { thickness_mm = 152 }
+side = { thickness_mm = 152 }
+rear = { thickness_mm = 152 }
+top = { thickness_mm = 25 }
+
+# Crew seats, MGs, components and hatches as usa m4a3_75 (S13a Build B: the nearest def; positions approximate).
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [200, 60, 120], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "turret", center = [20, -45, 0], half = [30, 25, 70] }
+in = "turret"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "turret", center = [-60, -40, 22], half = [30, 30, 63] }
+in = "turret"
+
+[[seats]]
+id = "loader"
+role = "loader"
+box = { frame = "turret", center = [10, 45, -25], half = [30, 25, 95] }
+in = "turret"
+
+[[seats]]
+id = "radio_mg"
+role = "radio_mg"
+box = { frame = "hull", center = [200, -60, 120], half = [35, 30, 40] }
+in = "hull"
+
+[[weapons]]
+def = "ww2:m3_75mm"
+mount = "turret_main"
+muzzle = [340, 0, 45]
+elevation_deg = [-10, 25]
+# S5a (owner question S5a-10 (A)): stowage restored to the historical 97
+# rounds of the dry-stowage M4A3 (75) (S3b-4 (A); the wet M4A3 (75)W held
+# 104) (strijdbewijs.nl, M4 Sherman data; historyofwar.org, Medium Tank
+# M4A3; it was 70 in S3). Split 35 M61 APC / 62 M48 HE (starting value: no
+# loading list read, verify); no smoke rounds (Q5 (A)). Each round is
+# priced in base at its weight x [supply] shell_mp_per_t x the rack factor
+# (51 % here: a full rack 866 kg costs at most 75 % of the 590 card, D4).
+# 104 rounds of 75 mm (floor racks; tanks-encyclopedia.com): 38 M61 APC, 66 M48 HE (the split is a starting value, verify).
+ammo = [{ id = "ww2:75mm_m61", count = 38 }, { id = "ww2:75mm_m48", count = 66 }]
+# The exposed barrel from the muzzle back to the turret front; a round must strike it to damage the gun.
+barrel = { length_cm = 230, radius_cm = 9 }
+
+# S3b Fix (review M4): MG rounds stowed per mount. The M4A3 (75) carried
+# 4,750 rounds of cal .30 for its coaxial and bow M1919A4 (Hunnicutt,
+# Sherman, data sheets; TM 9-759); split evenly between the mounts (the
+# 300 rounds of the cal .50 AA gun are not modelled: no AA mount). Spent
+# rounds refill one 100-round belt per base rearm step.
+[[weapons]]
+def = "ww2:m1919"
+mount = "coax"
+muzzle = [110, 25, 45]
+rounds = 3125
+
+[[weapons]]
+def = "ww2:m1919"
+mount = "hull"
+muzzle = [300, -60, 150]
+arc_deg = 15
+seat = "radio_mg"
+rounds = 3125
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [-210, 0, 110], half = [70, 100, 50] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [250, 118, 45] }, { pos = [0, 118, 45] }, { pos = [-250, 118, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [250, -118, 45] }, { pos = [0, -118, 45] }, { pos = [-250, -118, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+# The breech; S3b: the barrel is the main-gun mount's barrel box.
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "turret", center = [50, 0, 45], half = [45, 20, 20] }
+
+[[components]]
+type = "turret_ring"
+hp = 80
+box = { frame = "hull", center = [-10, 0, 180], half = [80, 80, 10] }
+repair = { to_hp = 50, time_s = 40 }
+
+# S3b (rack geometry, owner question S3b-4 (A): dry stowage): the M4A3 (75)
+# carried most rounds in sponson racks above the tracks on both sides of the
+# hull under the turret, plus ready rounds on the turret basket floor
+# (Hunnicutt, Sherman; TM 9-759). Flank hits above the running gear reach
+# them, as wartime loss reports describe. Three boxes, one HP pool;
+# approximate within the box model.
+[[components]]
+type = "ammo_rack"
+hp = 60
+boxes = [
+  { frame = "hull", center = [-30, 105, 60], half = [60, 22, 18] },
+  { frame = "hull", center = [-30, -105, 60], half = [60, 22, 18] },
+  { frame = "hull", center = [-10, -40, 60], half = [30, 30, 15] },
+]
+
+# S3b: the front transmission and differential in the nose between the
+# driver and the assistant driver (Hunnicutt). As the Panzer IV's.
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [220, 0, 85], half = [60, 30, 40] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+# S3c hatches (docs/slices/S3c-armour.md "History"): the commander's hatch
+# over the turret's right (the gunner follows him out), the oval loader's
+# hatch on the left (production from late 1943; owner question S3c-7 (A)
+# models the late hull), and the driver's and assistant driver's hatches in
+# the hull roof (TM 9-759; theshermantank.com). The floor escape hatch is
+# not modelled (A). Exit times are starting values as for the Panzer IV.
+[[hatches]]
+seats = ["commander", "gunner"]
+frame = "turret"
+pos = [-40, -40, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["loader"]
+frame = "turret"
+pos = [-30, 40, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [200, 60, 190]
+exit_ms = 4000
+
+[[hatches]]
+seats = ["radio_mg"]
+frame = "hull"
+pos = [200, -60, 190]
+exit_ms = 4000
