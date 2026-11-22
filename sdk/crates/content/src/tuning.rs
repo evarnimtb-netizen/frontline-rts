@@ -2879,6 +2879,11 @@ tuning_table! {
         /// S11b L1 switch: cards tagged `light_mortar` join the mortar slot
         /// of the buy mix.
         light: 0..=1 = "d_arty_zero",
+        /// B3 switch: an AI gun's direct (open-sight) fire also stops at
+        /// the A5 shell budget: over it, the gun holds fire beyond
+        /// `[vehicles.guns] self_defence_m` (struck, or a known enemy
+        /// vehicle within `[ai.guns] engage_still_m`: no hold).
+        direct_in_budget: 0..=1 = "d_arty_zero",
     }
 }
 
@@ -2946,6 +2951,7 @@ impl Default for AiArtyTuning {
             how_income_pct: 15,
             how_reserve_mp: 300,
             light: 0,
+            direct_in_budget: 0,
         }
     }
 }

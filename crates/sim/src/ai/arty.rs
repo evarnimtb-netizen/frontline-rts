@@ -140,7 +140,7 @@ use frontline_content::VehicleRole;
 use frontline_content::setup::member_trait;
 
 use super::truck::RoleBuy;
-use super::{Known, Mine, PointEval, Rel, sq_m};
+use super::{Known, KnownVehicle, Mine, PointEval, Rel, sq_m};
 use crate::command::CommandKind;
 use crate::ecs::{EntityKind, SimId};
 use crate::game::Order;
@@ -461,7 +461,7 @@ impl super::Planner<'_> {
     }
 
     /// The S11a1 plan step (module notes above), after the mortars.
-    pub(super) fn arty(&mut self, points: &[PointEval], known: &[Known]) {
+    pub(super) fn arty(&mut self, points: &[PointEval], known: &[Known], kv: &[KnownVehicle]) {
         let g = self.g;
         let a = &g.setup.rules.ai.arty;
         if g.setup.rules.fire_mission.is_none() {
@@ -537,7 +537,7 @@ impl super::Planner<'_> {
         // A2, A4-A6 per gun, ascending id.
         let ids: Vec<SquadId> = self.ai.arty.keys().copied().collect();
         for id in &ids {
-            self.run_arty(*id, known, &own);
+            self.run_arty(*id, known, kv, &own);
         }
         // P3 (with `ff_safe` 1 the S3 lift step covers prep missions too:
         // review A-3, no second `Stop`).
@@ -564,7 +564,7 @@ impl super::Planner<'_> {
     }
 
     /// A2 and A4-A6 for gun squad `id`.
-    fn run_arty(&mut self, id: SquadId, known: &[Known], own: &[FxVec2]) {
+    fn run_arty(&mut self, id: SquadId, known: &[Known], kv: &[KnownVehicle], own: &[FxVec2]) {
         let g = self.g;
         let s = &g.setup;
         let a = &s.rules.ai.arty;
@@ -608,6 +608,10 @@ impl super::Planner<'_> {
             }
             self.ai.arty.insert(id, rec);
             return;
+        }
+        // B3: direct fire inside the shell budget.
+        if a.direct_in_budget != 0 {
+            self.direct_budget(gun, pos, kv);
         }
         let sq = &g.squads[&id];
         // A6: lift a mission with own men near its target. S11a2 S3: with
@@ -668,12 +672,7 @@ impl super::Planner<'_> {
             self.ai.arty.insert(id, rec);
             return;
         }
-        let minutes = tick / (60 * hz);
-        let income = s.rules.start_manpower as u64 + s.rules.income_per_min as u64 * minutes;
-        let shells = g.players[self.me.0 as usize].s11.gun_shell_micro;
-        if shells as u128 * 100
-            > income as u128 * crate::supply::MICRO as u128 * a.shell_mp_max_pct as u128
-        {
+        if self.over_shell_budget() {
             self.ai.counters.arty_budget_holds += 1;
             self.ai.arty.insert(id, rec);
             return;
@@ -701,6 +700,56 @@ impl super::Planner<'_> {
             self.ai.counters.arty_no_observer += 1;
         }
         self.ai.arty.insert(id, rec);
+    }
+
+    /// A5: whether the player's infantry-gun shells bought so far cost
+    /// more than `shell_mp_max_pct` of the income so far.
+    fn over_shell_budget(&self) -> bool {
+        let s = &self.g.setup;
+        let hz = s.tick_hz.max(1) as u64;
+        let minutes = self.tick / (60 * hz);
+        let income = s.rules.start_manpower as u64 + s.rules.income_per_min as u64 * minutes;
+        let shells = self.g.players[self.me.0 as usize].s11.gun_shell_micro;
+        shells as u128 * 100
+            > income as u128
+                * crate::supply::MICRO as u128
+                * s.rules.ai.arty.shell_mp_max_pct as u128
+    }
+
+    /// B3 (`direct_in_budget` 1) for emplaced gun `gun` at `pos`: over the
+    /// A5 budget the gun holds its direct fire beyond `[vehicles.guns]
+    /// self_defence_m` (`SetAmbush`; the sim also breaks the hold when the
+    /// gun is struck), unless a known enemy vehicle is within `[ai.guns]
+    /// engage_still_m` (anti-tank fire is not the HE the budget limits);
+    /// inside the budget, or with such a vehicle, the hold is lifted. One
+    /// `arty_direct_holds` per plan held. Missions are not affected.
+    fn direct_budget(&mut self, gun: SimId, pos: FxVec2, kv: &[KnownVehicle]) {
+        let s = &self.g.setup;
+        let Some(sv) = self.g.vehicles[&gun].served.as_ref() else {
+            return;
+        };
+        let armour = sq_m(Fx::from_int(s.rules.ai.guns.engage_still_m.min(5000) as i32));
+        let hold =
+            self.over_shell_budget() && !kv.iter().any(|v| (v.pos - pos).length_sq_raw() <= armour);
+        let want = if hold {
+            self.ai.counters.arty_direct_holds += 1;
+            s.rules.vehicles.guns.self_defence_m.clamp(1, 2000) as u16
+        } else {
+            0
+        };
+        let sent =
+            self.ai.pending.iter().any(
+                |c| matches!(&c.kind, CommandKind::SetAmbush { guns, .. } if guns.contains(&gun)),
+            );
+        if sv.hold_fire_m != want && !sent {
+            self.ai.emit(
+                self.due,
+                CommandKind::SetAmbush {
+                    guns: vec![gun],
+                    range_m: want,
+                },
+            );
+        }
     }
 
     /// A4 for gun squad `id` at `pos`: the first of the best

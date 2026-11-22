@@ -2539,6 +2539,7 @@
           "cb_max_error_m": 60,
           "counter_fire": 1,
           "danger_close_m": 50,
+          "direct_in_budget": 0,
           "ff_safe": 1,
           "fo": 1,
           "fo_max": 1,

@@ -1041,7 +1041,7 @@ impl super::Planner<'_> {
                 })
                 .collect();
             self.mortars(&tubes, &[], &known);
-            self.arty(&[], &known);
+            self.arty(&[], &known, &[]);
         }
         None
     }

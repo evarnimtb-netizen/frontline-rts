@@ -731,6 +731,10 @@ pub struct AiCounters {
     pub fo_lost: u32,
     pub breach_prep_waits: u32,
     pub breach_prep_timeouts: u32,
+    /// B3 (`[ai.arty] direct_in_budget`): per plan and emplaced AI gun
+    /// over the A5 shell budget, a plan in which its direct fire was held
+    /// (beyond `self_defence_m`).
+    pub arty_direct_holds: u32,
     /// S11a2 (spec 3; Build B counts them): own missions lifted for own
     /// men (S3), targets the own-men filter passed over (S2), counter-fire
     /// missions ordered (R3), markers held as too wide or with no new
@@ -1578,7 +1582,7 @@ impl Planner<'_> {
         self.ff_lift();
         self.mortars(&mine, &points, &known);
         // S11a1: the infantry guns and observers, with the rays left.
-        self.arty(&points, &known);
+        self.arty(&points, &known, &kv);
         self.throws(&mine, &known, &kv);
     }
 
