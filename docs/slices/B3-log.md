@@ -5,13 +5,11 @@ results `targets/B3-results/`. Branch `claude/project-thread-aj1tww`. Another ag
 your files (`git commit -m ... -- FILES`), never `git add -A`, never `target/`, `.claude/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: B3 run 1 (screen) done 2026-11-22. NO candidate set: C_he none, C_all none. Stop rule 8 (first line) applies:
-no HE lever passed rule H. No default changed; no extra set was played (no rule called for one).**
-- BASE `884d46e` (sim and mods unchanged since `3b3387f`: `git diff --stat 3b3387f -- mods crates sdk` empty, so the judge
-  base `target/s13-on` is valid: 42.08 % of 480, HE of casualties 28.0 / 28.3 / 28.2). World key `ba09de8def971642465e0c5f`.
-- Block S base (3001-3080, 160): Germany 46.2 %, HE of casualties 28.01, no winner 0, median 19.7 min.
-  **The base is already 1.71 points over the cap 26.3** (B2's block S read 26.19 before S13; the heavy wave added it).
-- Screen (paired.py lines; HE floor is max(26.3, base + 0.3) = 28.31; H needs HE <= 27.51):
+**State: B3 run 1 (screen) done 2026-11-22. NO candidate set (C_he none, C_all none); stop rule 8: no HE lever passed H.
+No default changed; no extra set played. BASE `884d46e`, world key `ba09de8def971642465e0c5f`; sim and mods unchanged
+since `3b3387f`, so `target/s13-on` stays the judge base (42.08 % of 480, HE of casualties 28.0 / 28.3 / 28.2).**
+- Block S base (3001-3080, 160): Germany 46.2 %, HE 28.01, no winner 0, median 19.7 min: **1.71 over the cap 26.3 already**
+  (B2's block S read 26.19 before S13). HE floor max(26.3, base + 0.3) = 28.31; rule H needs HE <= 27.51.
 
 | lever | Ger base -> lever | change | up/down | z | HE | floors | own counter (G / U) | verdict |
 |---|---|---|---|---|---|---|---|---|
@@ -27,19 +25,15 @@ no HE lever passed rule H. No default changed; no extra set was played (no rule 
 | `diag_head300` | 46.2 -> 43.8 | -2.5 | 31/35 | -0.49 | 28.01 -> 26.59 | ok | tank HE 14.64->13.60 / 7.78->7.87 | diagnostic |
 | `own_s12_bleed120_300` | 46.2 -> 41.2 | -5.0 | 13/21 | -1.37 | 28.01 -> 28.58 | FAIL no-winner 1, HE | stabilised 3.6->5.4 / 4.0->6.4 % | fail floors; B3-5 report |
 
-- Armour test (`own_class_twins`, 5 seeds, all cases): pass base False, lever True; case 45 `jumbo_survives` 0 -> 8 of 10;
-  1 check of 143 moved. Joins an apply commit only with B3-4 (A) (it is), and only if a set is applied.
-- **C_he: none.** No HE lever passes rule H; summed HE drop of passing levers 0 (of all HE levers, pass or not: 0.56 + 0.36 +
-  0.13 = 1.05, cap6 is +0.66). The `he_shell_cap4` dose rule needs `he_shell_cap6` in C_he: not played.
-- **C_all: none.** Without C_he, the only rule V/W lever is `own_m36_h1` (a single lever, its line above). It cannot meet
-  the run-2 gate HE <= 25.8 (27.87), so it is not a run-2 candidate under section 5.
-- **Cap in TOML: not reachable within the plan.** 26.3 needs -1.71; even all three non-diagnostic HE levers summed (unmeasured,
-  additive estimate) give about 26.96; closest small set `own_rg_gap25+own_m17_160_64` about 27.09 (two owner-class levers).
-  Only the diagnostic `diag_head300` (-1.42, never a candidate) comes near. What is left: B2-12 (B) (the cap is below the S13
-  base itself) or code (gun direct fire outside the shell budget, see B3-1; fire at downed men, 41-47 % of downs).
-- Run 2 has nothing to confirm under current rules. If the owner answers B2-12 (B) with a cap the S13 base can meet, run 2
-  would confirm `own_m36_h1` (goal 2; R5: M36 up, Jumbo >= 10 in both fresh blocks) and, if B2-9 (A), retest `own_rg_gap25`.
-- Not played: `he_shell_cap4`, `mix_vehicle25` (base 46.2 % is under 55), every combination.
+- Armour (`own_class_twins`): pass base False -> lever True; case 45 `jumbo_survives` 0 -> 8 of 10; 1 of 143 checks moved.
+- **C_he: none** (sum of passing drops 0; all HE levers pass or not 0.56 + 0.36 + 0.13 = 1.05; cap6 +0.66; `he_shell_cap4`
+  needs cap6 in C_he). **C_all: none**: only `own_m36_h1` passes V, alone it reads HE 27.87 > the run-2 gate 25.8.
+- **Cap in TOML: not reachable.** 26.3 needs -1.71; all three HE levers summed (unmeasured estimate) about 26.96; closest
+  small set `own_rg_gap25+own_m17_160_64` about 27.09. Only `diag_head300` (-1.42, never a candidate) comes near. Left:
+  B2-12 (B) (the cap is under the S13 base itself) or code (direct gun fire outside the shell budget; fire at downed men).
+- Run 2: nothing to confirm under current rules. With B2-12 (B) at a cap the base meets, it would confirm `own_m36_h1`
+  (R5: M36 up and Jumbo >= 10 in both fresh blocks) and, with B2-9 (A), retest `own_rg_gap25`. Not played: `he_shell_cap4`,
+  `mix_vehicle25` (base 46.2 % < 55), every combination.
 
 ## B3-1 screen (2026-11-22; stage agent; block S 3001-3080, `BATCH_JOBS=4`)
 ### Chunk 0
