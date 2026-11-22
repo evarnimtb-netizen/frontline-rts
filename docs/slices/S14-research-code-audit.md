@@ -93,5 +93,5 @@ cartridge feed and resupply for fuel, and the S10a-ai breach job as the model fo
   lists. Bridge cues per weapon class (`match_events.rs`).
 
 ## 12. Targets numbering
-- `docs/slices/targets/S12.toml` already uses T159-T173; the S13 plan (7) names T150-T159, which collide: S13's Build renumbers. S14
-  starts at **T200** to stay clear of both.
+- `docs/slices/targets/S12.toml` already uses T159-T173; S13 (planned T150-T159) was
+  renumbered to T174-T184 by its build. S14 starts at **T185**, right after it.

@@ -225,29 +225,29 @@ particles in flight, patches, burning men, strikes mid-wind-up and clears mid-st
 - **R5 Melee (hard).** M5's capsule rule as a row: 100 strikes at a man 0.9 m ahead hit 100; at 0.9 m aside hit 0. (RE done-when 5.)
 - **R6 Trench under fire (report).** A ducked trench line (MG suppression as S3b) with a flame man at 25 m: out %, stepped-out men.
 
-## 10. Measures and targets (`docs/slices/targets/S14.toml`, written by Build A as a copy of the then-current targets plus T200+)
+## 10. Measures and targets (`docs/slices/targets/S14.toml`, written by Build A as a copy of the then-current targets plus T185+)
 - **Gate to S14-ai:** `flame_only` 480 (the AI blind to flame: flame men fire only by auto-targeting): Germany 35-65 %, match
   length inside the owner rule (median 15-30, none under 10 or over 40), no match without a winner. Otherwise stop for the owner.
-- **S14a hard:** T200 `s14_off` 40 set = `<BASE>` 40/40 (`tools/neutral.py`); T201a-c R1 and controls; T202 R2; T203 R5.
-- **S14-ai hard:** T204 Germany pooled 35-65 %; T205 no winner 0, length rule; **T206 `flame_matches_pct` >= 50** (matches in which
-  an AI flame man hit a man in a trench or bunker: RE "5 of 10"); T207 every flame job ends (no job older than `job_max_s`); T208
+- **S14a hard:** T185 `s14_off` 40 set = `<BASE>` 40/40 (`tools/neutral.py`); T186a-c R1 and controls; T187 R2; T188 R5.
+- **S14-ai hard:** T189 Germany pooled 35-65 %; T190 no winner 0, length rule; **T191 `flame_matches_pct` >= 50** (matches in which
+  an AI flame man hit a man in a trench or bunker: RE "5 of 10"); T192 every flame job ends (no job older than `job_max_s`); T193
   tick p99; paired `s14_off` vs default on the same 480: a pooled move of 5 points or more stops the slice for the owner (as S12).
-- **Reports:** T210 flame kills and downs per match by side; T211 HE share of casualties (T8) beside the flame share; T212 strikes,
-  strike hits and kills per match; T213 clear orders, steps, done; T214 refuels; T215 `flame_capped` and patches dropped; R3, R4, R6.
-- Ablations on 480: `no_flame_ai`, `no_clear`, `no_melee`, `no_patches`. Levers if T204 fails, in order: `[ai.flame] cards_max`,
+- **Reports:** T195 flame kills and downs per match by side; T196 HE share of casualties (T8) beside the flame share; T197 strikes,
+  strike hits and kills per match; T198 clear orders, steps, done; T199 refuels; T200 `flame_capped` and patches dropped; R3, R4, R6.
+- Ablations on 480: `no_flame_ai`, `no_clear`, `no_melee`, `no_patches`. Levers if T189 fails, in order: `[ai.flame] cards_max`,
   `jobs` timing, `burn_hp_per_s`, `patch_hp_per_s`; never squad sizes or prices (owner class).
 
 ## 11. Stages (`workflows.md` 1-4: engine tier; no per-slice Tune; stage briefs `S14a-build-X.md` written at each stage's start, as S12)
 | Part | Stage | Model | Content | Exit |
 |---|---|---|---|---|
-| S14a | A flame (2 chunks) | Opus | ONE layout commit (3.1, every key of 2, SAVE +1, PROTOCOL +1 with both commands refused); F1-F9; snapshot `flame`, `patches`, burning flag; tests | `check.sh quick`; T200 |
+| S14a | A flame (2 chunks) | Opus | ONE layout commit (3.1, every key of 2, SAVE +1, PROTOCOL +1 with both commands refused); F1-F9; snapshot `flame`, `patches`, burning flag; tests | `check.sh quick`; T185 |
 | | Checker | Sonnet | diff vs this file, named tests, neutral check | list of misses |
 | | B clear + data (2 chunks) | Opus (data part may be Sonnet) | C1-C5; weapons, cartridges, `when` pairs, derived `flame`; rows R1-R4, R6; resolved-defs baseline (`BLESS=1`) | R1, R2 |
 | | C melee (1 chunk) | Opus | M1-M5, `Strike`, melee blocks, R5 | R5; `s14_off` 40/40 |
 | | Gate | script | `flame_only` 480 (`tools/measure.sh`) | section 10 gate |
 | | P presenter (1 chunk) | Sonnet | stream, patches, burning men, strike, Clear trench button, `V`; headless mock smoke | |
-| S14-ai | D AI (2 chunks) | Opus | A1-A4, liveness, JSON `s14`, `S14.toml` T204-T215, switches on, 40 sets | `check.sh tests` |
-| | Measure, Review, Fix | script, Opus, Opus | 480 + ablations; review gate fires (sim, save, protocol) | T204-T208 |
+| S14-ai | D AI (2 chunks) | Opus | A1-A4, liveness, JSON `s14`, `S14.toml` T189-T200, switches on, 40 sets | `check.sh tests` |
+| | Measure, Review, Fix | script, Opus, Opus | 480 + ablations; review gate fires (sim, save, protocol) | T189-T193 |
 | | Docs | Haiku | logs, STATE (versions line), TODO S14 block, `workflows.md` S14 size, modding guide `docs/modding/flame.md` | |
 
 ## 12. Design questions: all settled on (A) (2026-11-22; the first affected part in brackets; S14-1..7 are in `docs/TODO.md`)
@@ -266,18 +266,18 @@ particles in flight, patches, burning men, strikes mid-wind-up and clears mid-st
 - **S14-7 Burning ground and paths [S14a].** (A) Paths ignore fire; men caught in it step out (F6), and `ClearTrench` waits for its
   own fire. (B) A path cost around live patches (a new nav layer; tick cost).
 Settled in the plan only (data and scope, owner rule 2026-11-11): the US weapon is the M1A1 for the 1944-06 card (4.1); fuel
-11.8 L / 17.8 L and the particle figures of 4.1; card prices unchanged; strike numbers of 4.3; the T200 numbering; the AI weights.
+11.8 L / 17.8 L and the particle figures of 4.1; card prices unchanged; strike numbers of 4.3; the T185 numbering; the AI weights.
 
 ## 13. Risks
 1. **Flame too strong in trenches** (owner rule S4-43: trenches stay strong vs small arms; flame is not small arms, and the design
    wants it to crack trenches). The `flame_only` gate reads the swing before any AI uses it on purpose; levers in section 10.
 2. **Lethality and length.** Most flame casualties die (downed men keep burning). `length_min` is in the gate; `burn_s` the first lever.
-3. **Patches as area denial.** A defender can burn his own trench mouth; S14-1 (A) makes that cost him too. T215 counts patches.
+3. **Patches as area denial.** A defender can burn his own trench mouth; S14-1 (A) makes that cost him too. T200 counts patches.
 4. **Cost.** Particles and patches are serial; `flame_bench` and verify's p99. Fallback: `particles_per_player` 32.
 5. **S13 moves under us.** S13a takes the next SAVE, appends cards and touches `[ai.armour]`; S14 touches `combat.rs`, `items.rs`,
-   `ai/`: re-read the append-sensitive tests and the baselines (`resolved_defs.rs`, JSON snapshots) after the rebase. S13's plan names
-   T150-T159, which S12 already used; S14 starts at T200 either way.
-6. **HE share (T8, S12-16 known miss).** Flame takes trench kills from HE in the AI half; T211 shows by how much; not a lever here.
+   `ai/`: re-read the append-sensitive tests and the baselines (`resolved_defs.rs`, JSON snapshots) after the rebase. S13 renumbered its
+   targets to T174-T184 (S12 uses T159-T173); S14 starts at T185.
+6. **HE share (T8, S12-16 known miss).** Flame takes trench kills from HE in the AI half; T196 shows by how much; not a lever here.
 7. **Crew-weapon pickup of fuel.** The flamethrower must pass to the assistant with the operator's fuel units; whether the S4
    crew-weapon pickup carries the feed's rounds is not audited: Build A reads it and tests `flame_handover_keeps_fuel`.
 
