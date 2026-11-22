@@ -1,15 +1,35 @@
 # B3 log (third balance pass; at most 150 lines)
 
-Plan `docs/slices/B3-balance.md`; stage contract `B3-run-1.md`; levers, `paired.py`, `queue.sh` in `targets/B3-levers/`;
+Plan `docs/slices/B3-balance.md`; stage contracts `B3-run-1.md`, `B3-run-2.md`; levers, `paired.py`, `queue.sh` in `targets/B3-levers/`;
 results `targets/B3-results/`. Branch `claude/project-thread-aj1tww`. Another agent may work in this checkout: commit only
 your files (`git commit -m ... -- FILES`), never `git add -A`, never `target/`, `.claude/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: B3 code stage done 2026-11-22: `073b577` adds `[ai.arty] direct_in_budget` (SAVE 32, ww2 0; neutral 40/40).
-Its screen is NOT played (command below). Run 1 (screen, BASE `884d46e`): NO candidate set (C_he none, C_all none); stop
-rule 8: no HE lever passed H. No default changed. `target/s13-on` stays the judge base (42.08 % of 480, HE 28.0/28.3/28.2).**
-- Block S base (3001-3080, 160): Germany 46.2 %, HE 28.01, no winner 0, median 19.7 min: **1.71 over the cap 26.3 already**
-  (B2's block S read 26.19 before S13). HE floor max(26.3, base + 0.3) = 28.31; rule H needs HE <= 27.51.
+**State: B3 run 2 done 2026-11-22: C_all confirmed and applied at `f4e610b` (contract `B3-run-2.md`); the judge measure
+`target/b3-final` (480) misses J1 and J4: by the plan the apply is to be reverted (`git revert f4e610b`); orchestrator's call.**
+- Applied (TOML): `[ai.arty] shell_mp_max_pct` 25 -> 6, `direct_in_budget` 0 -> 1; M17 burst 200 cm / 96 -> 160 / 64; M36
+  `ai_heavy`; 7.5 cm PzGr 40 `apcr`, 3-inch M62 `apcbc`; T184d hard. Snapshot blessed; setup BASELINE hashes unchanged.
+- Confirm (320 fresh pairs, F1 3101 + F2 3201): C_all HE 27.90 -> 26.05 (27.62 -> 26.24, 28.17 -> 25.86), Germany 49.1 ->
+  49.1 (+0.0; +1.2 / -1.2), floors ok, no winner 0; M36 0.6 -> 36.9 / 0.0 -> 43.8 %, Jumbo 12.5 / 15.6 %. R1-R5 hold.
+  C_he also held R1-R4 (26.29 pooled; 26.63 / 25.95; Germany -0.3).
+- **Judge (`f4e610b`, 480, against `target/s13-on`):** Germany 47.29 % (50.62 / 41.25 / 50.00; +5.2), no winner 0. HE share of
+  casualties 27.40 / 24.96 / 26.70, about 26.35 pooled (s13-on 28.0 / 28.3 / 28.2): **J1 MISS** (T8a 27.40; T8b 24.96 pass;
+  T8c, the 40 set, 26.91). J2 pass (each set 38-62). J3 pass. **J4 MISS**: hard rows passing at s13-on now missing: T50b (USA
+  ride saving -1.8 s), T119b (USA front mines 37.4 % < 40), T121d (USA mines set off 0.28 < 0.3, sibling of the noisy T121b),
+  T122c (German wire seen 46.4 % < 50); fixed: T8b, T50f, T121b, T179a-c. J5: T179a-d pass (Panther 28.75, M36 41.25, Tiger
+  14.4, Jumbo 16.25 %). Heavy buys (3 sets) G 141 -> 220, U 184 -> 304. Hard misses 51 -> 49.
+- Armour test at `f4e610b` (5 seeds): pass False -> True; case 45 `jumbo_survives` 0 -> 8 of 10; case 9 trench casualties
+  27.5 -> 21.95 % (still passes; the M17 cut). `B3-results/armour_final_f4e610b.txt`.
+- The 5101-5180 held-out set is NOT played (it follows a judge pass).
+- Tests edited in the apply (the orchestrator asked for check green; the plan says such tests are reported): 6 pinned values
+  (b3 layout, s13 setup keys, t151h, s13_content, s11a1_content, ballistics golden row 44: PzGr 40 vs M4A3 turret 1000 m
+  30 deg pen -> 9.6 %), and 3 match-trajectory tests that restore the M17's old burst in their own setup (s10a empty fort:
+  0 throws; ai_vs_ai_plays_by_the_rules: 7 of 299 rejected, ordinary races, none a SetAmbush; save_fuzz s11b roundtrip).
+  A revert of `f4e610b` takes them back with the values.
+- Sets played: 6 (base, c_he, c_all on 3101 and 3201) + the judge measure + 1 armour test. F1, F2 spent.
+
+## B3-1 screen (2026-11-22; stage agent; block S 3001-3080, `BATCH_JOBS=4`)
+Run 1 screen table (block S base 3001-3080, 160: Germany 46.2 %, HE 28.01, no winner 0, median 19.7 min):
 
 | lever | Ger base -> lever | change | up/down | z | HE | floors | own counter (G / U) | verdict |
 |---|---|---|---|---|---|---|---|---|
@@ -25,17 +45,6 @@ rule 8: no HE lever passed H. No default changed. `target/s13-on` stays the judg
 | `diag_head300` | 46.2 -> 43.8 | -2.5 | 31/35 | -0.49 | 28.01 -> 26.59 | ok | tank HE 14.64->13.60 / 7.78->7.87 | diagnostic |
 | `own_s12_bleed120_300` | 46.2 -> 41.2 | -5.0 | 13/21 | -1.37 | 28.01 -> 28.58 | FAIL no-winner 1, HE | stabilised 3.6->5.4 / 4.0->6.4 % | fail floors; B3-5 report |
 
-- Armour (`own_class_twins`): pass base False -> lever True; case 45 `jumbo_survives` 0 -> 8 of 10; 1 of 143 checks moved.
-- **C_he: none** (sum of passing drops 0; all HE levers pass or not 0.56 + 0.36 + 0.13 = 1.05; cap6 +0.66; `he_shell_cap4`
-  needs cap6 in C_he). **C_all: none**: only `own_m36_h1` passes V, alone it reads HE 27.87 > the run-2 gate 25.8.
-- **Cap in TOML: not reachable.** 26.3 needs -1.71; all three HE levers summed (unmeasured estimate) about 26.96; closest
-  small set `own_rg_gap25+own_m17_160_64` about 27.09. Only `diag_head300` (-1.42, never a candidate) comes near. Left:
-  B2-12 (B) (the cap is under the S13 base itself) or code (direct gun fire outside the shell budget; fire at downed men).
-- **B3 code screen (orchestrator; about 25 min at 4 jobs, base replayed by the new binary):**
-  `tools/run.sh target/b3/code.log docs/slices/targets/B3-levers/queue.sh code` (then `tools/run.sh --wait
-  target/b3/code.log` until done). Read `paired.txt` lines `code_direct_budget*@s3001` with rule H; commit `B3-results/`.
-
-## B3-1 screen (2026-11-22; stage agent; block S 3001-3080, `BATCH_JOBS=4`)
 ### Chunk 0
 - Head `884d46e`; STATE.md: S13 measured at `3b3387f`, Germany 42.08 %; no change to `mods crates sdk` since. Build done by
   the orchestrator (`target/b3/build.log`). `tools/batch.sh world` = `ba09de8def971642465e0c5f`.
@@ -43,7 +52,8 @@ rule 8: no HE lever passed H. No default changed. `target/s13-on` stays the judg
   of casualties 28.0 / 28.3 / 28.2 (T8 cap 26.3).
 - `queue.sh check` (`target/b3/check.log`): 19 `old -> new` values, as expected: `hv_ger_reach` 3, `own_m17_160_64` 2,
   `own_class_twins` 2, `own_s12_bleed120_300` 2, every other file 1 (incl. `he_shell_cap4`, `mix_vehicle25`). No file fixed.
-- Armour: `B3-results/armour_own_class_twins.txt` (above). paired.py read the JSON; no fix.
+- Armour: `B3-results/armour_own_class_twins.txt`: pass False -> True; case 45 `jumbo_survives` 0 -> 8 of 10; 1 of 143
+  checks moved. paired.py read the JSON; no fix.
 ### Chunks 1, 2, 4 (one orchestrator queue: `queue.sh run1`, `target/b3/run1.log`; all 12 sets, exit 0)
 - B2-12 is not answered (B), so chunk 1 ran its levers. Base stop rule: Germany 46.2 % inside 35-65, no winner 0: go on.
 - Base `--counters` (a match): Germany caused 64.1 casualties, HE 36.0 %: tank HE 14.64, mortar 5.50, rifle grenade 2.96;
@@ -113,3 +123,22 @@ rule 8: no HE lever passed H. No default changed. `target/s13-on` stays the judg
 - Levers: `code_direct_budget` (switch alone; at 25 % the budget never binds at the S13 head, so expect ~0: control) and
   `code_direct_budget_cap6` (switch + 6 %: `he_shell_cap6` without the direct-fire leak). Both load (`target/b3/check`).
   Risk: a held gun also does not re-lay on a target beyond 40 m, and AT fire waits for armour within 400 m.
+
+## B3 run 2 (2026-11-22; stage agent; F1 3101-3180, F2 3201-3280, `BATCH_JOBS=4`; contract `B3-run-2.md`)
+- Sets named by the orchestrator: C_he = `code_direct_budget_cap6` + `own_m17_160_64` (`c_he.toml`), C_all = C_he +
+  `own_m36_h1` + `own_class_twins` (`c_all.toml`); `queue.sh check`-style load: 4 and 7 values. No block-S play of them.
+- `queue.sh run2` (`target/b3/run2.log`, about 7 min a set, exit 0); lines in `paired.txt`:
+
+| set@block | Ger base -> set | change | up/down | HE | floors | M36 / Jumbo % |
+|---|---|---|---|---|---|---|
+| `c_he@s3101` | 50.0 -> 50.0 | +0.0 | 23/23 | 27.62 -> 26.63 | ok | 1.2 / 31.2 |
+| `c_all@s3101` | 50.0 -> 51.2 | +1.2 | 24/22 | 27.62 -> 26.24 | ok | 36.9 / 12.5 |
+| `c_he@s3201` | 48.1 -> 47.5 | -0.6 | 22/23 | 28.17 -> 25.95 | ok | 0.6 / 36.2 |
+| `c_all@s3201` | 48.1 -> 46.9 | -1.2 | 22/24 | 28.17 -> 25.86 | ok | 43.8 / 15.6 |
+| C_he pooled 320 | 49.1 -> 48.8 | -0.3 | 45/46 | 27.90 -> 26.29 | ok | |
+| C_all pooled 320 | 49.1 -> 49.1 | +0.0 | 46/46 | 27.90 -> 26.05 | ok | |
+
+- Own counters (C_all, a match, G / U, F1): base-gun rounds 24.3->19.2 / 18.8->11.9, direct rounds 10.0->8.0 / 6.3->4.4,
+  direct holds 0->132 / 214, gun kills 6.14->4.58 / 5.39->3.51; US rifle-grenade casualties 5.84->4.86.
+- Decision: C_all R1-R5 hold -> applied (`f4e610b`). `check.sh quick 8f9cde6` all ok (1141 tests) after the test edits above.
+- Judge and armour: top block; files `B3-results/judge_f4e610b_*.txt`, `armour_final_f4e610b.txt`.

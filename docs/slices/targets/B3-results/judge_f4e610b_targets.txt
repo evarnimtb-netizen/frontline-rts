@@ -1,0 +1,691 @@
+T4a skirmish40.factions.germany.s5b_derived.refused_total 0 [-,0] PASS
+T4b skirmish40.factions.usa.s5b_derived.refused_total 0 [-,0] PASS
+T5a skirmish40.wins.germany_pct 57.5 [35,65] PASS
+T5b skirmish40.wins.usa_pct 42.5 [35,65] PASS
+T5c skirmish160.wins.germany_pct 50.625 [35,65] PASS
+T5d skirmish160_oos.wins.germany_pct 41.25 [35,65] PASS
+T6a skirmish40.wins.base_max_pct 52.5 [-,62] PASS
+T6b skirmish160.wins.base_max_pct 51.875 [-,62] PASS
+T6c skirmish160_oos.wins.base_max_pct 50 [-,62] PASS
+T7a skirmish40.length_min.min 10.652 [10,-] PASS
+T7b skirmish40.length_min.max 36.724 [-,40] PASS
+T7c skirmish40.length_min.median 21.135 [15,30] PASS
+T7d skirmish160.length_min.median 20.423 [15,30] PASS
+T8a skirmish160.s12_derived.he_share_casualties_pct.mean 27.395 [20,26.3] MISS
+T8b skirmish160_oos.s12_derived.he_share_casualties_pct.mean 24.957 [20,26.3] PASS
+T8c skirmish40.s12_derived.he_share_casualties_pct.mean 26.907 [-,26.3] MISS
+T8d skirmish160.he_share_pct.mean 36.76 [20,25] MISS (report)
+T9a skirmish160.factions.germany.kills_by_source_pct.mortar 14.131 [10,15] PASS
+T9b skirmish160.factions.usa.kills_by_source_pct.mortar 12.89 [10,15] PASS
+T10a skirmish160.factions.germany.s5b_derived.bombs_per_match 58.638 [0,-] PASS
+T10b skirmish160.factions.usa.s5b_derived.bombs_per_match 48.375 [0,-] PASS
+T10c skirmish160.factions.germany.ammo.spend_mp.per_match 757.318 [0,-] PASS
+T10d skirmish160.factions.usa.ammo.spend_mp.per_match 762.247 [0,-] PASS
+T10e skirmish160.factions.germany.ammo.spend_mp.shells 112820.055 [0,-] PASS
+T10f skirmish160.factions.usa.ammo.spend_mp.shells 114946.546 [0,-] PASS
+T10g skirmish160.factions.germany.s6_derived.crate_mp_per_match 169.988 [0,-] PASS
+T10h skirmish160.factions.usa.s6_derived.crate_mp_per_match 175.775 [0,-] PASS
+T11a skirmish40.factions.germany.s5b_derived.ai_observed_direct_pct 100 [70,-] PASS
+T11b skirmish40.factions.usa.s5b_derived.ai_observed_direct_pct 100 [70,-] PASS
+T13a fortify10.pass - [1,-] SKIP (run fortify10 not played)
+T13b armour5.pass - [1,-] SKIP (run armour5 not played)
+T13c armour_stress10.pass - [1,-] SKIP (run armour_stress10 not played)
+T14a timing40.tick_p99_ms.peak - [-,1.5] SKIP (run timing40 not played)
+T14b armour_stress10.cases.case14.checks.sim_tick_p99_10_ms_on_3_threads.value - [-,10] SKIP (run armour_stress10 not played)
+T15a skirmish40.wins.no_winner 0 [-,0] PASS
+T15b skirmish160.wins.no_winner 0 [-,0] PASS
+T15c skirmish160_oos.wins.no_winner 0 [-,0] PASS
+T20a skirmish160.factions.germany.s6_derived.base_bomb_refills 0 [-,0] PASS
+T20b skirmish160.factions.usa.s6_derived.base_bomb_refills 0 [-,0] PASS
+T20c skirmish160.factions.germany.s6_derived.bomb_refills_unsourced 0 [-,0] PASS
+T20d skirmish160.factions.usa.s6_derived.bomb_refills_unsourced 0 [-,0] PASS
+T22a skirmish160.factions.germany.s6_derived.stock_in_not_crate_kg 0 [-,0] PASS
+T22b skirmish160.factions.usa.s6_derived.stock_in_not_crate_kg 0 [-,0] PASS
+T23a skirmish160.s6.cookoffs_per_match 0.475 [0,-] PASS
+T24a skirmish160.factions.germany.s6_derived.tank_rounds_forward_per_match 7.369 [0,-] PASS
+T24b skirmish160.factions.usa.s6_derived.tank_rounds_forward_per_match 6.744 [0,-] PASS
+T27a skirmish160.factions.germany.s6_derived.hq_built_pct 100 [70,-] PASS
+T27b skirmish160.factions.usa.s6_derived.hq_built_pct 100 [70,-] PASS
+T27c skirmish160.factions.germany.s6_derived.crates_delivered_per_match 10.225 [3,-] PASS
+T27d skirmish160.factions.usa.s6_derived.crates_delivered_per_match 8.525 [3,-] PASS
+T27e skirmish160.factions.germany.s6_derived.tank_crate_runs_per_match 0.006 [0,-] PASS
+T27f skirmish160.factions.usa.s6_derived.tank_crate_runs_per_match 0 [0,-] PASS
+T30a skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad 16.875 [60,-] MISS
+T30b skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad 5.625 [60,-] MISS
+T30c skirmish160_oos.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad 12.5 [60,-] MISS
+T30d skirmish160_oos.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad 4.375 [60,-] MISS
+T31a skirmish160.factions.germany.s7_derived.vehicle_kills_pct 35.172 [-,30] MISS (report)
+T31b skirmish160.factions.usa.s7_derived.vehicle_kills_pct 27.132 [-,30] PASS
+T31c skirmish160_oos.factions.germany.s7_derived.vehicle_kills_pct 34.107 [-,30] MISS (report)
+T31d skirmish160_oos.factions.usa.s7_derived.vehicle_kills_pct 26.336 [-,30] PASS
+T32a skirmish160.factions.germany.s7_derived.kills_by_vehicle_max_pct 16.006 [-,18] PASS
+T32b skirmish160.factions.usa.s7_derived.kills_by_vehicle_max_pct 9.978 [-,18] PASS
+T33a skirmish160.factions.germany.s7_derived.tank_td_mp_pct 16.736 [-,35] PASS
+T33b skirmish160.factions.usa.s7_derived.tank_td_mp_pct 12.827 [-,35] PASS
+T33c skirmish160.factions.germany.s7_derived.mp_share_pct.ger_pz4_h_squad 7.371 [0,-] PASS
+T33d skirmish160.factions.germany.s7_derived.mp_share_pct.ger_stug3_g_squad 1.305 [0,-] PASS
+T33e skirmish160.factions.usa.s7_derived.mp_share_pct.usa_m4a3_75_squad 4.13 [0,-] PASS
+T33f skirmish160.factions.usa.s7_derived.mp_share_pct.usa_m10_squad 0.449 [0,-] PASS
+T33g skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_pz4_h 5.997 [0,-] PASS
+T33h skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_stug3_g 0.08 [0,-] PASS
+T33i skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m4a3_75 2.077 [0,-] PASS
+T33j skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m10 0.025 [0,-] PASS
+T33k skirmish160.factions.germany.s7_derived.kos_per_bought.ger_stug3_g 0 [0,-] PASS
+T33l skirmish160.factions.usa.s7_derived.kos_per_bought.usa_m10 0 [0,-] PASS
+T33m skirmish160.factions.germany.s7_derived.kos_per_bought.ger_pz4_h 0.081 [0,-] PASS
+T33n skirmish160.factions.usa.s7_derived.kos_per_bought.usa_m4a3_75 0.068 [0,-] PASS
+T34a armour5.cases.case17.checks.stug_wins_pct.value - [55,-] SKIP (run armour5 not played)
+T34b armour5.cases.case17.checks.first_hit_s_stug.value - [0,-] SKIP (run armour5 not played)
+T34c armour5.cases.case17.checks.first_hit_s_sherman.value - [0,-] SKIP (run armour5 not played)
+T34d armour5.cases.case18.checks.sherman_wins_pct.value - [50,-] SKIP (run armour5 not played)
+T34e armour5.cases.case18.checks.stug_fired_pct.value - [0,-] SKIP (run armour5 not played)
+T34f armour5.cases.case18.checks.first_hit_s_stug.value - [0,-] SKIP (run armour5 not played)
+T34g armour5.cases.case18.checks.first_hit_s_sherman.value - [0,-] SKIP (run armour5 not played)
+T35a armour5.cases.case19.checks.stopped_inside_pct.value - [50,-] SKIP (run armour5 not played)
+T35b armour5.cases.case19.checks.stopped_crew_hit_pct.value - [50,-] SKIP (run armour5 not played)
+T35c armour5.cases.case19.checks.moving_inside_pct.value - [-,20] SKIP (run armour5 not played)
+T36a armour5.cases.case20.checks.m10_crew_hit_pct.value - [0,-] SKIP (run armour5 not played)
+T36b armour5.cases.case20.checks.sherman_crew_hit_pct.value - [-,0] SKIP (run armour5 not played)
+T37a skirmish160.factions.germany.s7_derived.open_top_throws_per_match 0 [0,-] PASS
+T37b skirmish160.factions.usa.s7_derived.open_top_throws_per_match 0 [0,-] PASS
+T5e skirmish160_s201.wins.germany_pct 50 [0,-] PASS
+T5f skirmish160_h301.wins.germany_pct - [40,60] SKIP (run skirmish160_h301 not played)
+T40a skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_sdkfz251_1_squad 8.75 [60,-] MISS
+T40b skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad 1.875 [60,-] MISS
+T40c skirmish160_oos.factions.germany.s7_derived.bought_matches_pct.ger_sdkfz251_1_squad 6.25 [60,-] MISS
+T40d skirmish160_oos.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad 1.25 [60,-] MISS
+T41a skirmish160.factions.germany.s8a_derived.transported_per_match 2.975 [1,-] PASS
+T41b skirmish160.factions.usa.s8a_derived.transported_per_match 2.669 [1,-] PASS
+T41c skirmish160.factions.germany.s8a_derived.obj_saved_s_per_ride 17.608 [0,-] PASS
+T41d skirmish160.factions.usa.s8a_derived.obj_saved_s_per_ride -1.816 [0,-] MISS (report)
+T41e skirmish160.factions.germany.s8a_derived.obj_saved_s_per_match 16.948 [0,-] PASS
+T41f skirmish160.factions.usa.s8a_derived.obj_saved_s_per_match -1.714 [0,-] MISS (report)
+T41g skirmish160.factions.germany.s8a_derived.ride_saved_s_per_ride 34.451 [0,-] PASS
+T41h skirmish160.factions.usa.s8a_derived.ride_saved_s_per_ride 37.421 [0,-] PASS
+T42a skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_sdkfz251_1 0.06 [-,10] PASS
+T42b skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m3a1 5.225 [-,10] PASS
+T42c skirmish160_oos.factions.germany.s7_derived.kills_by_vehicle_max_pct 15.532 [0,-] PASS
+T42d skirmish160_oos.factions.usa.s7_derived.kills_by_vehicle_max_pct 9.941 [0,-] PASS
+T43a skirmish160.factions.germany.s8a_derived.riders_lost_per_match 0.275 [0,-] PASS
+T43b skirmish160.factions.usa.s8a_derived.riders_lost_per_match 0.281 [0,-] PASS
+T43c skirmish160.factions.germany.s8a_derived.small_arms_pens_per_match 10.394 [0,-] PASS
+T43d skirmish160.factions.usa.s8a_derived.small_arms_pens_per_match 24.338 [0,-] PASS
+T43e skirmish160.factions.germany.s8a_derived.dismounts_under_fire_pct 10.273 [0,-] PASS
+T43f skirmish160.factions.usa.s8a_derived.dismounts_under_fire_pct 13.06 [0,-] PASS
+T44a armour5.cases.case21.checks.mg42_m3a1_side_50_pen_pct.value - [80,-] SKIP (run armour5 not played)
+T44b armour5.cases.case21.checks.mg42_m3a1_side_150_pen_pct.value - [0,-] SKIP (run armour5 not played)
+T44c armour5.cases.case21.checks.mg42_m3a1_side_300_pen_pct.value - [0,-] SKIP (run armour5 not played)
+T44d armour5.cases.case21.checks.m2hb_251_side_50_pen_pct.value - [80,-] SKIP (run armour5 not played)
+T44e armour5.cases.case21.checks.m2hb_251_side_150_pen_pct.value - [80,-] SKIP (run armour5 not played)
+T44f armour5.cases.case21.checks.m2hb_251_side_300_pen_pct.value - [80,-] SKIP (run armour5 not played)
+T44g armour5.cases.case21.checks.rifle_251_front_pen_pct.value - [-,0] SKIP (run armour5 not played)
+T44h armour5.cases.case21.checks.rifle_m3a1_front_pen_pct.value - [-,0] SKIP (run armour5 not played)
+T45a armour5.cases.case22.checks.passenger_hit_pct.value - [50,-] SKIP (run armour5 not played)
+T45b armour5.cases.case22.checks.passengers_lost_mean.value - [0,-] SKIP (run armour5 not played)
+T46a armour5.cases.case23.checks.stopped_passengers_lost_pct.value - [50,-] SKIP (run armour5 not played)
+T46b armour5.cases.case23.checks.moving_inside_pct.value - [-,20] SKIP (run armour5 not played)
+T47a armour5.cases.case24.checks.sides_faster.value - [1,-] SKIP (run armour5 not played)
+T47b armour5.cases.case24.checks.door_men_hit_mean.value - [0,-] SKIP (run armour5 not played)
+T47c armour5.cases.case24.checks.sides_men_hit_mean.value - [0,-] SKIP (run armour5 not played)
+T48a skirmish160.factions.germany.s8a_derived.transport_trips_per_bought 34 [1,-] PASS
+T48b skirmish160.factions.usa.s8a_derived.transport_trips_per_bought 142.333 [1,-] PASS
+T50a skirmish160.factions.germany.s8a_derived.obj_saved_s_per_ride 17.608 [0.1,-] PASS
+T50b skirmish160.factions.usa.s8a_derived.obj_saved_s_per_ride -1.816 [0.1,-] MISS
+T50c skirmish160_oos.factions.germany.s8a_derived.obj_saved_s_per_ride 16.565 [0.1,-] PASS
+T50d skirmish160_oos.factions.usa.s8a_derived.obj_saved_s_per_ride 3.19 [0.1,-] PASS
+T50e skirmish160_s201.factions.germany.s8a_derived.obj_saved_s_per_ride 11.546 [0.1,-] PASS
+T50f skirmish160_s201.factions.usa.s8a_derived.obj_saved_s_per_ride 3.484 [0.1,-] PASS
+T51a skirmish160.factions.germany.s8a_derived.obj_lost_per_match 0.35 [0,-] PASS
+T51b skirmish160.factions.usa.s8a_derived.obj_lost_per_match 0.231 [0,-] PASS
+T51c skirmish160.factions.germany.s8b_derived.unload_exposed_pct 49.301 [0,-] PASS
+T51d skirmish160.factions.usa.s8b_derived.unload_exposed_pct 57.787 [0,-] PASS
+T52a skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_sdkfz234_1_squad 100 [60,-] PASS
+T52b skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m8_squad 100 [60,-] PASS
+T53a skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_opel_blitz_squad 80 [60,-] PASS
+T53b skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_cckw_squad 60.625 [60,-] PASS
+T54a skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_pz4_h_squad 75 [90,-] MISS
+T54b skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m4a3_75_squad 45.625 [90,-] MISS
+T54c skirmish160.factions.germany.s7_derived.mp_share_pct.ger_pz4_h_squad 7.371 [11,-] MISS
+T54d skirmish160.factions.usa.s7_derived.mp_share_pct.usa_m4a3_75_squad 4.13 [10,-] MISS
+T54e skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad 16.875 [80,-] MISS
+T54f skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad 5.625 [75,-] MISS
+T55a skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_sdkfz234_1 16.006 [-,10] MISS (report)
+T55b skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m8 9.978 [-,10] PASS
+T55c skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_sdkfz234_1 16.006 [0.3,-] PASS
+T55d skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_m8 9.978 [0.3,-] PASS
+T56a skirmish160.factions.germany.s7_derived.mp_share_pct.ger_sdkfz234_1_squad 7.388 [-,8] PASS
+T56b skirmish160.factions.usa.s7_derived.mp_share_pct.usa_m8_squad 7.308 [-,8] PASS
+T56c skirmish160.factions.germany.s7_derived.mp_share_pct.ger_opel_blitz_squad 2.813 [-,5] PASS
+T56d skirmish160.factions.usa.s7_derived.mp_share_pct.usa_cckw_squad 2.8 [-,5] PASS
+T57a skirmish160.factions.germany.s8b_derived.truck_crates_dropped_per_match 4.494 [1,-] PASS
+T57b skirmish160.factions.usa.s8b_derived.truck_crates_dropped_per_match 3.594 [1,-] PASS
+T57c skirmish160.factions.germany.s8b_derived.truck_tank_rounds_per_match 4.881 [0,-] PASS
+T57d skirmish160.factions.usa.s8b_derived.truck_tank_rounds_per_match 1.294 [0,-] PASS
+T57e skirmish160.factions.germany.s8b_derived.truck_men_rounds_per_match 9.838 [0,-] PASS
+T57f skirmish160.factions.usa.s8b_derived.truck_men_rounds_per_match 13.338 [0,-] PASS
+T57g skirmish160.factions.germany.s8b_derived.cargo_detonations_per_match 0.194 [0,-] PASS
+T57h skirmish160.factions.usa.s8b_derived.cargo_detonations_per_match 0.106 [0,-] PASS
+T58a skirmish160.factions.germany.s8b_derived.stranded_served_per_match 0.013 [0,-] PASS
+T58b skirmish160.factions.usa.s8b_derived.stranded_served_per_match 0.019 [0,-] PASS
+T59a skirmish160.factions.germany.s8b_derived.truck_loaded_kg_per_match 376.27 [0,-] PASS
+T59b skirmish160.factions.usa.s8b_derived.truck_loaded_kg_per_match 295.148 [0,-] PASS
+T60a armour5.cases.case25.checks.crossings_closed_line.value - [-,0] SKIP (run armour5 not played)
+T60b armour5.cases.case25.checks.reached_through_gap_pct.value - [80,-] SKIP (run armour5 not played)
+T60c armour5.cases.case25.checks.tank_crosses_same_line_pct.value - [80,-] SKIP (run armour5 not played)
+T61a armour5.cases.case26.checks.no_neutral_pivot.value - [1,-] SKIP (run armour5 not played)
+T61b armour5.cases.case26.checks.turn_radius_within_pct.value - [-,15] SKIP (run armour5 not played)
+T61c armour5.cases.case26.checks.reverse_speed_234_cm_s.value - [900,-] SKIP (run armour5 not played)
+T61d armour5.cases.case26.checks.wheel_blast_disables_pct.value - [50,-] SKIP (run armour5 not played)
+T62a armour5.cases.case27.checks.seconds_per_round.value - [3.9,4.1] SKIP (run armour5 not played)
+T62b armour5.cases.case27.checks.stock_error_g.value - [-,0] SKIP (run armour5 not played)
+T62c armour5.cases.case27.checks.no_mp_charged.value - [1,-] SKIP (run armour5 not played)
+T63a armour5.cases.case28.checks.detonated_loaded_pct.value - [50,-] SKIP (run armour5 not played)
+T63b armour5.cases.case28.checks.detonated_empty_pct.value - [-,0] SKIP (run armour5 not played)
+T64a armour5.cases.case29.checks.seconds_per_round.value - [3.9,4.1] SKIP (run armour5 not played)
+T64b armour5.cases.case29.checks.sources_drawn.value - [-,1] SKIP (run armour5 not played)
+T65a armour5.cases.case30.checks.screened_inside_pct.value - [-,0] SKIP (run armour5 not played)
+T65b armour5.cases.case30.checks.screened_crew_lost.value - [-,0] SKIP (run armour5 not played)
+T65c armour5.cases.case30.checks.landed_beside_pct.value - [80,-] SKIP (run armour5 not played)
+T65d armour5.cases.case30.checks.unscreened_m8_inside_pct.value - [30,-] SKIP (run armour5 not played)
+T65e armour5.cases.case30.checks.bullets_pass_screen.value - [1,-] SKIP (run armour5 not played)
+T66a armour5.cases.case31.checks.mg42_truck_pen_pct.value - [90,-] SKIP (run armour5 not played)
+T66b armour5.cases.case31.checks.mg42_stops_truck_s.value - [0,60] SKIP (run armour5 not played)
+T67a armour5.cases.case31.checks.pen_2cm_m3a1_front_100_pct.value - [80,-] SKIP (run armour5 not played)
+T67b armour5.cases.case31.checks.pen_37mm_pz4_front_pct.value - [-,5] SKIP (run armour5 not played)
+T67c armour5.cases.case31.checks.rifle_m8_front_pen_pct.value - [-,0] SKIP (run armour5 not played)
+T67d armour5.cases.case31.checks.stationary_sight_gain_pct.value - [30,-] SKIP (run armour5 not played)
+T68a armour5.cases.case32.checks.stranded_served_pct.value - [80,-] SKIP (run armour5 not played)
+T68b armour5.cases.case32.checks.rounds_gained_mean.value - [5,-] SKIP (run armour5 not played)
+T69a skirmish160.factions.germany.s8b_derived.recon_stops_per_match 12.306 [0,-] PASS
+T69b skirmish160.factions.usa.s8b_derived.recon_stops_per_match 7.55 [0,-] PASS
+T70a skirmish160_oos.factions.usa.s8a_derived.transported_per_match 2.494 [1,-] PASS
+T70b skirmish160_s201.factions.usa.s8a_derived.transported_per_match 2.594 [1,-] PASS
+T70c skirmish160_oos.factions.usa.s8a_derived.transport_trips_per_bought 199.5 [1,-] PASS
+T70d skirmish160_s201.factions.usa.s8a_derived.transport_trips_per_bought 415 [1,-] PASS
+T71a skirmish160.factions.germany.s8b_derived.ai_move_fails_per_match 2.856 [-,5] PASS
+T71b skirmish160.factions.usa.s8b_derived.ai_move_fails_per_match 1.738 [-,5] PASS
+T72a skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_sdkfz251_1_squad 8.75 [60,-] MISS
+T72b skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad 1.875 [60,-] MISS
+T73a armour5.cases.case33.checks.front_losses_pct_of_open.value - [-,30] SKIP (run armour5 not played)
+T73b armour5.cases.case33.checks.flank45_over_front.value - [3,-] SKIP (run armour5 not played)
+T73c armour5.cases.case33.checks.front_shield_stops_pct.value - [0,-] SKIP (run armour5 not played)
+T74a armour5.cases.case34.checks.fires_first_pct.value - [80,-] SKIP (run armour5 not played)
+T74b armour5.cases.case34.checks.disabled_pct.value - [60,-] SKIP (run armour5 not played)
+T74c armour5.cases.case34.checks.hits_per_disable.value - [0,-] SKIP (run armour5 not played)
+T74d armour5.cases.case35.checks.fires_first_pct.value - [0,-] SKIP (run armour5 not played)
+T74e armour5.cases.case35.checks.disabled_pct.value - [0,-] SKIP (run armour5 not played)
+T75a armour5.cases.case36.checks.he_at_crew_pct.value - [80,-] SKIP (run armour5 not played)
+T75b armour5.cases.case36.checks.silence_s_mean.value - [0,-] SKIP (run armour5 not played)
+T75c armour5.cases.case36.checks.gun_parts_hit_mean.value - [0,-] SKIP (run armour5 not played)
+T76a armour5.cases.case37.checks.sees_tank_in_arc_m.value - [400,-] SKIP (run armour5 not played)
+T76b armour5.cases.case37.checks.sees_tank_out_arc_m.value - [-,350] SKIP (run armour5 not played)
+T77a armour5.cases.case38.checks.slot_swap_s.value - [2.5,3.5] SKIP (run armour5 not played)
+T77b armour5.cases.case38.checks.neutral_after_s.value - [9,12] SKIP (run armour5 not played)
+T77c armour5.cases.case38.checks.enemy_serves_pct.value - [100,-] SKIP (run armour5 not played)
+T77d armour5.cases.case38.checks.own_crate_rounds.value - [-,0] SKIP (run armour5 not played)
+T77e armour5.cases.case38.checks.gun_faction_crate_rounds.value - [1,-] SKIP (run armour5 not played)
+T77f armour5.cases.case38.checks.left_rounds_fired_pct.value - [100,-] SKIP (run armour5 not played)
+T78a armour5.cases.case39.checks.emplace_s.value - [27,33] SKIP (run armour5 not played)
+T78b armour5.cases.case39.checks.pack_s.value - [15,21] SKIP (run armour5 not played)
+T78c armour5.cases.case39.checks.pushed_cm_s_full_crew.value - [30,40] SKIP (run armour5 not played)
+T78d armour5.cases.case39.checks.hitched_tow_cm_s.value - [400,-] SKIP (run armour5 not played)
+T78e armour5.cases.case39.checks.relay_trail_s.value - [12,18] SKIP (run armour5 not played)
+T78f armour5.cases.case39.checks.crew_ride_tow_pct.value - [100,-] SKIP (run armour5 not played)
+T79a armour5.cases.case40.checks.pit_carriage_hits_pct.value - [-,20] SKIP (run armour5 not played)
+T79b armour5.cases.case40.checks.pit_crew_losses_pct_of_open.value - [0,-] SKIP (run armour5 not played)
+T80a skirmish160.factions.germany.s9_derived.gun_fired_matches_pct 78.125 [60,-] PASS
+T80b skirmish160.factions.usa.s9_derived.gun_fired_matches_pct 75.625 [60,-] PASS
+T81a skirmish160.factions.germany.s9_derived.gun_in_cover_pct 82.749 [60,-] PASS
+T81b skirmish160.factions.usa.s9_derived.gun_in_cover_pct 87.838 [60,-] PASS
+T82a skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_pak40_squad 100 [0,-] PASS
+T82b skirmish160.factions.usa.s7_derived.bought_matches_pct.usa_57mm_m1_squad 100 [0,-] PASS
+T82c skirmish160.factions.germany.s9_derived.guns_bought_per_match 2.013 [0,-] PASS
+T82d skirmish160.factions.usa.s9_derived.guns_bought_per_match 1.888 [0,-] PASS
+T82e skirmish160.factions.germany.s7_derived.bought_matches_pct.ger_pak38_squad 0 [-,0] PASS
+T83a skirmish160.factions.germany.s9_derived.gun_mp_pct 17.753 [-,20] PASS
+T83b skirmish160.factions.usa.s9_derived.gun_mp_pct 19.013 [-,20] PASS
+T84a skirmish160.factions.germany.s9_derived.gun_rounds_per_match 5.95 [0,-] PASS
+T84b skirmish160.factions.usa.s9_derived.gun_rounds_per_match 10.313 [0,-] PASS
+T84c skirmish160.factions.germany.s9_derived.gun_ko_tanks_per_match 0.031 [0,-] PASS
+T84d skirmish160.factions.usa.s9_derived.gun_ko_tanks_per_match 0.038 [0,-] PASS
+T84e skirmish160.factions.germany.s7_derived.kos_per_bought.ger_pak40 0.058 [0,-] PASS
+T84f skirmish160.factions.usa.s7_derived.kos_per_bought.usa_57mm_m1 0.062 [0,-] PASS
+T85a skirmish160.factions.germany.s7_derived.kills_by_vehicle_pct.ger_pak40 3.881 [0,-] PASS
+T85c skirmish160.factions.germany.s7_derived.mp_share_pct.ger_pak40_squad 17.753 [0,-] PASS
+T85b skirmish160.factions.usa.s7_derived.kills_by_vehicle_pct.usa_57mm_m1 3.41 [0,-] PASS
+T85d skirmish160.factions.usa.s7_derived.mp_share_pct.usa_57mm_m1_squad 19.013 [0,-] PASS
+T85e skirmish160.factions.germany.s7_derived.mp_share_pct.ger_sdkfz11_squad 0 [0,-] PASS
+T85f skirmish160.factions.germany.s7_derived.mp_share_pct.ger_pak38_squad 0 [0,-] PASS
+T86a skirmish160.factions.germany.s9_derived.gun_crew_lost_per_match 1.531 [0,-] PASS
+T86b skirmish160.factions.usa.s9_derived.gun_crew_lost_per_match 1.406 [0,-] PASS
+T86c skirmish160.factions.germany.s9_derived.guns_neutral_per_match 0.175 [0,-] PASS
+T86d skirmish160.factions.usa.s9_derived.guns_neutral_per_match 0.094 [0,-] PASS
+T86e skirmish160.factions.germany.s9_derived.guns_captured_per_match 0.031 [0,-] PASS
+T86f skirmish160.factions.usa.s9_derived.guns_captured_per_match 0.044 [0,-] PASS
+T86g skirmish160.factions.germany.s9.tows_lost 18 [0,-] PASS
+T86h skirmish160.factions.usa.s9.tows_lost 24 [0,-] PASS
+T87a skirmish160.factions.germany.s9.gun_ai_fails 147 [0,-] PASS
+T87b skirmish160.factions.usa.s9.gun_ai_fails 93 [0,-] PASS
+T88a skirmish160.factions.germany.s9_derived.gun_armour_out_per_match 0.138 [0.55,-] MISS
+T88b skirmish160.factions.usa.s9_derived.gun_armour_out_per_match 0.244 [0.45,-] MISS (report)
+T88c skirmish160_oos.factions.germany.s9_derived.gun_armour_out_per_match 0.169 [0.55,-] MISS
+T88d skirmish160_oos.factions.usa.s9_derived.gun_armour_out_per_match 0.188 [0.45,-] MISS (report)
+T89a skirmish160.factions.germany.s10.works_started 1971 [0,-] PASS
+T89b skirmish160.factions.usa.s10.works_started 1852 [0,-] PASS
+T89c skirmish160_oos.factions.germany.s10.works_started 1918 [0,-] PASS
+T89d skirmish160_oos.factions.usa.s10.works_started 1796 [0,-] PASS
+T89e skirmish160_s201.factions.germany.s10.works_started 2003 [0,-] PASS
+T89f skirmish160_s201.factions.usa.s10.works_started 1918 [0,-] PASS
+T90a skirmish160.factions.germany.s10.new_cards_bought 328 [0,-] PASS
+T90b skirmish160.factions.usa.s10.new_cards_bought 1 [0,-] PASS
+T90c skirmish160_oos.factions.germany.s10.new_cards_bought 353 [0,-] PASS
+T90d skirmish160_oos.factions.usa.s10.new_cards_bought 3 [0,-] PASS
+T90e skirmish160_s201.factions.germany.s10.new_cards_bought 358 [0,-] PASS
+T90f skirmish160_s201.factions.usa.s10.new_cards_bought 1 [0,-] PASS
+T91a fortify10.s10a.wire.inside_speed_pct - [19,21] SKIP (run fortify10 not played)
+T91b fortify10.s10a.wire.cut_gap_speed_pct - [95,-] SKIP (run fortify10 not played)
+T91c fortify10.s10a.wire.blown_gap_speed_pct - [95,-] SKIP (run fortify10 not played)
+T92a fortify10.s10a.roof.survived_81mm_pct - [100,-] SKIP (run fortify10 not played)
+T92b fortify10.s10a.roof.sheltered_losses - [-,0] SKIP (run fortify10 not played)
+T92c fortify10.s10a.roof.broken_heavy_pct - [100,-] SKIP (run fortify10 not played)
+T93a fortify10.s10a.breach.defender_loss_pct - [75,-] SKIP (run fortify10 not played)
+T93b fortify10.s10a.breach.attacker_loss_pct - [-,50] SKIP (run fortify10 not played)
+T93c fortify10.s10a.breach.gap_opened_pct - [0,-] SKIP (run fortify10 not played)
+T93d fortify10.s10a.breach.control.defender_loss_pct - [0,-] SKIP (run fortify10 not played)
+T93e fortify10.s10a.breach.control.attacker_loss_pct - [0,-] SKIP (run fortify10 not played)
+T93f fortify10.s10a.breach_ai.gap_opened_pct - [30,-] SKIP (run fortify10 not played)
+T93g fortify10.s10a.breach_ai.attacker_loss_pct - [-,60] SKIP (run fortify10 not played)
+T93h fortify10.s10a.breach_ai.placed_pct - [30,-] SKIP (run fortify10 not played)
+T93i fortify10.s10a.breach_ai.defender_loss_pct - [0,-] SKIP (run fortify10 not played)
+T93j fortify10.s10a.breach_ai.control.attacker_loss_pct - [0,-] SKIP (run fortify10 not played)
+T94a skirmish160.factions.germany.s10_derived.matches_with_works_pct 100 [60,-] PASS
+T94b skirmish160.factions.usa.s10_derived.matches_with_works_pct 99.375 [60,-] PASS
+T94c skirmish160_oos.factions.germany.s10_derived.matches_with_works_pct 99.375 [60,-] PASS
+T94d skirmish160_oos.factions.usa.s10_derived.matches_with_works_pct 100 [60,-] PASS
+T95a skirmish160.factions.germany.s10_derived.matches_with_wire_pct 91.875 [60,-] PASS
+T95b skirmish160.factions.usa.s10_derived.matches_with_wire_pct 89.375 [60,-] PASS
+T95c skirmish160_oos.factions.germany.s10_derived.matches_with_wire_pct 94.375 [60,-] PASS
+T95d skirmish160_oos.factions.usa.s10_derived.matches_with_wire_pct 85 [60,-] PASS
+T96a skirmish160.factions.germany.s10_derived.breach_when_enemy_wire_pct 0 [60,-] MISS (report)
+T96b skirmish160.factions.usa.s10_derived.breach_when_enemy_wire_pct 0 [60,-] MISS (report)
+T96c skirmish160_oos.factions.germany.s10_derived.breach_when_enemy_wire_pct 0 [60,-] MISS (report)
+T96d skirmish160_oos.factions.usa.s10_derived.breach_when_enemy_wire_pct 0 [60,-] MISS (report)
+T96e skirmish160.factions.germany.s10_derived.matches_with_gap_pct 0 [0,-] PASS
+T96f skirmish160.factions.usa.s10_derived.matches_with_gap_pct 0 [0,-] PASS
+T96g skirmish160_oos.factions.germany.s10_derived.matches_with_gap_pct 0 [0,-] PASS
+T96h skirmish160_oos.factions.usa.s10_derived.matches_with_gap_pct 0 [0,-] PASS
+T97a skirmish160.factions.germany.s10_derived.builder_share_pct 19.126 [-,12] MISS
+T97b skirmish160.factions.usa.s10_derived.builder_share_pct 20.391 [-,12] MISS
+T97c skirmish160_oos.factions.germany.s10_derived.builder_share_pct 19.216 [-,12] MISS
+T97d skirmish160_oos.factions.usa.s10_derived.builder_share_pct 19.976 [-,12] MISS
+T98a skirmish160.factions.germany.s10_derived.materials_mp_pct 1.588 [-,3] PASS
+T98b skirmish160.factions.usa.s10_derived.materials_mp_pct 1.502 [-,3] PASS
+T98c skirmish160_oos.factions.germany.s10_derived.materials_mp_pct 1.637 [-,3] PASS
+T98d skirmish160_oos.factions.usa.s10_derived.materials_mp_pct 1.52 [-,3] PASS
+T98e skirmish160.factions.germany.s10_derived.materials_loaded_kg_per_match 875.125 [0,-] PASS
+T98f skirmish160.factions.usa.s10_derived.materials_loaded_kg_per_match 827.313 [0,-] PASS
+T98g skirmish160_oos.factions.germany.s10_derived.materials_loaded_kg_per_match 861.506 [0,-] PASS
+T98h skirmish160_oos.factions.usa.s10_derived.materials_loaded_kg_per_match 799.925 [0,-] PASS
+T99a skirmish160.factions.germany.s10_derived.fort_refused_per_match 0.2 [-,1] PASS
+T99b skirmish160.factions.usa.s10_derived.fort_refused_per_match 0.181 [-,1] PASS
+T99c skirmish160_oos.factions.germany.s10_derived.fort_refused_per_match 0.15 [-,1] PASS
+T99d skirmish160_oos.factions.usa.s10_derived.fort_refused_per_match 0.156 [-,1] PASS
+T100a skirmish160.factions.germany.s10_derived.new_cards_per_match 2.05 [0.3,-] PASS
+T100b skirmish160.factions.usa.s10_derived.new_cards_per_match 0.006 [0.3,-] MISS (report)
+T100c skirmish160_oos.factions.germany.s10_derived.new_cards_per_match 2.206 [0.3,-] PASS
+T100d skirmish160_oos.factions.usa.s10_derived.new_cards_per_match 0.019 [0.3,-] MISS (report)
+T101a skirmish160.factions.germany.s10_derived.works_per_match 4.256 [0,-] PASS
+T101b skirmish160.factions.usa.s10_derived.works_per_match 3.6 [0,-] PASS
+T101c skirmish160.factions.germany.s10_derived.wire_sections_per_match 31.438 [0,-] PASS
+T101d skirmish160.factions.usa.s10_derived.wire_sections_per_match 24.669 [0,-] PASS
+T101e skirmish160.factions.germany.s10_derived.breaches_started_per_match 0 [0,-] PASS
+T101f skirmish160.factions.usa.s10_derived.breaches_started_per_match 0 [0,-] PASS
+T101g skirmish160.factions.germany.s10_derived.breach_opened_pct 0 [0,-] PASS
+T101h skirmish160.factions.usa.s10_derived.breach_opened_pct 0 [0,-] PASS
+T101i skirmish160.factions.germany.s10_derived.men_lost_in_wire_per_match 0.013 [0,-] PASS
+T101j skirmish160.factions.usa.s10_derived.men_lost_in_wire_per_match 0.006 [0,-] PASS
+T101k skirmish160.factions.germany.s10_derived.materials_lost_kg_per_match 161.15 [0,-] PASS
+T101l skirmish160.factions.usa.s10_derived.materials_lost_kg_per_match 202.9 [0,-] PASS
+T101m skirmish160.factions.germany.s10_derived.hq_roofed_pct 86.875 [0,-] PASS
+T101n skirmish160.factions.usa.s10_derived.hq_roofed_pct 90.625 [0,-] PASS
+T101o skirmish160.factions.germany.s10_derived.shelter_moves_per_match 0.088 [0,-] PASS
+T101p skirmish160.factions.usa.s10_derived.shelter_moves_per_match 0.025 [0,-] PASS
+T101q skirmish160.factions.germany.s10_derived.wire_bypassed_per_match 1.4 [0,-] PASS
+T101r skirmish160.factions.usa.s10_derived.wire_bypassed_per_match 1.906 [0,-] PASS
+T101s skirmish160.factions.germany.s10_derived.material_runs_per_match 4.831 [0,-] PASS
+T101t skirmish160.factions.usa.s10_derived.material_runs_per_match 3.769 [0,-] PASS
+T102a fortify10.s10b.atmine.direct_immobilised_pct - [100,-] SKIP (run fortify10 not played)
+T102b fortify10.s10b.atmine.field_immobilised_pct - [75,-] SKIP (run fortify10 not played)
+T102c fortify10.s10b.atmine.field_knocked_out_pct - [0,-] SKIP (run fortify10 not played)
+T102d fortify10.s10b.atmine.infantry_triggered - [-,0] SKIP (run fortify10 not played)
+T102e fortify10.s10b.atmine.infantry_close_passes - [1,-] SKIP (run fortify10 not played)
+T103a fortify10.s10b.apmine.near_miss_triggered - [-,0] SKIP (run fortify10 not played)
+T103b fortify10.s10b.apmine.contact_triggered_pct - [100,-] SKIP (run fortify10 not played)
+T103c fortify10.s10b.apmine.vehicle_triggered - [-,0] SKIP (run fortify10 not played)
+T103d fortify10.s10b.apmine.crossing_losses_pct - [0,-] SKIP (run fortify10 not played)
+T104a fortify10.s10b.sweep.found_vs_expected_pts - [-,10] SKIP (run fortify10 not played)
+T104b fortify10.s10b.sweep.lifted_of_found_pct - [90,-] SKIP (run fortify10 not played)
+T104c fortify10.s10b.sweep.found_pct - [0,-] SKIP (run fortify10 not played)
+T104d fortify10.s10b.sweep.sweeper_losses - [0,-] SKIP (run fortify10 not played)
+T104e fortify10.s10b.sweep.bangalore_cleared_pct - [0,-] SKIP (run fortify10 not played)
+T105a fortify10.s10b.obstacle.hedgehog_crossed_pct - [-,0] SKIP (run fortify10 not played)
+T105b fortify10.s10b.obstacle.log_crossed_pct - [-,0] SKIP (run fortify10 not played)
+T105c fortify10.s10b.obstacle.infantry_speed_pct - [95,-] SKIP (run fortify10 not played)
+T105d fortify10.s10b.obstacle.tank_reached_pct - [0,-] SKIP (run fortify10 not played)
+T105e fortify10.s10b.obstacle.approached_pct - [100,-] SKIP (run fortify10 not played)
+T105f fortify10.s10b.obstacle.control_crossed_pct - [100,-] SKIP (run fortify10 not played)
+T106a fortify10.s10b.demolish.destroyed_pct - [100,-] SKIP (run fortify10 not played)
+T106b fortify10.s10b.demolish.gap_crossed_pct - [80,-] SKIP (run fortify10 not played)
+T106c fortify10.s10b.demolish.charge_laid_s - [0,-] SKIP (run fortify10 not played)
+T106d fortify10.s10b.demolish.approached_pct - [0,-] SKIP (run fortify10 not played)
+T107a fortify10.s10b.bunker.small_arms_hp_lost - [-,0] SKIP (run fortify10 not played)
+T107b fortify10.s10b.bunker.survived_81mm_x3_pct - [100,-] SKIP (run fortify10 not played)
+T107c fortify10.s10b.bunker.sheltered_losses - [-,0] SKIP (run fortify10 not played)
+T107d fortify10.s10b.bunker.slit_satchel_losses_pct - [40,-] SKIP (run fortify10 not played)
+T107e fortify10.s10b.bunker.roof_satchel_losses - [-,0] SKIP (run fortify10 not played)
+T107f fortify10.s10b.bunker.ap_shots_to_break - [0,-] SKIP (run fortify10 not played)
+T107g fortify10.s10b.bunker.mg_losses_pct - [0,-] SKIP (run fortify10 not played)
+T107h fortify10.s10b.bunker.control.mg_losses_pct - [0,-] SKIP (run fortify10 not played)
+T107k fortify10.s10b.bunker.slit_satchel_uphill_losses_pct - [0,-] SKIP (run fortify10 not played)
+T107l fortify10.s10b.bunker.back_satchel_losses_pct - [0,-] SKIP (run fortify10 not played)
+T107m fortify10.s10b.bunker.slit_charge_laid_pct - [100,-] SKIP (run fortify10 not played)
+T107i fortify10.s10b.bunker.control.small_arms_hp_lost - [1,-] SKIP (run fortify10 not played)
+T107j fortify10.s10b.bunker.control.open_mg_losses_pct - [1,-] SKIP (run fortify10 not played)
+T108a skirmish40_off.factions.germany.s10b.used 0 [-,0] PASS
+T108b skirmish40_off.factions.usa.s10b.used 0 [-,0] PASS
+T109a skirmish160.factions.germany.s10b_ai_derived.matches_with_mines_pct 98.125 [45,-] PASS; exposure 160 (min 40); control 0
+T109b skirmish160.factions.usa.s10b_ai_derived.matches_with_mines_pct 94.375 [45,-] PASS; exposure 160 (min 40); control 0
+T109c skirmish160_oos.factions.germany.s10b_ai_derived.matches_with_mines_pct 95 [45,-] PASS; exposure 160 (min 40); control 0
+T109d skirmish160_oos.factions.usa.s10b_ai_derived.matches_with_mines_pct 91.875 [45,-] PASS; exposure 160 (min 40); control 0
+T109e skirmish160.factions.germany.s10b_ai_derived.mines_laid_per_match 26.294 [10,-] PASS; exposure 160 (min 40); control 0
+T109f skirmish160.factions.usa.s10b_ai_derived.mines_laid_per_match 21.819 [10,-] PASS; exposure 160 (min 40); control 0
+T109g skirmish160_oos.factions.germany.s10b_ai_derived.mines_laid_per_match 24.269 [10,-] PASS; exposure 160 (min 40); control 0
+T109h skirmish160_oos.factions.usa.s10b_ai_derived.mines_laid_per_match 19.688 [10,-] PASS; exposure 160 (min 40); control 0
+T110a skirmish160.factions.germany.s10b_ai_derived.at_fields_per_match 0.313 [0.5,-] MISS; exposure 160 (min 40); control 0
+T110b skirmish160.factions.usa.s10b_ai_derived.at_fields_per_match 0.363 [0.5,-] MISS; exposure 160 (min 40); control 0
+T110c skirmish160_oos.factions.germany.s10b_ai_derived.at_fields_per_match 0.356 [0.5,-] MISS; exposure 160 (min 40); control 0
+T110d skirmish160_oos.factions.usa.s10b_ai_derived.at_fields_per_match 0.206 [0.5,-] MISS; exposure 160 (min 40); control 0
+T110e skirmish160.factions.germany.s10b_ai_derived.tanks_stopped_per_match 0.1 [0.1,-] UNEXPOSED; exposure 3.282 (min 5); control 0
+T110f skirmish160.factions.usa.s10b_ai_derived.tanks_stopped_per_match 0.025 [0.1,-] UNEXPOSED; exposure 0.893 (min 5); control 0
+T110g skirmish160_oos.factions.germany.s10b_ai_derived.tanks_stopped_per_match 0.05 [0.1,-] UNEXPOSED; exposure 1.201 (min 5); control 0
+T110h skirmish160_oos.factions.usa.s10b_ai_derived.tanks_stopped_per_match 0.031 [0.1,-] UNEXPOSED; exposure 0.68 (min 5); control 0
+T110i fortify10.s10b_ai.mines.tank_stopped_pct - [60,-] SKIP (run fortify10 not played)
+T110j fortify10.s10b_ai.mines.field_laid_pct - [90,-] SKIP (run fortify10 not played)
+T110k fortify10.s10b_ai.mines.tank_stopped_pct - [0,-] SKIP (run fortify10 not played)
+T111a skirmish160.factions.germany.s10b_ai_derived.sweep_when_wanted_pct 37.5 [50,-] MISS; exposure 24 (min 10); control null
+T111b skirmish160.factions.usa.s10b_ai_derived.sweep_when_wanted_pct 29.545 [50,-] MISS; exposure 44 (min 10); control null
+T111c skirmish160_oos.factions.germany.s10b_ai_derived.sweep_when_wanted_pct 33.333 [50,-] MISS; exposure 24 (min 10); control null
+T111d skirmish160_oos.factions.usa.s10b_ai_derived.sweep_when_wanted_pct 20 [50,-] MISS; exposure 40 (min 10); control null
+T111e skirmish160.factions.germany.s10b_ai_derived.mines_swept_per_match 0 [0,-] PASS; exposure 24 (min 10); control 0
+T111f skirmish160.factions.usa.s10b_ai_derived.mines_swept_per_match 0.038 [0,-] PASS; exposure 44 (min 10); control 0
+T111g skirmish160_oos.factions.germany.s10b_ai_derived.mines_swept_per_match 0.013 [0,-] PASS; exposure 24 (min 10); control 0
+T111h skirmish160_oos.factions.usa.s10b_ai_derived.mines_swept_per_match 0.025 [0,-] PASS; exposure 40 (min 10); control 0
+T111i fortify10.s10b_ai.sweep.lane_swept_pct - [80,-] SKIP (run fortify10 not played)
+T111j fortify10.s10b_ai.sweep.attacker_mine_losses - [-,1] SKIP (run fortify10 not played)
+T112a skirmish160.factions.germany.s10b_ai_derived.matches_with_obstacle_pct 16.25 [30,-] MISS; exposure 62 (min 20); control 0
+T112b skirmish160.factions.usa.s10b_ai_derived.matches_with_obstacle_pct 16.875 [30,-] MISS; exposure 51 (min 20); control 0
+T112c skirmish160_oos.factions.germany.s10b_ai_derived.matches_with_obstacle_pct 14.375 [30,-] MISS; exposure 58 (min 20); control 0
+T112d skirmish160_oos.factions.usa.s10b_ai_derived.matches_with_obstacle_pct 16.25 [30,-] MISS; exposure 53 (min 20); control 0
+T112e skirmish160.factions.germany.s10b_ai_derived.obstacles_per_match 0.369 [0,-] PASS; exposure 62 (min 20); control 0
+T112f skirmish160.factions.usa.s10b_ai_derived.obstacles_per_match 0.281 [0,-] PASS; exposure 51 (min 20); control 0
+T112g skirmish160_oos.factions.germany.s10b_ai_derived.obstacles_per_match 0.3 [0,-] PASS; exposure 58 (min 20); control 0
+T112h skirmish160_oos.factions.usa.s10b_ai_derived.obstacles_per_match 0.306 [0,-] PASS; exposure 53 (min 20); control 0
+T112i fortify10.s10b_ai.obstacle.barrier_built_pct - [80,-] SKIP (run fortify10 not played)
+T112j fortify10.s10b_ai.obstacle.enemy_time_in_arc_s - [0,-] SKIP (run fortify10 not played)
+T113a skirmish160.factions.germany.s10b_ai_derived.matches_with_bunker_pct 1.25 [10,-] MISS; exposure 129 (min 20); control 0
+T113b skirmish160.factions.usa.s10b_ai_derived.matches_with_bunker_pct 0 [0,-] PASS; exposure 114 (min 20); control 0
+T113c skirmish160_oos.factions.germany.s10b_ai_derived.matches_with_bunker_pct 1.25 [10,-] MISS; exposure 128 (min 20); control 0
+T113d skirmish160_oos.factions.usa.s10b_ai_derived.matches_with_bunker_pct 0 [0,-] PASS; exposure 111 (min 20); control 0
+T113e fortify10.s10b_ai.bunker.built_pct - [80,-] SKIP (run fortify10 not played)
+T113f fortify10.s10b_ai.bunker.manned_pct - [80,-] SKIP (run fortify10 not played)
+T113g fortify10.s10b_ai.bunker.us_built_pct - [0,-] SKIP (run fortify10 not played)
+T114a skirmish160.factions.germany.s10b_ai_derived.demolish_when_wanted_pct - [0,-] SKIP (no matches to measure)
+T114b skirmish160.factions.usa.s10b_ai_derived.demolish_when_wanted_pct - [0,-] SKIP (no matches to measure)
+T114c skirmish160_oos.factions.germany.s10b_ai_derived.demolish_when_wanted_pct - [0,-] SKIP (no matches to measure)
+T114d skirmish160_oos.factions.usa.s10b_ai_derived.demolish_when_wanted_pct - [0,-] SKIP (no matches to measure)
+T114e fortify10.s10b_ai.demolish.gap_opened_pct - [60,-] SKIP (run fortify10 not played)
+T114f fortify10.s10b_ai.demolish.tank_passed_pct - [60,-] SKIP (run fortify10 not played)
+T114g fortify10.s10b_ai.demolish.pieces_used - [0,-] SKIP (run fortify10 not played)
+T114h fortify10.s10b_ai.demolish.handover0.gap_opened_pct - [-,0] SKIP (run fortify10 not played)
+T115a skirmish160.factions.germany.s10b_ai_derived.own_side_mistakes 1 [-,0] MISS; exposure 967 (min 20); control fortify10.s10b_ai.obstacle.control.own_blocked - (not played)
+T115b skirmish160.factions.usa.s10b_ai_derived.own_side_mistakes 1 [-,0] MISS; exposure 950 (min 20); control fortify10.s10b_ai.obstacle.control.own_blocked - (not played)
+T115c skirmish160_oos.factions.germany.s10b_ai_derived.own_side_mistakes 6 [-,0] MISS; exposure 913 (min 20); control fortify10.s10b_ai.obstacle.control.own_blocked - (not played)
+T115d skirmish160_oos.factions.usa.s10b_ai_derived.own_side_mistakes 1 [-,0] MISS; exposure 903 (min 20); control fortify10.s10b_ai.obstacle.control.own_blocked - (not played)
+T115e fortify10.s10b_ai.obstacle.own_blocked - [-,0] SKIP (run fortify10 not played)
+T116a fortify10.s10b_ai.paths.tank_immobilised_pct - [-,10] SKIP (run fortify10 not played)
+T116b fortify10.s10b_ai.paths.foot_mine_losses_pct - [-,10] SKIP (run fortify10 not played)
+T116c skirmish160.factions.germany.s10b_ai_derived.lost_on_known_per_match 0 [0,-] PASS; exposure 94.375 (min 30); control 0
+T116d skirmish160.factions.usa.s10b_ai_derived.lost_on_known_per_match 0 [0,-] PASS; exposure 98.125 (min 30); control 0
+T117a skirmish160.factions.germany.s10b_ai_derived.s10b_materials_mp_pct 0.396 [-,3] PASS; exposure 967 (min 20); control 0.373
+T117b skirmish160.factions.usa.s10b_ai_derived.s10b_materials_mp_pct 0.347 [-,3] PASS; exposure 950 (min 20); control 0.334
+T117c skirmish160_oos.factions.germany.s10b_ai_derived.s10b_materials_mp_pct 0.386 [-,3] PASS; exposure 913 (min 20); control 0.373
+T117d skirmish160_oos.factions.usa.s10b_ai_derived.s10b_materials_mp_pct 0.328 [-,3] PASS; exposure 903 (min 20); control 0.334
+T117e skirmish160.factions.germany.s10_derived.builder_share_pct 19.126 [-,12] MISS (report); exposure 967 (min 20); control 18.97
+T117f skirmish160.factions.usa.s10_derived.builder_share_pct 20.391 [-,12] MISS (report); exposure 950 (min 20); control 20.324
+T117g skirmish160_oos.factions.germany.s10_derived.builder_share_pct 19.216 [-,12] MISS (report); exposure 913 (min 20); control 18.97
+T117h skirmish160_oos.factions.usa.s10_derived.builder_share_pct 19.976 [-,12] MISS (report); exposure 903 (min 20); control 20.324
+T118a skirmish160.factions.germany.s10b_ai_derived.refused_reorders 0 [-,0] PASS; exposure 197 (min 5); control 164
+T118b skirmish160.factions.usa.s10b_ai_derived.refused_reorders 0 [-,0] PASS; exposure 175 (min 5); control 92
+T118c skirmish160_oos.factions.germany.s10b_ai_derived.refused_reorders 0 [-,0] PASS; exposure 170 (min 5); control 164
+T118d skirmish160_oos.factions.usa.s10b_ai_derived.refused_reorders 0 [-,0] PASS; exposure 149 (min 5); control 92
+T118e skirmish160.factions.germany.s10b_ai_derived.jobs_overdue 0 [-,0] CONTROL-SAME; exposure 967 (min 20); control 0
+T118f skirmish160.factions.usa.s10b_ai_derived.jobs_overdue 0 [-,0] CONTROL-SAME; exposure 950 (min 20); control 0
+T118g skirmish160_oos.factions.germany.s10b_ai_derived.jobs_overdue 0 [-,0] CONTROL-SAME; exposure 913 (min 20); control 0
+T118h skirmish160_oos.factions.usa.s10b_ai_derived.jobs_overdue 0 [-,0] CONTROL-SAME; exposure 903 (min 20); control 0
+T119a skirmish160.factions.germany.s10c_derived.front_mines_share_pct 53.411 [40,-] PASS; exposure 83.75 (min 20); control 0
+T119b skirmish160.factions.usa.s10c_derived.front_mines_share_pct 37.353 [40,-] MISS; exposure 70 (min 20); control 0
+T119c skirmish160_oos.factions.germany.s10c_derived.front_mines_share_pct 55.447 [40,-] PASS; exposure 79.375 (min 20); control 0
+T119d skirmish160_oos.factions.usa.s10c_derived.front_mines_share_pct 43.81 [40,-] PASS; exposure 58.125 (min 20); control 0
+T120a skirmish160.factions.germany.s10c_derived.matches_mines_approached_pct 49.045 [30,-] PASS; exposure 98.125 (min 30); control 0
+T120b skirmish160.factions.usa.s10c_derived.matches_mines_approached_pct 30.464 [30,-] PASS; exposure 94.375 (min 30); control 0
+T120c skirmish160_oos.factions.germany.s10c_derived.matches_mines_approached_pct 47.368 [30,-] PASS; exposure 95 (min 30); control 0
+T120d skirmish160_oos.factions.usa.s10c_derived.matches_mines_approached_pct 35.374 [30,-] PASS; exposure 91.875 (min 30); control 0
+T121a skirmish160.factions.germany.s10c_derived.mines_set_off_per_match 0.781 [0.3,-] PASS; exposure 98.125 (min 30); control 0
+T121b skirmish160.factions.usa.s10c_derived.mines_set_off_per_match 0.319 [0.3,-] PASS; exposure 94.375 (min 30); control 0
+T121c skirmish160_oos.factions.germany.s10c_derived.mines_set_off_per_match 0.525 [0.3,-] PASS; exposure 95 (min 30); control 0
+T121d skirmish160_oos.factions.usa.s10c_derived.mines_set_off_per_match 0.281 [0.3,-] MISS; exposure 91.875 (min 30); control 0
+T122a skirmish160.factions.germany.s10c_derived.wire_seen_by_enemy_pct 47.619 [50,-] MISS; exposure 147 (min 40); control 0
+T122b skirmish160.factions.usa.s10c_derived.wire_seen_by_enemy_pct 34.965 [50,-] MISS; exposure 143 (min 40); control 0
+T122c skirmish160_oos.factions.germany.s10c_derived.wire_seen_by_enemy_pct 46.358 [50,-] MISS; exposure 151 (min 40); control 0
+T122d skirmish160_oos.factions.usa.s10c_derived.wire_seen_by_enemy_pct 35.294 [50,-] MISS; exposure 136 (min 40); control 0
+T123a skirmish160.factions.germany.s10_derived.breaches_started_per_match 0 [0.05,-] MISS (report); exposure 31.25 (min 30); control 0
+T123b skirmish160.factions.usa.s10_derived.breaches_started_per_match 0 [0.05,-] MISS (report); exposure 43.75 (min 30); control 0
+T123c skirmish160_oos.factions.germany.s10_derived.breaches_started_per_match 0 [0.05,-] MISS (report); exposure 30 (min 30); control 0
+T123d skirmish160_oos.factions.usa.s10_derived.breaches_started_per_match 0 [0.05,-] MISS (report); exposure 43.75 (min 30); control 0
+T124a skirmish160.factions.germany.s10c_derived.defence_job_fail_pct 9.617 [-,30] PASS; exposure 967 (min 20); control 1.923
+T124b skirmish160.factions.usa.s10c_derived.defence_job_fail_pct 9.789 [-,30] PASS; exposure 950 (min 20); control 5.882
+T124c skirmish160_oos.factions.germany.s10c_derived.defence_job_fail_pct 8.324 [-,30] PASS; exposure 913 (min 20); control 1.923
+T124d skirmish160_oos.factions.usa.s10c_derived.defence_job_fail_pct 8.638 [-,30] PASS; exposure 903 (min 20); control 5.882
+T125a skirmish160.factions.germany.s10c_derived.front_builders_lost_per_match 0.494 [-,0.5] PASS; exposure 6.775 (min 0.5); control 0
+T125b skirmish160.factions.usa.s10c_derived.front_builders_lost_per_match 0.656 [-,0.5] MISS (report); exposure 6.931 (min 0.5); control 0
+T125c skirmish160_oos.factions.germany.s10c_derived.front_builders_lost_per_match 0.65 [-,0.5] MISS (report); exposure 6.694 (min 0.5); control 0
+T125d skirmish160_oos.factions.usa.s10c_derived.front_builders_lost_per_match 0.713 [-,0.5] MISS (report); exposure 6.619 (min 0.5); control 0
+T126a skirmish160.factions.germany.s10b_ai_derived.demolish_wanted_matches 0 [8,-] MISS (report); exposure 0 (min 5); control 0
+T126b skirmish160.factions.usa.s10b_ai_derived.demolish_wanted_matches 0 [8,-] MISS (report); exposure 0 (min 5); control 0
+T126c skirmish160_oos.factions.germany.s10b_ai_derived.demolish_wanted_matches 0 [8,-] MISS (report); exposure 0.625 (min 5); control 0
+T126d skirmish160_oos.factions.usa.s10b_ai_derived.demolish_wanted_matches 0 [8,-] MISS (report); exposure 0 (min 5); control 0
+T127a skirmish160.factions.germany.s10b_ai_derived.at_exposure_s_per_match 3.282 [1,-] PASS; exposure 7.5 (min 5); control 0
+T127b skirmish160.factions.usa.s10b_ai_derived.at_exposure_s_per_match 0.893 [1,-] MISS (report); exposure 3.125 (min 5); control 0
+T127c skirmish160_oos.factions.germany.s10b_ai_derived.at_exposure_s_per_match 1.201 [1,-] PASS; exposure 9.375 (min 5); control 0
+T127d skirmish160_oos.factions.usa.s10b_ai_derived.at_exposure_s_per_match 0.68 [1,-] MISS (report); exposure 1.25 (min 5); control 0
+T128a fortify10.s11a1.gun_fm.ratio_pct - [200,-] SKIP (run fortify10 not played)
+T128b fortify10.s11a1.gun_fm.observed_miss_m - [-,15] SKIP (run fortify10 not played)
+T129a fortify10.s11a1.mask.m3_refused_pct - [100,-] SKIP (run fortify10 not played)
+T129b fortify10.s11a1.mask.leig_fired_pct - [100,-] SKIP (run fortify10 not played)
+T130a fortify10.s11a1.barrage.trench_vs_open_pct - [-,40] SKIP (run fortify10 not played)
+T130b fortify10.s11a1.barrage.trench_suppressed_pct - [0,-] SKIP (run fortify10 not played)
+T131a fortify10.s11a1.breach_prep.gap_opened_pct - [60,-] SKIP (run fortify10 not played)
+T131b fortify10.s11a1.breach_prep.placed_pct - [60,-] SKIP (run fortify10 not played)
+T131c fortify10.s11a1.breach_prep.attacker_loss_pct - [-,60] SKIP (run fortify10 not played)
+T131d fortify10.s11a1.breach_prep_gun.gap_opened_pct - [60,-] SKIP (run fortify10 not played)
+T132a skirmish160.factions.germany.s11a1_derived.gun_bought_matches_pct 100 [40,-] PASS; exposure 20.423 (min 10); control 0
+T132b skirmish160.factions.usa.s11a1_derived.gun_bought_matches_pct 100 [40,-] PASS; exposure 20.423 (min 10); control 0
+T132c skirmish160_oos.factions.germany.s11a1_derived.gun_bought_matches_pct 100 [40,-] PASS; exposure 19.486 (min 10); control 0
+T132d skirmish160_oos.factions.usa.s11a1_derived.gun_bought_matches_pct 100 [40,-] PASS; exposure 19.486 (min 10); control 0
+T133a skirmish160.factions.germany.s11a1_derived.gun_fired_matches_pct 97.5 [60,-] PASS; exposure 100 (min 40); control null
+T133b skirmish160.factions.usa.s11a1_derived.gun_fired_matches_pct 94.375 [60,-] PASS; exposure 100 (min 40); control null
+T133c skirmish160_oos.factions.germany.s11a1_derived.gun_fired_matches_pct 96.875 [60,-] PASS; exposure 100 (min 40); control null
+T133d skirmish160_oos.factions.usa.s11a1_derived.gun_fired_matches_pct 93.75 [60,-] PASS; exposure 100 (min 40); control null
+T134a skirmish160.factions.germany.s11a2_derived.gun_observed_or_cb_pct 87.801 [80,-] PASS; exposure 22.031 (min 4); control null
+T134b skirmish160.factions.usa.s11a2_derived.gun_observed_or_cb_pct 90.264 [80,-] PASS; exposure 13.481 (min 4); control null
+T134c skirmish160_oos.factions.germany.s11a2_derived.gun_observed_or_cb_pct 88.567 [80,-] PASS; exposure 20.063 (min 4); control null
+T134d skirmish160_oos.factions.usa.s11a2_derived.gun_observed_or_cb_pct 88.827 [80,-] PASS; exposure 12.306 (min 4); control null
+T135a skirmish160.factions.germany.s11a1_derived.gun_kill_share_pct 8.214 [-,10] PASS; exposure 22.031 (min 4); control 0
+T135b skirmish160.factions.usa.s11a1_derived.gun_kill_share_pct 4.921 [-,10] PASS; exposure 13.481 (min 4); control 0
+T135c skirmish160_oos.factions.germany.s11a1_derived.gun_kill_share_pct 8.505 [-,10] PASS; exposure 20.063 (min 4); control 0
+T135d skirmish160_oos.factions.usa.s11a1_derived.gun_kill_share_pct 4.667 [-,10] PASS; exposure 12.306 (min 4); control 0
+T136a skirmish160.factions.germany.s11a1_derived.gun_shell_mp_pct 5.49 [-,25] PASS; exposure 22.031 (min 4); control 0
+T136b skirmish160.factions.usa.s11a1_derived.gun_shell_mp_pct 6.272 [-,25] PASS; exposure 13.481 (min 4); control 0
+T136c skirmish160_oos.factions.germany.s11a1_derived.gun_shell_mp_pct 5.347 [-,25] PASS; exposure 20.063 (min 4); control 0
+T136d skirmish160_oos.factions.usa.s11a1_derived.gun_shell_mp_pct 5.818 [-,25] PASS; exposure 12.306 (min 4); control 0
+T137a skirmish160.factions.germany.s11a1_derived.near_own_bursts_per_match 0.1 [-,0] MISS (report); exposure 22.031 (min 4); control 0
+T137b skirmish160.factions.usa.s11a1_derived.near_own_bursts_per_match 0.113 [-,0] MISS (report); exposure 13.481 (min 4); control 0
+T137c skirmish160_oos.factions.germany.s11a1_derived.near_own_bursts_per_match 0.088 [-,0] MISS (report); exposure 20.063 (min 4); control 0
+T137d skirmish160_oos.factions.usa.s11a1_derived.near_own_bursts_per_match 0.031 [-,0] MISS (report); exposure 12.306 (min 4); control 0
+T137e skirmish40.factions.germany.s11a1_derived.gun_refused_total 0 [-,0] PASS; exposure 21.075 (min 4); control 0
+T137f skirmish40.factions.usa.s11a1_derived.gun_refused_total 0 [-,0] PASS; exposure 14.025 (min 4); control 0
+T138a skirmish160.factions.germany.s11a1_derived.prep_missions_per_match 0 [0.05,-] MISS (report); exposure 0 (min 0.05); control 0
+T138b skirmish160.factions.usa.s11a1_derived.prep_missions_per_match 0 [0.05,-] MISS (report); exposure 0 (min 0.05); control 0
+T138c skirmish160_oos.factions.germany.s11a1_derived.prep_missions_per_match 0 [0.05,-] MISS (report); exposure 0 (min 0.05); control 0
+T138d skirmish160_oos.factions.usa.s11a1_derived.prep_missions_per_match 0 [0.05,-] MISS (report); exposure 0 (min 0.05); control 0
+T138e skirmish160.factions.germany.s11a1_derived.fo_lost_per_match 0.088 [-,1] PASS; exposure 100 (min 30); control 0
+T138f skirmish160.factions.usa.s11a1_derived.fo_lost_per_match 0.019 [-,1] PASS; exposure 96.875 (min 30); control 0
+T139a fortify10.s11a2.ff.own_vs_enemy_pct - [50,-] SKIP (run fortify10 not played)
+T139b fortify10.s11a2.ff.own_loss_pct - [10,-] SKIP (run fortify10 not played)
+T140a fortify10.s11a2.cb.marked_pct - [100,-] SKIP (run fortify10 not played)
+T140b fortify10.s11a2.cb.mean_error_pct - [3,12] SKIP (run fortify10 not played)
+T140d fortify10.s11a2.cb.worst_error_pct - [-,15] SKIP (run fortify10 not played)
+T140c fortify10.s11a2.cb.last_error_m - [-,45] SKIP (run fortify10 not played)
+T141a fortify10.s11a2.cb.answer.near_burst_pct - [10,-] SKIP (run fortify10 not played)
+T141b fortify10.s11a2.cb.answer.crew_loss_pct - [0,-] SKIP (run fortify10 not played)
+T142a fortify10.s11a2.ff_lift.clean_runs_pct - [90,-] SKIP (run fortify10 not played)
+T142b fortify10.s11a2.ff_lift.lifted_pct - [90,-] SKIP (run fortify10 not played)
+T142c fortify10.s11a2.ff_lift.control.clean_runs_pct - [-,50] SKIP (run fortify10 not played)
+T143a skirmish160.factions.germany.s11a2_derived.ff_kills_per_match 0.569 [-,1] PASS; exposure 58.638 (min 20); control 0
+T143b skirmish160.factions.usa.s11a2_derived.ff_kills_per_match 0.306 [-,1] PASS; exposure 48.375 (min 20); control 0
+T143c skirmish160_oos.factions.germany.s11a2_derived.ff_kills_per_match 0.55 [-,1] PASS; exposure 52.269 (min 20); control 0
+T143d skirmish160_oos.factions.usa.s11a2_derived.ff_kills_per_match 0.375 [-,1] PASS; exposure 45.531 (min 20); control 0
+T144a skirmish160.factions.germany.s11a2_derived.ff_lifts_per_match 3.931 [0.05,-] PASS; exposure 58.638 (min 20); control 0
+T144b skirmish160.factions.usa.s11a2_derived.ff_lifts_per_match 2.556 [0.05,-] PASS; exposure 48.375 (min 20); control 0
+T144c skirmish160_oos.factions.germany.s11a2_derived.ff_lifts_per_match 3.644 [0.05,-] PASS; exposure 52.269 (min 20); control 0
+T144d skirmish160_oos.factions.usa.s11a2_derived.ff_lifts_per_match 2.456 [0.05,-] PASS; exposure 45.531 (min 20); control 0
+T145a skirmish40.factions.germany.s5b_derived.bombs_per_match 59.35 [0,-] PASS; exposure 21.135 (min 10); control 70.825
+T145b skirmish40.factions.usa.s5b_derived.bombs_per_match 53.95 [0,-] PASS; exposure 21.135 (min 10); control 66.95
+T145c skirmish40.factions.germany.s11a2_derived.ff_kills_per_match 0.275 [0,-] PASS; exposure 59.35 (min 20); control 1.175
+T145d skirmish40.factions.usa.s11a2_derived.ff_kills_per_match 0.225 [0,-] PASS; exposure 53.95 (min 20); control 0.375
+T146a skirmish160.factions.germany.s11a2_derived.cb_marks_per_match 0.925 [0.3,-] PASS; exposure 13.481 (min 4); control 0
+T146b skirmish160.factions.usa.s11a2_derived.cb_marks_per_match 0.956 [0.3,-] PASS; exposure 22.031 (min 4); control 0
+T146c skirmish160_oos.factions.germany.s11a2_derived.cb_marks_per_match 0.913 [0.3,-] PASS; exposure 12.306 (min 4); control 0
+T146d skirmish160_oos.factions.usa.s11a2_derived.cb_marks_per_match 0.963 [0.3,-] PASS; exposure 20.063 (min 4); control 0
+T147a skirmish160.factions.germany.s11a2_derived.cb_fired_matches_pct 70.946 [50,-] PASS; exposure 0.925 (min 0.3); control null
+T147b skirmish160.factions.usa.s11a2_derived.cb_fired_matches_pct 91.503 [50,-] PASS; exposure 0.956 (min 0.3); control null
+T147c skirmish160_oos.factions.germany.s11a2_derived.cb_fired_matches_pct 69.178 [50,-] PASS; exposure 0.913 (min 0.3); control null
+T147d skirmish160_oos.factions.usa.s11a2_derived.cb_fired_matches_pct 87.662 [50,-] PASS; exposure 0.963 (min 0.3); control null
+T148a skirmish160.factions.germany.s11a2_derived.cb_near_burst_pct 49.356 [0,-] PASS; exposure 5.938 (min 1); control null
+T148b skirmish160.factions.usa.s11a2_derived.cb_near_burst_pct 43.75 [0,-] PASS; exposure 8.125 (min 1); control null
+T148c skirmish160.factions.germany.s11a2_derived.cb_shell_share_pct 26.95 [-,50] PASS; exposure 22.031 (min 4); control 0
+T148d skirmish160.factions.usa.s11a2_derived.cb_shell_share_pct 60.269 [-,50] MISS (report); exposure 13.481 (min 4); control 0
+T148e skirmish160.factions.germany.s11a2_derived.cb_masked_per_match 0 [0,-] PASS; exposure 0.925 (min 0.3); control 0
+T148f skirmish160.factions.usa.s11a2_derived.cb_masked_per_match 0.019 [0,-] PASS; exposure 0.956 (min 0.3); control 0
+T149a skirmish160.factions.germany.s11b_derived.cb_alt_holds_per_match 48.331 [0,-] PASS; exposure 0.925 (min 0.3); control 0
+T149b skirmish160.factions.usa.s11b_derived.cb_alt_holds_per_match 148.719 [0,-] PASS; exposure 0.956 (min 0.3); control 0
+T149c skirmish40.factions.germany.s11a2_derived.cb_shell_share_pct 36.062 [-,50] PASS; exposure 21.075 (min 4); control 31.164
+T149d skirmish40.factions.usa.s11a2_derived.cb_shell_share_pct 54.724 [-,50] MISS (report); exposure 14.025 (min 4); control 71.987
+T150a fortify10.s11b.how_mask.lefh_masked_pct - [100,-] SKIP (run fortify10 not played)
+T150b fortify10.s11b.how_mask.m2a1_masked_pct - [100,-] SKIP (run fortify10 not played)
+T151a fortify10.s11b.how_barrage.lefh.trench_vs_open_pct - [-,40] SKIP (run fortify10 not played)
+T151b fortify10.s11b.how_barrage.m2a1.trench_vs_open_pct - [-,40] SKIP (run fortify10 not played)
+T152a fortify10.s11b.rg.germany.fired_per_run - [1,-] SKIP (run fortify10 not played)
+T152b fortify10.s11b.rg.usa.fired_per_run - [1,-] SKIP (run fortify10 not played)
+T152c fortify10.s11b.rg.germany.trench_vs_open_pct - [0,-] SKIP (run fortify10 not played)
+T152d fortify10.s11b.rg.usa.trench_vs_open_pct - [0,-] SKIP (run fortify10 not played)
+T153a skirmish160.factions.germany.s11b_derived.how_bought_matches_pct 96.25 [20,-] PASS; exposure 90 (min 50); control 0
+T153b skirmish160.factions.usa.s11b_derived.how_bought_matches_pct 93.125 [20,-] PASS; exposure 90 (min 50); control 0
+T153c skirmish160_oos.factions.germany.s11b_derived.how_bought_matches_pct 93.125 [20,-] PASS; exposure 86.875 (min 50); control 0
+T153d skirmish160_oos.factions.usa.s11b_derived.how_bought_matches_pct 93.125 [20,-] PASS; exposure 86.875 (min 50); control 0
+T154a skirmish160.factions.germany.s11b_derived.how_fired_matches_pct 88.961 [50,-] PASS; exposure 96.25 (min 10); control null
+T154b skirmish160.factions.usa.s11b_derived.how_fired_matches_pct 89.262 [50,-] PASS; exposure 93.125 (min 10); control null
+T154c skirmish160.factions.germany.s11b_derived.how_kill_share_pct 3.45 [-,10] PASS; exposure 6.719 (min 1); control 0
+T154d skirmish160.factions.usa.s11b_derived.how_kill_share_pct 1.444 [-,10] PASS; exposure 4.888 (min 1); control 0
+T155a skirmish160.factions.germany.s11b_derived.light_bought_matches_pct 0 [30,-] MISS (report); exposure 20.423 (min 10); control 0
+T155b skirmish160.factions.usa.s11b_derived.light_bought_matches_pct 0 [30,-] MISS (report); exposure 20.423 (min 10); control 0
+T155c skirmish160.factions.germany.s11b_derived.light_buy_share_pct 0 [15,50] MISS (report); exposure 58.638 (min 20); control 0
+T155d skirmish160.factions.usa.s11b_derived.light_buy_share_pct 0 [15,50] MISS (report); exposure 48.375 (min 20); control 0
+T156a skirmish160.factions.germany.s11b_derived.rg_fired_per_match 6.55 [1,-] PASS; exposure 20.423 (min 10); control 0
+T156b skirmish160.factions.usa.s11b_derived.rg_fired_per_match 8.419 [1,-] PASS; exposure 20.423 (min 10); control 0
+T156c skirmish160.factions.germany.s11b_derived.rg_kill_share_pct 5.967 [-,5] MISS (report); exposure 6.55 (min 1); control 0
+T156d skirmish160.factions.usa.s11b_derived.rg_kill_share_pct 8.678 [-,5] MISS (report); exposure 8.419 (min 1); control 0
+T157a skirmish40.he_share_pct.mean 36.824 [-,26.3] MISS (report); exposure 21.135 (min 10); control 32.567
+T157b skirmish40.wins.germany_pct 57.5 [35,65] PASS; exposure 21.135 (min 10); control 57.5
+T157c skirmish40_rg_off.wins.germany_pct 50 [35,65] PASS; exposure 8.875 (min 1); control 57.5
+T158a skirmish40.factions.usa.s7_derived.bought_matches_pct.usa_m10_squad 7.5 [0,-] PASS; exposure 92.5 (min 10); control 2.5
+T158b skirmish40.factions.usa.s7_derived.bought_matches_pct.usa_m3a1_squad 2.5 [0,-] PASS; exposure 92.5 (min 10); control 2.5
+T158c skirmish40.factions.germany.s7_derived.bought_matches_pct.ger_stug3_g_squad 17.5 [0,-] PASS; exposure 95 (min 10); control 17.5
+T158d skirmish40.factions.germany.s7_derived.bought_matches_pct.ger_pz4_h_squad 80 [0,-] PASS; exposure 95 (min 10); control 90
+T159 fortify10.s12.trench.vs_base_pct - [-,110] SKIP (run fortify10 not played)
+T160 fortify10.s12.trench.head_300.out_pct - [0,-] SKIP (run fortify10 not played)
+T161 fortify10.s12.prone.vs_base_pct - [-,100] SKIP (run fortify10 not played)
+T162a skirmish40.factions.germany.s12.downed 2678 [0,-] PASS; exposure 3078 (min 0); control 0
+T162b skirmish40.factions.usa.s12.downed 2067 [0,-] PASS; exposure 2557 (min 0); control 0
+T163a skirmish40.factions.germany.s12.bled_out 1309 [0,-] PASS; exposure 2678 (min 0); control 0
+T163b skirmish40.factions.usa.s12.bled_out 966 [0,-] PASS; exposure 2067 (min 0); control 0
+T164 fortify10.s12.mg300.outright_pct - [20,45] SKIP (run fortify10 not played)
+T165 fortify10.s12.medics.drop_pts - [30,-] SKIP (run fortify10 not played)
+T166a fortify10.s12.post.treated_pct - [100,-] SKIP (run fortify10 not played)
+T166b fortify10.s12.post.hp - [75,75] SKIP (run fortify10 not played)
+T167 fortify10.s12.post.second_pct - [-,0] SKIP (run fortify10 not played)
+T168a fortify10.s12.refund.paid_ok_pct - [100,-] SKIP (run fortify10 not played)
+T168b fortify10.s12.refund.unpaid_mp - [-,0] SKIP (run fortify10 not played)
+T168c fortify10.s12.refund.repeat_mp - [-,0] SKIP (run fortify10 not played)
+T169a fortify10.s12.reinforce.filled_pct - [100,-] SKIP (run fortify10 not played)
+T169b fortify10.s12.reinforce.rifle_kit_pct - [100,-] SKIP (run fortify10 not played)
+T170a skirmish160.factions.germany.s12_derived.medic_matches_pct 86.875 [60,-] PASS; exposure 160 (min 20); control 0
+T170b skirmish160.factions.usa.s12_derived.medic_matches_pct 86.875 [60,-] PASS; exposure 160 (min 20); control 0
+T170c skirmish160_oos.factions.germany.s12_derived.medic_matches_pct 86.25 [60,-] PASS; exposure 160 (min 20); control 0
+T170d skirmish160_oos.factions.usa.s12_derived.medic_matches_pct 86.25 [60,-] PASS; exposure 160 (min 20); control 0
+T171a skirmish160.factions.germany.s12_derived.downed_per_match 65.569 [0,-] PASS; exposure 160 (min 0); control 0
+T171b skirmish160.factions.usa.s12_derived.downed_per_match 50.525 [0,-] PASS; exposure 160 (min 0); control 0
+T172a skirmish160.factions.germany.s12_derived.stabilised_pct 3.289 [0,-] PASS; exposure 160 (min 0); control null
+T172b skirmish160.factions.usa.s12_derived.stabilised_pct 3.909 [0,-] PASS; exposure 160 (min 0); control null
+T173a skirmish160.factions.germany.s12_derived.bled_out_pct 50.281 [0,-] PASS; exposure 160 (min 0); control null
+T173b skirmish160.factions.usa.s12_derived.bled_out_pct 47.551 [0,-] PASS; exposure 160 (min 0); control null
+T171c skirmish160.factions.germany.s12_derived.treated_per_match 0.588 [0,-] PASS; exposure 160 (min 0); control 0
+T171d skirmish160.factions.usa.s12_derived.treated_per_match 0.369 [0,-] PASS; exposure 160 (min 0); control 0
+T171e skirmish160.factions.germany.s12_derived.evac_per_match 0.513 [0,-] PASS; exposure 160 (min 0); control 0
+T171f skirmish160.factions.usa.s12_derived.evac_per_match 0.45 [0,-] PASS; exposure 160 (min 0); control 0
+T171g skirmish160.factions.germany.s12_derived.reinforced_men_per_match 14.688 [0,-] PASS; exposure 160 (min 0); control 0
+T171h skirmish160.factions.usa.s12_derived.reinforced_men_per_match 10.525 [0,-] PASS; exposure 160 (min 0); control 0
+T171i skirmish160.factions.germany.s12_derived.pop_downed_peak.mean 14.075 [0,-] PASS; exposure 160 (min 0); control 0
+T171j skirmish160.factions.usa.s12_derived.pop_downed_peak.mean 11.531 [0,-] PASS; exposure 160 (min 0); control 0
+T171k skirmish160.factions.germany.s12_derived.outright_kill_pct 15.368 [0,-] PASS; exposure 160 (min 0); control null
+T171l skirmish160.factions.usa.s12_derived.outright_kill_pct 21.886 [0,-] PASS; exposure 160 (min 0); control null
+T171m skirmish160.factions.germany.s12_derived.losses_per_match 75.119 [0,-] PASS; exposure 160 (min 0); control 76.85
+T171n skirmish160.factions.usa.s12_derived.losses_per_match 63.075 [0,-] PASS; exposure 160 (min 0); control 64.95
+T171o skirmish160.factions.germany.s12_derived.team_matches_pct 100 [0,-] PASS; exposure 160 (min 0); control 0
+T171p skirmish160.factions.usa.s12_derived.team_matches_pct 100 [0,-] PASS; exposure 160 (min 0); control 0
+T174a skirmish40_s13_off.wins.germany_pct 55 [0,100] PASS; exposure 40 (min 40); control 57.5
+T174b skirmish160.wins.germany_pct 50.625 [35,65] CONTROL-SAME; exposure 160 (min 100); control 55
+T174c skirmish160_oos.wins.germany_pct 41.25 [35,65] CONTROL-SAME; exposure 160 (min 100); control 55
+T174d skirmish160_s201.wins.germany_pct 50 [35,65] CONTROL-SAME; exposure 160 (min 100); control 55
+T176a skirmish160.wins.no_winner 0 [-,0] CONTROL-SAME; exposure 160 (min 100); control 0
+T176b skirmish160.length_min.median 20.423 [15,30] CONTROL-SAME; exposure 160 (min 100); control 21.116
+T179a skirmish160.factions.germany.s13.cards.ger_panther_g_squad.matches_pct 28.75 [25,-] PASS; exposure 160 (min 100); control 0
+T179b skirmish160.factions.usa.s13.cards.usa_m36_squad.matches_pct 41.25 [25,-] PASS; exposure 160 (min 100); control 0
+T179c skirmish160.factions.germany.s13.cards.ger_tiger_1_squad.matches_pct 14.375 [10,-] PASS; exposure 160 (min 100); control 0
+T179d skirmish160.factions.usa.s13.cards.usa_m4a3e2_squad.matches_pct 16.25 [10,-] PASS; exposure 160 (min 100); control 0
+T179e skirmish160.factions.usa.s13.cards.usa_m4a3_76w_squad.matches_pct 0 [0,-] PASS; exposure 160 (min 100); control 0
+T180a skirmish160.factions.germany.s5a.fired.9 515 [0,-] PASS; exposure 160 (min 100); control 138
+T180b skirmish160.factions.usa.s5a.fired.9 0 [0,-] PASS; exposure 160 (min 100); control 0
+T181a skirmish160.factions.germany.s13.kills.ger_panther_g 53 [0,-] PASS; exposure 160 (min 100); control 0
+T181b skirmish160.factions.germany.s13.kills.ger_tiger_1 40 [0,-] PASS; exposure 160 (min 100); control 0
+T181c skirmish160.factions.usa.s13.kills.usa_m4a3_76w 0 [0,-] PASS; exposure 160 (min 100); control 0
+T181d skirmish160.factions.usa.s13.kills.usa_m36 117 [0,-] PASS; exposure 160 (min 100); control 0
+T181e skirmish160.factions.usa.s13.kills.usa_m4a3e2 60 [0,-] PASS; exposure 160 (min 100); control 0
+T182a skirmish160.factions.germany.s13.push_turnbacks 0 [0,-] PASS; exposure 160 (min 100); control 0
+T182b skirmish160.factions.usa.s13.push_turnbacks 0 [0,-] PASS; exposure 160 (min 100); control 0
+T184a armour5.cases.case42.checks.glacis_pens.value - [-,0] SKIP (run armour5 not played)
+T184b armour5.cases.case43.checks.glacis_pens.value - [-,0] SKIP (run armour5 not played)
+T184c armour5.cases.case44.checks.tiger_wins.value - [6,-] SKIP (run armour5 not played)
+T184d armour5.cases.case45.checks.jumbo_survives.value - [6,-] SKIP (run armour5 not played)
+T184e armour5.cases.case46.checks.panther_out.value - [7,-] SKIP (run armour5 not played)
+372 pass, 97 miss (hard: 49), 4 unexposed, 9 control-same, 208 skipped

@@ -121,9 +121,19 @@ affordable S13 card. Measured at `3b3387f` (480): Germany **42.08 %** (43.12 / 4
 main), no match without a winner. Heavies bought (160 set): Panther 23.75 %, Tiger 7.5 %, Jumbo about 40 %, M36 0 (T179a-c miss:
 S13-F2). Armour duels 41-46 pass except 45 (old PzGr 40 unclassed: S13-F1). CI run 50 green.
 
+## B3 third balance pass (branch `claude/project-thread-aj1tww`; log `B3-log.md`; contract `B3-run-2.md`)
+
+Run 1 (screen) found no TOML set under the HE cap; the B3 code stage added `[ai.arty] direct_in_budget` (SAVE 32). Run 2
+confirmed C_all on fresh blocks 3101-3280 (320 pairs: HE share of casualties 27.90 -> 26.05, Germany +0.0, M36 0 -> 37-44 %,
+Jumbo 12.5 / 15.6 %) and applied it at `f4e610b`: `[ai.arty] shell_mp_max_pct` 6 and `direct_in_budget` 1, M17 burst 160 cm /
+64, M36 `ai_heavy`, PzGr 40 `apcr` and 3-inch M62 `apcbc` (T184d hard). Judge (`target/b3-final`, 480): Germany **47.29 %**
+(50.62 / 41.25 / 50.00; +5.2 on `target/s13-on`), no winner 0, HE share of casualties 27.40 / 24.96 / 26.70 (about 26.35
+pooled: T8a and T8c miss, T8b passes), T179a-d pass; 4 hard rows that pass at `s13-on` miss (T50b, T119b, T121d, T122c).
+By the plan's judge rule (J1, J4) the apply is to be reverted: the orchestrator's call.
+
 ## Known gaps
 
-- Balance: Germany 42.08 % at `3b3387f` (S13, branch; 42.71 % on main with S12); HE share sits on the cap 26.3, which stops most levers that help Germany (B2-12). T88 USA open (S9b-1 (A)). T5c, T50e known noise. Not verified: the eliminated-player path; a per-field hash audit beyond the named tests.
+- Balance: Germany 47.29 % at `f4e610b` (B3 run 2 applied, branch; judge J1/J4 miss, revert pending the orchestrator; 42.08 % at `3b3387f` before it, 42.71 % on main with S12); HE share of casualties about 26.35 pooled against the cap 26.3 (T8a 27.40 misses, B2-12). T88 USA open (S9b-1 (A)). T5c, T50e known noise. Not verified: the eliminated-player path; a per-field hash audit beyond the named tests.
 - Net loopback refuses `DropCrates` at a non-truck. Structures not selectable in the HUD (S6-18). No presenter pass for guns (S11a1-9).
 
 ## Roadmap position

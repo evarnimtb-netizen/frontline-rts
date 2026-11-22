@@ -1,0 +1,32 @@
+target/s13-on: Germany pooled 42.08 % of 480; sets 43.12 / 40.00 / 43.12; no winner 0; HE share 38.1 / 38.3 / 37.9; HE share of casualties 28.0 / 28.3 / 28.2 (T8 cap 26.3)
+  germany: gun tank KOs 7 (0.015 per match), guns bought 2.01, rounds 6.3, crew lost 1.46, re-sites 0.71, AI fails 0.90 per match
+    armour put out of action by its guns per match: 0.17 / 0.19 / 0.15 (mean 0.17)
+    fired in 81 / 86 / 85 % of matches (floor 60), in cover 81 / 85 / 86 % (floor 60), gun MP 18.4 / 18.1 / 18.8 % (cap 20), vehicle kills 34.7 / 37.6 / 34.4 % (cap 30)
+    bought in matches: ger_sdkfz251_1 7 %, ger_stug3_g 19 %, ger_pz4_h 69 %; MP share: ger_sdkfz251_1 0.3, ger_stug3_g 1.6, ger_pz4_h 7.0
+    fort: works in 100 / 100 / 100 %, wire in 97 / 96 / 94 %, gaps in 0 / 0 / 0 %, breach when enemy wire 0 / 0 / 0 %; builders 18.9 / 18.7 / 19.0 % of infantry plans (cap 12)
+    s10b-ai: mines in 96 / 95 / 95 %, obstacles in 24 / 19 / 26 %, bunker in 2 / 2 / 1 % of matches (done when started 14 / 8 / 3 %), sweep when wanted 5 / 26 / 33 %; own-side mistakes 3 / 8 / 2 (must be 0)
+    s12: medic matches 86 / 92 / 89 % (floor 60), downs stabilised 3.5 / 3.4 / 3.3 %, bled out 48.6 / 49.2 / 50.5 %, downs per match 65.6 / 66.8 / 66.2, replacements per match 15.5 / 15.6 / 15.0, HE share of its casualties 35.8 / 36.5 / 34.6 %
+  usa: gun tank KOs 10 (0.021 per match), guns bought 1.89, rounds 8.9, crew lost 1.31, re-sites 0.36, AI fails 0.59 per match
+    armour put out of action by its guns per match: 0.13 / 0.14 / 0.16 (mean 0.14)
+    fired in 71 / 74 / 72 % of matches (floor 60), in cover 88 / 83 / 86 % (floor 60), gun MP 18.9 / 19.1 / 19.4 % (cap 20), vehicle kills 29.3 / 28.8 / 28.6 % (cap 30)
+    bought in matches: usa_m3a1 2 %, usa_m10 6 %, usa_m4a3_75 45 %; MP share: usa_m3a1 0.1, usa_m10 0.5, usa_m4a3_75 4.1
+    fort: works in 100 / 100 / 100 %, wire in 88 / 89 / 89 %, gaps in 0 / 0 / 0 %, breach when enemy wire 0 / 0 / 0 %; builders 19.9 / 20.4 / 20.5 % of infantry plans (cap 12)
+    s10b-ai: mines in 91 / 92 / 92 %, obstacles in 17 / 19 / 14 %, bunker in 0 / 0 / 0 % of matches (done when started 0 / 0 / 0 %), sweep when wanted 22 / 24 / 30 %; own-side mistakes 1 / 2 / 1 (must be 0)
+    s12: medic matches 85 / 84 / 82 % (floor 60), downs stabilised 3.9 / 4.3 / 3.7 %, bled out 46.1 / 45.5 / 47.4 %, downs per match 49.7 / 50.0 / 51.2, replacements per match 10.1 / 9.7 / 10.7, HE share of its casualties 22.9 / 23.4 / 24.2 %
+  GATE pool=42.08 nowin=0 fired_min=71.2 cover_min=81.1 gun_mp_max=19.4 out_germany=0.169 out_usa=0.144
+target/b3-final: Germany pooled 47.29 % of 480 (+5.2 against the baseline); sets 50.62 / 41.25 / 50.00; no winner 0; HE share 36.8 / 34.7 / 36.2; HE share of casualties 27.4 / 25.0 / 26.7 (T8 cap 26.3)
+  germany: gun tank KOs 14 (0.029 per match), guns bought 2.00, rounds 5.9, crew lost 1.33, re-sites 0.72, AI fails 0.93 per match
+    armour put out of action by its guns per match: 0.14 / 0.17 / 0.18 (mean 0.16)
+    fired in 78 / 81 / 76 % of matches (floor 60), in cover 83 / 83 / 82 % (floor 60), gun MP 17.8 / 18.0 / 18.2 % (cap 20), vehicle kills 35.2 / 34.1 / 33.9 % (cap 30)
+    bought in matches: ger_sdkfz251_1 6 %, ger_stug3_g 15 %, ger_pz4_h 72 %; MP share: ger_sdkfz251_1 0.3, ger_stug3_g 1.2, ger_pz4_h 7.2
+    fort: works in 100 / 99 / 100 %, wire in 92 / 94 / 97 %, gaps in 0 / 0 / 0 %, breach when enemy wire 0 / 0 / 0 %; builders 19.1 / 19.2 / 19.1 % of infantry plans (cap 12)
+    s10b-ai: mines in 98 / 95 / 96 %, obstacles in 16 / 14 / 21 %, bunker in 1 / 1 / 2 % of matches (done when started 5 / 6 / 8 %), sweep when wanted 38 / 33 / 19 %; own-side mistakes 1 / 6 / 1 (must be 0)
+    s12: medic matches 87 / 86 / 86 % (floor 60), downs stabilised 3.3 / 3.1 / 3.6 %, bled out 50.3 / 51.1 / 51.6 %, downs per match 65.6 / 63.3 / 64.5, replacements per match 14.7 / 13.4 / 13.4, HE share of its casualties 35.9 / 32.1 / 34.3 %
+  usa: gun tank KOs 18 (0.037 per match), guns bought 1.85, rounds 9.2, crew lost 1.30, re-sites 0.31, AI fails 0.56 per match
+    armour put out of action by its guns per match: 0.24 / 0.19 / 0.24 (mean 0.23)
+    fired in 76 / 68 / 78 % of matches (floor 60), in cover 88 / 87 / 86 % (floor 60), gun MP 19.0 / 18.9 / 19.2 % (cap 20), vehicle kills 27.1 / 26.3 / 27.2 % (cap 30)
+    bought in matches: usa_m3a1 1 %, usa_m10 5 %, usa_m4a3_75 44 %; MP share: usa_m3a1 0.1, usa_m10 0.4, usa_m4a3_75 4.1
+    fort: works in 99 / 100 / 100 %, wire in 89 / 85 / 89 %, gaps in 0 / 0 / 0 %, breach when enemy wire 0 / 0 / 0 %; builders 20.4 / 20.0 / 20.8 % of infantry plans (cap 12)
+    s10b-ai: mines in 94 / 92 / 92 %, obstacles in 17 / 16 / 16 %, bunker in 0 / 0 / 0 % of matches (done when started 0 / 0 / 0 %), sweep when wanted 30 / 20 / 15 %; own-side mistakes 1 / 1 / 0 (must be 0)
+    s12: medic matches 87 / 86 / 91 % (floor 60), downs stabilised 3.9 / 4.9 / 4.3 %, bled out 47.6 / 47.7 / 48.1 %, downs per match 50.5 / 47.7 / 50.0, replacements per match 10.5 / 9.4 / 10.2, HE share of its casualties 21.3 / 19.8 / 21.0 %
+  GATE pool=47.29 nowin=0 fired_min=68.1 cover_min=81.9 gun_mp_max=19.2 out_germany=0.163 out_usa=0.225

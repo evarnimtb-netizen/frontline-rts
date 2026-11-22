@@ -541,6 +541,8 @@ Plan `docs/slices/B3-balance.md` 9; stage contract `B3-run-1.md`; levers `docs/s
   casualties (each man counted once, by the class that first took him out) reads 29.97 % on the 40 set against the hard
   cap 26.3 (25.5 with every S12 switch off). The double count found in Review was removed; the rest is a real shift.
   Decided 2026-11-21: ship S12 with T8 as a known miss; the next balance pass starts with it. Germany 20/40, length unchanged.
+  B3 run 2 (2026-11-22, `f4e610b`, `B3-log.md`): the shell budget 6 % with direct fire inside it and the M17 cut read
+  26.05 on 320 fresh pairs, but the 480 judge reads 27.40 / 24.96 / 26.70 (about 26.35 pooled; T8a misses): still open.
 - S12-17 Stabilisation stays at about 3 % of downs (medics reach few men); not tuned (features first). Read it in the balance pass.
 
 ## S13 open items (2026-11-21; branch `claude/project-thread-aj1tww`, log `docs/slices/S13-log.md`)
@@ -549,9 +551,12 @@ Plan `docs/slices/B3-balance.md` 9; stage contract `B3-run-1.md`; levers `docs/s
   survives 3 hits in 0 of 10 runs (bound >= 6). Every hit is one of the PaK's 2 old PzGr 40 (APCR without `slope_class`:
   S13-1 (A) classes only the new rounds), which the cosine law lets through the 101.6 mm @ 47 glacis. Not fixed in S13 (no old
   round is classed); `targets/S13.toml` T184d is `kind = "report"` with this note until the balance pass decides S13-1b.
+  B3 run 2 (`f4e610b`, B3-4 (A)): PzGr 40 `apcr`, 3-inch M62 `apcbc`, T184d hard again; armour test case 45 in `B3-log.md`.
 - S13-F2 **T155 (T179a-d) misses on the 40 set: tuning, not a defect** (diagnosis in `docs/slices/S13-log.md`, Fix stage). The
   M36 and 76 W lose the vehicle slot's pick to the Sherman and the M10 by roster order at equal weight and zero buys; the AI
   rarely makes a second vehicle-slot buy. Smallest lever set for the owner there.
+  B3 run 2 (`f4e610b`, B3-3 (A)): M36 `ai_heavy`; the 480 judge reads T179a-d pass (Panther 28.75, M36 41.25, Tiger 14.4,
+  Jumbo 16.25 % of skirmish160 matches); the 76 W stays at 0 (T179e floor 0).
 
 ## Planned work queue
 

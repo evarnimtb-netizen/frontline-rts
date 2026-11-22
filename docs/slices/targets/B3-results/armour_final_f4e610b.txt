@@ -1,0 +1,4 @@
+armour-test pass: base False, lever True
+  case45 jumbo_survives: (0.0, False) -> (8.0, True)
+  case9 trench_casualties_40_of_open: (27.5, True) -> (21.951, True)
+2 check(s) moved of 143
