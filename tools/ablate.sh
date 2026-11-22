@@ -71,6 +71,14 @@
 # [wounds] head_damage_pct 300. s12_off is the neutrality control there
 # (NEUTRAL_BASE default target/s12-base40, the 40 set of base 1209c99).
 #
+# S13 (docs/slices/S13-heavy-wave.md 3.2, 3.6, 5): with ABLATIONS=docs/
+# slices/targets/S13-ablations every *.toml there is an override (s13_off,
+# o1_off, heavy_off, push_off), and a file may hold only the S13 switches
+# at 0 ([armour] obliquity; [vehicles.gunnery] special_min_pct;
+# [ai.armour] heavy_buy, heavy_overwatch, push_limit). s13_off is the
+# neutrality control there (NEUTRAL_BASE default target/s13-base40, the
+# 40 set of base 6f7bda0).
+#
 # Env: ABLATIONS=DIR (default docs/slices/targets/S10b-ai-ablations; the
 # S10a set is docs/slices/targets/S10a-ai-ablations), TARGETS (default the
 # slice file beside DIR: S10b-ai.toml / S10a-ai.toml), NEUTRAL_BASE (default
@@ -117,6 +125,13 @@ if [ "$(basename "$DIR")" = S12-ablations ]; then
     MODE=s12
     NEUTRAL_NAME=s12_off
     NEUTRAL_BASE=${NEUTRAL_BASE:-target/s12-base40}
+fi
+if [ "$(basename "$DIR")" = S13-ablations ]; then
+    # The S10c rules for listing and applying, the S13 key list.
+    S10C=1
+    MODE=s13
+    NEUTRAL_NAME=s13_off
+    NEUTRAL_BASE=${NEUTRAL_BASE:-target/s13-base40}
 fi
 NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10b-verify}
 DRY=0
@@ -201,6 +216,13 @@ elif mode == "s12":
     switches = {
         "wounds": {"enabled": {0, 1}, "reinforce": {0, 1}, "head_damage_pct": {300}},
         "ai.medic": {"buy": {0, 1}, "field": {0, 1}, "post": {0, 1}, "reinforce": {0, 1}},
+    }
+elif mode == "s13":
+    # S13: its switches, at 0 only.
+    switches = {
+        "armour": {"obliquity": {0}},
+        "vehicles.gunnery": {"special_min_pct": {0}},
+        "ai.armour": {"heavy_buy": {0}, "heavy_overwatch": {0}, "push_limit": {0}},
     }
 elif mode == "s11a2":
     # S11a2: its four switches, at 0 only.

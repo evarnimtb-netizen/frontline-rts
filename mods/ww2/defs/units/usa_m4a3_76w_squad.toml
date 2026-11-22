@@ -1,0 +1,11 @@
+# The M4A3 (76) W Sherman as a buyable squad of one (S13a Build B): the 76 mm Sherman, cap 3. Cost, pop, cooldown and unlock are on the vehicle def (docs/slices/S13-heavy-wave.md 4.3).
+# ai_weight 100 (S13-ai Build C, plan 4.3); tag heavy_wave: [ai.armour] heavy_buy 0 keeps the AI from buying it.
+id = "ww2:usa_m4a3_76w_squad"
+name = "M4A3 (76) W Sherman"
+short_name = "76 Sherman"
+faction = "ww2:usa"
+tags = ["vehicle", "heavy_wave"]
+vehicle = "ww2:usa_m4a3_76w"
+ai_weight = 100
+max_alive = 3
+available_from = "1944-07"

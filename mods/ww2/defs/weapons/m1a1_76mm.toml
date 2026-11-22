@@ -1,0 +1,26 @@
+# 76 mm Gun M1A1: the M4A3 (76) W's main gun (S13a).
+id = "ww2:m1a1_76mm"
+name = "76 mm M1A1"
+class = "cannon"
+# Engagement range (m), as the tank guns.
+range_m = 600
+# A direct hit on a man (AP kills him and stops).
+damage = 300
+rounds_per_min = 10
+magazine = 1
+# Hand-loaded fixed round (ms; the crew rules scale it). As the 3-inch M7's
+# 6.5 s, which fires the same M62 projectile (S13 review V6); no figure
+# read (verify).
+reload_ms = 6500
+# 2.5 mrad stationary (urad), as the tank guns.
+spread_urad = 2500
+# Nominal; each round flies at its own.
+muzzle_velocity_m_s = 792
+suppression = 30
+# The muzzle blast gives it away: 300 % sight range for 3 s.
+fire_reveal_pct = 300
+fire_reveal_ms = 3000
+sources = [
+  "Wikipedia, 76 mm gun M1",
+  "Hunnicutt, Sherman (1978)",
+]

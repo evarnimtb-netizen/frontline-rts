@@ -91,7 +91,14 @@ impl Armoury {
             .next()
             .map(|r| r.vehicles.gunnery.clone())
             .expect("a mod with vehicles has rules");
-        let tables = frontline_sim::ArmourTables::new(&ammo, &vehicles, &[], &gunnery);
+        // S13: rule O1's `[armour]` (absent: the S13 values).
+        let o1 = defs
+            .rules
+            .values()
+            .next()
+            .and_then(|r| r.armour.clone())
+            .unwrap_or_default();
+        let tables = frontline_sim::ArmourTables::new(&ammo, &vehicles, &[], &gunnery, &o1);
         Armoury {
             ns: defs
                 .manifest
@@ -230,6 +237,9 @@ pub struct ShotReport {
     /// Angle between the round's path and the plate normal.
     pub impact_deg: f64,
     pub impact_cos: f64,
+    /// S13 rule O1: the cosine on the penetration side (`impact_cos` for a
+    /// round without a `slope_class`).
+    pub impact_cos_pen: f64,
     pub effective_mm: f64,
     /// Normalised penetration at this range, and its ±7 % band.
     pub pen0_mm: f64,
@@ -291,6 +301,7 @@ pub fn shot(
         track_mm: f(s.extra),
         impact_deg: c.clamp(-1.0, 1.0).acos().to_degrees(),
         impact_cos: c,
+        impact_cos_pen: f(s.c_pen),
         effective_mm: if c > 0.0 {
             f(s.effective)
         } else {
@@ -316,6 +327,12 @@ pub fn shot_text(r: &ShotReport) -> String {
     } else {
         "-".to_owned()
     };
+    // S13 rule O1: the penetration side's cosine when it differs.
+    let o1 = if r.impact_cos_pen != r.impact_cos {
+        format!(", O1 cos {:.3}", r.impact_cos_pen)
+    } else {
+        String::new()
+    };
     let verdict = match r.result.as_str() {
         "borderline" => format!("borderline: {:.1} % penetrate", r.pen_pct),
         "penetrates" => "penetrates (100 %)".to_owned(),
@@ -329,7 +346,7 @@ pub fn shot_text(r: &ShotReport) -> String {
         "ammo     {} ({}, {}, {:.0} m/s)\n\
          target   {} {}: {} mm at {}°{track}\n\
          shot     {} m, horizontal {}°, descent {:.2}°\n\
-         impact   {:.1}° from the normal (cos {:.3}), effective {effective}\n\
+         impact   {:.1}° from the normal (cos {:.3}{o1}), effective {effective}\n\
          pen      {:.1} mm at 0° (band {:.1} .. {:.1})\n\
          result   {verdict}",
         r.ammo,

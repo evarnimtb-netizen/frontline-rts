@@ -203,7 +203,13 @@ fn s12_medic_cards_resolve() {
         }
         assert!(!t.feeds.is_empty(), "{id}: counted");
         let f = &s.factions[t.faction as usize];
-        assert_eq!(*f.roster.last().unwrap(), k, "{id} is appended last");
+        // S13a appends two German and three US vehicle cards after the medic team.
+        let after = if f.id == "ww2:germany" { 2 } else { 3 };
+        assert_eq!(
+            f.roster[f.roster.len() - 1 - after],
+            k,
+            "{id} is appended last"
+        );
     }
     let mut bad = s.clone();
     let k = bad.squad_type_index("ww2:usa_aid_men").unwrap() as usize;

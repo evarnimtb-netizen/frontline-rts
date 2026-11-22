@@ -192,6 +192,7 @@ pub struct ArmourTestReport {
 }
 
 /// Loaded defs and the run options.
+mod s13;
 mod s8b;
 mod s9;
 
@@ -345,13 +346,27 @@ fn case1(env: &Env) -> Result<CaseReport> {
                 for h in got {
                     st.hits += 1;
                     // The rule replayed, and the CLI's closed form.
-                    let again =
-                        armour::penetrates(h.pen0, h.c, h.thickness, h.extra, h.cos_ricochet, h.v);
+                    // S13: the record carries O1's `c_pen` (`c` unclassed).
+                    let again = armour::penetrates_at(
+                        h.pen0,
+                        h.c,
+                        h.c_pen,
+                        h.thickness,
+                        h.extra,
+                        h.cos_ricochet,
+                        h.v,
+                    );
                     if again != h.result {
                         st.mismatches += 1;
                     }
-                    let ppm =
-                        armour::pen_chance_ppm(h.pen0, h.c, h.thickness, h.extra, h.cos_ricochet);
+                    let ppm = armour::pen_chance_ppm_at(
+                        h.pen0,
+                        h.c,
+                        h.c_pen,
+                        h.thickness,
+                        h.extra,
+                        h.cos_ricochet,
+                    );
                     let wrong = (ppm == PPM && h.result != PenResult::Penetration)
                         || (ppm == 0 && h.result == PenResult::Penetration);
                     if wrong {
@@ -3869,7 +3884,7 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         crossings: args.crossings,
         verbose: args.verbose,
     };
-    let all: [(u32, CaseFn); 40] = [
+    let all: [(u32, CaseFn); 46] = [
         (1, case1),
         (2, case2),
         (3, case3),
@@ -3910,6 +3925,12 @@ pub fn armour_test(args: &ArmourArgs) -> Result<ArmourTestReport> {
         (38, s9::case38),
         (39, s9::case39),
         (40, s9::case40),
+        (41, s13::case41),
+        (42, s13::case42),
+        (43, s13::case43),
+        (44, s13::case44),
+        (45, s13::case45),
+        (46, s13::case46),
     ];
     let start = Instant::now();
     let mut cases = Vec::new();

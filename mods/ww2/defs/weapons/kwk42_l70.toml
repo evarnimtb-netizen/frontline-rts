@@ -1,0 +1,25 @@
+# 7.5 cm KwK 42 L/70: the Panther G's main gun (S13a, docs/slices/S13-heavy-wave.md 4.1).
+id = "ww2:kwk42_l70"
+name = "7.5 cm KwK 42 L/70"
+class = "cannon"
+# Engagement range (m), as the tank guns.
+range_m = 600
+# A direct hit on a man (AP kills him and stops).
+damage = 300
+rounds_per_min = 10
+magazine = 1
+# Hand-loaded fixed round (ms; the crew rules scale it). A starting value
+# near the KwK 40's 6.5 s, set by round mass; no figure read (verify).
+reload_ms = 6500
+# 2.5 mrad stationary (urad), as the tank guns.
+spread_urad = 2500
+# Nominal; each round flies at its own.
+muzzle_velocity_m_s = 935
+suppression = 30
+# The muzzle blast gives it away: 300 % sight range for 3 s.
+fire_reveal_pct = 300
+fire_reveal_ms = 3000
+sources = [
+  "Wikipedia, 7.5 cm KwK 42",
+  "Jentz, Germany's Panther Tank",
+]

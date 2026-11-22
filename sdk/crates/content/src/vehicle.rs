@@ -323,6 +323,16 @@ pub enum AmmoMechanism {
 }
 
 impl AmmoMechanism {
+    /// S13 (O1): rounds that may carry a `slope_class`. An exhaustive
+    /// allow-list (stage A check N2): a new mechanism must be placed here
+    /// before it compiles, so it is neither accepted nor refused silently.
+    pub const fn takes_slope_class(self) -> bool {
+        match self {
+            AmmoMechanism::Ap | AmmoMechanism::Aphe => true,
+            AmmoMechanism::He | AmmoMechanism::Heat => false,
+        }
+    }
+
     /// Rounds that pierce armour (a core and spall after penetration).
     pub const fn penetrator(self) -> bool {
         !matches!(self, AmmoMechanism::He)
@@ -341,6 +351,21 @@ impl AmmoMechanism {
             AmmoMechanism::Heat => "heat",
         }
     }
+}
+
+/// S13 (docs/slices/S13-heavy-wave.md 3, rule O1): how a round's
+/// penetration falls with the plate's slope beyond the cosine law, by
+/// plate-to-calibre ratio. A round without a class keeps the cosine law.
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum SlopeClass {
+    /// Full-calibre AP, APC, APCBC: `c^1.5` at full weight.
+    Apcbc = 0,
+    /// APCR, HVAP: `c^2` at full weight.
+    Apcr = 1,
 }
 
 /// S11a1: the highest main-gun elevation a vehicle def may name (deg).
@@ -657,6 +682,11 @@ pub struct VehicleDef {
     /// S9: what this vehicle can tow.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tow: Option<TowDef>,
+    /// S13 H2 (docs/slices/S13-heavy-wave.md 5): the AI keeps this vehicle
+    /// on overwatch like a TD or assault gun (with `[ai.armour]
+    /// heavy_overwatch` on). Default false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ai_overwatch: bool,
 }
 
 /// S9: one `[[service]]` entry (`count` slots at the same spot).
@@ -1256,6 +1286,10 @@ pub struct AmmoDef {
     /// weapon's only feed.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub rare: bool,
+    /// S13 (rule O1): `apcbc` or `apcr`; absent: the cosine law. Not on
+    /// `he` or `heat` rounds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slope_class: Option<SlopeClass>,
 }
 
 /// The core (or HEAT jet) after penetration.
@@ -2660,6 +2694,18 @@ impl AmmoDef {
             out.push(Issue::new("name", "must not be empty"));
         }
         range(&mut out, "caliber_mm", self.caliber_mm as i64, 1, 500);
+        if self.slope_class.is_some() && !self.mechanism.takes_slope_class() {
+            out.push(
+                Issue::new(
+                    "slope_class",
+                    format!(
+                        "only `ap` and `aphe` rounds have a slope class, not `{}`",
+                        self.mechanism.name()
+                    ),
+                )
+                .with_hint("remove slope_class"),
+            );
+        }
         range(
             &mut out,
             "muzzle_velocity_m_s",
@@ -3176,6 +3222,8 @@ pub struct VehicleSetup {
     pub optic_sight_pct: u32,
     /// S9: what it can tow.
     pub tow: Option<TowSetup>,
+    /// S13 H2: the AI's overwatch habit (see [`VehicleDef::ai_overwatch`]).
+    pub ai_overwatch: bool,
 }
 
 /// S8b: a resolved `[supply]` (see [`TruckSupplyDef`]). Arrays are by
@@ -3279,6 +3327,80 @@ impl VehicleSetup {
         best
     }
 
+    /// S13 (review V3): the indices of the hull body's armour boxes. For a
+    /// tank, TD or assault gun every hull-frame box but the upper box (a
+    /// casemate's stays out, as a turret does); for every other role box 0
+    /// alone. Every pre-S13 def gets `[0]`; the S13 defs `hull` and
+    /// `superstructure`.
+    pub fn hull_body_boxes(&self) -> Vec<usize> {
+        if !matches!(
+            self.role,
+            VehicleRole::Tank | VehicleRole::AssaultGun | VehicleRole::TankDestroyer
+        ) || self.boxes.is_empty()
+        {
+            return vec![0];
+        }
+        let up = self.upper_box();
+        self.boxes
+            .iter()
+            .enumerate()
+            .filter(|&(k, b)| k == 0 || (b.frame == Frame::Hull && k != up))
+            .map(|(k, _)| k)
+            .collect()
+    }
+
+    /// S13 (review V2): the hull body's glacis box: of
+    /// [`Self::hull_body_boxes`] the one whose top is highest (ties: the
+    /// lower index). Box 0 for every pre-S13 def; the superstructure for
+    /// the S13 defs (its front plate is the glacis the presenter draws).
+    pub fn glacis_box(&self) -> usize {
+        let top = |k: usize| {
+            let b = &self.boxes[k].bounds;
+            b.center.z.0 as i64 + b.half.z.0 as i64
+        };
+        let mut best = 0;
+        for k in self.hull_body_boxes() {
+            if k < self.boxes.len() && (best >= self.boxes.len() || top(k) > top(best)) {
+                best = k;
+            }
+        }
+        best
+    }
+
+    /// S13 (review V3): the bounds of [`Self::hull_body_boxes`]: `hull`
+    /// (box 0) exactly when that is box 0 alone.
+    pub fn hull_body(&self) -> BoxSetup {
+        let ks = self.hull_body_boxes();
+        if ks.len() <= 1 {
+            return self.hull;
+        }
+        let body = ks.iter().map(|&k| &self.boxes[k]);
+        let mut lo = [i64::MAX; 3];
+        let mut hi = [i64::MIN; 3];
+        for b in body {
+            let c = [b.bounds.center.x, b.bounds.center.y, b.bounds.center.z];
+            let h = [b.bounds.half.x, b.bounds.half.y, b.bounds.half.z];
+            for a in 0..3 {
+                lo[a] = lo[a].min(c[a].0 as i64 - h[a].0 as i64);
+                hi[a] = hi[a].max(c[a].0 as i64 + h[a].0 as i64);
+            }
+        }
+        let ctr = |a: usize| Fixed(((lo[a] + hi[a]).div_euclid(2)) as i32);
+        let half = |a: usize| Fixed(((hi[a] - lo[a] + 1) / 2) as i32);
+        BoxSetup {
+            center: FixedVec3 {
+                x: ctr(0),
+                y: ctr(1),
+                z: ctr(2),
+            },
+            half: FixedVec3 {
+                x: half(0),
+                y: half(1),
+                z: half(2),
+            },
+        }
+    }
+
     /// The seat for `role`, if this vehicle has one.
     pub fn seat(&self, role: SeatRole) -> Option<&SeatSetup> {
         self.seats.iter().find(|s| s.role == role)
@@ -3341,6 +3463,8 @@ pub struct AmmoSetup {
     pub supply: Option<crate::setup::SupplySetup>,
     /// S5a: a rare round (D3).
     pub rare: bool,
+    /// S13: rule O1's class (`None`: the cosine law).
+    pub slope_class: Option<SlopeClass>,
 }
 
 // ------------------------------------------------------------- lowering --
@@ -3387,6 +3511,7 @@ pub(crate) fn lower_ammo(a: &AmmoDef) -> AmmoSetup {
             g: sp.g,
         }),
         rare: a.rare,
+        slope_class: a.slope_class,
     }
 }
 
@@ -3654,6 +3779,7 @@ pub(crate) fn lower_vehicle(
             max_kg: t.max_kg,
             towed_speed_pct: t.towed_speed_pct,
         }),
+        ai_overwatch: v.ai_overwatch,
         shields: v
             .shields
             .iter()
@@ -3849,6 +3975,10 @@ pub(crate) fn check_ammo(a: &AmmoSetup) -> Option<&'static str> {
         || a.blast.is_some() != a.mechanism.bursts()
     {
         return Some("ammo.mechanism: parts disagree with the mechanism");
+    }
+    // S13 (O1): a slope class only on a full-bore or sub-calibre AP round.
+    if a.slope_class.is_some() && !a.mechanism.takes_slope_class() {
+        return Some("ammo.slope_class: only on `ap` and `aphe` rounds");
     }
     if let Some(c) = &a.core
         && (c.damage > 1000 || !fx_in(c.length, 0, 5) || !(1..=3).contains(&c.max_boxes))

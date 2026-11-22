@@ -319,6 +319,9 @@ pub struct HitRecord {
     pub track_band: bool,
     pub pen0: Fx,
     pub c: Fx,
+    /// S13 rule O1: the cosine on the penetration side (`c` for a round
+    /// without a `slope_class`).
+    pub c_pen: Fx,
     pub thickness: Fx,
     pub extra: Fx,
     pub cos_ricochet: Fx,
@@ -518,6 +521,13 @@ impl MatchState {
         // S8a: small arms (no round, no blast) take their weapon's table.
         let small = ammo.is_none() && weapon.he.is_none();
         let range = (hit.point - origin).length();
+        // S13 rule O1: the round's table (its class), None for small arms
+        // and mortar shells (the cosine law).
+        let o1 = match (ammo, self.armour.ammo.get(e.ammo as usize)) {
+            (Some(_), Some(t)) => Some(t),
+            _ => None,
+        };
+        let c_pen = |c: Fx, t: Fx| o1.map_or(c, |a| a.c_pen(c, t));
         let (pen0, cos_ric) = match (ammo, self.armour.ammo.get(e.ammo as usize)) {
             (Some(_), Some(t)) => (t.pen0(range), t.cos_ricochet),
             _ if small => (
@@ -541,7 +551,7 @@ impl MatchState {
             let c = armour::impact_cos(dir, hit.normal);
             let mut rng = RngStream::new(seed, tick, SimId(e.slot), Purpose::SHIELD);
             let var = armour::variation(&mut rng);
-            out.result = armour::penetrates(pen0, c, t, Fx::ZERO, cos_ric, var);
+            out.result = armour::penetrates_at(pen0, c, c_pen(c, t), t, Fx::ZERO, cos_ric, var);
             if out.result != PenResult::Penetration || bursts {
                 out.result = PenResult::NonPenetration.min(out.result);
                 return Some(out);
@@ -572,7 +582,8 @@ impl MatchState {
         let extra = if band { plates.track_mm } else { Fx::ZERO };
         let mut rng = RngStream::new(seed, tick, SimId(e.slot), Purpose::PENETRATION);
         let var = armour::variation(&mut rng);
-        out.result = armour::penetrates(pen0, c, plate.thickness, extra, cos_ric, var);
+        let cp = c_pen(c, plate.thickness);
+        out.result = armour::penetrates_at(pen0, c, cp, plate.thickness, extra, cos_ric, var);
         if self.hit_log.is_some() && e.ammo != NO_AMMO {
             out.record = Some(HitRecord {
                 tick,
@@ -584,6 +595,7 @@ impl MatchState {
                 track_band: band,
                 pen0,
                 c,
+                c_pen: cp,
                 thickness: plate.thickness,
                 extra,
                 cos_ricochet: cos_ric,

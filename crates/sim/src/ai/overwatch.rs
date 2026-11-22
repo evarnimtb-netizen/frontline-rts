@@ -1,5 +1,6 @@
 //! S7 AI habits for assault guns and tank destroyers
-//! (`docs/slices/S7-casemate-td.md` 6): overwatch instead of leading
+//! (`docs/slices/S7-casemate-td.md` 6; S13-ai H2: and tanks whose def has
+//! `ai_overwatch`, with `[ai.armour] heavy_overwatch` 1): overwatch instead of leading
 //! assaults, open-topped vehicles backing off from infantry, and infantry
 //! throwing into stopped open-topped enemy vehicles. Every distance is
 //! rules data (`[ai.armour]`, `[ai.infantry]`).
@@ -83,7 +84,10 @@ impl super::Planner<'_> {
             return false;
         };
         let v = &g.setup.vehicles[vs.type_idx as usize];
-        if v.role == VehicleRole::Tank || r.overwatch_back_m == 0 {
+        // S13-ai H2: a tank def with `ai_overwatch` (Panther, Tiger) holds
+        // overwatch too with `heavy_overwatch` 1.
+        let heavy = v.ai_overwatch && r.heavy_overwatch != 0;
+        if (v.role == VehicleRole::Tank && !heavy) || r.overwatch_back_m == 0 {
             return false;
         }
         let Some(sq) = g.squads.get(&t.squad) else {
@@ -423,8 +427,17 @@ impl super::Planner<'_> {
     ) -> FxVec2 {
         let g = self.g;
         let r = &g.setup.rules.ai.armour;
+        // S13 (review V3b): the hull line at the hull body's centre (box 0
+        // and an S13 superstructure; box 0 alone for every pre-S13 def).
+        let body_dz = g.vehicles.get(&t.id).map_or(Fx::ZERO, |vs| {
+            let v = &g.setup.vehicles[vs.type_idx as usize];
+            Fx::from(v.hull_body().center.z) - Fx::from(v.hull.center.z)
+        });
         let (gun_h, hull_h) = match g.vderived.frame(t.id) {
-            Some(f) => (f.pivot.z - f.origin.z, f.hull.center.z - f.origin.z),
+            Some(f) => (
+                f.pivot.z - f.origin.z,
+                f.hull.center.z - f.origin.z + body_dz,
+            ),
             None => (Fx::from_int(2), Fx::ONE),
         };
         let threat = axis.extend(self.terrain.height_at(axis) + Fx::from_milli(THREAT_EYE_MM));

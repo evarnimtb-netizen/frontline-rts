@@ -177,6 +177,9 @@ pub fn add_sides(doc: &mut Value, r: &ManyReport) {
                     let mut s12 = crate::skirmish::S12Faction::default();
                     s12.add(&p.s12);
                     o.insert("s12".into(), s12_blocks(&s12));
+                    let mut s13 = crate::skirmish::S13Faction::default();
+                    s13.add(&p.s13);
+                    o.insert("s13".into(), s13_blocks(&s13));
                 }
                 side
             })
@@ -675,6 +678,9 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
     // the derived measures (Build C).
     o.insert("s12".into(), s12_blocks(&f.s12));
     o.insert("s12_derived".into(), s12_derived(&f.s12));
+    // S13 (docs/slices/S13-heavy-wave.md 7): the AI's heavy-wave counters
+    // and the heavy-wave cards' buys, match shares, kills and knock-outs.
+    o.insert("s13".into(), s13_blocks(&f.s13));
     o.insert(
         "s6_derived".into(),
         json!({
@@ -1277,6 +1283,41 @@ pub fn s11a2_blocks(c: &crate::skirmish::S11a2Faction) -> (Value, Value) {
 /// passes that held, not markers (review A-4): `cb_alt_hold_passes_per_match`
 /// says so by name; `cb_fired_matches_any_pct` is the share of all
 /// matches in which the faction's AI still ordered counter-fire.
+/// The `s13` block of one faction (or one side of one match): the AI's
+/// heavy-wave counters by name and, per `heavy_wave` card (short id), its
+/// buys, the matches with a buy (count and share of the faction's matches,
+/// T155) and the men (`kills`) and vehicles (`kos`) its vehicle put out
+/// (T157). Every value is 0 when the AI buys no heavy-wave card
+/// (`tools/neutral.py` reads a new block so).
+pub fn s13_blocks(c: &crate::skirmish::S13Faction) -> Value {
+    let mut raw = Map::new();
+    for (k, v) in crate::skirmish::S13_AI.iter().zip(c.ai) {
+        raw.insert((*k).into(), json!(v));
+    }
+    let pct = |n: u64| {
+        if c.matches == 0 {
+            0.0
+        } else {
+            round3(n as f64 * 100.0 / c.matches as f64)
+        }
+    };
+    let mut cards = Map::new();
+    for (k, &n) in &c.bought {
+        let m = c.bought_matches.get(k).copied().unwrap_or(0);
+        cards.insert(
+            k.clone(),
+            json!({ "bought": n, "matches": m, "matches_pct": pct(m) }),
+        );
+    }
+    raw.insert("cards".into(), Value::Object(cards));
+    let map = |m: &std::collections::BTreeMap<String, u64>| {
+        Value::Object(m.iter().map(|(k, v)| (k.clone(), json!(v))).collect())
+    };
+    raw.insert("kills".into(), map(&c.kills));
+    raw.insert("kos".into(), map(&c.kos));
+    Value::Object(raw)
+}
+
 /// The `s12` block of one faction (or one side of one match): the
 /// `S12Counters` and the AI's medic counters by name. Every value is 0
 /// with the S12 switches off (`tools/neutral.py` reads a new block so).

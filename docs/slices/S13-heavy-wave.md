@@ -13,7 +13,7 @@ merged, from a fresh main. Card: `docs/design/roster/roster-expansion.md` 4.2 "S
   the Panther glacis head-on to about 900 m and 76 mm HVAP past 1 km. US trials say the M82 failed the glacis and HVAP only worked at
   400 yd or less, often not. The slice's central fight would be wrong in the direction the owner rule forbids ("authentic stats").
 - So S13 adds **one small sim rule, O1** (obliquity by plate-to-calibre ratio and round class, section 3). It is **opt-in per round**
-  (`slope_class` ammo key): S13a sets it only on the eleven new rounds, so every existing duel is unchanged by construction.
+  (`slope_class` ammo key): S13a sets it only on the new AP rounds (every new AP round; HE has no class), so every existing duel is unchanged by construction.
 - **Split (owner rule 2026-11-09, `TODO.md` 40):** **S13a** mechanics: O1, all data, five cards at `ai_weight` 0, every new key in one
   layout commit, proven neutral (all S13a switches on = base, match for match, because no AI buys a new card and no old round is
   classed). **S13-ai**: the AI rules H1-H3 and card weights, measured on 480. **S13m**: heavy mortars, after S11b (S13-4).
@@ -75,8 +75,9 @@ today's rule. Ricochet unchanged; the track band's `extra * c` unchanged.
 | | `td_lo_pct` / `td_hi_pct` | 40 / 90 | - | ramp of `w` over T/d |
 | | `apcbc_w_pct` / `apcr_w_pct` | 100 / 100 | - | `w_max` per class |
 | ammo def | `slope_class` | absent | absent | `"apcbc"` (AP, APC, APCBC) or `"apcr"` (APCR, HVAP); load error on HE/HEAT |
-Ranges: switch 0..=1; `td_*` 0..=300, lo < hi; `*_w_pct` 0..=100. Every one of the 16 (lo, hi) pairs in {25,30,40,50} x {75,80,90,100}
-passes T151a-g below (script); 40 / 90 is the middle of that window, so the calibration is not fragile.
+Ranges: switch 0..=1; `td_*` 0..=300, lo < hi; `*_w_pct` 0..=100. Of the 16 (lo, hi) pairs in {25,30,40,50} x {75,80,90,100}, 15
+pass T151a-g below (script); (50, 100) misses T151e at 31 % with aimed descent (stage A check N5). The defaults 40 / 90 pass, inside
+that window, so the calibration is not fragile; the window is not a promise that every pair passes.
 ### 3.3 Chance to penetrate, cosine law -> O1 (defaults; B&L rows; per hit; 0° yaw / 30° yaw)
 | Round | Plate | 100 m | 350 m | 1000 m | History |
 |---|---|---|---|---|---|
@@ -214,7 +215,7 @@ Group (20-21 Aug 1944), Ordnance pamphlet on 90 mm ammunition (Jan 1945, lonesen
 summarised in "The Chieftain's Hatch: US guns vs German armour" 1-2. Production and arrival: Wikipedia Panther, Tiger I, M36, M4.
 
 ## 10. Owner questions: all DECIDED (A) on 2026-11-19 (settled on the recommendation; the part in brackets is the first affected)
-- **S13-1 Armour rule [S13a].** (A) Add O1, opt-in per round, on the 11 new rounds only, calibrated to US trials (3.3, 3.4).
+- **S13-1 Armour rule [S13a].** (A) Add O1, opt-in per round, on the new AP rounds only (every new AP round), calibrated to US trials (3.3, 3.4).
   (B) Keep the cosine law: the 90 mm and 76 mm HVAP pierce the Panther glacis to ~1 km, the Jumbo falls to the 8.8 cm at 600 m.
   (C) Lower the new rows instead: breaks "do not touch guns". **Decided (A).**
 - **S13-1b Old rounds [balance pass].** (A) Leave existing rounds on the cosine law in S13; the balance pass decides with the leak

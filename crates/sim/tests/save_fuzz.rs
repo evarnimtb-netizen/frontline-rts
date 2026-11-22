@@ -62,6 +62,7 @@ fn setup(seed: u64) -> MatchSetup {
     // played in `save_roundtrip_carries_s11b_state`).
     s.s11b_off();
     s.s12_off();
+    s.s13_off();
     s
 }
 
@@ -345,7 +346,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 30,
+        version: 31,
         state: w.state(),
     });
     assert!(
@@ -1786,6 +1787,12 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             },
         );
         ai.fo_lost_at = tick;
+        // S13 (plan 5): a dated armour sighting, a heavy plan and the
+        // heavy counters (the fuzz mutates them).
+        ai.armour_seen_at = tick;
+        ai.heavy_plan_since = tick;
+        ai.counters.heavy_plans = 1;
+        ai.counters.push_turnbacks = 2;
         ai.breaches.insert(
             belt_sq,
             frontline_sim::ai::AiBreach {

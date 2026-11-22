@@ -396,6 +396,13 @@ pub struct AiState {
     pub fo: BTreeMap<SquadId, AiFo>,
     /// S11a1 A3: tick the last observer team was lost (0: none).
     pub fo_lost_at: u64,
+    /// S13 H1 (docs/slices/S13-heavy-wave.md 5; S13-ai fills it): tick an
+    /// enemy tank, TD or assault gun was last seen (0: never). Unlike the
+    /// `enemy_vehicle_seen` latch, role-filtered and dated.
+    pub armour_seen_at: u64,
+    /// S13 H1: tick the current heavy plan (saving for an `ai_heavy` card)
+    /// started (0: no plan).
+    pub heavy_plan_since: u64,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -749,6 +756,13 @@ pub struct AiCounters {
     pub post_builds: u32,
     pub reinforce_orders: u32,
     pub medic_holds: u32,
+    /// S13 H1, H3 (S13-ai): heavy plans started, heavies bought, plans
+    /// dropped after `heavy_save_max_s`; tanks turned back at the push
+    /// limit.
+    pub heavy_plans: u32,
+    pub heavy_buys: u32,
+    pub heavy_drops: u32,
+    pub push_turnbacks: u32,
 }
 
 impl AiState {
@@ -797,6 +811,8 @@ impl AiState {
             arty: BTreeMap::new(),
             fo: BTreeMap::new(),
             fo_lost_at: 0,
+            armour_seen_at: 0,
+            heavy_plan_since: 0,
         }
     }
 
@@ -950,6 +966,9 @@ impl AiState {
             || !self.validate_s10b(g, player, tick, ents_len)
             // S11a1.
             || !arty::validate_arty(g, player, tick, &self.arty, &self.fo, self.fo_lost_at)
+            // S13.
+            || self.armour_seen_at > tick
+            || self.heavy_plan_since > tick
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             // Due one reaction delay after its plan at most (the save fuzz).
             || self.pending.last().is_some_and(|c| {
@@ -1753,6 +1772,11 @@ impl Planner<'_> {
             if ai.arty.light == 0 && s.type_has_tag(t, "light_mortar") {
                 continue;
             }
+            // S13-ai H1: with `[ai.armour] heavy_buy` 0 the AI buys no card
+            // of the heavy wave (tag `heavy_wave`), as at `ai_weight` 0.
+            if ai.armour.heavy_buy == 0 && s.type_has_tag(t, "heavy_wave") {
+                continue;
+            }
             if let Some(r) = mix_slot(s, t) {
                 cards[r].push(t);
             }
@@ -1955,6 +1979,9 @@ impl Planner<'_> {
         // sight than own AT teams and vehicles, an AT card ready), then
         // the floor.
         let mut urgent_builder = self.builder_floor_card();
+        // S13-ai H1 (plan 5): the heavy card the AI saves for, if any.
+        let mut heavy = self.heavy_plan(veh_slot.is_some(), |t| ready(t, &bought, &alive_by_type));
+        let mut saving_heavy = false;
         for _ in 0..self.g.setup.rules.ai.infantry.buys_per_plan {
             if let Some(t) = urgent_breach.take()
                 && ready(t, &bought, &alive_by_type)
@@ -2014,6 +2041,43 @@ impl Planner<'_> {
                     continue;
                 }
             }
+            // S13-ai H1: the planned heavy when affordable; until then no
+            // other vehicle and no buy but the urgent ones (breach and
+            // builder above, an AT team below).
+            if let Some(h) = heavy
+                && ready(h, &bought, &alive_by_type)
+            {
+                let ty = &s.squad_types[h as usize];
+                let men = ty.pop(&s.vehicles) as i64;
+                if budget >= ty.cost as i64 && pop + men <= s.rules.pop_cap as i64 {
+                    self.ai
+                        .emit(self.due, CommandKind::CallIn { squad_type: h });
+                    budget -= ty.cost as i64;
+                    pop += men;
+                    bought.push(h);
+                    alive_by_type[h as usize] += 1;
+                    let c = &mut self.ai.counters;
+                    if c.bought.len() < s.squad_types.len() {
+                        c.bought.resize(s.squad_types.len(), 0);
+                    }
+                    c.bought[h as usize] += 1;
+                    c.vehicles_bought += 1;
+                    c.heavy_buys += 1;
+                    self.ai.heavy_plan_since = 0;
+                    heavy = None;
+                    saving_heavy = false;
+                    if let Some(r) = veh_slot {
+                        counts[r] += 1;
+                        vehicles += 1;
+                        if vehicles >= vr.limit && !cards[r].iter().any(|&x| g.is_transport_type(x))
+                        {
+                            mix[r] = 0;
+                        }
+                    }
+                    continue;
+                }
+                saving_heavy = true;
+            }
             let total: i64 = counts.iter().sum();
             let active = |r: usize| !cards[r].is_empty() && (!gated(r) || mix[r] > 0);
             let weight: i64 = (0..slots)
@@ -2056,6 +2120,9 @@ impl Planner<'_> {
                 role = Some(a);
                 urgent_at = true;
             }
+            if saving_heavy && !urgent_at {
+                return;
+            }
             // S3b: the chosen slot if a card of it is off cooldown, else the
             // next in mix order that is.
             let Some(first) = role else {
@@ -2067,11 +2134,29 @@ impl Planner<'_> {
             else {
                 return;
             };
+            if saving_heavy && Some(r) != at_slot {
+                return;
+            }
             // S4: among the slot's ready cards, the one furthest below its
             // `ai_weight` share of this match's buys (fewest buys per weight;
             // ties: roster order), so full and understrength cards come in
             // the ratio of their weights. Out of manpower or pop for it:
             // save up (no cheaper card instead).
+            // S13 G2: in the vehicle slot with `[ai.armour] heavy_buy` 1, a
+            // tie goes to a `heavy_wave` card the AI can pay now (manpower
+            // and pop): the later unlock, then the later in the roster
+            // (appended, it never won roster order). Any other tie, and a
+            // wave card out of reach, keeps roster order, so the slot never
+            // starts saving for a wave card through this rule.
+            let wave_tie = Some(r) == veh_slot && ai.armour.heavy_buy != 0;
+            let wave_rank = |k: usize, t: u16| -> Option<(u32, usize)> {
+                let ty = &s.squad_types[t as usize];
+                (wave_tie
+                    && s.type_has_tag(t, "heavy_wave")
+                    && budget >= ty.cost as i64
+                    && pop + ty.pop(&s.vehicles) as i64 <= s.rules.pop_cap as i64)
+                    .then(|| (g.card_unlock_ticks(t), k))
+            };
             let ready_cards: Vec<u16> = cards[r]
                 .iter()
                 .copied()
@@ -2086,11 +2171,17 @@ impl Planner<'_> {
                     .copied()
                     .unwrap_or(0) as u64
             };
-            let Some(&t) = ready_cards.iter().min_by(|&&a, &&b| {
-                let wa = s.squad_types[a as usize].ai_weight.max(1) as u64;
-                let wb = s.squad_types[b as usize].ai_weight.max(1) as u64;
-                ((buys(a) + 1) * wb).cmp(&((buys(b) + 1) * wa))
-            }) else {
+            let Some((_, &t)) = ready_cards
+                .iter()
+                .enumerate()
+                .min_by(|&(ka, &a), &(kb, &b)| {
+                    let wa = s.squad_types[a as usize].ai_weight.max(1) as u64;
+                    let wb = s.squad_types[b as usize].ai_weight.max(1) as u64;
+                    let by_share = ((buys(a) + 1) * wb).cmp(&((buys(b) + 1) * wa));
+                    // `None` (roster order) sorts after any wave rank.
+                    by_share.then_with(|| wave_rank(kb, b).cmp(&wave_rank(ka, a)))
+                })
+            else {
                 return;
             };
             {
@@ -2143,6 +2234,64 @@ impl Planner<'_> {
                 }
             } else if Some(r) == at_slot {
                 c.at_bought += 1;
+            }
+        }
+    }
+
+    /// S13-ai H1 (plan 5): the `ai_heavy` card the AI saves for this plan,
+    /// keeping `heavy_plan_since` and the counters. With `heavy_buy` 1, a
+    /// vehicle slot, an enemy tank, TD or assault gun seen within
+    /// `heavy_seen_s` and a ready heavy card (`ready`: unlock, limit place,
+    /// cap, group, cooldown; fewest buys first, then roster order), a plan
+    /// starts (`heavy_plans`) or goes on. A plan older than
+    /// `heavy_save_max_s` is dropped (`heavy_drops`) and the sighting
+    /// forgotten: a new plan needs a later sighting. No ready card or no
+    /// recent sighting ends a plan without a count.
+    fn heavy_plan(&mut self, has_veh_slot: bool, ready: impl Fn(u16) -> bool) -> Option<u16> {
+        let g = self.g;
+        let s = &g.setup;
+        let r = &s.rules.ai.armour;
+        if r.heavy_buy == 0 || !has_veh_slot {
+            return None;
+        }
+        let hz = s.tick_hz.max(1) as u64;
+        let tick = self.tick;
+        let since = self.ai.heavy_plan_since;
+        if since != 0 && tick > since + r.heavy_save_max_s as u64 * hz {
+            self.ai.heavy_plan_since = 0;
+            self.ai.armour_seen_at = 0;
+            self.ai.counters.heavy_drops += 1;
+            return None;
+        }
+        let seen = self.ai.armour_seen_at;
+        let recent = seen != 0 && tick <= seen + r.heavy_seen_s as u64 * hz;
+        let faction = &s.factions[s.players[self.me.0 as usize].faction as usize];
+        let buys = |t: u16| {
+            self.ai
+                .counters
+                .bought
+                .get(t as usize)
+                .copied()
+                .unwrap_or(0)
+        };
+        let card = faction
+            .roster
+            .iter()
+            .enumerate()
+            .filter(|&(_, &t)| s.squad_types[t as usize].ai_heavy && ready(t))
+            .min_by_key(|&(k, &t)| (buys(t), k))
+            .map(|(_, &t)| t);
+        match card {
+            Some(t) if recent || since != 0 => {
+                if since == 0 {
+                    self.ai.heavy_plan_since = tick;
+                    self.ai.counters.heavy_plans += 1;
+                }
+                Some(t)
+            }
+            _ => {
+                self.ai.heavy_plan_since = 0;
+                None
             }
         }
     }
@@ -2604,6 +2753,15 @@ impl Planner<'_> {
     fn note_sightings(&mut self, known: &[Known], kv: &[KnownVehicle]) {
         if !kv.is_empty() {
             self.ai.enemy_vehicle_seen = true;
+        }
+        // S13-ai H1: an enemy tank, TD or assault gun in sight, dated.
+        let vehicles = &self.g.setup.vehicles;
+        if self.g.setup.rules.ai.armour.heavy_buy != 0
+            && kv
+                .iter()
+                .any(|k| guns::is_armour(vehicles[k.type_idx as usize].role))
+        {
+            self.ai.armour_seen_at = self.tick;
         }
         let ai = &self.g.setup.rules.ai;
         let clear = ai.at_clear_ticks as u64;

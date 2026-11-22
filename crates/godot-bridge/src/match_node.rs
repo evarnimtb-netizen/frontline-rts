@@ -268,7 +268,10 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
     let fx = |v: frontline_content::Fixed| Fx::from(v).to_f32();
     let mut out = VarDictionary::new();
     for v in &setup.vehicles {
-        let hull = &v.hull;
+        // S13 review V2: the hull body (box 0 and an S13 superstructure;
+        // box 0 alone for every earlier def) and its glacis box's front.
+        let body = v.hull_body();
+        let hull = &body;
         let tur = &v.turret;
         let gun = v.main_gun();
         let seats: PackedStringArray = SeatRole::ALL
@@ -404,7 +407,9 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             "pintles" => &pintles,
             "shields" => &shields,
             "slots" => &slots,
-            "glacis_deg" => v.plate(0).map_or(0, |p| p.slope_deg) as f32,
+            "glacis_deg" => v
+                .plate((v.glacis_box() * frontline_content::vehicle::PLATE_GROUPS) as u8)
+                .map_or(0, |p| p.slope_deg) as f32,
             "seats" => &seats,
             "ammo" => &ammo,
             "casemate" => casemate,
@@ -2448,8 +2453,44 @@ impl MatchRuntime {
                 if unlock > f.tick {
                     d.set("locked_s", (unlock - f.tick) as f32 / hz);
                 }
-            } else if ty.vehicle.is_some() && locked_s > 0.0 {
-                d.set("locked_s", locked_s);
+            } else if ty.vehicle.is_some() {
+                if locked_s > 0.0 {
+                    d.set("locked_s", locked_s);
+                }
+                // S13 (docs/slices/S13-heavy-wave.md 1): an in-limit card
+                // with its own cap (`max_alive`, or its limit group's
+                // `limit`) shows that count beside the vehicle limit: the
+                // one of the two with fewer places left (the sim refuses
+                // at either).
+                let own = |pred: &dyn Fn(u16) -> bool| {
+                    f.squads
+                        .iter()
+                        .filter(|q| q.owner as usize == local && pred(q.type_idx))
+                        .count() as u32
+                };
+                let mut cap: Option<(u32, u32, &str)> =
+                    (ty.max_alive > 0).then(|| (own(&|k| k == t), ty.max_alive as u32, ""));
+                if let Some(g) = ty.limit_group
+                    && let Some(lg) = setup.rules.limit_groups.get(g as usize)
+                {
+                    let n = own(&|k| {
+                        setup
+                            .squad_types
+                            .get(k as usize)
+                            .and_then(|q| q.limit_group)
+                            == Some(g)
+                    });
+                    let left = |c: &(u32, u32, &str)| c.1.saturating_sub(c.0);
+                    let grp = (n, lg.limit, lg.id.as_str());
+                    if cap.is_none_or(|c| left(&grp) < left(&c)) {
+                        cap = Some(grp);
+                    }
+                }
+                if let Some((n, max, group)) = cap {
+                    d.set("card_alive", n as i64);
+                    d.set("card_max", max as i64);
+                    d.set("card_group", short_id(group));
+                }
             }
             catalog.push(&d.to_variant());
         }

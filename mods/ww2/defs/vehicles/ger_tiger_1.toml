@@ -1,0 +1,253 @@
+# Panzerkampfwagen VI Tiger Ausf. E, late production (S13a Build B, docs/slices/S13-heavy-wave.md 4.2): the 8.8 cm KwK 36 L/56, flat 100 mm faces.
+# Plates: Wikipedia Tiger I, panzerworld.com; slopes of the nose and rear are from memory (verify). Mantlet not modelled (S13-2 (A)). Frames as ger_pz4_h.toml (cm).
+id = "ww2:ger_tiger_1"
+name = "Panzerkampfwagen VI Tiger Ausf. E"
+short_name = "Tiger I"
+faction = "ww2:germany"
+role = "tank"
+cost = 1200
+pop = 16
+# Card cooldown 300 s, unlock 12:00 (docs/slices/S13-heavy-wave.md 4.3); a gameplay value, not a price.
+recall_cooldown_s = 300
+initial_cooldown_s = 720
+sight_m = 175
+spot_size_pct = 200
+eye_height_cm = 275
+sources = [
+  "Jentz, Germany's Tiger Tanks: D.W. to Tiger I (1997)",
+  "panzerworld.com, Pz.Kpfw. Tiger Ausf. E",
+  "Wikipedia, Tiger I (about 130 in the West in three battalions)",
+  "docs/slices/S13-research-history.md 1.2",
+]
+crew_squad = "ww2:ger_tank_crew"
+rare_cap = 2
+# S13-6 (A): 2 PzGr 40 rounds (APCR, rare).
+# S13 H2: the AI keeps it back as overwatch (read only once [ai.armour] heavy_overwatch is on).
+ai_overwatch = true
+
+[mobility]
+type = "tracked"
+# 38 km/h (plan 4.2) on the game's scale (Sherman 42 km/h = 650 cm/s).
+speed_cm_s = 590
+reverse_cm_s = 200
+turn_deg_s = 25
+accel_cm_s2 = 150
+brake_cm_s2 = 400
+# 27°: under the 30° pitch clamp.
+max_slope_pct = 50
+# AT-ditch ground at least 1.9 m deep blocks it.
+ditch_block_dm = 19
+bog_pct = 10
+unbog_s = [20, 40]
+moving_spread_pct = 400
+
+[hull]
+# S7: the hull box and its plates moved to [[boxes]] "hull" (box 0).
+# The lower part of box 0's sides is running gear (track hits, +20 mm).
+track_band_pct = 75  # S13 review V1: of box 0 (the lower hull) only; 75 % keeps the S3 band (45 % of the whole hull) in cm
+track_mm = 20
+
+[turret]
+pivot = [0, 0, 190]
+# 9 deg/s: a midpoint between the idle (6) and high-rev (19) figures, not a sourced point value (S13-3 (A)).
+traverse_deg_s = 9
+# Main gun elevation (deg/s): a starting value (as the other tanks).
+elevate_deg_s = 6
+
+# S13a Build B: armour boxes (docs/slices/S13-heavy-wave.md 4.2). Box 0 the
+# lower hull (nose, lower sides, engine deck), box 1 the superstructure
+# (glacis, upper sides, crew deck), then the turret. Mantlets are not
+# modelled (S13-2 (A)): the turret front is the published face plate.
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 85], half = [315, 175, 45] }
+[boxes.armor]
+# Lower hull: nose 100 mm at 24 deg, lower side 60 at 0, rear 80 at 8, deck 25 (Wikipedia Tiger I; slopes verify).
+front = { thickness_mm = 100, slope_deg = 24 }
+side = { thickness_mm = 60 }
+rear = { thickness_mm = 80, slope_deg = 8 }
+top = { thickness_mm = 25 }
+
+[[boxes]]
+id = "superstructure"
+frame = "hull"
+box = { center = [0, 0, 160], half = [315, 160, 30] }  # S13 review V5: the hull's full length, front face at the nose
+[boxes.armor]
+# Superstructure front 100 at 8 deg, side 80 at 0, rear 80 at 8, roof 25 (Wikipedia Tiger I; slopes verify).
+front = { thickness_mm = 100, slope_deg = 8 }
+side = { thickness_mm = 80 }
+rear = { thickness_mm = 80, slope_deg = 8 }
+top = { thickness_mm = 25 }
+
+[[boxes]]
+id = "turret"
+frame = "turret"
+box = { center = [0, 0, 45], half = [130, 115, 45] }
+[boxes.armor]
+# Turret face 100 at 8 deg, side and rear 80 at 0, roof 40 (from Mar 1944).
+front = { thickness_mm = 100, slope_deg = 8 }
+side = { thickness_mm = 80 }
+rear = { thickness_mm = 80 }
+top = { thickness_mm = 40 }
+
+# Crew seats, MGs and components as ger pz4_h (S13a Build B: the nearest def; positions approximate); track anchors,
+# ammunition bins and hatches placed for this hull (S13 review V6).
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [190, 60, 115], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "turret", center = [10, 45, 0], half = [30, 25, 70] }
+in = "turret"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "turret", center = [-70, 0, 22], half = [30, 30, 63] }
+in = "turret"
+
+[[seats]]
+id = "loader"
+role = "loader"
+box = { frame = "turret", center = [10, -45, -25], half = [30, 25, 95] }
+in = "turret"
+
+[[seats]]
+id = "radio_mg"
+role = "radio_mg"
+box = { frame = "hull", center = [190, -60, 115], half = [35, 30, 40] }
+in = "hull"
+
+[[weapons]]
+def = "ww2:kwk36_l56"
+mount = "turret_main"
+# From the turret pivot.
+muzzle = [500, 0, 45]
+elevation_deg = [-8, 15]
+# Auto loads the APCR only against a target the APCBC likely fails on
+# ([vehicles.gunnery] special_below_pct); each round is priced in base at
+# its weight x [supply] shell_mp_per_t x the rack factor (S5a D4).
+# 92 rounds (panzerworld.com): 46 PzGr 39, 44 Sprgr, 2 PzGr 40 (S13-6 (A)); the split is a starting value (verify).
+ammo = [
+  { id = "ww2:88mm_pzgr39", count = 46 },
+  { id = "ww2:88mm_sprgr", count = 44 },
+  { id = "ww2:88mm_pzgr40", count = 2 },
+]
+# The exposed barrel from the muzzle back to the turret front; a round must strike it to damage the gun.
+barrel = { length_cm = 380, radius_cm = 9 }
+
+# S3b Fix (review M4): MG rounds stowed per mount, split evenly; spent
+# rounds refill one 150-round belt per base rearm step. No figure read for
+# the Tiger I (S13 review V6): a starting value (verify).
+[[weapons]]
+def = "ww2:mg34"
+mount = "coax"
+muzzle = [120, 25, 45]
+rounds = 2250
+
+[[weapons]]
+def = "ww2:mg34"
+mount = "hull"
+# Hull frame.
+muzzle = [295, -60, 140]
+arc_deg = 15
+seat = "radio_mg"
+rounds = 2250
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [-200, 0, 100], half = [70, 100, 45] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [270, 160, 45] }, { pos = [0, 160, 45] }, { pos = [-270, 160, 45] }]  # S13 review V6: 15 cm inside the hull side, as ger_pz4_h.toml
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [270, -160, 45] }, { pos = [0, -160, 45] }, { pos = [-270, -160, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+# The breech inside the turret; S3b: the barrel is the main-gun mount's
+# barrel box, damaged only by rounds that strike it. No field repair.
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "turret", center = [50, 0, 45], half = [45, 20, 20] }
+
+[[components]]
+type = "turret_ring"
+hp = 80
+box = { frame = "hull", center = [20, 0, 166], half = [80, 80, 10] }
+repair = { to_hp = 50, time_s = 40 }
+
+# S13 review V6: Tiger I: the 92 rounds in bins in the sponsons over the tracks and under the floor
+# (Jentz, Germany's Tiger Tanks; positions approximate).
+# Two sponson bins in the superstructure, one floor bin beside the radio
+# operator; one HP pool.
+[[components]]
+type = "ammo_rack"
+hp = 60
+boxes = [
+  { frame = "hull", center = [-20, 135, 155], half = [90, 25, 25] },
+  { frame = "hull", center = [-20, -135, 155], half = [90, 25, 25] },
+  { frame = "hull", center = [100, -50, 55], half = [25, 25, 15] },
+]
+
+# S3b: the gearbox and final-drive train in the nose between the driver and
+# the radio operator (front sprockets; Panzer Tracts 4-3). Damaged: half
+# speed; destroyed: immobilised. Values as the engine's (100 HP, field
+# repair to 50 in 60 s); no fire. A starting value for tuning.
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [200, 0, 85], half = [60, 30, 40] }
+repair = { to_hp = 50, time_s = 60 }
+
+# Direct control (§5.12), unused until M5.
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+# S3c hatches (docs/slices/S3c-armour.md "History"); S13 review V6: no turret
+# side doors (the Pz IV's): the commander's cupola (the gunner leaves
+# through it too), the loader's hatch in the turret roof (right), and the
+# driver's and radio operator's hatches in the superstructure roof.
+# Positions in cm (hull frame, or turret frame from the pivot); exit times
+# as the Pz IV's: about 3 s out of a turret hatch, 4 s out of a hull hatch.
+[[hatches]]
+seats = ["commander", "gunner"]
+frame = "turret"
+pos = [-70, 0, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["loader"]
+frame = "turret"
+pos = [10, -50, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [190, 60, 190]
+exit_ms = 4000
+
+[[hatches]]
+seats = ["radio_mg"]
+frame = "hull"
+pos = [190, -60, 190]
+exit_ms = 4000

@@ -44,9 +44,9 @@ in the AI, HE for the 57 mm.
 
 ## Versions
 
-`SAVE_VERSION` **29** and `PROTOCOL_VERSION` **15** on main (`world.rs`, `protocol.rs`); **30** and **16** on the branch
-(S12: `Tend`, `Carry`, `Evacuate`, `Reinforce` on the wire; the layout fields are in `S12-log.md`). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
-S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16 (branch). A save, hash or command change
+`SAVE_VERSION` **30** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **31** and **16** on the branch
+(S13: no new command; the layout fields are in `S13-log.md`). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
+S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16 (branch). A save, hash or command change
 bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
 BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 
@@ -102,7 +102,7 @@ debug sim tests, simulate, clippy, rustfmt, cargo-deny passed; Windows and THIRD
 - Tank crews bail out. Vehicles before fortifications. Matches 10-40 min, median 15-30.
 - S9 (2026-11-08): vehicle spotting 2x; AT gun optic 250 % inside the arc; T33 counts tanks and TDs only. S9b (2026-11-10): S9b-1 (A) keep `income_max_pct` 30, the US T88 shortfall goes to the S10 AI half; S9b-2, S9b-3 (A).
 
-## S12 wounds and medics (branch `claude/project-thread-aj1tww`; log `S12-log.md`; waits for the owner's merge OK)
+## S12 wounds and medics (on main 2026-11-21, PR 5; log `S12-log.md`)
 
 SAVE 30, PROTOCOL 16. Hit zones; men go fit / wounded / downed (`EntityKind::Downed`) / dead; bleeding, self and buddy
 bandage, seeded bleed-out; medics stabilise and carry; aid posts (`kind = "aid"`) treat once and evacuate (refund for bought
@@ -112,14 +112,23 @@ downed men, aid menu. All shipped on (`[wounds] enabled`, `reinforce`, `[ai.medi
 casualties 28.1 % against the hard cap 26.3 (known miss S12-16, first item of the next balance pass). Ablations (pooled
 Germany): no_medics 41.04, no_post 44.17, no_reinforce 45.00, head_300 43.54. CI run 47 on `91078e9` green.
 
+## S13 heavy wave (branch `claude/project-thread-aj1tww`; log `S13-log.md`; waits for the owner's merge OK)
+
+SAVE 31, PROTOCOL 16. Panther G, Tiger I, M4A3 (76) W, M36, M4A3E2 Jumbo with 4 guns and 11 rounds; obliquity rule O1
+(`[armour]`, opt-in per round by `slope_class`, on the 7 new AP rounds only); three armour boxes per new hull (nose,
+superstructure, turret); AI heavy buy H1, heavy overwatch H2, push limit H3 (never fires at the defaults); vehicle-slot tie to an
+affordable S13 card. Measured at `3b3387f` (480): Germany **42.08 %** (43.12 / 40.00 / 43.12; 42.71 with `s13_off`, equal to S12 on
+main), no match without a winner. Heavies bought (160 set): Panther 23.75 %, Tiger 7.5 %, Jumbo about 40 %, M36 0 (T179a-c miss:
+S13-F2). Armour duels 41-46 pass except 45 (old PzGr 40 unclassed: S13-F1). CI run 50 green.
+
 ## Known gaps
 
-- Balance: Germany 42.71 % at `b89ef42` (S12, branch; 44.17 % on main); HE share sits on the cap 26.3, which stops most levers that help Germany (B2-12). T88 USA open (S9b-1 (A)). T5c, T50e known noise. Not verified: the eliminated-player path; a per-field hash audit beyond the named tests.
+- Balance: Germany 42.08 % at `3b3387f` (S13, branch; 42.71 % on main with S12); HE share sits on the cap 26.3, which stops most levers that help Germany (B2-12). T88 USA open (S9b-1 (A)). T5c, T50e known noise. Not verified: the eliminated-player path; a per-field hash audit beyond the named tests.
 - Net loopback refuses `DropCrates` at a non-truck. Structures not selectable in the HUD (S6-18). No presenter pass for guns (S11a1-9).
 
 ## Roadmap position
 
-Done on main: S1 to S11b, B1 and B2 (S11b and B2 merged 2026-11-20). On the branch: S12, waiting for the owner's merge OK. Next: that merge, then S13 (plan `S13-heavy-wave.md`) and a balance pass starting with S12-16; then the open items (AT guns in cover, preparation fire in matches; S11b-9..11 follow S11a2-10..12).
+Done on main: S1 to S12, B1 and B2 (S12 merged 2026-11-21). On the branch: S13, waiting for the owner's merge OK. Next: that merge, then a balance pass starting with S12-16, S13-F1, S13-F2; S14, S15; then the open items (AT guns in cover, preparation fire in matches; S11b-9..11 follow S11a2-10..12).
 
 ## How to check work
 

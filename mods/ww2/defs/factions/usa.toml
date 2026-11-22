@@ -39,6 +39,10 @@ roster = [
     "ww2:usa_60mm_mortar_squad",
     # S12: the medic team (appended; ai_weight 0 until S12b).
     "ww2:usa_aid_men",
+    # S13a: the 76 mm Sherman, the M36 and the Jumbo (appended; ai_weight 0 until S13-ai).
+    "ww2:usa_m4a3_76w_squad",
+    "ww2:usa_m36_squad",
+    "ww2:usa_m4a3e2_squad",
 ]
 # Squads on the field at tick 0, at the player's base. S4-14 (A): two full
 # line squads and the engineers.

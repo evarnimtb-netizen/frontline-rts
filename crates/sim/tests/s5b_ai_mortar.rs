@@ -32,6 +32,7 @@ fn setup(edit: impl FnOnce(&mut MatchSetup)) -> MatchSetup {
     // S11b Build C: written with every S11b switch off (shipped on).
     s.s11b_off();
     s.s12_off();
+    s.s13_off();
     frontline_sim::scenarios::staging(&mut s, true);
     s.players[1].is_ai = true;
     s.rules.start_manpower = 0;
