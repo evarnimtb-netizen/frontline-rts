@@ -12,6 +12,7 @@
 #   queue.sh run1                  # armour own_class_twins, then base + 11 single levers (~2.5 h)
 #   queue.sh armour NAME           # armour-test (5 seeds, all cases) base and NAME; prints what moved
 #   queue.sh code                  # B3 code screen: base + code_direct_budget, code_direct_budget_cap6 (block 3001)
+#   queue.sh run2                  # B3 run 2 confirm: base, c_he, c_all on F1 (3101) then F2 (3201): six sets
 #
 # NAME is a file of this folder without .toml; "a+b" applies a.toml then
 # b.toml (a combination). The base is always played first. Start it in the
@@ -108,6 +109,12 @@ case "${1:-}" in
         # is neutral: same numbers as run 1's base), then the switch alone and with the 6 % cap.
         "$0" 3001 code_direct_budget code_direct_budget_cap6
         echo "code screen done. Summary: $R/paired.txt (code_direct_budget*@s3001), $R/counters_s3001_code_*.txt. Commit $R."
+        ;;
+    run2)
+        # B3 run 2 (docs/slices/B3-run-2.md): the two candidates on both fresh blocks.
+        "$0" 3101 c_he c_all
+        "$0" 3201 c_he c_all
+        echo "run 2 done. Summary: $R/paired.txt (c_he@s3101 ... c_all@s3201), $R/counters_s3[12]01_*.txt. Commit $R."
         ;;
     "" | -h | --help)
         sed -n 2,20p "$0"

@@ -1,0 +1,19 @@
+# B3 run 2 candidate C_all (docs/slices/B3-run-2.md): C_he + own_m36_h1
+# (B3-3 (A); rule V pass, M36 0 -> 34 %) + own_class_twins (B3-4 (A); armour
+# case 45 0 -> 8 of 10). Same keys as the four lever files.
+[ai.arty]
+direct_in_budget = 1
+shell_mp_max_pct = 6
+
+[defs.ammo."ww2:m17_rifle_grenade".he]
+blast_radius_cm = 160
+frag_count = 64
+
+[defs.units."ww2:usa_m36_squad"]
+ai_heavy = true
+
+[defs.ammo."ww2:75mm_pzgr40"]
+slope_class = "apcr"
+
+[defs.ammo."ww2:3in_m62"]
+slope_class = "apcbc"
