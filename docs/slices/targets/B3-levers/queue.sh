@@ -11,6 +11,7 @@
 #   queue.sh --dry BLOCK NAME...   # prints the commands only
 #   queue.sh run1                  # armour own_class_twins, then base + 11 single levers (~2.5 h)
 #   queue.sh armour NAME           # armour-test (5 seeds, all cases) base and NAME; prints what moved
+#   queue.sh code                  # B3 code screen: base + code_direct_budget, code_direct_budget_cap6 (block 3001)
 #
 # NAME is a file of this folder without .toml; "a+b" applies a.toml then
 # b.toml (a combination). The base is always played first. Start it in the
@@ -102,8 +103,14 @@ case "${1:-}" in
             he_mission3 own_m36_w150 diag_head300 own_s12_bleed120_300
         echo "run 1 done. Summary: $R/paired.txt (one line per lever), $R/counters_s3001_*.txt, $R/armour_own_class_twins.txt, CSVs in $R; JSON in target/b3/s3001/. Commit $R."
         ;;
+    code)
+        # B3 code (SAVE 32, `[ai.arty] direct_in_budget`): the new binary replays the base (switch 0
+        # is neutral: same numbers as run 1's base), then the switch alone and with the 6 % cap.
+        "$0" 3001 code_direct_budget code_direct_budget_cap6
+        echo "code screen done. Summary: $R/paired.txt (code_direct_budget*@s3001), $R/counters_s3001_code_*.txt. Commit $R."
+        ;;
     "" | -h | --help)
-        sed -n 2,19p "$0"
+        sed -n 2,20p "$0"
         exit 2
         ;;
     *)

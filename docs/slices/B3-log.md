@@ -5,9 +5,9 @@ results `targets/B3-results/`. Branch `claude/project-thread-aj1tww`. Another ag
 your files (`git commit -m ... -- FILES`), never `git add -A`, never `target/`, `.claude/`, `tools/__pycache__/`. Do not push.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: B3 run 1 (screen) done 2026-11-22. NO candidate set (C_he none, C_all none); stop rule 8: no HE lever passed H.
-No default changed; no extra set played. BASE `884d46e`, world key `ba09de8def971642465e0c5f`; sim and mods unchanged
-since `3b3387f`, so `target/s13-on` stays the judge base (42.08 % of 480, HE of casualties 28.0 / 28.3 / 28.2).**
+**State: B3 code stage done 2026-11-22: `073b577` adds `[ai.arty] direct_in_budget` (SAVE 32, ww2 0; neutral 40/40).
+Its screen is NOT played (command below). Run 1 (screen, BASE `884d46e`): NO candidate set (C_he none, C_all none); stop
+rule 8: no HE lever passed H. No default changed. `target/s13-on` stays the judge base (42.08 % of 480, HE 28.0/28.3/28.2).**
 - Block S base (3001-3080, 160): Germany 46.2 %, HE 28.01, no winner 0, median 19.7 min: **1.71 over the cap 26.3 already**
   (B2's block S read 26.19 before S13). HE floor max(26.3, base + 0.3) = 28.31; rule H needs HE <= 27.51.
 
@@ -31,9 +31,9 @@ since `3b3387f`, so `target/s13-on` stays the judge base (42.08 % of 480, HE of 
 - **Cap in TOML: not reachable.** 26.3 needs -1.71; all three HE levers summed (unmeasured estimate) about 26.96; closest
   small set `own_rg_gap25+own_m17_160_64` about 27.09. Only `diag_head300` (-1.42, never a candidate) comes near. Left:
   B2-12 (B) (the cap is under the S13 base itself) or code (direct gun fire outside the shell budget; fire at downed men).
-- Run 2: nothing to confirm under current rules. With B2-12 (B) at a cap the base meets, it would confirm `own_m36_h1`
-  (R5: M36 up and Jumbo >= 10 in both fresh blocks) and, with B2-9 (A), retest `own_rg_gap25`. Not played: `he_shell_cap4`,
-  `mix_vehicle25` (base 46.2 % < 55), every combination.
+- **B3 code screen (orchestrator; about 25 min at 4 jobs, base replayed by the new binary):**
+  `tools/run.sh target/b3/code.log docs/slices/targets/B3-levers/queue.sh code` (then `tools/run.sh --wait
+  target/b3/code.log` until done). Read `paired.txt` lines `code_direct_budget*@s3001` with rule H; commit `B3-results/`.
 
 ## B3-1 screen (2026-11-22; stage agent; block S 3001-3080, `BATCH_JOBS=4`)
 ### Chunk 0
@@ -91,3 +91,25 @@ since `3b3387f`, so `target/s13-on` stays the judge base (42.08 % of 480, HE of 
   matches at the cost of the Jumbo falling to its floor; waits only on an HE fix, not on a question.
   `own_rg_gap25` passed the HE part of rule H (-0.56) but not Germany (-3.1); it also waits for B2-9.
 - Nothing went wrong; no script fixed; no set replayed. Extra sets played by the stage: 0.
+- Run 2 (moved from the top by the code stage): nothing to confirm under current rules. With B2-12 (B) at a cap the base meets, it would confirm `own_m36_h1`
+  (R5: M36 up and Jumbo >= 10 in both fresh blocks) and, with B2-9 (A), retest `own_rg_gap25`. Not played: `he_shell_cap4`,
+  `mix_vehicle25` (base 46.2 % < 55), every combination.
+
+## B3 code (2026-11-22; stage agent; owner option pending, recommended; reversible: revert `073b577`)
+- Rule (`crates/sim/src/ai/arty.rs` `direct_budget`, before A6 each plan, emplaced AI `inf_gun` only: leIG, leFH, 75 mm
+  M1A1, 105 mm M3, M2A1): with `direct_in_budget` 1 and gun shells over `shell_mp_max_pct` of the income so far (A5's
+  test, now `over_shell_budget`), the AI sends `SetAmbush` at `[vehicles.guns] self_defence_m` (40 m): the sim's ambush
+  hold (`guns::holds_fire`) stops direct fire at men and vehicles beyond it, and breaks when the gun is struck. A known
+  enemy vehicle within `[ai.guns] engage_still_m` (400 m) or the budget back in reach sends `SetAmbush 0`. Missions are
+  not touched. "Charged": direct rounds were already bought into `gun_shell_micro` at base rearm; now the budget limits
+  them too. Counter `arty_direct_holds` (gun-plans held; `s11a1` JSON block); `paired.py --counters` prints it with
+  `gun_direct_rounds` and `gun_kills`.
+- Layout: SAVE 31 -> 32 (one `AiCounters` field, one setup key 0..=1); BASELINE, snapshot, `tuning.md`, STATE.md.
+- Tests: `direct_budget_holds_ai_gun_direct_fire_over_budget` (leIG, men 100 m off, 67 % spent: 0 direct rounds and a
+  40 m hold; controls switch 0: 3 rounds, no hold; budget 100 %: no hold), `direct_budget_keeps_self_defence_fire` (36 m:
+  fires), `direct_budget_layout_roundtrips`. In a probe the leIG did not fire at 30 m with the switch off either.
+- Neutral: `target/b3c-base40` (played before the edit; cached, binary current) vs `target/b3c-off40`: same 40/40.
+  check quick 8f9cde6: all ok (1141 tests). Sets played: 1 (off40; base40 was a cache hit).
+- Levers: `code_direct_budget` (switch alone; at 25 % the budget never binds at the S13 head, so expect ~0: control) and
+  `code_direct_budget_cap6` (switch + 6 %: `he_shell_cap6` without the direct-fire leak). Both load (`target/b3/check`).
+  Risk: a held gun also does not re-lay on a target beyond 40 m, and AT fire waits for armour within 400 m.

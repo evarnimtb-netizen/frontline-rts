@@ -192,6 +192,10 @@ def counters(paths):
                       f["s11a1_derived"]["gun_shell_mp_pct"], a1.get("arty_budget_holds", 0) / n,
                       a1.get("arty_missions", 0) / n,
                       b1["rg_fired"] / n))
+            # B3 code: direct (open-sight) base-gun rounds and gun-plans held by `direct_in_budget`.
+            print("    base-gun direct rounds %.1f, direct holds %.1f, gun kills %.2f" % (
+                a1.get("gun_direct_rounds", 0) / n, a1.get("arty_direct_holds", 0) / n,
+                a1.get("gun_kills", 0) / n))
             s13 = f.get("s13", {})
             cards = " ".join("%s %.1f %%" % (c.replace("_squad", ""), v["matches_pct"])
                              for c, v in sorted(s13.get("cards", {}).items()))
