@@ -13,3 +13,5 @@ code_direct_budget@s3001 n=160 base 46.2 % lever 46.2 % diff +0.0 up 0 down 0 z 
 code_direct_budget_cap6@s3001 n=160 base 46.2 % lever 45.6 % diff -0.6 up 8 down 9 z -0.24 blocks -0.6 | HE 28.01 -> 26.56 | floors ok
 c_he@s3101 n=160 base 50.0 % lever 50.0 % diff +0.0 up 23 down 23 z +0.00 blocks +0.0 | HE 27.62 -> 26.63 | floors ok
 c_all@s3101 n=160 base 50.0 % lever 51.2 % diff +1.2 up 24 down 22 z +0.29 blocks +1.2 | HE 27.62 -> 26.24 | floors ok
+c_he@s3201 n=160 base 48.1 % lever 47.5 % diff -0.6 up 22 down 23 z -0.15 blocks -0.6 | HE 28.17 -> 25.95 | floors ok
+c_all@s3201 n=160 base 48.1 % lever 46.9 % diff -1.2 up 22 down 24 z -0.29 blocks -1.2 | HE 28.17 -> 25.86 | floors ok
