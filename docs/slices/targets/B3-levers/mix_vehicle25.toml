@@ -1,0 +1,4 @@
+# B3 lever (tier 1, the middle dose of mix_vehicle30; played only by the dose
+# rule of B3-balance.md 5). [ai.mix] vehicle 20 -> 25.
+[ai.mix]
+vehicle = 25

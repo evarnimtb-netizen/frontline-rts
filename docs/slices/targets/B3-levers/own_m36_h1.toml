@@ -1,0 +1,8 @@
+# B3 lever, OWNER CLASS (B3-3; outside S13 plan 7's lever list): the M36 card
+# gets `ai_heavy = true`, so H1 buys it (an enemy tank, TD or assault gun seen
+# in the last 300 s) instead of waiting for a vehicle-slot pick it never wins
+# (0 buys in 480 matches). H1 picks fewest buys, then roster order: the M36
+# (unlock 8:00, 760) comes before the Jumbo (10:00, 900), the Jumbo second.
+# `ai_weight` stays 100. Own counter: M36 matches; floor: Jumbo >= 10 %.
+[defs.units."ww2:usa_m36_squad"]
+ai_heavy = true

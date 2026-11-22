@@ -1,0 +1,8 @@
+# B3 lever (tier 1, symmetric; B2's `mix_vehicle30` unchanged). [ai.mix]
+# vehicle 20 -> 30 (range 20-30). Why: the AI makes 0.96 (Germany) and 0.53
+# (USA) vehicle-slot buys a match, so the slot's later cards (76 W, M36, StuG,
+# M10) are never reached; B2 read +8.8 points for Germany and HE 25.7 on block
+# 2001, failing only B2's mortar and vehicle-kill floors. Own counter: vehicle
+# cards a match.
+[ai.mix]
+vehicle = 30

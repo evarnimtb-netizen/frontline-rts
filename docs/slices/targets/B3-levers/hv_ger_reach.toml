@@ -1,0 +1,12 @@
+# B3 lever (tier 1 under B3-1 (A): cost and unlock of S13 cards, items 1 and 2
+# of S13 plan 7; never an older card). Panther 1050 -> 950, Tiger 1200 -> 1100
+# and its unlock 12:00 -> 10:00 (`initial_cooldown_s` 720 -> 600, the Jumbo's
+# time). Why: T179a 20.8 % of 480 (floor 25), T179c 6.9 % (floor 10); the
+# Tiger is only ever the second heavy (H1 picks fewest buys, then roster
+# order), and 8 second heavy buys were Panthers because the Tiger was not
+# ready. Own counter: Panther and Tiger matches.
+[defs.vehicles."ww2:ger_panther_g"]
+cost = 950
+[defs.vehicles."ww2:ger_tiger_1"]
+cost = 1100
+initial_cooldown_s = 600

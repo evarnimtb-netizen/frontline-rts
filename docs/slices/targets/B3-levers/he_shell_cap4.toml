@@ -1,0 +1,4 @@
+# B3 lever (tier 1, the stronger dose of he_shell_cap6; played only by the
+# dose rule of B3-balance.md 5). [ai.arty] shell_mp_max_pct 25 -> 4.
+[ai.arty]
+shell_mp_max_pct = 4

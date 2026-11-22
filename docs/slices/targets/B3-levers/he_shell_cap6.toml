@@ -1,0 +1,9 @@
+# B3 lever (tier 1, goal 1 HE share; symmetric AI key). [ai.arty]
+# shell_mp_max_pct 25 -> 6 (range 4-25). Why: base guns rearm in base without
+# a pause (reserve holds 0, budget holds 0 at the S13 head), so the shell
+# budget is their only brake and 25 % never binds: shells cost Germany
+# 7.2-7.8 % and the USA 9.2-9.6 % of income. The four base guns make 12.7 of
+# the 24.5 kills a match in the tank-HE class. Own counter: base-gun rounds a
+# match and `arty_budget_holds` (paired.py --counters).
+[ai.arty]
+shell_mp_max_pct = 6

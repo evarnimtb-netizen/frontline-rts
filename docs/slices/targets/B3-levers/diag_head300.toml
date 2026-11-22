@@ -1,0 +1,7 @@
+# B3 DIAGNOSTIC (never a candidate; S12-3 (A) keeps the head factor at 100):
+# [wounds] head_damage_pct 100 -> 300 alone, every other switch as shipped.
+# The S12 ablation `head_300` (which also turns medics and reinforce off)
+# read HE 26.6 and tank-HE casualties back at the wounds-off level; this
+# file separates the head factor from the medics.
+[wounds]
+head_damage_pct = 300

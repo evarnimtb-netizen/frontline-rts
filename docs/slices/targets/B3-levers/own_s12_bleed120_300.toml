@@ -1,0 +1,8 @@
+# B3 lever, OWNER CLASS (B3-5, S12-17; optional, report only): a downed man
+# bleeds out after 120-300 s instead of 60-180 s (IS 5.3's figures). Why:
+# medics start a tend on 6 % of downs and stabilise 3.4-3.9 %; 46-49 % bleed
+# out and 41-44 % are killed while down. Own counter: stabilised, bled out
+# and killed-while-down shares (paired.py --counters).
+[wounds]
+down_bleed_min_s = 120
+down_bleed_max_s = 300
