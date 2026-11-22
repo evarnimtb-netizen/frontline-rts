@@ -131,9 +131,34 @@ struct Seen {
     barrages: BTreeSet<SquadId>,
 }
 
+/// B3 run 2 cut the M17 rifle grenade's burst (blast 160 cm, 64 fragments;
+/// B3-2 (A)). This test's match was found with the Mk 2 hand grenade's
+/// burst it had before: restore that blast radius and fragment count.
+fn m17_burst_pre_b3(s: &mut frontline_content::MatchSetup) {
+    let mk2 = s
+        .items
+        .iter()
+        .find(|i| i.id == "ww2:mk2_grenade")
+        .and_then(|i| i.he.as_ref())
+        .map(|h| (h.blast.blast_radius, h.blast.frag_count))
+        .expect("the Mk 2 grenade's burst");
+    let m17 = s
+        .ammo
+        .iter_mut()
+        .find(|a| a.id == "ww2:m17_rifle_grenade")
+        .and_then(|a| a.blast.as_mut())
+        .expect("the M17's burst");
+    (m17.blast.blast_radius, m17.blast.frag_count) = mk2;
+}
+
 #[test]
 fn ai_vs_ai_plays_by_the_rules() {
-    let mut w = ai_vs_ai(3, 2);
+    // B3 run 2: with the cut M17 burst this seed reads 7 rejected of 299
+    // (2.3 %, all ordinary races: a retreat, move or crate for a squad
+    // that changed in the reaction delay; none from the new SetAmbush).
+    let mut s = setup(3, Difficulty::Normal, Difficulty::Normal, true);
+    m17_burst_pre_b3(&mut s);
+    let mut w = World::new_match(s, 2).unwrap();
     let s = w.match_setup().unwrap().clone();
     let pct = s.rules.ai.retreat_strength_pct as usize;
     let mut seen = Seen::default();

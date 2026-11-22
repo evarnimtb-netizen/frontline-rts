@@ -68,8 +68,19 @@ fn load_rejects_bad_s11a1_keys() {
             buy_pending: s.rules.ai.arty.buy_pending,
             how: s.rules.ai.arty.how,
             light: s.rules.ai.arty.light,
+            // B3 run 2 ships them (checked below the first assert).
+            shell_mp_max_pct: s.rules.ai.arty.shell_mp_max_pct,
+            direct_in_budget: s.rules.ai.arty.direct_in_budget,
             ..AiArtyTuning::default()
         }
+    );
+    // B3 run 2: the shell budget 6 % holds direct fire too.
+    assert_eq!(
+        (
+            s.rules.ai.arty.shell_mp_max_pct,
+            s.rules.ai.arty.direct_in_budget
+        ),
+        (6, 1)
     );
     assert_eq!(FireMissionTuning::KEYS.len(), 45); // S11a2: + 10
     assert_eq!(AiArtyTuning::KEYS.len(), 34); // S11a2: + 4; S11b: + 8; B3 code: + 1
@@ -98,6 +109,9 @@ fn load_rejects_bad_s11a1_keys() {
             buy_pending: s.rules.ai.arty.buy_pending,
             how: s.rules.ai.arty.how,
             light: s.rules.ai.arty.light,
+            // B3 run 2 ships them (checked below the first assert).
+            shell_mp_max_pct: s.rules.ai.arty.shell_mp_max_pct,
+            direct_in_budget: s.rules.ai.arty.direct_in_budget,
             ..AiArtyTuning::default()
         }
     );

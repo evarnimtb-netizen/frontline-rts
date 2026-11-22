@@ -5088,8 +5088,7 @@ min = 6
 exposure = "armour5.cases.case45.runs"
 exposure_min = 10
 control = "armour5.cases.case45.checks.jumbo_survives_o1_off.value"
-kind = "report"
-note = "plan 7 case 45: Jumbo survives 3 hits in >= 6 of 10 (control: the o1_off run). KNOWN MISS, reported not hard: 0/10 at Build C; every hit is one of the PaK 40's 2 old PzGr 40 (APCR, no slope_class: S13-1 (A) classes only the new rounds), which the cosine law lets through the Jumbo's 101.6 @ 47 glacis. Classing old rounds is S13-1b, left to the balance pass (docs/TODO.md); turn this row hard again then"
+note = "plan 7 case 45: Jumbo survives 3 hits in >= 6 of 10 (control: the o1_off run). Hard again from B3 run 2 (B3-4 (A)): the old 7.5 cm PzGr 40 and 3-inch M62 carry slope_class like their S13 twins (S13-F1)"
 [[target]]
 id = "T184e"
 metric = "armour5.cases.case46.checks.panther_out.value"

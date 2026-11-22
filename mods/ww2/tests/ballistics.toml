@@ -414,8 +414,8 @@ target = "ww2:usa_m4a3_75"
 zone = "turret_front"
 range = 1000
 angle = 30
-expect = "pen"
-note = "S3b Fix (Bird & Livingston 0° tables): penetrates (100.0 %)"
+pen_pct = [7, 13]
+note = "S3b Fix (Bird & Livingston 0° tables): penetrates (100.0 %); B3 run 2 classes the round apcr (O1, B3-4 (A)): borderline 9.6 %"
 
 [[row]] # 45
 ammo = "ww2:75mm_pzgr40"

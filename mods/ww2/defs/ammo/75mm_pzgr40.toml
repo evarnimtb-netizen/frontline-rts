@@ -24,6 +24,8 @@ drag_coeff = 0
 penetration = [[100, 176], [500, 154], [1000, 130], [1500, 109], [2000, 92]]
 pen_reference_angle_deg = 0
 ricochet_angle_deg = 70
+# B3 run 2 (B3-4 (A), S13-1b): O1 class of the twin of 75mm_pzgr4042 (APCR); armour case 45.
+slope_class = "apcr"
 # Damage to the gun when it strikes the barrel box, and to a track from a
 # hit in the running-gear band (as the PzGr 39).
 nonpen_damage = 40

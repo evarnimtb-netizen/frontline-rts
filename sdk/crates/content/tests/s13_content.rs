@@ -73,7 +73,8 @@ fn load_rejects_bad_s13_keys() {
         (1, 300, 10)
     );
     // S13a Build B: exactly the seven AP / APCBC / APCR rounds of the eleven
-    // new ones carry a class (the four HE rounds refuse one); no old round.
+    // new ones carry a class (the four HE rounds refuse one); of the old
+    // rounds only the two twins B3 run 2 classes (B3-4 (A)).
     let mut classed: Vec<(&str, SlopeClass)> = s
         .ammo
         .iter()
@@ -83,7 +84,9 @@ fn load_rejects_bad_s13_keys() {
     assert_eq!(
         classed,
         [
+            ("ww2:3in_m62", SlopeClass::Apcbc),
             ("ww2:75mm_pzgr3942", SlopeClass::Apcbc),
+            ("ww2:75mm_pzgr40", SlopeClass::Apcr),
             ("ww2:75mm_pzgr4042", SlopeClass::Apcr),
             ("ww2:76mm_m62", SlopeClass::Apcbc),
             ("ww2:76mm_m93", SlopeClass::Apcr),
@@ -104,6 +107,8 @@ fn load_rejects_bad_s13_keys() {
         [
             "ww2:ger_panther_g_squad",
             "ww2:ger_tiger_1_squad",
+            // B3 run 2 (B3-3 (A)).
+            "ww2:usa_m36_squad",
             "ww2:usa_m4a3e2_squad"
         ]
     );

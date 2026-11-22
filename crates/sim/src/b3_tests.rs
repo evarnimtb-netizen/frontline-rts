@@ -108,16 +108,17 @@ fn direct_budget_layout_roundtrips() {
     let y = World::load(&x.save(), 1).unwrap();
     assert_ne!(y.full_state_hash(), h, "arty_direct_holds is not hashed");
     let base = flat_world_with(1, |_| {}).game().unwrap().setup.clone();
-    assert_eq!(base.rules.ai.arty.direct_in_budget, 0, "ww2 ships it 0");
+    // B3 run 2 ships it 1 (was 0 at the B3 code stage); the edit is 0.
+    assert_eq!(base.rules.ai.arty.direct_in_budget, 1, "ww2 ships it 1");
     let h0 = postcard::to_allocvec(&base).unwrap();
     let mut s = base.clone();
-    s.rules.ai.arty.direct_in_budget = 1;
+    s.rules.ai.arty.direct_in_budget = 0;
     assert_ne!(
         postcard::to_allocvec(&s).unwrap(),
         h0,
         "not in the setup bytes"
     );
-    assert!(s.validate().is_empty(), "control: 1 is valid");
+    assert!(s.validate().is_empty(), "control: 0 is valid");
     s.rules.ai.arty.direct_in_budget = 2;
     assert!(!s.validate().is_empty(), "direct_in_budget 2 is accepted");
 }

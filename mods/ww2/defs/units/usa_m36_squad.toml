@@ -7,5 +7,7 @@ faction = "ww2:usa"
 tags = ["vehicle", "heavy_wave"]
 vehicle = "ww2:usa_m36"
 ai_weight = 100
+# B3 run 2 (B3-3 (A)): H1 buys it once enemy armour was seen, before the Jumbo (0 -> about 40 % of matches; Jumbo kept above 10 %).
+ai_heavy = true
 max_alive = 2
 available_from = "1944-09"
