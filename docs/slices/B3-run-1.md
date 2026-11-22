@@ -87,3 +87,19 @@ anything that went wrong. Do not confirm, apply, or replay on other seeds.
 ## Report (schema)
 commits; BASE and world key; the table; C_he and C_all or "none"; the armour-test result for `own_class_twins`; the goal 4
 numbers if played; owner questions the result now depends on; anything the next stage must know (a fixed script, a dropped file).
+
+## Orchestrator command
+One background command plays the armour test of `own_class_twins` (base and lever side by side, about 15 min) and then the
+screen block 3001-3080 (160 matches a set): the base and the eleven single levers in chunk order (`he_shell_cap6,
+own_m17_160_64, own_rg_gap25, hv_save360, own_m36_h1, hv_ger_reach, mix_vehicle30, he_mission3, own_m36_w150, diag_head300,
+own_s12_bleed120_300`). The combinations (chunk 3) need the rules and stay for the stage agent.
+
+    tools/run.sh target/b3/run1.log docs/slices/targets/B3-levers/queue.sh run1
+
+Poll with `tools/run.sh --wait target/b3/run1.log` (200 s a call). Expected: about 15 min + 12 sets of 12-25 min = 2.5 to
+5 hours on 4 cores (a 4-match test set took 35 s). It is resumable: after a restart run the same line; played sets come from
+`target/batch-cache` and a finished armour JSON in `target/b3/armour` is kept. The last line printed says where the summary
+lands: `docs/slices/targets/B3-results/paired.txt` (one line per lever), `counters_s3001_NAME.txt`, `armour_own_class_twins.txt`
+and the CSVs beside them (commit that folder). Armour result already known (prep, this head): base fail, lever pass; case 45
+`jumbo_survives` 0 -> 8 of 10, nothing else moved of 143 checks; so chunk 0 step 5 is done and only needs logging.
+A prep test with `SEEDS=2 B3_OUT=target/b3t B3_RESULTS=target/b3t/res` also works.

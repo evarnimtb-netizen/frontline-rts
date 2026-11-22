@@ -9,17 +9,18 @@
 #   queue.sh check                 # every lever file loads; prints what it changes
 #   queue.sh BLOCK NAME...         # BLOCK: first seed (3001, 3101, 3201); 80 seeds, both bases
 #   queue.sh --dry BLOCK NAME...   # prints the commands only
+#   queue.sh run1                  # armour own_class_twins, then base + 11 single levers (~2.5 h)
 #   queue.sh armour NAME           # armour-test (5 seeds, all cases) base and NAME; prints what moved
 #
 # NAME is a file of this folder without .toml; "a+b" applies a.toml then
 # b.toml (a combination). The base is always played first. Start it in the
 # background:
 #   tools/run.sh target/b3/q1.log docs/slices/targets/B3-levers/queue.sh 3001 he_shell_cap6 ...
-# Env: BATCH_JOBS (default here 4: the cloud machine has 4 cores).
+# Env: BATCH_JOBS (default here 4), SEEDS (default 80; a tiny test: SEEDS=2 B3_OUT=target/b3t B3_RESULTS=target/b3t/res queue.sh 3001 NAME).
 set -u
 cd "$(dirname "$0")/../../../.."
 L=docs/slices/targets/B3-levers
-R=docs/slices/targets/B3-results
+R=${B3_RESULTS:-docs/slices/targets/B3-results}
 export BATCH_JOBS="${BATCH_JOBS:-4}"
 DRY=
 [ "${1:-}" = "--dry" ] && { DRY=1; shift; }
@@ -80,19 +81,34 @@ case "${1:-}" in
     armour)
         name=${2:?usage: queue.sh armour NAME}
         o=$(ovs "$name") || exit 2
-        mkdir -p "$R"
-        tools/batch.sh target/b3/armour/base.json -- armour-test --seeds 5 || echo "base armour-test exit $?"
-        # shellcheck disable=SC2086
-        tools/batch.sh "target/b3/armour/$name.json" $o -- armour-test --seeds 5 || echo "$name armour-test exit $?"
+        mkdir -p "$R" target/b3/armour
+        # A failing hard check makes armour-test exit 1, so batch.sh does not cache it:
+        # a finished JSON in target/b3/armour is kept and not played again (about 14 min each).
+        # Base and lever run side by side (one thread each).
+        if [ ! -s target/b3/armour/base.json ]; then
+            tools/batch.sh target/b3/armour/base.json -- armour-test --seeds 5 || echo "base armour-test exit $? (hard checks failing is normal)" &
+        fi
+        if [ ! -s "target/b3/armour/$name.json" ]; then
+            # shellcheck disable=SC2086
+            tools/batch.sh "target/b3/armour/$name.json" $o -- armour-test --seeds 5 || echo "$name armour-test exit $?" &
+        fi
+        wait
         python3 -I "$L/paired.py" --armour target/b3/armour/base.json "target/b3/armour/$name.json" | tee "$R/armour_$name.txt"
         ;;
+    run1)
+        # Everything of run 1 that needs no decision: armour test, base, the eleven single levers.
+        "$0" armour own_class_twins
+        "$0" 3001 he_shell_cap6 own_m17_160_64 own_rg_gap25 hv_save360 own_m36_h1 hv_ger_reach mix_vehicle30 \
+            he_mission3 own_m36_w150 diag_head300 own_s12_bleed120_300
+        echo "run 1 done. Summary: $R/paired.txt (one line per lever), $R/counters_s3001_*.txt, $R/armour_own_class_twins.txt, CSVs in $R; JSON in target/b3/s3001/. Commit $R."
+        ;;
     "" | -h | --help)
-        sed -n 2,18p "$0"
+        sed -n 2,19p "$0"
         exit 2
         ;;
     *)
         b=$1
         shift
-        block "target/b3/s$b" "$b" 80 "$@"
+        block "${B3_OUT:-target/b3}/s$b" "$b" "${SEEDS:-80}" "$@"
         ;;
 esac
