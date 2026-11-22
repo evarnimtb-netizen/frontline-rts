@@ -1,0 +1,11 @@
+he_shell_cap6@s3001 n=160 base 46.2 % lever 40.0 % diff -6.2 up 5 down 15 z -2.24 blocks -6.2 | HE 28.01 -> 28.67 | floors FAIL: HE share 28.67 (base 28.01)
+own_m17_160_64@s3001 n=160 base 46.2 % lever 46.9 % diff +0.6 up 26 down 25 z +0.14 blocks +0.6 | HE 28.01 -> 27.65 | floors ok
+own_rg_gap25@s3001 n=160 base 46.2 % lever 43.1 % diff -3.1 up 25 down 30 z -0.67 blocks -3.1 | HE 28.01 -> 27.45 | floors ok
+hv_save360@s3001 n=160 base 46.2 % lever 46.9 % diff +0.6 up 2 down 1 z +0.58 blocks +0.6 | HE 28.01 -> 28.07 | floors ok
+own_m36_h1@s3001 n=160 base 46.2 % lever 45.0 % diff -1.2 up 5 down 7 z -0.58 blocks -1.2 | HE 28.01 -> 27.87 | floors ok
+hv_ger_reach@s3001 n=160 base 46.2 % lever 45.0 % diff -1.2 up 1 down 3 z -1.00 blocks -1.2 | HE 28.01 -> 28.10 | floors ok
+mix_vehicle30@s3001 n=160 base 46.2 % lever 46.2 % diff +0.0 up 38 down 38 z +0.00 blocks +0.0 | HE 28.01 -> 28.14 | floors ok
+he_mission3@s3001 n=160 base 46.2 % lever 43.8 % diff -2.5 up 14 down 18 z -0.71 blocks -2.5 | HE 28.01 -> 27.88 | floors ok
+own_m36_w150@s3001 n=160 base 46.2 % lever 42.5 % diff -3.8 up 5 down 11 z -1.50 blocks -3.8 | HE 28.01 -> 27.95 | floors ok
+diag_head300@s3001 n=160 base 46.2 % lever 43.8 % diff -2.5 up 31 down 35 z -0.49 blocks -2.5 | HE 28.01 -> 26.59 | floors ok
+own_s12_bleed120_300@s3001 n=160 base 46.2 % lever 41.2 % diff -5.0 up 13 down 21 z -1.37 blocks -5.0 | HE 28.01 -> 28.58 | floors FAIL: no-winner 1; HE share 28.58 (base 28.01)
