@@ -80,12 +80,21 @@ pub struct SkirmishArgs {
     /// Match seed.
     #[arg(long, value_name = "N", default_value_t = 1, conflicts_with = "load")]
     pub seed: u64,
-    /// AI difficulty for both players.
+    /// AI difficulty for every player.
     #[arg(long, value_enum, default_value_t = DifficultyArg::Normal)]
     pub difficulty: DifficultyArg,
-    /// Overrides --difficulty for player 1.
+    /// Overrides --difficulty for player 1 (slot 1: in a 1v1 the opponent,
+    /// in a `--teams 2v2` match player 0's ally).
     #[arg(long, value_enum, value_name = "DIFFICULTY")]
     pub difficulty1: Option<DifficultyArg>,
+    /// S17 review: overrides --difficulty for player 2 (team matches; in a
+    /// 2v2 the first player of team 1).
+    #[arg(long, value_enum, value_name = "DIFFICULTY", requires = "teams")]
+    pub difficulty2: Option<DifficultyArg>,
+    /// S17 review: overrides --difficulty for player 3 (team matches; in a
+    /// 2v2 the second player of team 1).
+    #[arg(long, value_enum, value_name = "DIFFICULTY", requires = "teams")]
+    pub difficulty3: Option<DifficultyArg>,
     /// S16a: the map (a map def id). The default and an explicit
     /// `--map ww2:kessel_ridge` play the same matches (same hashes).
     #[arg(long, value_name = "ID", default_value = DEFAULT_MAP, conflicts_with = "load")]
@@ -97,7 +106,8 @@ pub struct SkirmishArgs {
     #[arg(long, value_name = "ID", default_value = "ww2:usa")]
     pub faction1: String,
     /// S17b: a team match (`2v2` or `map`) instead of a 1v1. Every player
-    /// is an AI at --difficulty (--difficulty1 sets player 1). With
+    /// is an AI at --difficulty; --difficultyN overrides player N (slot N:
+    /// 2v2 teams are players 0, 1 and players 2, 3). With
     /// --swap-bases each player takes the base of the player n/2 slots on
     /// (the other side's base in the same place).
     #[arg(long, value_enum, value_name = "MODE", conflicts_with = "load")]
@@ -141,7 +151,7 @@ pub struct SkirmishArgs {
     #[arg(
         long,
         value_name = "FILE",
-        conflicts_with_all = ["difficulty1", "start_manpower", "swap_bases"]
+        conflicts_with_all = ["difficulty1", "difficulty2", "difficulty3", "start_manpower", "swap_bases"]
     )]
     pub load: Option<PathBuf>,
     /// Output format.
@@ -200,6 +210,8 @@ impl Default for SkirmishArgs {
             seed: 1,
             difficulty: DifficultyArg::Normal,
             difficulty1: None,
+            difficulty2: None,
+            difficulty3: None,
             map: DEFAULT_MAP.into(),
             faction0: "ww2:germany".into(),
             faction1: "ww2:usa".into(),
@@ -502,6 +514,10 @@ pub struct PathSearchStats {
     pub mean: f64,
     pub p99: u32,
     pub max: u32,
+    /// S17 review: searches that hit `path_max_expansions` short of the
+    /// goal, and those of them still short after the S16 road retry.
+    pub capped: u64,
+    pub capped_unreached: u64,
     /// The raw counts (merged over a set; not printed).
     #[serde(skip)]
     pub raw: frontline_sim::path::observe::SearchStats,
@@ -518,6 +534,8 @@ impl PathSearchStats {
             }),
             p99: raw.percentile(99),
             max: raw.max,
+            capped: raw.capped,
+            capped_unreached: raw.capped_unreached,
             raw,
         }
     }
@@ -2633,7 +2651,13 @@ pub fn match_setup(args: &SkirmishArgs) -> Result<MatchSetup> {
     let d0: Difficulty = args.difficulty.into();
     let d1: Difficulty = args.difficulty1.unwrap_or(args.difficulty).into();
     if let Some(mode) = args.teams {
-        return team_setup(args, &defs, mode, d0, d1);
+        let d = [
+            d0,
+            d1,
+            args.difficulty2.unwrap_or(args.difficulty).into(),
+            args.difficulty3.unwrap_or(args.difficulty).into(),
+        ];
+        return team_setup(args, &defs, mode, d);
     }
     let req = MatchRequest {
         rules: "ww2:skirmish".into(),
@@ -2672,8 +2696,7 @@ fn team_setup(
     args: &SkirmishArgs,
     defs: &frontline_content::ModDefs,
     mode: TeamsArg,
-    d0: Difficulty,
-    d1: Difficulty,
+    difficulty: [Difficulty; 4],
 ) -> Result<MatchSetup> {
     let map = defs
         .maps
@@ -2710,7 +2733,7 @@ fn team_setup(
             .map(|(i, &t)| PlayerRequest {
                 faction: factions[i].clone(),
                 ai: true,
-                difficulty: if i == 1 { d1 } else { d0 },
+                difficulty: difficulty[i],
                 team: Some(t),
             })
             .collect(),
@@ -3617,8 +3640,8 @@ pub fn summary_text(r: &SkirmishReport) -> String {
     );
     let ps = &r.path_search;
     out += &format!(
-        "map {}; path searches {} (expansions mean {:.1}, p99 {}, max {})\n",
-        r.map, ps.searches, ps.mean, ps.p99, ps.max
+        "map {}; path searches {} (expansions mean {:.1}, p99 {}, max {}; capped {}, still short {})\n",
+        r.map, ps.searches, ps.mean, ps.p99, ps.max, ps.capped, ps.capped_unreached
     );
     out += &format!("vehicle km on road: {}\n", r.road_km.line());
     if let Some(t) = &r.teams {
@@ -4879,8 +4902,8 @@ pub fn many_text(r: &ManyReport) -> String {
     {
         let ps = PathSearchStats::merged(r.matches.iter().map(|m| &m.report.path_search));
         out += &format!(
-            "S16 path searches: {}, expansions mean {:.1}, p99 {}, max {}\n",
-            ps.searches, ps.mean, ps.p99, ps.max
+            "S16 path searches: {}, expansions mean {:.1}, p99 {}, max {}; capped {}, still short after retry {}\n",
+            ps.searches, ps.mean, ps.p99, ps.max, ps.capped, ps.capped_unreached
         );
         let rk = RoadKm::merged(r.matches.iter().map(|m| &m.report.road_km));
         out += &format!("S16 vehicle km on road: {}\n", rk.line());

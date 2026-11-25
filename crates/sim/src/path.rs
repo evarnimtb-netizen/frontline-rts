@@ -345,6 +345,7 @@ pub fn find_vehicle_path(
         )
     };
     let mut r = run(None, s);
+    let capped = !r.reached && !r.exhausted;
     // S16 review (F3): a road-priced search that hit the cap runs once
     // more at `cap_retry_weight_pct` and keeps that path only if it
     // reaches the goal; both runs' expansions are charged (`PathQueue`
@@ -363,7 +364,7 @@ pub fn find_vehicle_path(
         }
         r.expansions = total;
     }
-    observe::record(r.expansions);
+    observe::record(r.expansions, capped, !r.reached && !r.exhausted);
     r
 }
 
@@ -459,7 +460,8 @@ fn search_with(
         None,
         s,
     );
-    observe::record(r.expansions);
+    let capped = !r.reached && !r.exhausted;
+    observe::record(r.expansions, capped, capped);
     r
 }
 
@@ -817,13 +819,25 @@ pub mod observe {
         pub expansions: u64,
         pub max: u32,
         pub hist: Vec<u64>,
+        /// S17 review: searches whose first run stopped at the expansion
+        /// cap short of the goal ...
+        pub capped: u64,
+        /// ... and those still short of it after the S16 retry (a vehicle
+        /// search on a road map) or with no retry.
+        pub capped_unreached: u64,
     }
 
     impl SearchStats {
         pub fn add(&mut self, expansions: u32) {
+            self.add_search(expansions, false, false);
+        }
+
+        pub fn add_search(&mut self, expansions: u32, capped: bool, unreached: bool) {
             if self.hist.is_empty() {
                 self.hist = vec![0; BUCKETS];
             }
+            self.capped += capped as u64;
+            self.capped_unreached += unreached as u64;
             self.searches += 1;
             self.expansions += expansions as u64;
             self.max = self.max.max(expansions);
@@ -839,6 +853,8 @@ pub mod observe {
             }
             self.searches += o.searches;
             self.expansions += o.expansions;
+            self.capped += o.capped;
+            self.capped_unreached += o.capped_unreached;
             self.max = self.max.max(o.max);
             for (a, b) in self.hist.iter_mut().zip(&o.hist) {
                 *a += b;
@@ -875,12 +891,12 @@ pub mod observe {
         SINK.with(|c| *c.borrow_mut() = sink);
     }
 
-    pub(crate) fn record(expansions: u32) {
+    pub(crate) fn record(expansions: u32, capped: bool, unreached: bool) {
         SINK.with(|c| {
             if let Some(s) = &*c.borrow()
                 && let Ok(mut st) = s.lock()
             {
-                st.add(expansions);
+                st.add_search(expansions, capped, unreached);
             }
         });
     }

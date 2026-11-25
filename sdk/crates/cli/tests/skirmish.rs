@@ -157,6 +157,7 @@ fn map_flag_defaults_to_kessel_ridge_with_the_same_hashes() {
     assert_eq!(a.final_hash, b.final_hash);
     assert_eq!(a.map, "ww2:kessel_ridge");
     assert!(a.path_search.searches > 0, "path searches are counted");
+    assert!(a.path_search.capped >= a.path_search.capped_unreached);
     assert!(a.path_search.max >= a.path_search.p99);
     let json = tmp("s16_map.json");
     let out = Command::new(exe)
@@ -265,6 +266,40 @@ fn a_2v2_on_harrow_cross_plays_the_same_at_any_thread_count_and_through_a_save()
         })
         .is_err()
     );
+}
+
+/// S17 review (O4): in a team match --difficulty sets every player and
+/// --difficulty1..3 override player 1..3 (slot N, base N); --difficulty2
+/// and --difficulty3 need --teams.
+#[test]
+fn team_difficulty_flags_set_their_own_slot() {
+    use frontline_cli::skirmish::{DifficultyArg, TeamsArg, match_setup};
+    use frontline_content::Difficulty;
+    let s = match_setup(&SkirmishArgs {
+        map: "ww2:harrow_cross".into(),
+        teams: Some(TeamsArg::TwoVTwo),
+        difficulty: DifficultyArg::Hard,
+        difficulty1: Some(DifficultyArg::Easy),
+        difficulty3: Some(DifficultyArg::Normal),
+        ..short(4, 1, 1)
+    })
+    .unwrap();
+    let d: Vec<Difficulty> = s.players.iter().map(|p| p.difficulty).collect();
+    assert_eq!(
+        d,
+        [
+            Difficulty::Hard,
+            Difficulty::Easy,
+            Difficulty::Hard,
+            Difficulty::Normal
+        ]
+    );
+    let exe = env!("CARGO_BIN_EXE_frontline-cli");
+    let out = Command::new(exe)
+        .args(["skirmish", "--ai-vs-ai", "--difficulty2", "easy"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "--difficulty2 needs --teams");
 }
 
 /// S16b (finding F1): the road observer counts vehicle km on Linden

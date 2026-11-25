@@ -34,6 +34,7 @@ pub struct MenuChoice {
     /// S17 (Presenter P): `1v1` (default) or `2v2`: the human (slot 0)
     /// and an AI ally (slot 1, same faction) against two AIs of the other
     /// faction (slots 2 and 3) on a map with four bases (Harrow Cross).
+    /// Offline only: a `2v2` with `slots` is refused (online teams: S18).
     pub mode: String,
     /// S3: play the test rules override (`mods/ww2/tests/
     /// rules_test_unlock.toml`: vehicles unlocked at once), for scripted
@@ -143,6 +144,11 @@ pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, S
     if !MODES.contains(&choice.mode.as_str()) {
         return Err(format!("unknown mode {:?}", choice.mode));
     }
+    // S17 review (O4): net slots name two players; a networked 2v2 is
+    // S18, so a 2v2 with slots is refused rather than played as a 1v1.
+    if choice.mode == "2v2" && choice.slots.is_some() {
+        return Err("a 2v2 with net slots is not supported (S18)".into());
+    }
     let slots = match &choice.slots {
         Some(s) => s.clone(),
         None => {
@@ -173,21 +179,20 @@ pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, S
     }
     // S17: in a 2v2 slot 0 (human, unless ai_vs_ai) and slot 1 (AI ally)
     // play the chosen faction, slots 2 and 3 (AI) the other; teams 0 and 1.
-    let team_slots: Vec<(SlotChoice, Option<u8>)> =
-        if choice.mode == "2v2" && choice.slots.is_none() {
-            let ally = SlotChoice {
-                faction: slots[0].faction.clone(),
-                human: false,
-            };
-            vec![
-                (slots[0].clone(), Some(0)),
-                (ally, Some(0)),
-                (slots[1].clone(), Some(1)),
-                (slots[1].clone(), Some(1)),
-            ]
-        } else {
-            slots.iter().map(|s| (s.clone(), None)).collect()
+    let team_slots: Vec<(SlotChoice, Option<u8>)> = if choice.mode == "2v2" {
+        let ally = SlotChoice {
+            faction: slots[0].faction.clone(),
+            human: false,
         };
+        vec![
+            (slots[0].clone(), Some(0)),
+            (ally, Some(0)),
+            (slots[1].clone(), Some(1)),
+            (slots[1].clone(), Some(1)),
+        ]
+    } else {
+        slots.iter().map(|s| (s.clone(), None)).collect()
+    };
     let req = MatchRequest {
         rules: if choice.test_unlock {
             TEST_UNLOCK_RULES.to_owned()
@@ -273,6 +278,22 @@ mod tests {
             ..MenuChoice::default()
         };
         assert!(resolve(&m, &bad).is_err());
+    }
+
+    #[test]
+    fn a_2v2_with_net_slots_is_refused() {
+        let slot = |f: &str| SlotChoice {
+            faction: f.into(),
+            human: true,
+        };
+        let choice = MenuChoice {
+            map: "harrow_cross".into(),
+            mode: "2v2".into(),
+            slots: Some([slot("usa"), slot("germany")]),
+            ..MenuChoice::default()
+        };
+        let e = resolve(&mods(), &choice).unwrap_err();
+        assert!(e.contains("2v2"), "{e}");
     }
 
     #[test]
