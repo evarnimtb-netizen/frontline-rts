@@ -483,7 +483,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// the whole slice.
 /// 32: B3 code (`AiCounters::arty_direct_holds`; in the setup `[ai.arty]
 /// direct_in_budget`).
-const SAVE_VERSION: u32 = 32;
+/// 33: S16a (`FLAG_ROAD` in the terrain flag layer and the point-symmetry
+/// blend; in the setup `MapSetup::roads`, `[vehicles.road]` and
+/// `MobilitySetup::road_speed_pct`). One bump for the slice.
+const SAVE_VERSION: u32 = 33;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {

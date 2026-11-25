@@ -629,6 +629,8 @@ pub struct VehicleRulesSetup {
     pub transport: TransportTuning,
     /// S9 `[vehicles.guns]`.
     pub guns: GunsTuning,
+    /// S16a `[vehicles.road]` (the neutral `Default` when absent).
+    pub road: crate::tuning::RoadTuning,
 }
 
 /// Thrown-item rules (see `ItemRulesDef`).
@@ -845,6 +847,16 @@ pub struct MapSetup {
     pub woods: Vec<CircleSetup>,
     pub points: Vec<PointSetup>,
     pub bases: Vec<CircleSetup>,
+    /// S16a: road polylines (`[[roads]]`); empty on a map without roads.
+    pub roads: Vec<RoadSetup>,
+}
+
+/// S16a: one road, a polyline with a half width; grid points within
+/// `half_width` of a segment get `FLAG_ROAD` at terrain generation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoadSetup {
+    pub points: Vec<FixedVec2>,
+    pub half_width: Fixed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2130,6 +2142,7 @@ impl ModDefs {
                         recrew: v.recrew.clone(),
                         transport: v.transport.clone(),
                         guns: v.guns.clone(),
+                        road: v.road.clone().unwrap_or_default(),
                     }
                 },
                 difficulty: DifficultyTable {
@@ -2241,6 +2254,14 @@ impl ModDefs {
                     .map(|b| CircleSetup {
                         center: FixedVec2::from_m(b.pos),
                         radius: Fixed::from_int(b.radius_m as i32),
+                    })
+                    .collect(),
+                roads: map
+                    .roads
+                    .iter()
+                    .map(|r| RoadSetup {
+                        points: r.points.iter().map(|&p| FixedVec2::from_m(p)).collect(),
+                        half_width: Fixed::from_ratio(r.width_m as i64, 2),
                     })
                     .collect(),
             },
@@ -2706,6 +2727,30 @@ impl MatchSetup {
                 "out of range",
             );
         }
+        // S16a (R5): what `MapFileDef::validate` checks, on the setup.
+        check(
+            self.map.roads.len() <= crate::MAX_ROADS,
+            "map.roads",
+            "too many roads",
+        );
+        for r in &self.map.roads {
+            check(
+                (2..=crate::MAX_ROAD_POINTS).contains(&r.points.len())
+                    && r.points.iter().all(|&p| on_map(p)),
+                "map.roads.points",
+                "need at least two points on the map",
+            );
+            check(
+                r.points.windows(2).all(|w| w[0] != w[1]),
+                "map.roads.points",
+                "zero-length segment",
+            );
+            check(
+                r.half_width >= Fixed::from_int(2) && fx_in(r.half_width, 2, 6),
+                "map.roads.half_width",
+                "out of range",
+            );
+        }
         check(
             !self.map.points.is_empty(),
             "map.points",
@@ -3025,6 +3070,7 @@ impl MatchSetup {
                 recrew: &v.recrew,
                 transport: &v.transport,
                 guns: &v.guns,
+                road: &v.road,
                 vehicle_damage: &v.damage,
                 formation: &m.formation,
                 cover: &r.cover,

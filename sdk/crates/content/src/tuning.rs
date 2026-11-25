@@ -982,6 +982,54 @@ impl TransportTuning {
 }
 
 tuning_table! {
+    /// `[vehicles.road]` (S16a, docs/slices/S16-second-map.md 2 and 4):
+    /// vehicles on a map's `[[roads]]`. Every value lives in the rules TOML;
+    /// a rules def without the table ignores roads (`Default`: `enabled` 0).
+    pub struct RoadTuning {
+        /// R1-R3 master switch: with 0 a road flag changes nothing.
+        enabled: 0..=1,
+        /// Forward speed on a road node, in percent of the def's
+        /// cross-country `speed_cm_s`, by drive type (a vehicle's
+        /// `[mobility] road_speed_pct` overrides it).
+        wheeled_pct: 100..=200,
+        halftrack_pct: 100..=200,
+        tracked_pct: 100..=200,
+        /// Reverse speed on a road node, in percent of `reverse_cm_s`.
+        reverse_pct: 100..=200,
+        /// R3: 1 prices a road node by time (`100 / road pct` of a step,
+        /// no woods factor); 0 prices it as any other node.
+        path_cost: 0..=1,
+        /// R3: heuristic weight on a map with roads is
+        /// max(100, 130 x this / road pct) percent.
+        heuristic_pct: 1..=200,
+    }
+}
+
+impl RoadTuning {
+    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+
+    /// Whether road rules apply on a map with `roads` road polylines.
+    pub fn active(&self, roads: usize) -> bool {
+        self.enabled == 1 && roads > 0
+    }
+}
+
+impl Default for RoadTuning {
+    /// No `[vehicles.road]` table: roads off (every factor neutral).
+    fn default() -> RoadTuning {
+        RoadTuning {
+            enabled: 0,
+            wheeled_pct: 100,
+            halftrack_pct: 100,
+            tracked_pct: 100,
+            reverse_pct: 100,
+            path_cost: 0,
+            heuristic_pct: 100,
+        }
+    }
+}
+
+tuning_table! {
     /// `[vehicles.recrew]` (S3c): who can man an abandoned vehicle again,
     /// and how (S3c-2, S3c-3 (A)).
     pub struct RecrewTuning {
@@ -3324,6 +3372,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("vehicles.recrew", RecrewTuning::KEYS),
     ("vehicles.transport", TransportTuning::KEYS),
     ("vehicles.guns", GunsTuning::KEYS),
+    ("vehicles.road", RoadTuning::KEYS),
     ("movement.formation", FormationTuning::KEYS),
     ("cover", CoverTuning::KEYS),
     ("items.throw", ThrowTuning::KEYS),
@@ -3354,6 +3403,7 @@ pub(crate) struct TuningRefs<'a> {
     pub recrew: &'a RecrewTuning,
     pub transport: &'a TransportTuning,
     pub guns: &'a GunsTuning,
+    pub road: &'a RoadTuning,
     pub formation: &'a FormationTuning,
     pub cover: &'a CoverTuning,
     pub throw: &'a ThrowTuning,
@@ -3415,6 +3465,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.recrew.check(&p("vehicles.recrew"), out);
     t.transport.check(&p("vehicles.transport"), out);
     t.guns.check(&p("vehicles.guns"), out);
+    t.road.check(&p("vehicles.road"), out);
     t.formation.check(&p("movement.formation"), out);
     t.cover.check(&p("cover"), out);
     t.throw.check(&p("items.throw"), out);

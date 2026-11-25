@@ -3399,6 +3399,15 @@
           "untrained_spread_pct": 150,
           "untrained_traverse_pct": 75
         },
+        "road": {
+          "enabled": 1,
+          "halftrack_pct": 150,
+          "heuristic_pct": 100,
+          "path_cost": 1,
+          "reverse_pct": 100,
+          "tracked_pct": 140,
+          "wheeled_pct": 175
+        },
         "seat_swap_s": 4,
         "transport": {
           "board_reach_cm": 300,

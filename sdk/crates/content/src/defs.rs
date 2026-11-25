@@ -1546,7 +1546,27 @@ pub struct MapFileDef {
     pub capture_points: Vec<CapturePointDef>,
     /// One base per player slot, in slot order.
     pub bases: Vec<BaseDef>,
+    /// S16a: roads (vehicles drive faster on them; `[vehicles.road]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roads: Vec<RoadDef>,
 }
+
+/// S16a: one road, a polyline of map points (m) and its width.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RoadDef {
+    /// At least two points, inside the map, no two in a row equal.
+    pub points: Vec<[u32; 2]>,
+    /// Full width (m), 4..=12 (6: a single-track country road; under 6 m
+    /// a diagonal road leaves gaps on the 4 m grid).
+    pub width_m: u32,
+}
+
+/// S16a (R5): road widths `frontline-cli validate` accepts (m).
+pub const ROAD_WIDTH_M: std::ops::RangeInclusive<u32> = 4..=12;
+/// S16a (R5): a hand-placed item on a `symmetry = "point"` map must have a
+/// mirror within this (m), else a warning.
+pub const MIRROR_TOLERANCE_M: u32 = 2;
 
 /// Heightfield shape. Height = base + value-noise octaves + ridges − valleys.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1826,6 +1846,9 @@ pub struct VehicleRulesDef {
     /// S9 `[vehicles.guns]`.
     #[serde(default)]
     pub guns: GunsTuning,
+    /// S16a `[vehicles.road]` (absent: roads change nothing).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub road: Option<crate::tuning::RoadTuning>,
 }
 
 /// Thrown items (S1b abilities).
@@ -2968,6 +2991,106 @@ impl MapFileDef {
                 500,
             );
         }
+        // S16a (R5).
+        if self.roads.len() > crate::MAX_ROADS {
+            out.push(Issue::new("roads", "too many roads"));
+        }
+        for (i, r) in self.roads.iter().enumerate() {
+            let p = format!("roads[{i}]");
+            if r.points.len() < 2 || r.points.len() > crate::MAX_ROAD_POINTS {
+                out.push(Issue::new(
+                    format!("{p}.points"),
+                    format!(
+                        "a road needs 2..={} points, got {}",
+                        crate::MAX_ROAD_POINTS,
+                        r.points.len()
+                    ),
+                ));
+            }
+            for (k, q) in r.points.iter().enumerate() {
+                inside(&mut out, format!("{p}.points[{k}]"), *q);
+            }
+            for (k, w) in r.points.windows(2).enumerate() {
+                if w[0] == w[1] {
+                    out.push(Issue::new(
+                        format!("{p}.points[{}]", k + 1),
+                        "zero-length segment (the same point twice in a row)",
+                    ));
+                }
+            }
+            range(
+                &mut out,
+                &format!("{p}.width_m"),
+                r.width_m,
+                *ROAD_WIDTH_M.start(),
+                *ROAD_WIDTH_M.end(),
+            );
+        }
+        out
+    }
+
+    /// S16a (R5): on a `symmetry = "point"` map, every hand-placed item
+    /// (capture point, base, woods patch, road point) needs a mirror
+    /// through the map centre within [`MIRROR_TOLERANCE_M`] among the same
+    /// kind (bases: the other base). Warnings, not errors; empty on a map
+    /// without symmetry.
+    pub fn mirror_warnings(&self) -> Vec<Issue> {
+        let mut out = Vec::new();
+        if self.terrain.symmetry != TerrainSymmetry::Point {
+            return out;
+        }
+        let size = self.size_m as i64;
+        let tol = (MIRROR_TOLERANCE_M as i64).pow(2);
+        let mirrored = |p: [u32; 2], set: &[[u32; 2]]| {
+            let (mx, my) = (size - p[0] as i64, size - p[1] as i64);
+            set.iter().any(|q| {
+                let (dx, dy) = (q[0] as i64 - mx, q[1] as i64 - my);
+                dx * dx + dy * dy <= tol
+            })
+        };
+        let warn = |out: &mut Vec<Issue>, path: String, p: [u32; 2]| {
+            out.push(Issue::new(
+                path,
+                format!(
+                    "[{}, {}] has no mirror within {MIRROR_TOLERANCE_M} m of [{}, {}] \
+                     (terrain.symmetry = \"point\")",
+                    p[0],
+                    p[1],
+                    size - p[0] as i64,
+                    size - p[1] as i64
+                ),
+            ));
+        };
+        let points: Vec<_> = self.capture_points.iter().map(|c| c.pos).collect();
+        for (i, &p) in points.iter().enumerate() {
+            if !mirrored(p, &points) {
+                warn(&mut out, format!("capture_points[{i}].pos"), p);
+            }
+        }
+        let bases: Vec<_> = self.bases.iter().map(|b| b.pos).collect();
+        for (i, &p) in bases.iter().enumerate() {
+            if !mirrored(p, &bases) {
+                warn(&mut out, format!("bases[{i}].pos"), p);
+            }
+        }
+        let woods: Vec<_> = self.woods.iter().map(|w| w.center).collect();
+        for (i, &p) in woods.iter().enumerate() {
+            if !mirrored(p, &woods) {
+                warn(&mut out, format!("woods[{i}].center"), p);
+            }
+        }
+        let road_points: Vec<_> = self
+            .roads
+            .iter()
+            .flat_map(|r| r.points.iter().copied())
+            .collect();
+        for (i, r) in self.roads.iter().enumerate() {
+            for (k, &q) in r.points.iter().enumerate() {
+                if !mirrored(q, &road_points) {
+                    warn(&mut out, format!("roads[{i}].points[{k}]"), q);
+                }
+            }
+        }
         out
     }
 }
@@ -3326,6 +3449,7 @@ impl RulesDef {
                 recrew: &v.recrew,
                 transport: &v.transport,
                 guns: &v.guns,
+                road: &v.road.clone().unwrap_or_default(),
                 vehicle_damage: &v.damage,
                 formation: &self.movement.formation,
                 cover: &self.cover,

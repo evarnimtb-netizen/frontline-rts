@@ -1800,3 +1800,28 @@ td_lo_pct = 40               # w is 0 at or below this plate-to-calibre ratio (%
 td_hi_pct = 90               # ... and full at or above this one (%)
 apcbc_w_pct = 100            # full weight of class apcbc (%; c^1.5)
 apcr_w_pct = 100             # full weight of class apcr (%; c^2)
+
+[vehicles.road]
+# S16a (docs/slices/S16-second-map.md 2, 4): vehicles on a map's [[roads]].
+# A map without roads (Kessel Ridge) is unchanged whatever these say.
+# R1-R3 master switch (0: a road flag changes nothing).
+enabled = 1
+# Forward speed on a road node in percent of the def's cross-country
+# speed_cm_s, by drive type (S16-5 (A)); a vehicle's [mobility]
+# road_speed_pct overrides it. Checked in Build A against the defs: Opel
+# Blitz 800 cm/s (29 km/h) -> 50 km/h; Sd.Kfz. 251 750 -> 41 km/h; Pz IV
+# 600 (22 km/h) -> 30 km/h, all at or under the historical road speeds
+# (about 80, 52 and 38 km/h). Towed guns: 100 (a hitched gun moves with
+# its tower).
+wheeled_pct = 175
+halftrack_pct = 150
+tracked_pct = 140
+# Reverse speed on a road node in percent of reverse_cm_s.
+reverse_pct = 100
+# R3: 1 prices a road node by time (100 / road pct of a step, no woods
+# factor); 0 prices it as any other node.
+path_cost = 1
+# R3: on a map with roads the A* heuristic weight is
+# max(100, 130 x heuristic_pct / road pct) percent (100: plain A* at
+# least, so searches stay under path_max_expansions).
+heuristic_pct = 100

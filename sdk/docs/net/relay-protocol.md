@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **16** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **17** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -232,6 +232,9 @@ Hello { nonce: u64, build_id: String, content_hash: u64, name: String }
   profiles, the S6 `[supply]` keys and `[ai.supply]`, four cards) and the
   save version (`-s15`: structures, crates, cook-offs and per-player S6
   accounts).
+  S16a bumped `PROTOCOL_VERSION` to 17 with no command change: the
+  setup each peer hashes for `Ready` gains map roads, `[vehicles.road]`
+  and a vehicle's `road_speed_pct`, and the save version moves to 33.
 - The relay drops `Hello`s shorter than 512 bytes. No reply before
   authentication is larger than the request, so the relay cannot amplify
   a flood with a spoofed source address.

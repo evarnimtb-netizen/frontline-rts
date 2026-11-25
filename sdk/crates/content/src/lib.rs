@@ -56,6 +56,9 @@ pub use vehicle::{
 /// Most capture points on a map (the sim's AI keeps point indices in a
 /// byte with one value reserved).
 pub const MAX_CAPTURE_POINTS: usize = 64;
+/// S16a: most roads on a map, and most points per road.
+pub const MAX_ROADS: usize = 64;
+pub const MAX_ROAD_POINTS: usize = 64;
 
 /// One exported JSON Schema.
 pub struct SchemaDoc {

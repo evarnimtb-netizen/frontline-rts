@@ -204,15 +204,19 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // values were 0x3c7f492027baa0f3, 0x82dc14c3d6b5a508,
 // 0x45645832ee66f654, 0x3c7f492027baa0f3, 0x10c9494db95d1aee,
 // 0xc9418ead8da4807e.
+// S16a Build A (`MapSetup::roads`, `[vehicles.road]`,
+// `MobilitySetup::road_speed_pct`) changed it; the B3 code values were
+// 0xeab40cb2122960c1, 0x2a81f7b3b47897ee, 0xc871cc8b8240ceb5,
+// 0xeab40cb2122960c1, 0x4f30ae2d701308a1, 0x2f7da91f46cf2629.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xeab40cb2122960c1),
-    ("skirmish usa-ger seed 7 hard", 0x2a81f7b3b47897ee),
-    ("test_unlock ger-usa seed 1 normal", 0xc871cc8b8240ceb5),
-    ("example override ger-usa seed 1 normal", 0xeab40cb2122960c1),
-    ("human ger vs ai usa seed 3 easy", 0x4f30ae2d701308a1),
+    ("skirmish ger-usa seed 1 normal", 0x4c3937e52dc6d9e0),
+    ("skirmish usa-ger seed 7 hard", 0x581ae4dfdf332bd5),
+    ("test_unlock ger-usa seed 1 normal", 0x663b27e422e8b1a2),
+    ("example override ger-usa seed 1 normal", 0x4c3937e52dc6d9e0),
+    ("human ger vs ai usa seed 3 easy", 0xa5335681da2200b6),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x2f7da91f46cf2629,
+        0xf295242268d1ecfa,
     ),
 ];
 

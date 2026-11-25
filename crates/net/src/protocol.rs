@@ -39,7 +39,10 @@ use serde::{Deserialize, Serialize};
 /// the sim refuses it; the one bump for the S11b slice). 16 (S12): `Tend`,
 /// `Carry`, `Evacuate`, `Reinforce` (refused by the sim until S12a Build
 /// B) and `StockKind::Aid` in the setup (the one bump for the S12 slice).
-pub const PROTOCOL_VERSION: u16 = 16;
+/// 17 (S16a): no new command; the setup sent in `Ready` (`setup_hash`)
+/// gains `MapSetup::roads`, `[vehicles.road]` and
+/// `MobilitySetup::road_speed_pct` (the one bump for the S16 slice).
+pub const PROTOCOL_VERSION: u16 = 17;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -1101,7 +1104,7 @@ mod tests {
     /// list is out of limits.
     #[test]
     fn net_s12_commands_in_limits() {
-        assert_eq!(PROTOCOL_VERSION, 16);
+        const { assert!(PROTOCOL_VERSION >= 16) };
         let input = |k: CommandKind| {
             Packet::Input(Input {
                 ack: BundleAck::default(),
