@@ -6,9 +6,11 @@ extends Node3D
 ## pale bar over the striker: raised in the wind-up, thrust toward the
 ## nearest enemy in the recovery). Placeholder quality, cheap: one
 ## MultiMesh for the stream, pooled meshes for the rest, everything hidden
-## while the state carries none of the three fields (the shipped rules).
+## while the state carries none of the three fields (no fire yet, or the
+## S14 switches off).
+## STREAM_MAX is two players' cap (`MAX_FLAME_PER_PLAYER` 256 each).
 
-const STREAM_MAX := 256
+const STREAM_MAX := 512
 const LIGHTS_MAX := 3
 const PATCH_COL := Color(1.0, 0.45, 0.10, 0.55)
 const MAN_FLAME := Color(1.0, 0.62, 0.15)

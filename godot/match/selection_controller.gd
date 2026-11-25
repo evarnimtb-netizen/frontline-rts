@@ -1532,7 +1532,8 @@ func _use_tool_at(screen: Vector2, shift: bool) -> void:
 			view.emit_intent(&"cut_wire", {"squads": selected_squads(), "target": g})
 		&"bangalore":
 			view.emit_intent(&"bangalore", {"squads": selected_squads(), "target": g})
-		# S14: the first able squad clears the trench nearest the click.
+		# S14: the first selected infantry squad (the bridge's pick) clears the
+		# trench nearest the click; the sim refuses it with no frag grenade.
 		&"clear_trench":
 			view.emit_intent(&"clear_trench", {"squads": selected_squads(), "target": g})
 			if not shift:
@@ -1761,8 +1762,9 @@ func _key(e: InputEventKey) -> void:
 			return
 	for order in [&"move", &"stop", &"retreat", &"dig", &"barrage", &"regroup", &"face", &"repair", &"suppress", &"crew", &"embark", &"disembark"]:
 		if e.is_action_pressed(StringName("order_" + order)):
-			# S14: with melee on, V strikes (Board stays on its button).
-			if order == &"embark" and view.s14_on("melee") and not selected_soldiers().is_empty():
+			# S14 (Fix 10, TODO S14-11 (A)): with melee on, V strikes when a
+			# selected man has an enemy within STRIKE_KEY_M; else it boards.
+			if order == &"embark" and view.s14_on("melee") and enemy_in_strike_reach():
 				order = &"strike"
 			activate(order)
 			get_viewport().set_input_as_handled()
@@ -1786,6 +1788,23 @@ func _key(e: InputEventKey) -> void:
 		if pos != null:
 			view.jump_camera(pos)
 		get_viewport().set_input_as_handled()
+
+
+## S14 (Fix 10): how near an enemy soldier must be to a selected man for
+## V to strike instead of board (m; the sim's strike reach is about 0.6-1 m
+## plus the body radius).
+const STRIKE_KEY_M := 1.5
+
+
+## S14 (Fix 10): a selected own soldier has an enemy soldier within
+## STRIKE_KEY_M.
+func enemy_in_strike_reach() -> bool:
+	for id in selected_soldiers():
+		var p: Vector3 = view.unit_pos(id)
+		for so in view.soldiers_by_id.values():
+			if int(so.owner) != view.local_player and (so.pos as Vector3).distance_to(p) <= STRIKE_KEY_M:
+				return true
+	return false
 
 
 ## Recalls control group `g` (its living own men); a second recall within

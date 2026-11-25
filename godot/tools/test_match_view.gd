@@ -1195,9 +1195,28 @@ func _test_s14() -> void:
 	grid.press(&"strike")
 	var st: Variant = _last(&"strike_units")
 	_check(st != null and not (st.units as PackedInt32Array).is_empty(), "S14: Strike sends strike_units")
+	# S14 Fix 10 (TODO S14-11 (A)): V strikes only with an enemy within
+	# STRIKE_KEY_M of a selected man; else it boards, as before S14.
 	_intents.clear()
 	_key(KEY_V)
-	_check(_last(&"strike_units") != null, "S14: V sends strike_units")
+	_check(_last(&"strike_units") == null, "S14: V boards (no strike) with no enemy near")
+	_sel.cancel_tool()
+	_sel.select_squads(PackedInt32Array([sq]))
+	var foe := -1
+	for t in ["rifle", "engineer", "mg"]:
+		for sid in _source.squad_ids(1, t):
+			if foe == -1 and _source.unit_ids(sid).size() > 0:
+				foe = _source.unit_ids(sid)[0]
+	_check(foe != -1, "S14: an enemy man to stage")
+	if foe != -1:
+		var me: Dictionary = _source._man(men[0])
+		var them: Dictionary = _source._man(foe)
+		them.pos = (me.pos as Vector2) + Vector2(1.0, 0.0)
+		_view.update_state(_source.get_state())
+		await _frames(1)
+		_intents.clear()
+		_key(KEY_V)
+		_check(_last(&"strike_units") != null, "S14: V sends strike_units with an enemy within reach")
 	if grid.enabled(&"clear_trench"):
 		grid.press(&"clear_trench")
 		_check(_sel.tool == &"clear_trench", "S14: Clear arms a tool")

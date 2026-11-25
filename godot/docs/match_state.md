@@ -1647,8 +1647,8 @@ wound, casualty or medic squad is in the state.
 
 Design: `docs/slices/S14-assault-kit.md` 3, 5, 6. Everything is off unless
 the rules switch it on (`[flame] enabled`, `[melee] enabled`, `[clear]
-enabled`; all 0 in the shipped rules), and every field below is empty or
-absent while it is off. The bridge sends them; the mock shows one of each
+enabled`; all 1 in the shipped rules since S14 C), and every field below is
+empty or absent while it is off. The bridge sends them; the mock shows one of each
 once `stage_s14` is called (`rules.s14` on).
 
 ### State keys
@@ -1663,7 +1663,8 @@ once `stage_s14` is called (`rules.s14` on).
   ground (same sight rule, plus 6 m); it burns within `radius` m of `pos`
   (`[flame] patch_radius_cm`) until `seconds_left` runs out.
 - `soldiers[].burning: bool` -- only when true (a flame hit or burning
-  ground).
+  ground). A downed man (in `casualties[]`, S12) who burns carries no
+  flag: `burning` is sent per standing soldier only.
 - `soldiers[].strike: int` -- only when not 0: 1 wind-up, 2 recovery (the
   strike pose).
 - Weapons: `WeaponClass::Flame` (`class` "flame" in defs); the bridge's
@@ -1672,7 +1673,8 @@ once `stage_s14` is called (`rules.s14` on).
 ### Intents
 
 - `strike_units {units}` (direct control `V` while `rules.s14.melee` is
-  on; the Strike button) -- each of the own `units` with no strike running
+  on and an enemy is within 1.5 m of a selected man, else `V` boards; the
+  Strike button) -- each of the own `units` with no strike running
   starts one at the nearest enemy within reach. Refused (`fort_refused`,
   `not_allowed`) with `[melee] enabled` 0 or when nobody is in reach. The
   bridge maps it to `Strike`; the mock does not handle it.
@@ -1685,7 +1687,8 @@ once `stage_s14` is called (`rules.s14` on).
 
 ### Presenter (`match/flame_view.gd`)
 
-One MultiMesh of short bright boxes for the stream (at most 256), a
+One MultiMesh of short bright boxes for the stream (at most 512: the rules
+allow 256 per player, `MAX_FLAME_PER_PLAYER`, so a 1v1 never overflows it), a
 flickering disc for each patch with a light under the first 3, a small
 flame over each burning man, and the strike pose as a pale bar over the
 striker (raised in the wind-up, thrust toward the nearest enemy in the
@@ -1693,4 +1696,6 @@ recovery; the soldiers are instanced meshes without a rig, so there is no
 arm to move). Nothing is drawn while the fields are empty. Burning men are
 not tinted (the instanced bodies take no per-man tint from GDScript); the
 flame marker stands for it. `V` is also Board's key: with `rules.s14.melee`
-on and men selected `V` strikes and Board stays on its button.
+on, men selected and an enemy within 1.5 m of one of them
+(`STRIKE_KEY_M`, the sim's default reach plus a margin) `V` strikes;
+otherwise it arms Board as before (S14-11 (A)).

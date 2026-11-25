@@ -1494,11 +1494,11 @@ mod tests {
         assert_eq!(f.extra[1].squads_called, f.extra[1].squads_called);
     }
 
-    /// S14: the frame copies the flame fields one to one; with every
-    /// switch off (the shipped rules) there is no particle or patch, and
-    /// burning and strike hold one quiet entry per soldier.
+    /// S14: the frame copies the flame fields one to one; before anyone
+    /// fires (the shipped rules have S14 on) there is no particle or
+    /// patch, and burning and strike hold one quiet entry per soldier.
     #[test]
-    fn frame_carries_the_s14_fields_quiet_when_off() {
+    fn frame_carries_the_s14_fields_quiet_before_any_fire() {
         let mut w = test_world(false);
         let setup = w.match_setup().unwrap().clone();
         let mut ctx = FrameCtx::new(&setup, 0);
