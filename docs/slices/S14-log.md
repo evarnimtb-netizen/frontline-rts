@@ -5,35 +5,24 @@ Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never
 Owner rule 2026-11-25: no balance runs, no tuning; every number a TOML key with a range, behind switches that stay off.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S14-ai Build D done; Review next.** SAVE 33 / PROTOCOL 17. Every S14 switch is 1 in `mods/ww2/defs/rules/skirmish.toml`
-(`[flame]`, `[melee]`, `[clear] enabled`; `[ai.flame] jobs/refuel/buy/clear`). **T185:** `target/s14-D-off40` (`s14_off.toml`) vs
-`target/s14-base40`: `neutral.py` "same 40/40". **Default 40** (`target/s14-D-40`, breakage read only): no winner 0; length min
-10.65 / median 20.43 / max 31.31 min; no panic; Germany 22 of 40 (reported, not judged). **Code map.** `crates/sim/src/ai/flame.rs`:
-`AiFlameState` (`AiState::flame`: `jobs` by squad, `failed` targets, `cleared` squads), A1 `flame_start` / `flame_continue` /
-`run_flame` (phases Close, Smoke, Go, Burn, Clear; ends `END_*` = `FLAME_END_NAMES`), `flame_target` (bunker slit = roof centre +
-facing x roof half depth; else the known enemy in a dug cell nearest the point), `flame_focus` (the base of fire's aim,
-`ai/assault.rs` beside `breach_focus`), A2 `tank_pct`/`tank_low` (hook in `ai/ammo.rs` refills), A3 `flame_card` (urgent buy after
-the breach card in `ai.rs` `buy`), A4 `flame_clears`; `ai.rs` `throws` skips a squad clearing or with a `ClearTrench` pending (its
-`Regroup` ended the clear). JSON `factions.<f>.s14_derived` (`json_out::s14_derived`); targets T189-T200 (`targets/S14.toml`: T190
-no winner / length 10-40 and T192 `flame_jobs_open_per_match` <= 4 hard, the rest reports); `tools/pool.py` S14 line.
-**S14 rules in the default 40 (ger / usa, totals).** Flame jobs 2 / 4 (ends: usa done 1, deadline 1, weak 1; 2 + 1 open at the end);
-flame buys 8 / 4; refuels 0 / 0; AI clear orders 15 / 9, clears done 3 / 4, clear steps 6 / 3; strikes 24 / 25, strike hits 0 / 0;
-flame fired 0 / 19, flame hits 0 / 1, in a trench or pit 0 / 0 (`flame_matches_pct` 0); burn downs / kills 0 / 2, 0 / 3; patches
-0 / 19; stepped out 6 / 0; capped 0, patches dropped 0.
-**Open owner questions.** (1) Layout: the plan said S14-ai adds no saved field, but A1's deadline, stall and L3 recheck need job
-state; Build D added `AiState::flame` (one field, inside SAVE 33, which is not on main yet; no SAVE bump). Alternative: a stateless
-job read from the men's orders, without L1. (2) Few jobs: a man crouched in a trench is seen only when he rises to fire, so A1's
-"known enemy in a dug cell" is rare; German flame never fired in 40 matches. Widen the target (a known dug cell or enemy trench
-near the point) or leave to the balance pass? (3) A2 never fired: no tank reached the reserve (19 particles in all). Note the
-flamethrower is a crew weapon, so S5a's squad share already is the tank's; A2 adds only "at the reserve, even under threat".
-(4) Strikes 49, hits 0 (Build C question 4: the level strike passes over a crouched man). (5) R1 geometry and R3/R6 as Build C.
-**Deviations (D).** (1) `AiState::flame` (above). (2) Close and Go use `Move`, not `AttackMove` (as the breach stage: an
-AttackMove halts at every enemy in sight and the job stalls). (3) A squad already within `stage_m` skips Close; a flame man
-within `stand_m` burns from where he is. (4) A3: "no live own flame squad" read as none attacking that point, with `cards_max`
-the cap on living flame squads. (5) A4: the *point* within `clear_near_m` of the known trench enemy (the plan's wording), not the
-squad. (6) L3 waits are per target (8 m) for A1 and per squad for A4, both `recheck_s`. (7) Smoke waits `[ai.fort]
-suppress_lead_s` (the breach rule). (8) Test worlds: `flat_world_with` resolves with flame off and calls `s14_off`;
-`real_flame_world` calls `s14_off` then turns flame on (they were written with the switches off).
+**State: S14 Fix done; Docs/PR next.** SAVE 33 / PROTOCOL 17. Every S14 switch is 1 in `mods/ww2/defs/rules/skirmish.toml`.
+Review findings 1-16 fixed (section "S14 Fix" below); 13a kept as was (owner question S14-10). **T185:** `target/s14-F-off40`
+(`s14_off.toml`) vs `target/s14-base40`: `neutral.py` "same 40/40". **Default 40** (`target/s14-F-40`, breakage read only): no
+winner 0; length min 10.65 / median 21.13 / max 32.53 min; no panic; Germany 22 of 40 (reported, not judged).
+**S14 rules in the default 40 (ger / usa).** Flame jobs 7 / 6 (ends: done 6 / 0, deadline 0 / 2; open at the end 1 / 4, oldest
+77 / 133 s, T192 <= 185 passes); flame buys 10 / 9; flame fired 8 / 12, hits 1 / 0 (1 on a trench man, 0 in a bunker); burn kills
+1 / 0; patches 1 / 7; stepped out 4 / 0; refuels 0 / 0; AI clear orders 26 / 13, clears done 25 / 7, steps 34 / 3; strikes 0 / 1,
+strike hits 0 / 0; capped 0, patches dropped 0.
+**Why some rules stay at 0 (read, not tuned).** Refuels: no tank reached the 10 % reserve (20 particles in 40 matches against a
+120-unit tank). Strikes fell 49 -> 1: fix 3 makes a dry man in reach reload or draw his sidearm first, and the automatic strike
+was nearly always a dry man; the staged R5 row and `automatic_strike_hits_a_crouched_man` show a strike that does fire hits. Bunker
+flame hits 0: few jobs reach Burn at a bunker; the slit itself works (R1 below, `ai_flames_the_slit`).
+**R1 (slit, 5 seeds x 2 owners).** out 22 %, 0 runs with 4 of 5 out, closed control 8 %, back 0 %, flame man out in 5 of 10 runs;
+stays report-only (owner question S14-8): a flat stream passes over men crouched 1.5 m down and ends on the back wall's side.
+**For Docs/PR.** `docs/modding/tuning.md` has every new key (`[flame] aim_cm`, `slit_near_cm`, `patches`; `[melee] down_cm`,
+`up_cm`, `drop_cm` gone, `start_pad_cm` 0; `[ai.flame] memory_s`, `burn_min_s`, `clear_max_s`, `stand_trench_m`): their defaults
+were chosen so each rule fires, not tuned. `godot/docs/match_state.md` S14 section is current (V rule, stream 512). Owner questions
+S14-1..13 in `docs/TODO.md` (8-13 new, each on (A)). Godot `test_match_view` 456/456. The PR text should list the 16 findings.
 
 ## S14a A (Build A)
 Commits: 176525e layout; 8aca2e1 keys, when, class, ablations, targets; 3c55b01 F1-F5, F8, F9; f22d8a1 log, clippy; 4d3b6c1
@@ -101,3 +90,17 @@ strikes and Board stays on its button; (2) no tint for burning men (instanced bo
 marker instead; (3) no rig access, so the strike pose is a bar over the striker (raised, then thrust toward the nearest enemy);
 (4) the mock does not act on `strike_units` / `clear_trench`; (5) the 16-vehicle 0.2 ms timing check in `test_match_view`
 is a headless timing check that failed once under load (0.355 ms), unrelated to S14. No sound for flame shots yet (MG cue).
+
+## S14 Fix (F)
+Commits: 13bebba fix 1; 32c9865 sim and AI 2-8, 11, 13b, 15, 16; 4c76482 cli and targets; 3af174f V key and presenter docs 10, 12.
+(1) A flame man's `Suppress` aims at the target's height (`flame_aim_z`: the slit's middle near an enemy bunker, else the ground
+or dug floor + `aim_cm`); slit test with the real M1A1 man, closed and back controls. (2) AI flame target: in-trench sightings
+remembered `memory_s`, bunker by `known_by_record`, Burn at least `burn_min_s`, trench stand `stand_trench_m` 2. (3) Melee: feet
+window `down_cm`/`up_cm`, nearest enemy on the body axis, a dry man reloads or draws first. (4) `cleared` kept while the clear runs,
+`clear_max_s` stops an old one, a job's squad kept while its clear runs. (5) The clear's flame burst ends after `burst_rounds`.
+(6) A clear ends on an undug cell. (7) `[flame] patches` switch; a 0-hp burn spares the downed. (8) Step-out only while holding;
+regroup after. (9) T192 gates `flame_job_oldest_s` <= 185; AI tests assert effects; thread test 1/2/3/4/8. (10) `V` strikes only
+with an enemy within 1.5 m (S14-9). (11) The entry cell is step 1 (R4 window 120 -> 180 s for it). (12) Docs and names. (13b)
+deadline and stall tests for a busy job squad; 13a not changed (S14-10). (14) no code defect. (15) stance Auto after a clear.
+(16) load checks: strike point on the map, Flame-class particle weapon, bounded particle state.
+Deviation: 13a reverted (counting other squads' tasks ended every lone job at once).

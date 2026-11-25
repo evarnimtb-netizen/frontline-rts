@@ -582,6 +582,30 @@ strike numbers) are settled in the plan and only reported there.
 - S14-7 Burning ground and movement. (A) Paths ignore fire; men standing in it step out on their own, and Clear trench waits for its
   own fire to die. **(A) assumed 2026-11-22.** (B) Paths route around burning ground (a new navigation layer; costs tick time).
 
+S14 Fix (2026-11-25, review `docs/slices/S14-review.md`; log `S14-log.md` "S14 Fix"). Each runs on (A) until answered:
+
+- S14-8 R1, flame through a bunker slit. With the aim fixed (finding 1) the real M1A1 man puts 6 hits into the bunker over 10 runs
+  (fortify10 row: 22 % of the men out, 0 runs with 4 of 5 out; closed control 8 %, back control 0 %); in 5 of 10 runs the
+  defenders kill him first. Where he empties his tank, 0-2 of 5 are out: a flat 27 m/s stream through a 0.4 m slit passes over
+  men crouched on a pit floor 1.5 m down and ends on the back wall's side with no effect (S14-6 (A)). (A) R1 (T186) stays
+  report-only; the slit is a balance-pass matter. **(A) assumed 2026-11-25.** (B) A particle ending on a fort piece's inner side
+  splashes (burns men within `near_cm` of it). (C) Lower the R1 target (e.g. 2 of 5 out in half the runs).
+- S14-9 The `V` key (review finding 10). (A) With `[melee]` on, `V` strikes only when an enemy is within 1.5 m of a selected man,
+  otherwise it boards as before. **(A) assumed 2026-11-25.** (B) A new key for Strike, `V` stays Board.
+- S14-10 A lone flame job's end (finding 13). The job's own Attack task counts in "point attacked", so "the point is no longer
+  attacked" ends a job only with the point taken; counting only other squads' tasks ended every lone job at once. (A) Keep it: a
+  lone job is bounded by `[ai.flame] job_max_s` (T192 now gates the oldest open job at the match end, <= 185 s). **(A) assumed
+  2026-11-25.** (B) End a lone job when the AI's plan for that point is dropped (needs the plan's id in the job).
+- S14-11 The AI's bunker target (finding 2). (A) A bunker counts as a flame target when seen, remembered, or on the AI's record of
+  enemy works (`known_by_record`); men in a trench are remembered `[ai.flame] memory_s` (60) after they were last seen. **(A)
+  assumed 2026-11-25.** (B) Seen only (the plan's text), with the trench memory alone.
+- S14-12 Where the flame man stands at a trench (finding 2). A flat stream enters a 1.8 m trench only from its lip. (A) `[ai.flame]
+  stand_trench_m` 2 (bunkers keep `stand_m` 20); a default chosen so the rule fires, not tuned. **(A) assumed 2026-11-25.**
+  (B) A lobbed stream (aim higher, longer range) so he can stand off.
+- S14-13 Melee reach in height (finding 3). (A) A strike reaches feet up to 2 m below or above the striker's (`[melee] down_cm`,
+  `up_cm`): any stance and into a trench from its lip; the enemy nearest the strike point on his body axis is hit. **(A) assumed
+  2026-11-25.** (B) Same level only (crouched and prone men hit, no reach into a trench).
+
 ## Planned work queue
 
 1. Infra step (done; on main).
@@ -608,7 +632,7 @@ strike numbers) are settled in the plan and only reported there.
 17. **S11a2: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A and B, with the Fix of Build B (B-1..B-7). Verified: `check.sh quick 730e67f` all ok, 982 tests at the head `e149258`. GitHub CI on `affb26e` (S11a1 complete plus S11a2 stage A): Linux build, release and debug sim tests, simulate, clippy, rustfmt and cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on main (fixed by PR 1); macOS cancelled; cross-platform hash check skipped. CI on `e149258` was still running when written. Measured 480 at `e149258`: Germany 41.67 % (sets 46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0; 318 targets pass, 82 miss (44 hard). New hard misses: T9b, T54a, T54c, T81a, T81b, T119b; gone: T8a, T115d, T121d. `tools/verify.sh` not run. Spec `docs/slices/S11a2.md`, log `S11a2-log.md`, targets `S11a2.toml`. Owner questions S11a2-1..12 above. Next: the merge decisions for S10c-ai, S11a1, S11a2 and PR 1; then the open items in STATE.md; then S11b.
 18. **S11b: done on branch `claude/project-thread-e7nsak` (2026-11-19), waits for the owner's merge OK.** Built in Build A, B and C, with the Fix stage (spec `docs/slices/S11b.md`, stages `S11b-build-A.md`, `-B.md`, `-C.md`, targets `S11b.toml`, log `S11b-log.md`). Measured 480 at `88117de`: Germany 44.17 %, HE share 26.8 / 26.5 / 26.2 (cap 26.3). Owner questions S11b-1..14 above.
 19. **B2 balance pass: done on branch `claude/project-thread-e7nsak` (2026-11-19); NO default changed.** Plan `docs/slices/B2-balance.md` (item 14; stages `B2-run-1.md` and `B2-run-2.md`, targets `B2.toml`, levers `targets/B2-levers/`, log `B2-log.md`). No lever passed the plan's rule. `rg_gap25` was applied (`fc14f52`) and reverted (`63e4b04`) when judge rule J4 failed on T121b. Owner questions B2-1..12 above.
-20. **S14 assault kit: planned (2026-11-22), not built.** Plan `docs/slices/S14-assault-kit.md` (notes `S14-research-history.md`, `S14-research-code-audit.md`). Builds after S13 from a fresh main: S14a mechanics (Build A flame, B clear trench and data, C melee; all switches 0, neutral; the `flame_only` 480 gates the AI half), presenter P, then S14-ai (flame jobs, refuel, flame buy, AI clear trench; 480, ablations). SAVE +1 and PROTOCOL +1 (`ClearTrench`, `Strike`). Targets from T185. Owner questions S14-1..7 above, each on (A).
+20. **S14 assault kit: built, reviewed and fixed on `claude/project-thread-aj1tww` (S14 Fix 2026-11-25); Docs/PR next.** Log `docs/slices/S14-log.md`. Owner questions S14-8..13 (above) from the Fix stage, each on (A). Plan `docs/slices/S14-assault-kit.md` (notes `S14-research-history.md`, `S14-research-code-audit.md`). Builds after S13 from a fresh main: S14a mechanics (Build A flame, B clear trench and data, C melee; all switches 0, neutral; the `flame_only` 480 gates the AI half), presenter P, then S14-ai (flame jobs, refuel, flame buy, AI clear trench; 480, ablations). SAVE +1 and PROTOCOL +1 (`ClearTrench`, `Strike`). Targets from T185. Owner questions S14-1..7 above, each on (A).
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 

@@ -84,7 +84,7 @@
 # flame_only, no_flame_ai, no_clear, no_melee, no_patches), and a file may
 # hold only the S14 switches ([flame] enabled; [melee] enabled; [clear]
 # enabled; [ai.flame] jobs, refuel, buy, clear; each 0 or 1) and [flame]
-# patch_hp_per_s 0. s14_off is the neutrality control there (NEUTRAL_BASE
+# patch_hp_per_s 0 or patches 0 (S14 Fix). s14_off is the neutrality control there (NEUTRAL_BASE
 # default target/s14-base40, the 40 set of base a27ce63). Written by S14a
 # Build A; run by a later balance pass (owner 2026-11-25).
 #
@@ -241,10 +241,10 @@ elif mode == "s13":
         "ai.armour": {"heavy_buy": {0}, "heavy_overwatch": {0}, "push_limit": {0}},
     }
 elif mode == "s14":
-    # S14: its switches (0 or 1), and harmless burning ground.
+    # S14: its switches (0 or 1), harmless burning ground, no ground fire.
     on_off = {0, 1}
     switches = {
-        "flame": {"enabled": on_off, "patch_hp_per_s": {0}},
+        "flame": {"enabled": on_off, "patch_hp_per_s": {0}, "patches": {0}},
         "melee": {"enabled": on_off},
         "clear": {"enabled": on_off},
         "ai.flame": {"jobs": on_off, "refuel": on_off, "buy": on_off, "clear": on_off},
