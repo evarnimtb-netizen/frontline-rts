@@ -1320,7 +1320,9 @@ impl MatchState {
             &CommandKind::ClearTrench { squad, .. } => {
                 self.refuse_fort(p, Some(squad), crate::fort::FortRefusal::NotAllowed)
             }
-            CommandKind::Strike { .. } => self.refuse_fort(p, None, crate::fort::FortRefusal::NotAllowed),
+            CommandKind::Strike { .. } => {
+                self.refuse_fort(p, None, crate::fort::FortRefusal::NotAllowed)
+            }
             CommandKind::PlaceBangalore { units, target } => {
                 self.place_bangalore(ctx, p, units, *target)
             }

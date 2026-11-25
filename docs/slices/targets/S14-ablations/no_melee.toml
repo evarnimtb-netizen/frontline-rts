@@ -1,0 +1,16 @@
+# S14 ablation (plan 10): no melee strike (M1-M5), the rest on. Run by the
+# later balance pass.
+[flame]
+enabled = 1
+
+[melee]
+enabled = 0
+
+[clear]
+enabled = 1
+
+[ai.flame]
+jobs = 1
+refuel = 1
+buy = 1
+clear = 1

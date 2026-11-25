@@ -125,7 +125,13 @@ pub struct S14Counters {
 
 /// Load check of one entity's `Close` (spec 3.1). `burn_max`: the latest
 /// tick a burn may end at.
-pub(crate) fn close_ok(kind: EntityKind, c: &Close, players: usize, vehicles: usize, burn_max: u64) -> bool {
+pub(crate) fn close_ok(
+    kind: EntityKind,
+    c: &Close,
+    players: usize,
+    vehicles: usize,
+    burn_max: u64,
+) -> bool {
     let man = matches!(kind, EntityKind::Soldier | EntityKind::Downed);
     if !man {
         return *c == Close::default();
@@ -182,13 +188,17 @@ impl MatchState {
     /// The S14 bounds of this match's rules.
     pub(crate) fn s14_limits(&self) -> S14Limits {
         let hz = self.setup.tick_hz as u64;
+        let r = &self.setup.rules;
+        let f = &r.flame;
         S14Limits {
-            particles: MAX_FLAME_PER_PLAYER,
-            ttl_ticks: u16::MAX as u64,
-            patches: MAX_PATCHES,
-            patch_ticks: 3600 * hz,
-            steps: u8::MAX,
-            burn_ticks: 3600 * hz,
+            particles: (f.particles_per_player as usize).min(MAX_FLAME_PER_PLAYER),
+            ttl_ticks: (f.ttl_ms as u64 * hz)
+                .div_ceil(1000)
+                .clamp(1, u16::MAX as u64),
+            patches: (f.patches_max as usize).min(MAX_PATCHES),
+            patch_ticks: f.patch_s as u64 * hz,
+            steps: r.clear.steps_max.min(u8::MAX as u32) as u8,
+            burn_ticks: f.burn_s as u64 * hz,
         }
     }
 
@@ -199,7 +209,8 @@ impl MatchState {
         let s = &self.setup;
         let np = s.players.len();
         let size = Fx::from_int(s.map.size_m);
-        let on_map = |q: FxVec3| (Fx::ZERO..=size).contains(&q.x) && (Fx::ZERO..=size).contains(&q.y);
+        let on_map =
+            |q: FxVec3| (Fx::ZERO..=size).contains(&q.x) && (Fx::ZERO..=size).contains(&q.y);
         let lim = self.s14_limits();
         let cap = lim.particles;
         let mut per = vec![0usize; np];
@@ -274,7 +285,10 @@ impl MatchState {
 
     /// The clear cells must be dug trench (spec 3.1; needs the terrain,
     /// so the world calls it after [`MatchState::validate`]).
-    pub(crate) fn validate_s14_terrain(&self, t: &crate::terrain::Heightfield) -> Result<(), &'static str> {
+    pub(crate) fn validate_s14_terrain(
+        &self,
+        t: &crate::terrain::Heightfield,
+    ) -> Result<(), &'static str> {
         for cl in self.clears.values() {
             for (gx, gy) in [cl.cell, cl.from] {
                 if gx as u32 >= t.dim()

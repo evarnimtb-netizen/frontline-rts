@@ -46,7 +46,7 @@ pub use scenario::{
 pub use setup::{
     Difficulty, DigProfile, Fixed, FixedVec2, MatchRequest, MatchSetup, PlayerRequest, PlayerSetup,
 };
-pub use variant::{MemberDef, TrainingDef};
+pub use variant::{MemberDef, MemberWhen, TrainingDef};
 pub use vehicle::{
     AmmoDef, AmmoMechanism, COMPONENTS, ComponentKind, Frame, MAX_ARMOUR_BOXES, MAX_ZONES,
     MobilityKind, MountKind, PLATE_GROUPS, PlateGroup, SEAT_ROLES, SeatRole, SlopeClass,

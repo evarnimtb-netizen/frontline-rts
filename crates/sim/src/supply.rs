@@ -134,6 +134,7 @@ pub(crate) fn class_of(setup: &MatchSetup, ents: &Entities, r: &FireRequest) -> 
         WeaponClass::Mortar => f::MORTAR,
         WeaponClass::Launcher => f::ROCKET,
         WeaponClass::Cannon => f::TANK_AP,
+        WeaponClass::Flame => f::FLAME,
     })
 }
 

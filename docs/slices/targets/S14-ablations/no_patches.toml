@@ -1,0 +1,18 @@
+# S14 ablation (plan 2, 10): burning ground harmless (`patch_s` 0 is refused
+# by its range, so `patch_hp_per_s` 0), the rest on. Run by the later
+# balance pass.
+[flame]
+enabled = 1
+patch_hp_per_s = 0
+
+[melee]
+enabled = 1
+
+[clear]
+enabled = 1
+
+[ai.flame]
+jobs = 1
+refuel = 1
+buy = 1
+clear = 1

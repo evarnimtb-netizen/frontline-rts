@@ -1252,7 +1252,8 @@ fn staged_s12(w: &mut World) {
     // burning man (a man mid-strike and a squad mid-clear come with Builds
     // C and B).
     use frontline_sim::fx::FxVec3;
-    let p3 = |x: i32, y: i32, z: i32| FxVec3::new(Fx::from_int(x), Fx::from_int(y), Fx::from_int(z));
+    let p3 =
+        |x: i32, y: i32, z: i32| FxVec3::new(Fx::from_int(x), Fx::from_int(y), Fx::from_int(z));
     let flame = |id, x| frontline_sim::flame::Flame {
         id,
         pos: p3(x, 705, 1),

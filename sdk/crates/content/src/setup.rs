@@ -396,6 +396,18 @@ impl MatchSetup {
         (a.heavy_buy, a.heavy_overwatch, a.push_limit) = (0, 0, 0);
     }
 
+    /// S14: every S14 switch 0 on a resolved setup (`[flame] enabled`,
+    /// `[melee] enabled`, `[clear] enabled`, `[ai.flame]` jobs, refuel,
+    /// buy, clear). Flame members are chosen at resolve time by `when`, so
+    /// a setup resolved with `[flame] enabled` 1 keeps its flame men; this
+    /// turns the rules off only.
+    pub fn s14_off(&mut self) {
+        let r = &mut self.rules;
+        (r.flame.enabled, r.melee.enabled, r.clear.enabled) = (0, 0, 0);
+        let a = &mut r.ai.flame;
+        (a.jobs, a.refuel, a.buy, a.clear) = (0, 0, 0, 0);
+    }
+
     /// S11b G1: `[items] rifle_grenades` 0 on a resolved setup (the kind
     /// dropped from every squad type: `items[kind]` None, member counts 0).
     pub fn rifle_grenades_off(&mut self) {
@@ -505,6 +517,12 @@ pub struct RulesSetup {
     pub wounds: WoundsTuning,
     /// S13: `[armour]` (rule O1; or the S13 values).
     pub armour: crate::tuning::ArmourTuning,
+    /// S14: `[flame]` (or the S14a values, the switch off).
+    pub flame: crate::tuning::FlameTuning,
+    /// S14: `[melee]` (or the S14a values, the switch off).
+    pub melee: crate::tuning::MeleeTuning,
+    /// S14: `[clear]` (or the S14a values, the switch off).
+    pub clear: crate::tuning::ClearTuning,
 }
 
 impl RulesSetup {
@@ -699,6 +717,8 @@ pub struct AiSetup {
     pub arty: AiArtyTuning,
     /// S12: `[ai.medic]` (or the S12a values, switches off).
     pub medic: AiMedicTuning,
+    /// S14-ai: `[ai.flame]` (or the S14a values, switches off).
+    pub flame: crate::tuning::AiFlameTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1755,7 +1775,20 @@ impl ModDefs {
             .squads
             .values()
             .filter(|s| !s.is_abstract)
-            .map(|s| {
+            .map(|s0| {
+                // S14 (plan 4.2): the members whose `when` does not match
+                // `[flame] enabled` are dropped before anything reads the
+                // card (no `when` anywhere: the card as it is).
+                let flame_on = rules.flame.as_ref().is_some_and(|f| f.enabled == 1);
+                let filtered;
+                let s = if s0.members.iter().any(|m| m.when.is_some()) {
+                    let mut c = s0.clone();
+                    c.members.retain(|m| m.active(flame_on));
+                    filtered = c;
+                    &filtered
+                } else {
+                    s0
+                };
                 let faction = index_of(self.factions.keys(), &s.faction).unwrap_or(0);
                 let cooldown_group = group_of(s);
                 let vehicle = s
@@ -2182,6 +2215,7 @@ impl ModDefs {
                         obstacles: a.obstacles.clone().unwrap_or_default(),
                         arty: a.arty.clone().unwrap_or_default(),
                         medic: a.medic.clone().unwrap_or_default(),
+                        flame: a.flame.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2199,6 +2233,9 @@ impl ModDefs {
                 fortify: rules.fortify.clone(),
                 wounds: rules.wounds.clone().unwrap_or_default(),
                 armour: rules.armour.clone().unwrap_or_default(),
+                flame: rules.flame.clone().unwrap_or_default(),
+                melee: rules.melee.clone().unwrap_or_default(),
+                clear: rules.clear.clone().unwrap_or_default(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -3049,6 +3086,10 @@ impl MatchSetup {
                 wounds: &r.wounds,
                 ai_medic: &a.medic,
                 armour: &r.armour,
+                flame: &r.flame,
+                melee: &r.melee,
+                clear: &r.clear,
+                ai_flame: &a.flame,
             },
         );
         r.at_ditch

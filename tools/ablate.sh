@@ -79,6 +79,15 @@
 # neutrality control there (NEUTRAL_BASE default target/s13-base40, the
 # 40 set of base 6f7bda0).
 #
+# S14 (docs/slices/S14-assault-kit.md 2, 10): with ABLATIONS=docs/slices/
+# targets/S14-ablations every *.toml there is an override (s14_off,
+# flame_only, no_flame_ai, no_clear, no_melee, no_patches), and a file may
+# hold only the S14 switches ([flame] enabled; [melee] enabled; [clear]
+# enabled; [ai.flame] jobs, refuel, buy, clear; each 0 or 1) and [flame]
+# patch_hp_per_s 0. s14_off is the neutrality control there (NEUTRAL_BASE
+# default target/s14-base40, the 40 set of base a27ce63). Written by S14a
+# Build A; run by a later balance pass (owner 2026-11-25).
+#
 # Env: ABLATIONS=DIR (default docs/slices/targets/S10b-ai-ablations; the
 # S10a set is docs/slices/targets/S10a-ai-ablations), TARGETS (default the
 # slice file beside DIR: S10b-ai.toml / S10a-ai.toml), NEUTRAL_BASE (default
@@ -132,6 +141,13 @@ if [ "$(basename "$DIR")" = S13-ablations ]; then
     MODE=s13
     NEUTRAL_NAME=s13_off
     NEUTRAL_BASE=${NEUTRAL_BASE:-target/s13-base40}
+fi
+if [ "$(basename "$DIR")" = S14-ablations ]; then
+    # The S10c rules for listing and applying, the S14 key list.
+    S10C=1
+    MODE=s14
+    NEUTRAL_NAME=s14_off
+    NEUTRAL_BASE=${NEUTRAL_BASE:-target/s14-base40}
 fi
 NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10b-verify}
 DRY=0
@@ -223,6 +239,15 @@ elif mode == "s13":
         "armour": {"obliquity": {0}},
         "vehicles.gunnery": {"special_min_pct": {0}},
         "ai.armour": {"heavy_buy": {0}, "heavy_overwatch": {0}, "push_limit": {0}},
+    }
+elif mode == "s14":
+    # S14: its switches (0 or 1), and harmless burning ground.
+    on_off = {0, 1}
+    switches = {
+        "flame": {"enabled": on_off, "patch_hp_per_s": {0}},
+        "melee": {"enabled": on_off},
+        "clear": {"enabled": on_off},
+        "ai.flame": {"jobs": on_off, "refuel": on_off, "buy": on_off, "clear": on_off},
     }
 elif mode == "s11a2":
     # S11a2: its four switches, at 0 only.

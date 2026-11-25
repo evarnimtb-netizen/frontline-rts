@@ -3390,6 +3390,8 @@ impl MatchState {
             }
             Some(WeaponClass::Mortar) => kill_class::MORTAR,
             Some(WeaponClass::Cannon) => kill_class::TANK_AP,
+            // S14 F8.
+            Some(WeaponClass::Flame) => kill_class::FLAME,
             _ => kill_class::OTHER,
         }
     }

@@ -597,6 +597,10 @@ pub enum WeaponClass {
     Launcher,
     /// S3c: a handgun (tank crews' sidearm); fires like a rifle.
     Pistol,
+    /// S14 F1: a flamethrower: fires flame particles (never pool rounds)
+    /// like an MG fires bursts; its feed is the fuel. With `[flame]
+    /// enabled` 0 it does not fire.
+    Flame,
 }
 
 /// A weapon (`defs/weapons/*.toml`).
@@ -1694,6 +1698,16 @@ pub struct RulesDef {
     /// Without it: the S13 values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub armour: Option<crate::tuning::ArmourTuning>,
+    /// S14: flame particles, burning men and ground (`[flame]`). Without
+    /// it: the S14a values, the switch off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flame: Option<crate::tuning::FlameTuning>,
+    /// S14: the melee strike (`[melee]`). Without it: switch off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub melee: Option<crate::tuning::MeleeTuning>,
+    /// S14: the `ClearTrench` order (`[clear]`). Without it: switch off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear: Option<crate::tuning::ClearTuning>,
     /// S10a: fortification rules (`[fortify]`). Without it no blueprint
     /// can be built.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2138,6 +2152,9 @@ pub struct AiDef {
     /// S12: `[ai.medic]` (default: the S12a values, switches off).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub medic: Option<AiMedicTuning>,
+    /// S14-ai: `[ai.flame]` (default: the S14a values, switches off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flame: Option<crate::tuning::AiFlameTuning>,
 }
 
 impl AiDef {
@@ -3350,6 +3367,10 @@ impl RulesDef {
                 wounds: &self.wounds.clone().unwrap_or_default(),
                 ai_medic: &a.medic.clone().unwrap_or_default(),
                 armour: &self.armour.clone().unwrap_or_default(),
+                flame: &self.flame.clone().unwrap_or_default(),
+                melee: &self.melee.clone().unwrap_or_default(),
+                clear: &self.clear.clone().unwrap_or_default(),
+                ai_flame: &a.flame.clone().unwrap_or_default(),
             },
         );
         match (a.barrage_rounds, &a.mortar) {

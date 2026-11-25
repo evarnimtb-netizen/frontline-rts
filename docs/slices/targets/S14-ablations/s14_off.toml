@@ -1,0 +1,18 @@
+# S14 neutrality control (docs/slices/S14-assault-kit.md 2, 10): every S14
+# switch at its off value. Against the base 40 (NEUTRAL_BASE,
+# target/s14-base40, the 40 set of base a27ce63) it must be same match for
+# match (T185).
+[flame]
+enabled = 0
+
+[melee]
+enabled = 0
+
+[clear]
+enabled = 0
+
+[ai.flame]
+jobs = 0
+refuel = 0
+buy = 0
+clear = 0

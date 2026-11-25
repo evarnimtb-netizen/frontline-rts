@@ -1800,3 +1800,59 @@ td_lo_pct = 40               # w is 0 at or below this plate-to-calibre ratio (%
 td_hi_pct = 90               # ... and full at or above this one (%)
 apcbc_w_pct = 100            # full weight of class apcbc (%; c^1.5)
 apcr_w_pct = 100             # full weight of class apcr (%; c^2)
+
+# S14 assault kit (docs/slices/S14-assault-kit.md 2-3): flame particles F1-F9. Every number is a
+# balance lever (owner 2026-11-25: no balance runs in S14; a later pass fixes them here). The
+# switch stays 0 until S14-ai; with 0 no particle exists and flame slots resolve to today's men.
+[flame]
+enabled = 0                  # switch F1-F9 (0..=1)
+particles_per_player = 64    # F1: particles in flight per player (1..=256; 2 throwers x 12/s x 2.5 s = 60)
+ttl_ms = 2500                # F2: a particle's life (50..=10000 ms; 30 m at 25 m/s is about 1.3 s)
+near_cm = 300                # F4: near miss of a particle (1..=1000 cm; [combat] near_miss_cm is 200)
+burn_s = 4                   # F3: a struck man burns this long, refreshed by each hit (1..=3600 s)
+burn_hp_per_s = 15           # F3: HP a second while burning (0..=1000)
+pulse_ms = 500               # F3, F5: burn and patch damage every this often (50..=10000 ms)
+burn_suppression = 40        # F3: suppression points per pulse while burning (0..=100)
+patch_radius_cm = 100        # F5: burning ground reaches this far (1..=1000 cm; design 4.3 "radius 1 m")
+patch_s = 15                 # F5: burning ground lasts (1..=3600 s; design 4.3 "10-20 s")
+patch_hp_per_s = 20          # F5: HP a second to a man in it (0..=1000; 0 = patches harmless)
+patch_z_cm = 100             # F5: his feet within this height of it (1..=1000 cm)
+patch_merge_cm = 50          # F5: a landing this close refreshes a patch (1..=1000 cm)
+patches_max = 128            # F5: patches at most; one over is dropped and counted (1..=256)
+step_out = 1                 # switch F6: men leave burning ground (0..=1)
+step_out_m = 2               # F6: to this far beyond its edge (1..=50 m)
+
+# S14 melee M1-M5 (plan 2, 5): the default strike (entrenching spade) of a weapon with no [melee]
+# block. Switch 0 until S14-ai.
+[melee]
+enabled = 0                  # switch M1-M5 (0..=1; 0: no strike, Strike refused)
+reach_cm = 60                # M1: strike length (1..=1000 cm; infantry-structures.md 4.2)
+damage = 60                  # M1: strike damage (0..=1000 HP; a torso strike wounds, W3)
+windup_ms = 500              # M3: wind-up (1..=4000 ms)
+recover_ms = 1000            # M3: recovery with no fire (1..=4000 ms)
+start_pad_cm = 30            # M2: start with an enemy within reach + this (0..=1000 cm)
+
+# S14 ClearTrench C1-C5 (plan 2, 6). Switch 0 until S14-ai.
+[clear]
+enabled = 0                  # switch C1-C5 (0..=1; 0: ClearTrench refused)
+step_m = 8                   # C3: a step goes at least this far along the trench (1..=100 m)
+steps_max = 6                # C5: steps at most (1..=50)
+throwers = 2                 # C3: men throwing at each step point (1..=8)
+settle_s = 2                 # C3: wait after the fuse (0..=3600 s)
+walk_cells = 64              # C3: trench walk visits at most this many 4 m cells (1..=1024)
+
+# S14-ai A1-A4 (plan 2, 7): the AI's flame jobs, refuel, flame buys, trench clears. All 0 in S14a.
+[ai.flame]
+jobs = 0                     # switch A1: flame jobs (0..=1)
+refuel = 0                   # switch A2: refuel a dry flame man (0..=1)
+buy = 0                      # switch A3: buy the faction's flame card (0..=1)
+clear = 0                    # switch A4: order ClearTrench (0..=1)
+target_m = 40                # A1: a known enemy this close to the point is a target (1..=1000 m)
+stage_m = 40                 # A1: the squad closes to this far short of it (1..=1000 m)
+stand_m = 20                 # A1: the flame man stands this far from it (1..=1000 m)
+reserve_pct = 10             # A1, A2: fuel kept in reserve (0..=100 % of a full tank)
+job_max_s = 180              # A1 L1: a job ends after this long (1..=3600 s)
+stall_s = 45                 # A1 L2: or with no phase progress this long (1..=3600 s)
+cards_max = 2                # A3: flame cards alive at most (0..=8)
+clear_near_m = 15            # A4: clear a trench with a known enemy this close to the point (1..=1000 m)
+recheck_s = 60               # A1 L3, A4: a failed target or squad waits this long (1..=3600 s)

@@ -2603,6 +2603,21 @@
         "at_clear_s": 30,
         "dig_length_m": 20,
         "dig_offset_m": 10,
+        "flame": {
+          "buy": 0,
+          "cards_max": 2,
+          "clear": 0,
+          "clear_near_m": 15,
+          "job_max_s": 180,
+          "jobs": 0,
+          "recheck_s": 60,
+          "refuel": 0,
+          "reserve_pct": 10,
+          "stage_m": 40,
+          "stall_s": 45,
+          "stand_m": 20,
+          "target_m": 40
+        },
         "fort": {
           "breach": 1,
           "breach_cards_max": 1,
@@ -2856,6 +2871,14 @@
         "max_men": 4,
         "radius_m": 15,
         "time_s": 20
+      },
+      "clear": {
+        "enabled": 0,
+        "settle_s": 2,
+        "step_m": 8,
+        "steps_max": 6,
+        "throwers": 2,
+        "walk_cells": 64
       },
       "combat": {
         "blast": {
@@ -3144,6 +3167,24 @@
         "ranging_max_cells": 4,
         "ranging_step_pct": 50
       },
+      "flame": {
+        "burn_hp_per_s": 15,
+        "burn_s": 4,
+        "burn_suppression": 40,
+        "enabled": 0,
+        "near_cm": 300,
+        "particles_per_player": 64,
+        "patch_hp_per_s": 20,
+        "patch_merge_cm": 50,
+        "patch_radius_cm": 100,
+        "patch_s": 15,
+        "patch_z_cm": 100,
+        "patches_max": 128,
+        "pulse_ms": 500,
+        "step_out": 1,
+        "step_out_m": 2,
+        "ttl_ms": 2500
+      },
       "fortify": {
         "carry_kg_per_man": 20,
         "construction_mp_per_t": 100,
@@ -3203,6 +3244,14 @@
       "limit_groups": {
         "ww2:artillery": 2,
         "ww2:heavy": 1
+      },
+      "melee": {
+        "damage": 60,
+        "enabled": 0,
+        "reach_cm": 60,
+        "recover_ms": 1000,
+        "start_pad_cm": 30,
+        "windup_ms": 500
       },
       "movement": {
         "arrive_cm": 40,
