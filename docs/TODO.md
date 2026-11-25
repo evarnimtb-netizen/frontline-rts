@@ -551,6 +551,18 @@ Plan `docs/slices/B3-balance.md` 9; stage contract `B3-run-1.md`; levers `docs/s
 - Note: balance runs on Linden Brook (480, mirror 160s, `road_off`) are dropped by the owner rule of 2026-11-25; Germany won 31 of
   the 40-set matches there (a printout).
 
+## S17 open owner questions (plan `docs/slices/S17-team-play.md` 12; log `S17-log.md`; each runs on (A): "(A) assumed")
+
+- S17-1 The split. (A) S17 = teams in the sim, AI allies, the map, 2v2 offline; S18 = online teams and co-op. (B) All of 2v2 in one slice. (C) Online first with human teams only, AI allies later. **(A) assumed.**
+- S17-2 Troops per player in 2v2. (A) 100 men each (`[teams] pop_pct` 67), 400 on the map. (B) 150 each, 600. (C) 75 each, 300 as in 1v1. **(A) assumed.**
+- S17-3 What allies see. (A) Everything their ally sees, mines and artillery markers included (`shared_sight` 1). (B) Only their own spots. **(A) assumed.**
+- S17-4 Tickets. (A) One count per team (`team_tickets` 1). (B) Each player his own. **(A) assumed.**
+- S17-5 Sharing between allies. (A) Not in S17: HQ, dumps, aid posts, trucks, transports and fire missions serve only their owner. (B) Allies may draw ammunition and use aid posts now. **(A) assumed.**
+- S17-6 A player with no troops left. (A) He stays in while his ally stands (`wiped_waits` 1). (B) He is out, as in 1v1. **(A) assumed.**
+- S17-7 The team map. (A) Harrow Cross, 1536 m, four bases on two edges, seven points, two crossing roads. (B) Four bases on a 1024 m map. (C) Two more bases on Linden Brook. **(A) assumed.**
+- S17-8 Who may team up. (A) Any mix (the CLI offers any; the menu's 2v2 puts your faction with your ally). (B) Historical sides only. **(A) assumed.**
+- S17-9 What S18 is. (A) Online teams and co-op (four-slot relay, team lobby, AI fill). (B) The late-1944 US wave. (C) Buildings and a village. **(A) assumed.**
+
 ## S12 open items (2026-11-21; branch `claude/project-thread-aj1tww`, log `docs/slices/S12-log.md`)
 
 - S12-16 **T8 known miss (accepted for now, first item of the next balance pass).** With wounds on, HE's share of

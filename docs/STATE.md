@@ -46,7 +46,7 @@ in the AI, HE for the 57 mm.
 
 `SAVE_VERSION` **31** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **32** and **16** on the branch
 `claude/project-thread-aj1tww` (B3 code: `[ai.arty] direct_in_budget`, `AiCounters::arty_direct_holds`; no new command). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
-S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16 (branch); S16a 33/17 (branch `claude/project-thread-1d8xx3`); S17a 34/17 (branch `s17-build`, log `docs/slices/S17-log.md`). A save, hash or command change
+S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16 (branch); S16a 33/17 (branch `claude/project-thread-1d8xx3`); S17a 34/17 (branch `s17-build`, log `docs/slices/S17-log.md`); S17b and its presenter 34/17 (no layout change). A save, hash or command change
 bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
 BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 
@@ -140,6 +140,17 @@ road km observer, AI metre audit (report only); woods no longer slow a vehicle o
 runs (owner rule 2026-11-25). Linden Brook 40 set: 40/40 won, hashes equal at 1 and 4 threads (printout: median 19.2 min,
 Germany 31/40). Findings for the owner: F1 (wheels 22 % on road in matches, from AI destinations), F3 (search cost 4.5x).
 Presenter P (map in menus, roads drawn) not built yet.
+
+## S17 team play (branch `s17-build`; log `S17-log.md`)
+
+SAVE 34, PROTOCOL 17. S17a: `team` per player, `crates/sim/src/teams.rs` (hostile, allied, sees), the owner-test sweep
+(`docs/slices/S17-sites.md`, checked by `tools/owner_sites.sh --check` in `tools/check.sh quick`), rules T1-T9 (`[teams]`),
+AI A1 A2 A5; at most 8 players (mine `known` mask). S17b: AI point sharing (A3) and ally help (A4) under `[ai.team]`
+(on; an AI alone never runs them), Harrow Cross (`ww2:harrow_cross`, 1536 m, four bases with `side`, seven points),
+`skirmish --teams 2v2|map --faction2 --faction3`, team reports (`teams`, `s17_derived`), `tools/batch.sh teams`.
+Presenter: ally colour (green), team fog in frames, top bar ally, 2v2 mode in the skirmish menu (you and an AI ally vs two
+AIs on Harrow Cross). No balance runs (owner rule 2026-11-25). Kessel Ridge 40 set same 40/40; 2v2 40 set on Harrow Cross:
+40/40 won, hashes equal at 1 and 4 threads (printout: team 0 18, team 1 22, median 20.6 min). Online teams are S18.
 
 ## Known gaps
 
