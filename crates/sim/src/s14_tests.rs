@@ -321,6 +321,7 @@ fn load_rejects_bad_s14_keys() {
         Box::new(|s| s.rules.melee.windup_ms = 600),
         Box::new(|s| s.rules.melee.recover_ms = 900),
         Box::new(|s| s.rules.melee.start_pad_cm = 20),
+        Box::new(|s| s.rules.melee.drop_cm = 40),
         Box::new(|s| s.rules.clear.enabled = 1),
         Box::new(|s| s.rules.clear.step_m = 6),
         Box::new(|s| s.rules.clear.steps_max = 4),

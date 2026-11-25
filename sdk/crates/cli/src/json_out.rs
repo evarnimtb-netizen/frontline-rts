@@ -812,8 +812,18 @@ fn row(id: &str, name: &str, value: Value) -> Value {
 /// row): a failing one raises the document's `hard_failed`. A row not run
 /// (no verdict) is no check.
 fn s14_checks(s14: &crate::fortify::s14::S14Report) -> Vec<Value> {
-    let (slit, pool) = (&s14.slit, &s14.pool);
+    let (slit, pool, melee) = (&s14.slit, &s14.pool, &s14.melee);
     let mut checks = Vec::new();
+    // S14a Build C: R5 (T188).
+    if let Some(pass) = melee.pass {
+        checks.push(check(
+            "s14_melee",
+            "S14 R5: a strike hits only a touched capsule",
+            melee.ahead_hits,
+            "100 strikes 0.9 m ahead hit 100; 0.9 m aside hit 0".into(),
+            pass,
+        ));
+    }
     if let Some(pass) = pool.pass {
         checks.push(check(
             "s14_pool",
@@ -1640,6 +1650,14 @@ mod tests {
         let c = s14_checks(&r);
         assert_eq!(c.len(), 2);
         assert_eq!(c[1]["id"], json!("s14_slit"));
+        // S14a Build C: R5 is hard.
+        r.melee.pass = Some(false);
+        let c = s14_checks(&r);
+        assert_eq!(c.len(), 3);
+        assert_eq!(
+            (c[0]["id"].as_str(), &c[0]["pass"]),
+            (Some("s14_melee"), &json!(false))
+        );
     }
 
     use super::*;

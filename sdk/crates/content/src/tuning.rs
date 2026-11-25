@@ -3432,6 +3432,11 @@ tuning_table! {
         /// M2: a strike starts with an enemy capsule within reach plus this
         /// (cm).
         start_pad_cm: 0..=1000 = "d_ml_start_pad_cm",
+        /// M1 (S14a Build C): the strike segment's far end lies this far
+        /// below its start at the chest (cm; 0: level, the plan's rule,
+        /// which passes over a crouched or prone man). A later balance
+        /// pass may lower it.
+        drop_cm: 0..=300 = "d_fl_zero",
     }
 }
 
@@ -3465,6 +3470,7 @@ impl Default for MeleeTuning {
             windup_ms: 500,
             recover_ms: 1000,
             start_pad_cm: 30,
+            drop_cm: 0,
         }
     }
 }

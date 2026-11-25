@@ -1832,6 +1832,7 @@ damage = 60                  # M1: strike damage (0..=1000 HP; a torso strike wo
 windup_ms = 500              # M3: wind-up (1..=4000 ms)
 recover_ms = 1000            # M3: recovery with no fire (1..=4000 ms)
 start_pad_cm = 30            # M2: start with an enemy within reach + this (0..=1000 cm)
+drop_cm = 0                  # M1: the strike's far end this far below the chest (0..=300 cm; 0: level)
 
 # S14 ClearTrench C1-C5 (plan 2, 6). Switch 0 until S14-ai.
 [clear]

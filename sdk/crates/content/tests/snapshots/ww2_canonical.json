@@ -3248,6 +3248,7 @@
       },
       "melee": {
         "damage": 60,
+        "drop_cm": 0,
         "enabled": 0,
         "reach_cm": 60,
         "recover_ms": 1000,

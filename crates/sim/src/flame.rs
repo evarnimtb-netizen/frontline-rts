@@ -1332,8 +1332,9 @@ impl MatchState {
 
     /// M1, M4 (Damage stage, after this tick's blows, ascending striker
     /// id): each striker still standing (one downed or killed earlier in
-    /// this stage does not strike) sweeps a segment `reach` long from his
-    /// chest (`fire_height` less 40 cm) toward `strike_at`, level. The
+    /// this stage does not strike) sweeps a segment `reach` long
+    /// (horizontally) from his chest (`fire_height` less 40 cm) toward
+    /// `strike_at`, its far end `[melee] drop_cm` lower (0: level). The
     /// nearest enemy soldier capsule it touches (ties by id; downed men,
     /// vehicles and pieces neither struck nor in the way) takes the
     /// strike's damage through `hurt` in the W1 zone at the touch point,
@@ -1371,7 +1372,9 @@ impl MatchState {
             if dir == FxVec2::ZERO {
                 continue;
             }
-            let d = FxVec3::new(dir.x.mul(m.reach), dir.y.mul(m.reach), Fx::ZERO);
+            // `[melee] drop_cm` lowers the far end (0: level).
+            let drop = Fx::from_ratio(self.setup.rules.melee.drop_cm.min(300) as i64, 100);
+            let d = FxVec3::new(dir.x.mul(m.reach), dir.y.mul(m.reach), -drop);
             let mid = from.xy() + dir * m.reach.div_int(2);
             let mut hit: Option<(Fx, SimId)> = None;
             ctx.spatial

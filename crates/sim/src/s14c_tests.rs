@@ -419,3 +419,30 @@ fn melee_scene_hash_is_thread_count_free() {
         assert_eq!(hashes(n).0, one, "{n} threads");
     }
 }
+
+/// M1 `[melee] drop_cm`: the plan's level strike from the chest passes
+/// over a crouched man 0.9 m ahead; with the far end 80 cm lower it
+/// touches him. Control: the same level strike touches him standing.
+#[test]
+fn drop_cm_lowers_the_strike() {
+    for (drop, crouched, touched) in [(0, true, false), (80, true, true), (0, false, true)] {
+        let (mut w, a, b) = duel(1, "ww2:kar98k", "ww2:m1_garand", (90, 0), |s| {
+            s.rules.melee.drop_cm = drop;
+        });
+        wind_up(&mut w, a, off(200, 0));
+        if crouched {
+            w.edit_soldier(b, |_, c| {
+                c.stance = crate::ecs::Stance::Crouch;
+                c.height = Fx::from_milli(1200);
+            });
+        }
+        tick_held(&mut w, (a, off(0, 0)), (b, off(90, 0)), true);
+        let k = s14_of(&w, 0);
+        assert_eq!(k.strikes, 1);
+        assert_eq!(
+            k.strike_hits,
+            u32::from(touched),
+            "drop {drop} crouched {crouched}"
+        );
+    }
+}

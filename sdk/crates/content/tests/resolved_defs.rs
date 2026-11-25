@@ -212,19 +212,20 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // Build A values were 0x3d6d1c3544726b15, 0xcdb1fa4e5d9561e9,
 // 0x3940f6319574da56, 0x3d6d1c3544726b15, 0xa27b97d75d700b55,
 // 0x2dd59afea04f2b9d.
-// S14a Build C (`WeaponSetup::melee`, the weapons' `[melee]` blocks; the
-// switch `[melee] enabled` stays 0) changed it; the Build B values were
+// S14a Build C (`WeaponSetup::melee`, the weapons' `[melee]` blocks,
+// `[melee] drop_cm` default 0; the switch `[melee] enabled` stays 0)
+// changed it; the Build B values were
 // 0x6ecc7eeea9c3f6b0, 0xaaec0ee881b5f065, 0x702e969a764a6f12,
 // 0x6ecc7eeea9c3f6b0, 0xd61c8badbd467e85, 0x6e581b6585ee642c.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x168500e5f87728b1),
-    ("skirmish usa-ger seed 7 hard", 0x81cf620ceaeb3d93),
-    ("test_unlock ger-usa seed 1 normal", 0xd1664cbfd8cf4a9e),
-    ("example override ger-usa seed 1 normal", 0x168500e5f87728b1),
-    ("human ger vs ai usa seed 3 easy", 0xeb9631115784d6bf),
+    ("skirmish ger-usa seed 1 normal", 0x14abfab90488d4aa),
+    ("skirmish usa-ger seed 7 hard", 0xf88efd5987b824e4),
+    ("test_unlock ger-usa seed 1 normal", 0x0491e6dfbbf3c7cb),
+    ("example override ger-usa seed 1 normal", 0x14abfab90488d4aa),
+    ("human ger vs ai usa seed 3 easy", 0xfb5e32dfa2bc123d),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x1683fcbb4de21ff3,
+        0x74a0018ca3a57fcf,
     ),
 ];
 

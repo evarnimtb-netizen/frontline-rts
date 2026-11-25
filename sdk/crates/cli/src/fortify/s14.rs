@@ -53,6 +53,17 @@
 //!   as S3b, 5 s ahead), then a flame man 25 m in front `SuppressUnits` on
 //!   the trench; 30 s later `out_pct` of the line squad, `stepped_out`
 //!   (the owner's F6 counter), `flame_fired`, `flame_in_trench_hits`.
+//! - `melee` (R5, hard; S14a Build C, `[melee] enabled` 1): one rifleman
+//!   of each side (Kar98k, M1 Garand; every other man of the two rifle
+//!   squads dead) strikes the other, held on his spot, `MELEE_STRIKES`
+//!   strikes in all (half each way), each staged one tick from the end of
+//!   its wind-up toward a point 2 m ahead; the struck man is held mid-
+//!   recovery (he neither fires nor strikes) and both are put back as
+//!   they stood at the start (standing, unhurt, unsuppressed) before each
+//!   strike. `strikes`, `ahead_hits` with the target 0.9 m ahead; the
+//!   control `aside_strikes`, `aside_hits` with him 0.9 m to the side of
+//!   the segment. Pass: every strike made, `ahead_hits` = `strikes`,
+//!   `aside_hits` 0. No RNG: one run on the first seed.
 use anyhow::{Result, bail};
 use frontline_content::{MatchSetup, WeaponClass};
 use frontline_sim::command::CommandKind;
@@ -83,6 +94,10 @@ const POOL_ROUNDS: u32 = 40;
 const POOL_TICKS: u64 = 300;
 /// R4: the clear's length (s).
 const CLEAR_S: u64 = 120;
+/// R5: strikes per variant (half by each side).
+pub const MELEE_STRIKES: u32 = 100;
+/// R5: the target's distance from the striker (cm).
+const MELEE_CM: i32 = 90;
 /// R6: the flame man's distance from the trench (m).
 const UNDER_FIRE_M: i32 = 25;
 
@@ -184,6 +199,16 @@ pub struct UnderFireRow {
     pub flamer_out: Option<f64>,
 }
 
+/// `fortify10.s14.melee` (R5, hard; module docs).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct MeleeRow {
+    pub strikes: Option<f64>,
+    pub ahead_hits: Option<f64>,
+    pub aside_strikes: Option<f64>,
+    pub aside_hits: Option<f64>,
+    pub pass: Option<bool>,
+}
+
 /// The S14 rows (`fortify10.s14`).
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct S14Report {
@@ -192,12 +217,13 @@ pub struct S14Report {
     pub trench: TrenchRow,
     pub clear: ClearRow,
     pub under_fire: UnderFireRow,
+    pub melee: MeleeRow,
 }
 
 /// Summary lines, one per row.
 pub fn summary_text(r: &S14Report) -> String {
     let v = serde_json::to_value(r).unwrap_or_default();
-    ["slit", "pool", "trench", "clear", "under_fire"]
+    ["slit", "pool", "trench", "clear", "under_fire", "melee"]
         .iter()
         .map(|k| format!("  S14 {k}: {}\n", fields(&v[*k])))
         .collect()
@@ -210,7 +236,8 @@ pub fn s14_rows(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<S14Re
         pool: pool_row(args, seeds.clone())?,
         trench: trench_row(args, seeds.clone())?,
         clear: clear_row(args, seeds.clone())?,
-        under_fire: under_fire_row(args, seeds)?,
+        under_fire: under_fire_row(args, seeds.clone())?,
+        melee: melee_row(args, seeds)?,
     })
 }
 
@@ -853,9 +880,134 @@ pub fn under_fire_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result
     })
 }
 
+/// R5 setup: the two rifle squads' riflemen (player 0's, player 1's),
+/// every other man dead.
+fn melee_scene(args: &FortifyArgs, seed: u64) -> Result<(World, [SimId; 2])> {
+    let mut w = flame_world(args, seed, false, |s| s.rules.melee.enabled = 1)?;
+    let mut men = [SimId(0); 2];
+    for p in 0..2u8 {
+        let s = w.match_setup().unwrap();
+        let (card, gun) = if super::faction(s, p).ends_with("germany") {
+            ("ww2:ger_grenadiergruppe", "ww2:kar98k")
+        } else {
+            ("ww2:usa_rifle_squad", "ww2:m1_garand")
+        };
+        let Some(t) = s.squad_type_index(card) else {
+            bail!("no card {card}");
+        };
+        let c = at(TRENCH_X + 40 * p as i32, LINE_Y);
+        let Some(sq) = w.spawn_squad_at(PlayerId(p), t, c, EAST) else {
+            bail!("the {card} was not spawned");
+        };
+        let all = members(&w, sq);
+        let s = w.match_setup().unwrap();
+        let Some(&man) = all
+            .iter()
+            .find(|m| s.weapons[w.entities().kit()[m.index()].weapon as usize].id == gun)
+        else {
+            bail!("no {gun} man in the {card}");
+        };
+        for &m in &all {
+            if m != man {
+                w.kill_soldier(m);
+            }
+        }
+        men[p as usize] = man;
+    }
+    w.step(&[]);
+    Ok((w, men))
+}
+
+/// R5: `n` strikes by `striker` at `target`, the target 0.9 m ahead
+/// (`aside` false) or to the side: (strikes made, hits), from the
+/// striker's counters.
+fn melee_strikes(
+    w: &mut World,
+    (striker, fresh_s): (SimId, frontline_sim::ecs::Combat),
+    (target, fresh_t): (SimId, frontline_sim::ecs::Combat),
+    aside: bool,
+    n: u32,
+) -> [u32; 2] {
+    use frontline_sim::flame::{STRIKE_RECOVER, STRIKE_WINDUP};
+    let p = w.entities().owner()[striker.index()].0 as usize;
+    let count = |w: &World| {
+        let k = &w.game().unwrap().players()[p].s14;
+        [k.strikes, k.strike_hits]
+    };
+    let before = count(w);
+    let c = at(TRENCH_X, LINE_Y + 40);
+    let d = Fx::from_int(MELEE_CM).div_int(100);
+    let t = if aside {
+        FxVec2::new(c.x, c.y + d)
+    } else {
+        FxVec2::new(c.x + d, c.y)
+    };
+    for _ in 0..n {
+        w.place_soldier(striker, c);
+        w.place_soldier(target, t);
+        // Both as fresh (standing, unhurt, unsuppressed: a struck man
+        // crouches, and the level strike passes over a crouched man).
+        w.edit_soldier(target, |_, cb| {
+            *cb = fresh_t;
+            cb.close.strike_phase = STRIKE_RECOVER;
+            cb.close.strike = 200;
+            cb.close.strike_at = FxVec2::new(c.x - Fx::from_int(5), c.y);
+        });
+        w.edit_soldier(striker, |_, cb| {
+            *cb = fresh_s;
+            cb.close.strike_phase = STRIKE_WINDUP;
+            cb.close.strike = 1;
+            cb.close.strike_at = FxVec2::new(c.x + Fx::from_int(2), c.y);
+        });
+        w.step(&[]);
+    }
+    let after = count(w);
+    [after[0] - before[0], after[1] - before[1]]
+}
+
+/// `fortify10.s14.melee` (R5, hard; module docs).
+pub fn melee_row(args: &FortifyArgs, seeds: std::ops::Range<u64>) -> Result<MeleeRow> {
+    let seed = seeds.start;
+    let mut v = [[0u32; 2]; 2];
+    for (k, aside) in [false, true].into_iter().enumerate() {
+        let (mut w, [a, b]) = melee_scene(args, seed)?;
+        let fresh = |w: &World, m: SimId| w.entities().combat()[m.index()];
+        let (a, b) = ((a, fresh(&w, a)), (b, fresh(&w, b)));
+        let half = MELEE_STRIKES / 2;
+        let x = melee_strikes(&mut w, a, b, aside, half);
+        let y = melee_strikes(&mut w, b, a, aside, MELEE_STRIKES - half);
+        v[k] = [x[0] + y[0], x[1] + y[1]];
+    }
+    let [ahead, aside] = v;
+    Ok(MeleeRow {
+        strikes: Some(ahead[0] as f64),
+        ahead_hits: Some(ahead[1] as f64),
+        aside_strikes: Some(aside[0] as f64),
+        aside_hits: Some(aside[1] as f64),
+        pass: Some(
+            ahead[0] == MELEE_STRIKES
+                && ahead[1] == MELEE_STRIKES
+                && aside[0] == MELEE_STRIKES
+                && aside[1] == 0,
+        ),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R5 (Build C): 100 strikes at a man 0.9 m ahead hit 100; control:
+    /// 0.9 m aside, none (`pass`).
+    #[test]
+    fn s14_melee_row_hits_only_ahead() {
+        let r = melee_row(&FortifyArgs::default(), 1..2).unwrap();
+        assert_eq!(r.strikes, Some(MELEE_STRIKES as f64), "{r:?}");
+        assert_eq!(r.ahead_hits, Some(MELEE_STRIKES as f64), "{r:?}");
+        assert_eq!(r.aside_strikes, Some(MELEE_STRIKES as f64), "{r:?}");
+        assert_eq!(r.aside_hits, Some(0.0), "{r:?}");
+        assert_eq!(r.pass, Some(true));
+    }
 
     /// R1-R4, R6 (Builds A, B): each row runs on one seed with the mod's
     /// flame men; the pool row's invariants hold (saturated, particles
