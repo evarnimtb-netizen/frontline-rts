@@ -39,14 +39,14 @@ skirmish vs AI or 1v1 human vs human online. Rust 1.99.0, workspace in `Cargo.to
 | CLI and tools | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff; autotune, check.sh | `sdk/crates/cli/src/`, `tools/` |
 
 Not in the game yet: Jagdpanzer IV, 38(t), M18, gun tows, displacement, gun crates, registration, flash, HEAT, wounds, a
-third faction, a second map, SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a 3-inch M5
+third faction, SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a 3-inch M5
 in the AI, HE for the 57 mm.
 
 ## Versions
 
 `SAVE_VERSION` **31** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **32** and **16** on the branch
 `claude/project-thread-aj1tww` (B3 code: `[ai.arty] direct_in_budget`, `AiCounters::arty_direct_holds`; no new command). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
-S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16 (branch). A save, hash or command change
+S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16 (branch); S16a 33/17 (branch `claude/project-thread-1d8xx3`). A save, hash or command change
 bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
 BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 
@@ -130,6 +130,16 @@ Jumbo 12.5 / 15.6 %) and applied it at `f4e610b`: `[ai.arty] shell_mp_max_pct` 6
 (50.62 / 41.25 / 50.00; +5.2 on `target/s13-on`), no winner 0, HE share of casualties 27.40 / 24.96 / 26.70 (about 26.35
 pooled: T8a and T8c miss, T8b passes), T179a-d pass; 4 hard rows that pass at `s13-on` miss (T50b, T119b, T121d, T122c).
 By the plan's judge rule (J1, J4) the apply is to be reverted: the orchestrator's call.
+
+## S16 second map and roads (branch `claude/project-thread-1d8xx3`; log `S16-log.md`)
+
+SAVE 33, PROTOCOL 17 (S16a layout). S16a: `[[roads]]` in maps, `[vehicles.road]` (speed by drive type, time-priced path cost,
+heuristic floor), point-symmetry blend, `skirmish --map`, tools take a map; Kessel Ridge neutral (40 set same 40/40 at Build A
+and Build B). S16b: Linden Brook (`ww2:linden_brook`, point-symmetric, C in a valley, four roads), mirror and path-cap tests,
+road km observer, AI metre audit (report only); woods no longer slow a vehicle on a road node with road factor 100. No balance
+runs (owner rule 2026-11-25). Linden Brook 40 set: 40/40 won, hashes equal at 1 and 4 threads (printout: median 19.2 min,
+Germany 31/40). Findings for the owner: F1 (wheels 22 % on road in matches, from AI destinations), F3 (search cost 4.5x).
+Presenter P (map in menus, roads drawn) not built yet.
 
 ## Known gaps
 

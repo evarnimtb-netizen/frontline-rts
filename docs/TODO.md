@@ -535,6 +535,22 @@ Plan `docs/slices/B3-balance.md` 9; stage contract `B3-run-1.md`; levers `docs/s
 - B3-6 The aim. (A) In order: HE under the cap with Germany not down more than 2 points; the heavies bought; Germany toward 45-55 only through levers that pass their rule. A set that fixes the cap and leaves Germany at 42-45 % is a valid result. (B) Apply nothing unless Germany also reaches 45 %. **(A) assumed 2026-11-22, owner away; Eva may reopen.**
 - B3-7 Method. (A) T31 logged, not a screen floor (it is a report row, B2-5 (A)); noisy hard rows listed apart in the judge (section 5); seeds as in section 5. (B) Keep B2's floors and judge rule unchanged. **(A) assumed 2026-11-22, owner away; Eva may reopen.**
 
+## S16 open owner questions (plan `docs/slices/S16-second-map.md` 12; log `S16-log.md`; each runs on (A): "(A) assumed")
+
+- S16-1 What S16 is. (A) Second map and roads. (B) 2v2 team play first. (C) The late-1944 US wave. (D) Buildings and a village (M4). **(A) assumed.**
+- S16-2 Map size. (A) 1024 m, as Kessel Ridge. (B) 1536 m. **(A) assumed.**
+- S16-3 How Linden Brook plays. (A) C in a valley overlooked by two ridges, bases west and east. (B) A crest map with another point layout. (C) Three points in a line. **(A) assumed.**
+- S16-4 If matches run short (median under 15 min). (A) Stop and ask before moving anything. (B) Move both bases 40 m back without asking. **(A) assumed.** (40-set printout: median 19.2 min, 11.7-25.9; not a measure.)
+- S16-5 Road speeds. (A) Wheels 175 %, half-tracks 150 %, tracks 140 % of cross-country. (B) One factor, 150 %. (C) No speed change. **(A) assumed.**
+- Note F1 (S16b, checked, no fix): the vehicle search does follow Linden Brook's roads (truck base to C, D, E 94-96 % driven on road;
+  an exact search would add about 5 points of road share and 2 % of trip time at 4.3x the expansions, and lowering the heuristic floor
+  puts 88 of 196 cross-map searches over the 8000 cap). In matches wheels drive 22 % on road because the AI sends them off the roads
+  (truck `follow_m`, gun sites, recon spots), so plan 9's "wheeled at least 50 %" would miss by AI destinations, not by the search.
+- Note F3 (S16b): vehicle searches on a road map cost about 4.5x Kessel Ridge's (mean 918 vs 206, p99 5119 vs 1087; plan 7 allows
+  +25 %): the R3 heuristic floor makes every road-map search plain A*. For Review; lever `heuristic_pct`, not applied.
+- Note: balance runs on Linden Brook (480, mirror 160s, `road_off`) are dropped by the owner rule of 2026-11-25; Germany won 31 of
+  the 40-set matches there (a printout).
+
 ## S12 open items (2026-11-21; branch `claude/project-thread-aj1tww`, log `docs/slices/S12-log.md`)
 
 - S12-16 **T8 known miss (accepted for now, first item of the next balance pass).** With wounds on, HE's share of
