@@ -180,6 +180,9 @@ pub fn add_sides(doc: &mut Value, r: &ManyReport) {
                     let mut s13 = crate::skirmish::S13Faction::default();
                     s13.add(&p.s13);
                     o.insert("s13".into(), s13_blocks(&s13));
+                    let mut s14 = crate::skirmish::S14Faction::default();
+                    s14.add(&p.s14);
+                    o.insert("s14".into(), s14_blocks(&s14));
                 }
                 side
             })
@@ -681,6 +684,10 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
     // S13 (docs/slices/S13-heavy-wave.md 7): the AI's heavy-wave counters
     // and the heavy-wave cards' buys, match shares, kills and knock-outs.
     o.insert("s13".into(), s13_blocks(&f.s13));
+    // S14 (docs/slices/S14-assault-kit.md 10): the S14 counters and the
+    // AI's flame counters by name (T195-T200 read
+    // `factions.<f>.s14.<counter>`).
+    o.insert("s14".into(), s14_blocks(&f.s14));
     o.insert(
         "s6_derived".into(),
         json!({
@@ -1320,6 +1327,20 @@ pub fn s13_blocks(c: &crate::skirmish::S13Faction) -> Value {
     Value::Object(raw)
 }
 
+/// The `s14` block of one faction (or one side of one match): every
+/// `S14Counters` field and the AI's flame counters by name. Every value is
+/// 0 with the S14 switches off (`tools/neutral.py` reads a new block so).
+pub fn s14_blocks(c: &crate::skirmish::S14Faction) -> Value {
+    let mut raw = Map::new();
+    for (k, v) in crate::skirmish::S14_COUNTERS.iter().zip(c.s) {
+        raw.insert((*k).into(), json!(v));
+    }
+    for (k, v) in crate::skirmish::S14_AI.iter().zip(c.ai) {
+        raw.insert((*k).into(), json!(v));
+    }
+    Value::Object(raw)
+}
+
 /// The `s12` block of one faction (or one side of one match): the
 /// `S12Counters` and the AI's medic counters by name. Every value is 0
 /// with the S12 switches off (`tools/neutral.py` reads a new block so).
@@ -1624,5 +1645,37 @@ mod tests {
     fn median_of_even_and_odd() {
         assert_eq!(median(&mut [3.0, 1.0, 2.0]), 2.0);
         assert_eq!(median(&mut [4.0, 1.0, 2.0, 3.0]), 2.5);
+    }
+
+    /// S14 step 8: the `s14` block names every `S14Counters` field and AI
+    /// flame counter, each with its own value (a player's counters reach
+    /// the right key), and reads all 0 with the switches off. Control: a
+    /// counter set on one player shows only under its name.
+    #[test]
+    fn s14_block_names_every_counter() {
+        use crate::skirmish::{S14_AI, S14_COUNTERS, S14Faction, S14Player};
+        let off = s14_blocks(&S14Faction::default());
+        let m = off.as_object().unwrap();
+        assert_eq!(m.len(), S14_COUNTERS.len() + S14_AI.len());
+        assert!(m.values().all(|v| v == &json!(0)), "{off}");
+        let c = frontline_sim::flame::S14Counters {
+            burn_kills: 3,
+            clears_done: 5,
+            ..Default::default()
+        };
+        let mut f = S14Faction::default();
+        f.add(&S14Player::of(&c, None));
+        f.add(&S14Player::of(&c, None));
+        let on = s14_blocks(&f);
+        assert_eq!(on["burn_kills"], json!(6));
+        assert_eq!(on["clears_done"], json!(10));
+        assert_eq!(on["clear_steps"], json!(0));
+        let nonzero = on
+            .as_object()
+            .unwrap()
+            .values()
+            .filter(|v| *v != &json!(0))
+            .count();
+        assert_eq!(nonzero, 2);
     }
 }
