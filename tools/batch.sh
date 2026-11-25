@@ -2,14 +2,16 @@
 # Cached deterministic runs of frontline-cli (docs/process/dev-speed.md).
 #
 #   tools/batch.sh OUT.json [-o OVERRIDE.toml]... -- SUBCOMMAND ARGS...
-#   tools/batch.sh sets OUTDIR [-o OVERRIDE.toml]...   # the three 160 sets
+#   tools/batch.sh sets OUTDIR [--map ID] [-o OVERRIDE.toml]...   # the three 160 sets
 #
 # Runs `target/release/frontline-cli SUBCOMMAND ARGS... --json OUT.json`, text
 # output to OUT.txt, and keeps both under target/batch-cache/KEY. KEY is the
 # hash of the CLI binary, every file under mods/, the override files' contents
 # and the arguments (without --jobs: results do not depend on it). The sim is
 # deterministic, so a second call with the same key copies the files back
-# instead of playing the matches again.
+# instead of playing the matches again. S16a: `--map ID` plays the sets on
+# that map; without it the CLI's default (Kessel Ridge) and the same cache
+# keys as before.
 #
 # Each call runs a snapshot of the binary and of mods/ kept under
 # target/batch-cache/world/KEY, so a rebuild or a TOML edit while a long run
@@ -117,14 +119,19 @@ case "${1:-}" in
         echo "$WORLD"
         ;;
     sets)
-        dir=${2:?usage: tools/batch.sh sets OUTDIR [-o OVERRIDE]...}
+        dir=${2:?usage: tools/batch.sh sets OUTDIR [--map ID] [-o OVERRIDE]...}
         shift 2
+        map=()
+        if [ "${1:-}" = --map ]; then
+            map=(--map "${2:?--map needs an id}")
+            shift 2
+        fi
         rc=0
         for s in "skirmish160 1" "skirmish160_oos 101" "skirmish160_s201 201"; do
             set -- "$@"
             name=${s% *}
             seed=${s#* }
-            run_one "$dir/$name.json" "$@" -- skirmish --ai-vs-ai --seed "$seed" --seeds 80 --both-bases --summary --minutes 45 || rc=1
+            run_one "$dir/$name.json" "$@" -- skirmish --ai-vs-ai --seed "$seed" --seeds 80 --both-bases --summary --minutes 45 ${map[@]+"${map[@]}"} || rc=1
         done
         exit $rc
         ;;
