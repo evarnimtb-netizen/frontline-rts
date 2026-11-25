@@ -6,18 +6,29 @@ extends VBoxContainer
 ##   connect       name; Host (port, default 47015) or Join (address:port,
 ##                 IPv4, [IPv6] or host name), validated before any call
 ##   connecting    "Connecting to …" and Cancel
-##   lobby         both slots (name, faction, ping, ready); own faction;
-##                 slot 0 edits seed, map and input delay D (2–6, with the
-##                 computed suggestion), slot 1 sees them; factions must
-##                 differ; Ready; mismatch / reject reason; 3-2-1 countdown
-##                 over the page; Leave
+##   lobby         the match's slots (name, faction, team, ping, ready);
+##                 own faction; slot 0 edits the mode (1v1, or S18 2v2:
+##                 four slots on Harrow Cross), seed, map and input delay D
+##                 (2–6, with the computed suggestion), the others see
+##                 them; in a 1v1 factions must differ; S18: own team, the
+##                 host fills open slots with AI (and removes it), a
+##                 joiner moves to an open slot; Ready; mismatch / reject
+##                 reason; 3-2-1 countdown over the page; Leave
 ##   disconnected  the reason, then back to the connect page
 ##
 ## "in_match" hands over to Session.start_net_match(). The panel never
 ## decides lobby rules on its own beyond disabling Ready when they cannot
-## pass (no opponent, same faction); the relay is the judge.
+## pass (no opponent, same faction, open slots, one team); the relay is
+## the judge.
 
 const NAME_MAX := 24
+## S18: lobby modes the host picks: slots in the match, and the map a 2v2
+## needs (four bases).
+const MODES := {"1v1": 2, "2v2": 4}
+const TEAM_MAP := "harrow_cross"
+## AI fill difficulty (normal) and the menu's words for the wire's 0..2.
+const AI_DIFFICULTY := 1
+const DIFFICULTY_NAMES := ["Easy", "Normal", "Hard"]
 ## Example addresses shown instead of the machine's own in screenshots.
 const CAPTURE_ADDRESSES := ["192.168.1.20", "100.101.102.103"]
 
@@ -41,6 +52,11 @@ var connecting_label: Label
 var lobby_where: Label
 var slot_rows: Array = []
 var faction_btns := {}
+## S18: own team buttons (Team 1, Team 2) and the host's mode pick.
+var team_box: Control
+var team_btns: Array = []
+var mode_pick: OptionButton
+var mode_ro: Label
 var map_pick: OptionButton
 var map_ro: Label
 var seed_spin: SpinBox
@@ -322,8 +338,10 @@ func _build_lobby() -> Control:
 	box.add_child(top)
 
 	box.add_child(_section("Players"))
-	for i in 2:
-		slot_rows.append(_slot_row(box))
+	for i in 4:
+		var r := _slot_row(box)
+		r.action.pressed.connect(_on_slot_action.bind(i))
+		slot_rows.append(r)
 
 	box.add_child(_section("Your faction"))
 	var fac_row := HBoxContainer.new()
@@ -347,12 +365,38 @@ func _build_lobby() -> Control:
 		fac_row.add_child(b)
 	box.add_child(fac_row)
 
+	# S18: own team (a 2v2 only).
+	team_box = VBoxContainer.new()
+	team_box.add_child(_section("Your team"))
+	var team_row := HBoxContainer.new()
+	team_row.add_theme_constant_override("separation", 10)
+	var tgroup := ButtonGroup.new()
+	for t in 2:
+		var tb := Button.new()
+		tb.text = "Team %d" % (t + 1)
+		tb.toggle_mode = true
+		tb.button_group = tgroup
+		tb.custom_minimum_size = Vector2(150, 40)
+		tb.pressed.connect(pick_team.bind(t))
+		team_btns.append(tb)
+		team_row.add_child(tb)
+	team_box.add_child(team_row)
+	box.add_child(team_box)
+
 	box.add_child(_section("Match (set by the host)"))
 	var grid := GridContainer.new()
 	grid.columns = 3
 	grid.add_theme_constant_override("h_separation", 14)
 	grid.add_theme_constant_override("v_separation", 8)
 	box.add_child(grid)
+
+	mode_pick = OptionButton.new()
+	for m in MODES:
+		mode_pick.add_item(m)
+	mode_pick.custom_minimum_size.x = 200
+	mode_pick.item_selected.connect(func(i: int) -> void: pick_mode(MODES.keys()[i]))
+	mode_ro = Label.new()
+	_grid_row(grid, "Mode", mode_pick, mode_ro, Control.new())
 
 	map_pick = OptionButton.new()
 	_map_ids = Session.MAPS.keys()
@@ -471,17 +515,29 @@ func _slot_row(parent: Control) -> Dictionary:
 	ping.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ping.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(ping)
+	var team := Label.new()
+	team.theme_type_variation = &"DimLabel"
+	team.custom_minimum_size.x = 64
+	team.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(team)
 	var rdy := Label.new()
 	rdy.custom_minimum_size.x = 96
 	rdy.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	rdy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(rdy)
-	return {"panel": panel, "stripe": stripe, "tag": tag, "name": nm, "faction": fac, "ping": ping, "ready": rdy}
+	# S18: Add AI / Remove AI (host), Move here (a joiner, open slots).
+	var action := Button.new()
+	action.custom_minimum_size = Vector2(110, 30)
+	action.visible = false
+	row.add_child(action)
+	return {"panel": panel, "stripe": stripe, "tag": tag, "name": nm, "faction": fac, "ping": ping, "team": team, "ready": rdy, "action": action}
 
 
 func _refresh_lobby() -> void:
 	var slot := int(status.get("slot", -1))
 	var slots: Array = status.get("slots", [])
+	var players := clampi(int(status.get("players", 2)), 2, 4)
+	var team_mode := players > 2
 	var host := slot == 0
 	var hosting := int(status.get("host_port", 0)) > 0
 	lobby_where.text = ("Hosting on %s" if hosting else "Joined %s") % where if where != "" else ""
@@ -495,15 +551,42 @@ func _refresh_lobby() -> void:
 		lobby_where.text = join_at if lobby_where.text == "" else lobby_where.text + "   ·   " + join_at
 	var mine: Dictionary = slots[slot] if slot >= 0 and slot < slots.size() else {}
 	var theirs: Dictionary = {}
-	for i in 2:
+	var open := 0
+	var others_ready := true
+	var teams := {}
+	for i in slot_rows.size():
 		var r: Dictionary = slot_rows[i]
+		r.panel.visible = i < players
+		if i >= players:
+			continue
 		var s: Dictionary = slots[i] if i < slots.size() else {}
-		var present := not String(s.get("name", "")).is_empty()
-		if i != slot and present:
+		var ai := int(s.get("ai", -1))
+		var present := not String(s.get("name", "")).is_empty() or ai >= 0
+		if i != slot and present and ai < 0 and theirs.is_empty():
 			theirs = s
+		var t := int(s.get("team", -1))
+		if present:
+			teams[t if t >= 0 else 10 + i] = true
+			if i != slot and not s.get("ready", false):
+				others_ready = false
+		else:
+			open += 1
 		# Slot 0 sets up the match. It is the host only with the in-game
 		# relay; on a standalone relay nobody hosts.
 		r.tag.text = "HOST" if i == 0 and hosting else "PLAYER %d" % (i + 1)
+		r.team.text = ("Team %d" % (t + 1)) if team_mode and t >= 0 else ""
+		# S18: the row's button: the host adds or removes AI fill; a joiner
+		# moves into an open slot.
+		r.action.visible = false
+		if team_mode and host and i > 0 and not present:
+			r.action.text = "Add AI"
+			r.action.visible = true
+		elif team_mode and host and ai >= 0:
+			r.action.text = "Remove AI"
+			r.action.visible = true
+		elif team_mode and slot > 0 and i > 0 and i != slot and not present:
+			r.action.text = "Move here"
+			r.action.visible = true
 		if not present:
 			r.stripe.color = Color(UiPalette.BORDER, 0.6)
 			r.name.text = "Open: waiting for a player …"
@@ -514,36 +597,47 @@ func _refresh_lobby() -> void:
 			continue
 		var f: String = s.get("faction", "")
 		r.stripe.color = UiPalette.faction_color(f)
-		r.name.text = String(s.name) + ("  (you)" if i == slot else "")
+		if ai >= 0:
+			r.name.text = "AI (%s)" % DIFFICULTY_NAMES[clampi(ai, 0, 2)]
+		else:
+			r.name.text = String(s.name) + ("  (you)" if i == slot else "")
 		r.name.add_theme_color_override("font_color", UiPalette.TEXT)
 		r.faction.text = UiPalette.FACTION_NAMES.get(f, f)
 		r.faction.add_theme_color_override("font_color", UiPalette.faction_color(f).lightened(0.35))
 		var ping := float(s.get("ping_ms", -1.0))
-		r.ping.text = "" if i == slot and ping < 0.0 else NetUi.ping_text(ping)
+		r.ping.text = "" if (i == slot and ping < 0.0) or ai >= 0 else NetUi.ping_text(ping)
 		var rd: bool = s.get("ready", false)
-		r.ready.text = "READY" if rd else "not ready"
+		r.ready.text = "AI" if ai >= 0 else ("READY" if rd else "not ready")
 		r.ready.add_theme_color_override("font_color", UiPalette.OK if rd else UiPalette.TEXT_DIM)
 
-	# Own faction; the opponent's is marked taken.
+	# Own faction; in a 1v1 the opponent's is marked taken.
 	var my_f: String = mine.get("faction", "")
-	var their_f: String = theirs.get("faction", "")
+	var their_f: String = theirs.get("faction", "") if not team_mode else ""
 	for f in faction_btns:
 		var b: Button = faction_btns[f]
 		b.set_pressed_no_signal(f == my_f)
 		b.text = UiPalette.FACTION_NAMES[f] + ("  (taken)" if f == their_f and f != my_f else "")
+	# S18: own team (2v2).
+	team_box.visible = team_mode
+	var my_t := int(mine.get("team", -1))
+	for t in team_btns.size():
+		(team_btns[t] as Button).set_pressed_no_signal(t == my_t)
 
-	# Slot 0 edits the match; slot 1 sees it.
+	# Slot 0 edits the match; the others see it.
 	var map_id: String = status.get("map", "kessel_ridge")
 	var seed_v := int(status.get("seed", 1))
 	var d := int(status.get("input_delay", 3))
 	var sug := int(status.get("suggested_delay", 3))
-	for c in [map_pick, seed_spin, seed_dice, delay_spin, delay_suggest]:
+	var mode := "2v2" if team_mode else "1v1"
+	for c in [mode_pick, map_pick, seed_spin, seed_dice, delay_spin, delay_suggest]:
 		c.visible = host
-	for c in [map_ro, seed_ro, delay_ro]:
+	for c in [mode_ro, map_ro, seed_ro, delay_ro]:
 		c.visible = not host
+	_sync(mode_pick, "mode", MODES.keys().find(mode))
 	_sync(map_pick, "map", _map_ids.find(map_id))
 	_sync(seed_spin, "seed", seed_v)
 	_sync(delay_spin, "delay", d)
+	mode_ro.text = mode
 	map_ro.text = Session.MAPS.get(map_id, {}).get("name", map_id)
 	seed_ro.text = str(seed_v)
 	delay_ro.text = "%d ticks" % d
@@ -557,7 +651,16 @@ func _refresh_lobby() -> void:
 	var msg := String(status.get("mismatch", ""))
 	var err := NetUi.reason_text(String(status.get("error", "")))
 	var blocker := ""
-	if theirs.is_empty():
+	if team_mode:
+		if open > 0:
+			blocker = "Waiting for players: %d open slot%s. The host can fill them with AI." % [open, "" if open == 1 else "s"]
+		elif my_t < 0:
+			blocker = "Pick your team."
+		elif teams.size() < 2:
+			blocker = "Everyone is on one team. Pick teams so both sides have players."
+		elif map_id != TEAM_MAP:
+			blocker = "A 2v2 needs a map with four bases: %s." % Session.MAPS.get(TEAM_MAP, {}).get("name", TEAM_MAP)
+	elif theirs.is_empty():
 		blocker = "Waiting for a second player to join."
 	elif my_f == their_f:
 		blocker = "Both players picked %s. Factions must differ: pick the other one." % UiPalette.FACTION_NAMES.get(my_f, my_f)
@@ -568,11 +671,14 @@ func _refresh_lobby() -> void:
 	elif not blocker.is_empty():
 		lobby_msg.text = blocker
 		lobby_msg.add_theme_color_override("font_color", UiPalette.WARN if not theirs.is_empty() else UiPalette.TEXT_DIM)
+	elif i_ready and team_mode:
+		lobby_msg.text = "All ready." if others_ready else "Ready. Waiting for the others."
+		lobby_msg.add_theme_color_override("font_color", UiPalette.TEXT_DIM)
 	elif i_ready:
 		lobby_msg.text = "Ready. Waiting for %s." % theirs.get("name", "your opponent") if not theirs.get("ready", false) else "Both ready."
 		lobby_msg.add_theme_color_override("font_color", UiPalette.TEXT_DIM)
 	else:
-		lobby_msg.text = "Press Ready when you are set. Changing anything takes both players out of Ready."
+		lobby_msg.text = "Press Ready when you are set. Changing anything takes %s out of Ready." % ("every player" if team_mode else "both players")
 		lobby_msg.add_theme_color_override("font_color", UiPalette.TEXT_DIM)
 	ready_button.disabled = not blocker.is_empty() or i_ready
 	ready_button.text = "READY  ✓" if i_ready else "READY"
@@ -605,6 +711,69 @@ func pick_faction(f: String) -> void:
 	AudioManager.play_ui(&"click")
 	net.set_choice({"faction": f})
 	refresh()
+
+
+## S18: own team (0: Team 1, 1: Team 2).
+func pick_team(t: int) -> void:
+	var net: Variant = Session.net
+	if net == null:
+		return
+	AudioManager.play_ui(&"click")
+	net.set_choice({"team": t})
+	refresh()
+
+
+## S18: the host picks 1v1 (two slots) or 2v2 (four, on Harrow Cross;
+## he goes on Team 1). Back to 1v1 drops the AI fill and the teams.
+func pick_mode(mode: String) -> void:
+	var net: Variant = Session.net
+	if net == null or int(status.get("slot", -1)) != 0:
+		return
+	_shown.mode = MODES.keys().find(mode)
+	if MODES[mode] > 2:
+		net.set_choice({"players": MODES[mode], "map": TEAM_MAP, "team": 0})
+	else:
+		net.set_choice({"players": 2, "ai": [], "team": -1})
+	refresh()
+
+
+## S18: a slot row's button (see _refresh_lobby).
+func _on_slot_action(i: int) -> void:
+	var net: Variant = Session.net
+	if net == null:
+		return
+	var slot := int(status.get("slot", -1))
+	var slots: Array = status.get("slots", [])
+	if slot > 0:
+		net.take_slot(i)
+		refresh()
+		return
+	if slot != 0:
+		return
+	# The host's AI list: every AI slot but this one's, plus this one if it
+	# was open. A new AI takes the team of its half (slots 0-1: Team 1,
+	# 2-3: Team 2) and the host's faction on his team, the other one else.
+	var ai: Array = []
+	var players := int(status.get("players", 2))
+	var host_f: String = slots[0].get("faction", "germany") if not slots.is_empty() else "germany"
+	for k in range(1, mini(players, slots.size())):
+		var s: Dictionary = slots[k]
+		var is_ai := int(s.get("ai", -1)) >= 0
+		var empty := String(s.get("name", "")).is_empty() and not is_ai
+		if (is_ai and k != i) or (empty and k == i):
+			var team := int(s.get("team", -1)) if is_ai else (0 if k * 2 < players else 1)
+			var fac: String = s.get("faction", "") if is_ai else (host_f if team == 0 else _other_faction(host_f))
+			ai.append({"slot": k, "faction": fac, "team": team, "difficulty": int(s.get("ai", AI_DIFFICULTY)) if is_ai else AI_DIFFICULTY})
+	AudioManager.play_ui(&"click")
+	net.set_choice({"ai": ai})
+	refresh()
+
+
+func _other_faction(f: String) -> String:
+	for g in Session.FACTIONS:
+		if g != f:
+			return g
+	return f
 
 
 func _send_choice() -> void:

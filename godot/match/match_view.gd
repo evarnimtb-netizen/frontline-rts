@@ -296,6 +296,10 @@ func update_state(s: Dictionary) -> void:
 		overlay.update_state(s, self)
 	for e in s.get("events", []):
 		event_feed.push(e)
+	# S18 H5: allies' map pings, in the feed (Space jumps there).
+	for p in net.get("pings", []):
+		var who := String(p.get("name", ""))
+		event_feed.push({"kind": "map_ping", "text": "%s pinged the map" % (who if who != "" else "An ally"), "pos": p.pos})
 	event_feed.update_state(s)
 	for c in [net_readout, net_overlay, net_disconnect]:
 		c.update_state(s)
@@ -845,6 +849,13 @@ func ground_pick(screen: Vector2) -> Variant:
 		return null
 	g.y = ground_y(g.x, g.z)
 	return g
+
+
+## S18 H5: pings `pos` for the allies (net match), and shows it in the
+## feed. The bridge drops pings closer than `[teams] ping_gap_s`.
+func map_ping(pos: Vector3) -> void:
+	emit_intent(&"map_ping", {"target": pos})
+	event_feed.push({"kind": "map_ping", "text": "You pinged the map", "pos": pos})
 
 
 func jump_camera(pos: Vector3) -> void:

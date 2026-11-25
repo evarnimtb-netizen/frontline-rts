@@ -17,6 +17,8 @@ const KINDS := {
 	"under_attack": [HudStyle.ACCENT, &""],
 	"tickets_low": [HudStyle.DANGER, &"error"],
 	"info": [HudStyle.DIM, &""],
+	# S18 H5: a map ping (own or an ally's).
+	"map_ping": [HudStyle.ACCENT, &"click"],
 	# S3: main-gun and rocket matters only (the bridge derives these).
 	"vehicle_arrived": [HudStyle.TEXT, &""],
 	"vehicle_knocked_out": [HudStyle.DANGER, &""],

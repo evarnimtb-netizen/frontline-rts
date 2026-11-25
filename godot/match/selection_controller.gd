@@ -1767,6 +1767,13 @@ func _key(e: InputEventKey) -> void:
 		if pos != null:
 			view.jump_camera(pos)
 		get_viewport().set_input_as_handled()
+	elif e.is_action_pressed(&"map_ping") and view.net_mode:
+		# S18 H5: the bridge sends it to the allies (at most one per
+		# `[teams] ping_gap_s`); the feed shows our own at once.
+		var at: Variant = view.ground_pick(cursor())
+		if at != null:
+			view.map_ping(at)
+		get_viewport().set_input_as_handled()
 
 
 ## Recalls control group `g` (its living own men); a second recall within

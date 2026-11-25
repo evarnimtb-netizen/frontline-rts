@@ -7,7 +7,8 @@ extends SceneTree
 ## (readout placement at 1600 and 1280, status dot, pending-order markers,
 ## desync banner, waiting / reconnecting / paused-by panels, the pause menu
 ## not pausing, input blocking, disconnect screen) and the lobby → match
-## hand-over.
+## hand-over. S18: the 2v2 lobby (mode, four rows, teams, AI fill, moving
+## to an open slot, Ready rules) and ally map pings in the event feed.
 ##
 ##   Godot --headless --path godot -s res://tools/test_net_ui.gd
 ##
@@ -205,6 +206,59 @@ func _test_menu(session: Node) -> void:
 	mock.stage("disconnected")
 	mp.refresh()
 	_check(mp.page == "disconnected" and mp.disconnect_panel.reason.text == NetUi.reason_text("opponent_left"), "lobby disconnect shows the reason")
+
+	# S18: the 2v2 lobby. The host alone in four slots fills them with AI.
+	mock.stage("lobby_host")
+	mp.refresh()
+	_check(not mp.team_box.visible and not mp.slot_rows[2].panel.visible, "1v1 lobby: two rows, no team pick")
+	mp.pick_mode("2v2")
+	mp.refresh()
+	_check(_last_call(mock, "set_choice")[0].get("players") == 4 and String(mp.status.map) == "harrow_cross", "2v2: four slots on Harrow Cross")
+	_check(mp.slot_rows[3].panel.visible and mp.team_box.visible and mp.slot_rows[0].team.text == "Team 1", "2v2: four rows, team pick, the host on Team 1")
+	_check(mp.slot_rows[1].action.visible and mp.slot_rows[1].action.text == "Add AI", "the host can fill an open slot with AI")
+	_check(mp.ready_button.disabled and mp.lobby_msg.text.contains("open slot"), "open slots: Ready disabled, reason shown")
+	for i in [1, 2, 3]:
+		mp._on_slot_action(i)
+		mp.refresh()
+	var ai: Array = _last_call(mock, "set_choice")[0].get("ai", [])
+	_check(ai.size() == 3 and int(ai[0].team) == 0 and int(ai[1].team) == 1 and int(ai[2].team) == 1, "AI fill: slot 1 on the host's team, slots 2 and 3 on the other")
+	_check(mp.slot_rows[1].name.text.begins_with("AI") and mp.slot_rows[1].ready.text == "AI" and mp.slot_rows[3].team.text == "Team 2", "AI rows show AI, difficulty and team")
+	_check(not mp.ready_button.disabled, "every slot filled, two teams: Ready enabled")
+	mp._on_slot_action(2)
+	mp.refresh()
+	_check(mp.slot_rows[2].action.text == "Add AI" and mp.slot_rows[3].action.text == "Remove AI", "Remove AI opens the slot again")
+	mp.pick_mode("1v1")
+	mp.refresh()
+	_check(not mp.slot_rows[2].panel.visible and _last_call(mock, "set_choice")[0].get("ai") == [], "back to 1v1 drops the AI fill")
+	# As the guest in slot 2 of a full 2v2.
+	mock.stage("lobby_2v2_guest")
+	mp.refresh()
+	_check(int(mp.status.slot) == 2 and not mp.mode_pick.visible and mp.mode_ro.text == "2v2", "guest sees the 2v2 read-only")
+	_check(not mp.slot_rows[1].action.visible and not mp.slot_rows[3].action.visible, "a guest cannot touch AI slots")
+	mp.pick_team(0)
+	mp.refresh()
+	_check(_last_call(mock, "set_choice")[0].get("team") == 0 and mp.slot_rows[2].team.text == "Team 1", "team pick sent and shown")
+	mock._slots[3].team = 0
+	mp.refresh()
+	_check(mp.ready_button.disabled and mp.lobby_msg.text.contains("one team"), "everyone on one team: Ready disabled")
+	mock._slots[3].team = 1
+	mp.pick_team(1)
+	mp.refresh()
+	_check(not mp.ready_button.disabled, "two teams: Ready enabled")
+	mp.on_ready()
+	mock.advance(1.0)
+	mp.refresh()
+	_check(mp.countdown_box.visible, "2v2 all ready: countdown")
+	# A joiner moves to an open slot.
+	mock.stage("lobby_2v2_open")
+	mock._slot = 2
+	mock._slots[2] = mock._slot_dict(mock._name, "usa", 40.0)
+	mock._slots[0].name = "Host"
+	mp.refresh()
+	_check(mp.slot_rows[1].action.visible and mp.slot_rows[1].action.text == "Move here", "a joiner can move to an open slot")
+	mp._on_slot_action(1)
+	mp.refresh()
+	_check(_last_call(mock, "take_slot") == [1] and int(mp.status.slot) == 1, "Move here → take_slot(1)")
 	mock.leave()
 	menu.queue_free()
 	session.net = null
@@ -230,6 +284,17 @@ func _test_match(session: Node) -> void:
 	view.intent.connect(func(k: StringName, d: Dictionary) -> void: _intents.append([k, d]))
 	_check(view.net_mode and view.net_readout.visible, "net state → readout visible")
 	_check(view.player(1).name == "Sam", "players carry the lobby names")
+
+	# S18 H5: an ally's map ping shows in the feed (Space jumps there);
+	# own pings go out as the map_ping intent.
+	mock.mock_ally_ping(1, Vector3(10, 0, -20))
+	await _frames(3)
+	var fl: Array = view.event_feed.lines
+	_check(not fl.is_empty() and String(fl[0].text) == "Sam pinged the map" and view.event_feed.last_position() == Vector3(10, 0, -20), "an ally's ping shows in the feed")
+	_intents.clear()
+	view.map_ping(Vector3(5, 0, 5))
+	_check(_intents.size() == 1 and _intents[0][0] == &"map_ping" and _intents[0][1].target == Vector3(5, 0, 5), "own ping → map_ping intent")
+	_check(String(view.event_feed.lines[0].text) == "You pinged the map", "own ping shows in the feed")
 
 	# Readout placement at both HUD sizes.
 	var hud: Control = view.hud

@@ -341,6 +341,8 @@ func start_net_match() -> void:
 	setup.faction = me.get("faction", setup.faction)
 	setup.seed = int(st.get("seed", setup.seed))
 	setup.map = st.get("map", setup.map)
+	# S18: four slots are a 2v2 (the bridge builds the match from Start).
+	setup.mode = "2v2" if int(st.get("players", 2)) > 2 else "1v1"
 	net_mode = true
 	autoplay_speed = 1.0
 	get_tree().paused = false

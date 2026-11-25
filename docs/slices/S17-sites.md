@@ -57,9 +57,9 @@ wire and points, `ai/sweep.rs`, `ai/obstacles.rs`, `ai/supply.rs`, `ai/medic.rs`
 | `fort.rs:1399` | Own | `\|\| ents.owner[v.index()] != p` |
 | `fort.rs:1573` | Own | `s.owner == owner && s.built && (s.pos - line[0]).length() <= Fx::from_int(5)` |
 | `fort.rs:2622` | Own | `if vp == m.owner {` |
-| `game.rs:1054` | Own | `.filter(\|id\| ents.owner[id.index()] == player)` |
-| `game.rs:1061` | Own | `.filter(\|id\| ents.owner[id.index()] == player)` |
-| `game.rs:1068` | Own | `ents.kind[id.index()] == EntityKind::Vehicle && ents.owner[id.index()] == player` |
+| `game.rs:1070` | Own (S18-6: pop cap; handed squads free) | `.filter(\|id\| ents.owner[id.index()] == player && counted(ents.squad[id.index()]))` |
+| `game.rs:1077` | Own (S18-6: pop cap; handed squads free) | `.filter(\|(id, c)\| ents.owner[id.index()] == player && counted(Some(c.from_squad)))` |
+| `game.rs:1085` | Own (S18-6: pop cap; handed squads free) | `&& ents.owner[id.index()] == player` |
 | `game.rs:1087` | Own | `.filter(\|sq\| sq.owner == player && sq.type_idx == squad_type)` |
 | `game.rs:1097` | Own | `sq.owner == player && s.squad_types[sq.type_idx as usize].limit_group == Some(g)` |
 | `game.rs:1353` | Own | `&& ents.owner[vehicle.index()] == player` |
@@ -82,6 +82,18 @@ wire and points, `ai/sweep.rs`, `ai/obstacles.rs`, `ai/supply.rs`, `ai/medic.rs`
 | `guns.rs:1173` | Own | `&& ctx.ents.owner[i] == ctx.ents.owner[id.index()]` |
 | `guns.rs:1488` | Own | `ctx.ents.owner[m.index()] == owner` |
 | `guns.rs:1667` | Own | `if !gun_ok \|\| !tow_ok \|\| ctx.ents.owner[gun.index()] != ctx.ents.owner[tow.index()] {` |
+| `handover.rs:45` | Own (S18 H1: a structure of a faction handed to the owner, load check) | `if factions.get(owner.0 as usize) == Some(&faction) {` |
+| `handover.rs:57` | Own (S18 H1: a structure of a faction handed to the owner, load check) | `Some(t) if t == owner => return true,` |
+| `handover.rs:80` | Own (S18 H1: hand-over moves the giver's things to his ally) | `if ents.owner[i] == from && handed_kind(ents.kind[i]) {` |
+| `handover.rs:88` | Own (S18 H1: hand-over moves the giver's things to his ally) | `if sq.owner == from {` |
+| `handover.rs:94` | Own (S18 H1: hand-over moves the giver's things to his ally) | `if s.owner == from {` |
+| `handover.rs:99` | Own (S18 H1: hand-over moves the giver's things to his ally) | `if c.owner == from {` |
+| `handover.rs:104` | Own (S18 H1: hand-over moves the giver's things to his ally) | `for w in f.works.values_mut().filter(\|w\| w.owner == from) {` |
+| `handover.rs:107` | Own (S18 H1: hand-over moves the giver's things to his ally) | `for p in f.pieces.values_mut().filter(\|p\| p.owner == from) {` |
+| `handover.rs:110` | Own (S18 H1: hand-over moves the giver's things to his ally) | `for w in f.wire.values_mut().filter(\|w\| w.owner == from) {` |
+| `handover.rs:113` | Own (S18 H1: hand-over moves the giver's things to his ally) | `for c in f.charges.iter_mut().filter(\|c\| c.owner == from) {` |
+| `handover.rs:116` | Own (S18 H1: hand-over moves the giver's things to his ally) | `for m in f.mines.values_mut().filter(\|m\| m.owner == from) {` |
+| `handover.rs:123` | Own (S18 H1: hand-over moves the giver's things to his ally) | `for d in self.unit_digs.values_mut().filter(\|d\| d.owner == from) {` |
 | `medics.rs:115` | Own | `\|\| (owners[id.index()] == owner && near(tf[id.index()].pos.xy()))` |
 | `medics.rs:119` | Own | `&& owners[j] == owner` |
 | `medics.rs:164` | Own | `&& ents.owner[j] == owner` |

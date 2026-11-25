@@ -20,7 +20,9 @@ extends RefCounted
 ## it does the same), U unloads the selected half-tracks (or the selected
 ## mounted squads' half-tracks) by the door, Shift+U over the sides.
 ## S10a: ` (the key left of 1) opens and closes the build menu (engineer,
-## assault and construction squads; every letter is taken).
+## assault and construction squads; every letter is taken). S18 H5: . (the
+## full stop) pings the ground under the cursor for the allies in a team
+## net match (owner answer S18-5 (A): map pings only).
 
 const ACTIONS := {
 	&"order_move": KEY_M,
@@ -52,6 +54,8 @@ const ACTIONS := {
 	&"focus_call_in": KEY_TAB,
 	&"dig_undo_point": KEY_BACKSPACE,
 	&"jump_to_event": KEY_SPACE,
+	# S18 H5: ally map ping (net team matches).
+	&"map_ping": KEY_PERIOD,
 	&"match_menu": KEY_ESCAPE,
 	&"match_menu_alt": KEY_F10,
 	# Debug builds only (S3b): reload mods/ TOML and restart the match.
@@ -85,6 +89,7 @@ const LABELS := {
 	&"order_drop_crates": "I",
 	&"order_build_menu": "`",
 	&"focus_call_in": "Tab",
+	&"map_ping": ".",
 }
 
 

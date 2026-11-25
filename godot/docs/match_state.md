@@ -404,6 +404,9 @@ net: {
   desync_tick: int,        # -1 none
   desync_dump: String,     # absolute folder of the dump, "" none
   disconnect_reason: String, # reason code; non-empty = link gone for good
+  pings: [                 # S18 H5: allies' map pings since the last state
+    { slot: int, name: String, pos: Vector3 },
+  ],
 },
 pending_orders: [          # own orders sent but not executed yet
   { pos: Vector3, kind: String },  # kind: move | attack_move | barrage |
