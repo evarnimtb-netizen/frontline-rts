@@ -477,6 +477,8 @@ pub(crate) struct FireCtx<'a> {
     pub vmarks: &'a [VMark],
     pub game: &'a MatchState,
     pub terrain: &'a Heightfield,
+    /// S14 M2: live soldiers on foot (this tick's movement hash).
+    pub spatial: &'a SpatialHash,
     pub seed: u64,
     pub tick: u64,
 }
@@ -674,6 +676,7 @@ pub(crate) fn aim_and_fire(
     weapon: &mut [Weapon],
     kits: &mut [Kit],
     out: &mut Vec<FireRequest>,
+    strikes: &mut Vec<SimId>,
 ) -> bool {
     let base = chunk * crate::ecs::CHUNK_SIZE;
     let setup = ctx.game.setup();
@@ -718,6 +721,12 @@ pub(crate) fn aim_and_fire(
         let ty = &setup.squad_types[sq.type_idx as usize];
         let wi = crate::supply::active_weapon(ty, kit);
         let w = &setup.weapons[wi as usize];
+        let feed = ty.feed_slot(w);
+        // S14 M2-M3: a strike running or starting takes his turn (no aim,
+        // no fire; nothing with `[melee] enabled` 0 and no strike).
+        if crate::flame::strike_tick(ctx, i, c, ws, kit, wi, feed.is_some(), strikes) {
+            continue;
+        }
         // A launcher carrier fires in `fire_launchers` (S3).
         if w.class == WeaponClass::Launcher {
             continue;
@@ -730,7 +739,6 @@ pub(crate) fn aim_and_fire(
         }
         // S5a: counted rounds. A dry weapon reloads from his pouches once
         // it may, else he draws his sidearm, else he holds fire.
-        let feed = ty.feed_slot(w);
         if feed.is_some() && w.he.is_none() && c.mag == 0 {
             if ws.cooldown > 0 || !crate::supply::reload_dry(setup, ty, kit, c, ws) {
                 c.target = None;
@@ -2576,6 +2584,9 @@ pub(crate) struct DamageCtx<'a> {
     pub wounds: Option<frontline_content::tuning::WoundsTuning>,
     /// S12: the downed men's spatial hash (`None` without any).
     pub downed: Option<&'a SpatialHash>,
+    /// S14 M3: strikers whose wind-up ended this tick, ascending id
+    /// (resolved after the blows, `MatchState::resolve_strikes`).
+    pub strikes: &'a [SimId],
 }
 
 /// A soldier at 0 HP this tick: `(victim, killer's player, kill class,
@@ -2589,7 +2600,7 @@ pub(crate) type Fallen = (SimId, u8, u16, crate::wounds::Hit);
 /// already at 0 this tick who is hit again joins `dead` once more (with
 /// `wounds` only: a down then a kill in one tick).
 #[allow(clippy::too_many_arguments)]
-fn hurt(
+pub(crate) fn hurt(
     ents: &mut Entities,
     hash: &mut HashCache,
     dead: &mut Vec<Fallen>,
@@ -3846,6 +3857,11 @@ impl MatchState {
                 self.start_smoke(t.item, t.pos);
             }
         }
+        // S14 M1, M4: strikes, after every blow of this tick.
+        if !ctx.strikes.is_empty() {
+            let strikes = ctx.strikes;
+            self.resolve_strikes(ctx, strikes, &mut dead);
+        }
         dead.append(&mut ctx.fallen);
         ctx.ff_dead.sort_unstable();
         if let Some(w) = ctx.wounds.clone() {
@@ -4764,6 +4780,7 @@ mod tests {
             let pos = at.extend(self.terrain.height_at(at));
             let mut stats = Stats::default();
             let mut ctx = DamageCtx {
+                strikes: &[],
                 ents: &mut self.ents,
                 terrain: &mut self.terrain,
                 spatial: &self.spatial,
@@ -4948,6 +4965,7 @@ mod tests {
         r.ents.combat[man.index()].suppression = 0;
         let mut stats = Stats::default();
         let mut ctx = DamageCtx {
+            strikes: &[],
             ents: &mut r.ents,
             terrain: &mut r.terrain,
             spatial: &r.spatial,
@@ -5009,6 +5027,7 @@ mod tests {
                 vmarks: &vmarks,
                 game: &self.game,
                 terrain: &self.terrain,
+                spatial: &self.spatial,
                 seed: 1,
                 tick,
             };
@@ -5020,6 +5039,7 @@ mod tests {
                 &mut self.ents.weapon,
                 &mut self.ents.kit,
                 &mut out,
+                &mut Vec::new(),
             );
             out
         }

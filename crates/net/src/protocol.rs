@@ -39,8 +39,9 @@ use serde::{Deserialize, Serialize};
 /// the sim refuses it; the one bump for the S11b slice). 16 (S12): `Tend`,
 /// `Carry`, `Evacuate`, `Reinforce` (refused by the sim until S12a Build
 /// B) and `StockKind::Aid` in the setup (the one bump for the S12 slice).
-/// 17 (S14): `ClearTrench`, `Strike` (refused by the sim until S14a Builds
-/// B and C) and the S14 setup keys (the one bump for the S14 slice).
+/// 17 (S14): `ClearTrench`, `Strike` (refused by the sim while `[clear]` /
+/// `[melee] enabled` is 0), the S14 setup keys and a weapon's `melee`
+/// (the one bump for the S14 slice).
 pub const PROTOCOL_VERSION: u16 = 17;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).

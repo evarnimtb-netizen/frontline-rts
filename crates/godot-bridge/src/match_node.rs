@@ -3969,7 +3969,8 @@ impl MatchRuntime {
             "move_units" | "attack_move_units" | "stop_units" | "retreat_units" | "dig_units"
             | "set_stance" | "set_fire" | "throw" | "throw_each" | "reverse_units"
             | "face_units" | "attack_unit" | "set_ammo" | "repair_units" | "follow_units"
-            | "suppress_units" | "tend_units" | "carry_units" | "evacuate_units" => {
+            | "suppress_units" | "tend_units" | "carry_units" | "evacuate_units"
+            | "strike_units" => {
                 let raw = data
                     .get("units")
                     .and_then(|v| v.try_to::<PackedInt32Array>().ok())
@@ -4000,6 +4001,7 @@ impl MatchRuntime {
                         | "tend_units"
                         | "carry_units"
                         | "evacuate_units"
+                        | "strike_units"
                 ) {
                     // `attack_unit` names its target vehicle in `target`,
                     // `follow_units` in `vehicle`, S12 `tend_units` and

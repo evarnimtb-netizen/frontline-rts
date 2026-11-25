@@ -528,6 +528,9 @@ pub struct World {
     flags: Vec<bool>,
     fire_bufs: Vec<Vec<FireRequest>>,
     fire_merged: Vec<FireRequest>,
+    /// S14 M3: per-chunk strike requests, and merged (ascending id).
+    strike_bufs: Vec<Vec<SimId>>,
+    strikes: Vec<SimId>,
     ended_bufs: Vec<Vec<(u32, ProjectileEnd)>>,
     cmd_order: Vec<usize>,
     /// AI commands due this tick (match mode), merged with the human ones.
@@ -686,6 +689,8 @@ impl World {
             flags: Vec::new(),
             fire_bufs: Vec::new(),
             fire_merged: Vec::new(),
+            strike_bufs: Vec::new(),
+            strikes: Vec::new(),
             ended_bufs: Vec::new(),
             cmd_order: Vec::new(),
             ai_cmds: Vec::new(),
@@ -1259,6 +1264,8 @@ impl World {
                 flags,
                 fire_bufs,
                 fire_merged,
+                strike_bufs,
+                strikes,
                 marks,
                 mark_of,
                 vmarks,
@@ -1280,6 +1287,7 @@ impl World {
             combat::build_vmarks(entities, vmarks);
             game.update_focus(entities, marks, mark_of);
             fire_bufs.resize_with(entities.chunk_count(), Vec::new);
+            strike_bufs.resize_with(entities.chunk_count(), Vec::new);
             {
                 let Entities {
                     kind,
@@ -1305,6 +1313,7 @@ impl World {
                     vmarks,
                     game: &*game,
                     terrain,
+                    spatial,
                     seed,
                     tick,
                 };
@@ -1314,15 +1323,22 @@ impl World {
                         .zip(weapon.par_chunks_mut(CHUNK_SIZE))
                         .zip(kit.par_chunks_mut(CHUNK_SIZE))
                         .zip(fire_bufs.par_iter_mut())
+                        .zip(strike_bufs.par_iter_mut())
                         .enumerate()
-                        .map(|(c, (((cb, w), k), out))| {
+                        .map(|(c, ((((cb, w), k), out), st))| {
                             out.clear();
-                            combat::aim_and_fire(c, &ctx, cb, w, k, out)
+                            st.clear();
+                            combat::aim_and_fire(c, &ctx, cb, w, k, out, st)
                         })
                         .collect_into_vec(flags)
                 });
             }
             hash.merge_entity_flags(flags);
+            // S14 M3: chunk order is ascending id.
+            strikes.clear();
+            for b in strike_bufs.iter() {
+                strikes.extend_from_slice(b);
+            }
             fire_merged.clear();
             for b in fire_bufs.iter() {
                 fire_merged.extend_from_slice(b);
@@ -1497,6 +1513,7 @@ impl World {
                 explosions,
                 fused,
                 armour_events,
+                strikes,
                 ..
             } = self;
             let SimState {
@@ -1507,6 +1524,7 @@ impl World {
                 ..
             } = state;
             let mut ctx = combat::DamageCtx {
+                strikes,
                 ents: entities,
                 terrain,
                 spatial,
@@ -3141,6 +3159,9 @@ mod s13_tests;
 #[cfg(test)]
 #[path = "s14_tests.rs"]
 mod s14_tests;
+#[cfg(test)]
+#[path = "s14c_tests.rs"]
+mod s14c_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;
@@ -5667,6 +5688,7 @@ mod tests {
             ..
         } = state;
         let mut ctx = combat::DamageCtx {
+            strikes: &[],
             ents: entities,
             terrain,
             spatial,
@@ -5786,6 +5808,7 @@ mod tests {
                 ..
             } = &mut w;
             let mut ctx = combat::DamageCtx {
+                strikes: &[],
                 ents: &mut state.entities,
                 terrain: &mut state.terrain,
                 spatial,

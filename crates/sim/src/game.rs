@@ -1318,10 +1318,8 @@ impl MatchState {
             &CommandKind::Reinforce { squad } => self.order_reinforce(ctx, p, squad),
             // S14 C1 (`crate::flame`; refused with `[clear] enabled` 0).
             &CommandKind::ClearTrench { squad, at } => self.order_clear(ctx, p, squad, at),
-            // S14: declared, not built yet (Build C).
-            CommandKind::Strike { .. } => {
-                self.refuse_fort(p, None, crate::fort::FortRefusal::NotAllowed)
-            }
+            // S14 M2 (`crate::flame`; refused with `[melee] enabled` 0).
+            CommandKind::Strike { units } => self.order_strike(ctx, p, units),
             CommandKind::PlaceBangalore { units, target } => {
                 self.place_bangalore(ctx, p, units, *target)
             }

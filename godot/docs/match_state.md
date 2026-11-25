@@ -1663,6 +1663,10 @@ shows none of it.
   patch_radius_cm` of `pos` until `ticks_left` runs out.
 - `soldier_burning[]: bool` — per entry of `soldiers` (match mode): he
   burns (a flame hit or burning ground, `[flame] burn_s`).
+- `soldier_strike[]: u8` — per entry of `soldiers` (match mode, S14a
+  Build C): his strike phase, 0 none, 1 wind-up (`[melee]` or the
+  weapon's `windup_ms`), 2 recovery (the strike landed or missed as the
+  recovery began). The strike pose reads it.
 - Weapons: `WeaponClass::Flame` (`class` "flame" in defs); the bridge's
   sound cue for its shots is the MG's (`"mg"`) until the presenter adds
   one.
@@ -1674,9 +1678,14 @@ shows none of it.
 
 ### Intents
 
-- None in Build A. `clear_trench {squad, at}` and `strike {units}` exist
-  in the sim's command set but are refused (`not_allowed`) until Build B
-  and C.
+- `strike_units {units}` (S14a Build C; direct control `V`) — each of
+  the own `units` with no strike running starts one at the nearest enemy
+  within reach (weapon `[melee]` `reach_cm`, else the rules') plus
+  `[melee] start_pad_cm`. Refused (`fort_refused`, `not_allowed`) with
+  `[melee] enabled` 0 or when nobody is in reach. The bridge maps it to
+  `Strike`; the mock does not handle it yet.
+- The sim's `ClearTrench {squad, at}` (Build B) has no bridge intent yet
+  (presenter stage).
 
 ### Presenter
 

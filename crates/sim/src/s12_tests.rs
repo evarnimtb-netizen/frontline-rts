@@ -431,6 +431,7 @@ fn blows_now(
     } = state;
     let g = game.as_mut().unwrap();
     let mut ctx = DamageCtx {
+        strikes: &[],
         ents: entities,
         terrain,
         spatial,

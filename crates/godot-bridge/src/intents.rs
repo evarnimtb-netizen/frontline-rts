@@ -672,6 +672,8 @@ pub fn vehicle_command(
             to: t()?,
         },
         "evacuate_units" => CommandKind::Evacuate { units },
+        // S14 M2: each man strikes the nearest enemy in reach (`V`).
+        "strike_units" => CommandKind::Strike { units },
         _ => return None,
     })
 }
@@ -703,6 +705,15 @@ mod tests {
         assert_eq!(
             vehicle_command("evacuate_units", u(), None, None, ""),
             Some(CommandKind::Evacuate { units: u() })
+        );
+    }
+
+    #[test]
+    fn s14_strike_intent_names_its_men() {
+        let u = || vec![SimId(3), SimId(4)];
+        assert_eq!(
+            vehicle_command("strike_units", u(), None, None, ""),
+            Some(CommandKind::Strike { units: u() })
         );
     }
 

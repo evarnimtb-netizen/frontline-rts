@@ -741,6 +741,10 @@ pub struct RenderSnapshot {
     /// S14, per entry of `soldiers` (match mode only): he is burning (a
     /// flame hit or burning ground, `[flame] burn_s`).
     pub soldier_burning: Vec<bool>,
+    /// S14 M3, per entry of `soldiers` (match mode only): his strike phase
+    /// (`crate::flame::STRIKE_NONE` 0, `STRIKE_WINDUP` 1, `STRIKE_RECOVER`
+    /// 2: the strike landed or missed at the start of the recovery).
+    pub soldier_strike: Vec<u8>,
     /// Detached soldiers, ascending id (match mode only).
     pub units: Vec<UnitSnapshot>,
     /// Dead soldiers, ascending id (match mode only).
@@ -852,6 +856,7 @@ impl RenderSnapshot {
         self.soldier_ride_slot.clear();
         self.soldier_wound.clear();
         self.soldier_burning.clear();
+        self.soldier_strike.clear();
         self.units.clear();
         self.corpses.clear();
         self.casualties.clear();
@@ -909,6 +914,7 @@ impl RenderSnapshot {
                         self.soldier_ride_slot.push(u.riding.map_or(0, |r| r.slot));
                         let w = &c.wound;
                         self.soldier_burning.push(c.close.burn_until > tick);
+                        self.soldier_strike.push(c.close.strike_phase);
                         self.soldier_wound.push(
                             [
                                 (w.state == crate::wounds::WOUNDED, wound_bits::WOUNDED),

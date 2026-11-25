@@ -1,7 +1,8 @@
 //! S14 assault kit (docs/slices/S14-assault-kit.md 3): the saved layout of
 //! flame particles, burning ground, burning and striking men, trench
 //! clears and the S14 counters, with their load checks (Build A's layout
-//! commit), and the flame rules F1-F9. Every rule reads its switch
+//! commit), the flame rules F1-F9, Clear trench C1-C5 and the melee strike
+//! M1-M5. Every rule reads its switch
 //! (`[flame] enabled`, `[melee] enabled`, `[clear] enabled`); at 0 no S14
 //! code path runs and no RNG draw changes.
 
@@ -1083,6 +1084,336 @@ impl MatchState {
             let nav = &mut ctx.ents.unit[m.index()].nav;
             nav.phase = NavPhase::Holding;
             nav.goal = at.xy();
+        }
+    }
+}
+
+// ------------------------------------------------------------- M1-M5 --
+
+use crate::combat::{DamageCtx, Fallen, FireCtx};
+use crate::ecs::{Combat, Stance, Transform, Weapon};
+use crate::items::Kit;
+use frontline_content::WeaponClass;
+use frontline_content::setup::MatchSetup;
+
+/// M1: a strike's numbers with one weapon in the man's hands: the
+/// weapon's `[melee]` block, else the rules' `[melee]` (the spade).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) struct Melee {
+    /// The segment's length (m).
+    pub reach: Fx,
+    pub damage: u32,
+    /// Wind-up and recovery (ticks, 1..=255: the ranges keep 4000 ms
+    /// inside a u8 at every allowed rate, `strike_ticks_fit_a_u8`).
+    pub windup: u8,
+    pub recover: u8,
+}
+
+/// M1: the strike of weapon `wi` (see [`Melee`]).
+pub(crate) fn melee_of(setup: &MatchSetup, wi: u16) -> Melee {
+    let r = &setup.rules.melee;
+    let (reach_cm, damage, windup_ms, recover_ms) =
+        match setup.weapons.get(wi as usize).and_then(|w| w.melee) {
+            Some(m) => (m.reach_cm, m.damage, m.windup_ms, m.recover_ms),
+            None => (r.reach_cm, r.damage, r.windup_ms, r.recover_ms),
+        };
+    let hz = setup.tick_hz as u64;
+    let ticks = |ms: u32| (ms as u64 * hz).div_ceil(1000).clamp(1, u8::MAX as u64) as u8;
+    Melee {
+        reach: Fx::from_ratio(reach_cm.min(1000) as i64, 100),
+        damage,
+        windup: ticks(windup_ms),
+        recover: ticks(recover_ms),
+    }
+}
+
+/// M2: the nearest enemy of `owner` among `near` (live soldiers on foot)
+/// whose body axis lies within `within` plus the capsule radius of `at`
+/// horizontally; ties by id. Returns him and his position.
+fn nearest_enemy(
+    near: impl FnOnce(&mut dyn FnMut(SimId)),
+    kind: &[EntityKind],
+    owners: &[PlayerId],
+    transform: &[Transform],
+    me: SimId,
+    owner: u8,
+    at: FxVec2,
+    within: Fx,
+) -> Option<(SimId, FxVec2)> {
+    let lim = within.raw().max(0) as u64;
+    let lim_sq = lim * lim;
+    let mut best: Option<(u64, SimId)> = None;
+    near(&mut |id: SimId| {
+        let j = id.index();
+        if id == me || kind.get(j) != Some(&EntityKind::Soldier) || owners[j].0 == owner {
+            return;
+        }
+        let d = (transform[j].pos.xy() - at).length_sq_raw();
+        if d <= lim_sq && best.is_none_or(|b| (d, id) < b) {
+            best = Some((d, id));
+        }
+    });
+    best.map(|(_, id)| (id, transform[id.index()].pos.xy()))
+}
+
+/// M2: how far (m) a strike may start: reach, `start_pad_cm` and the
+/// target's capsule radius.
+fn start_reach(setup: &MatchSetup, m: &Melee) -> Fx {
+    m.reach
+        + Fx::from_ratio(setup.rules.melee.start_pad_cm.min(1000) as i64, 100)
+        + Fx::from_milli(setup.rules.combat.body.radius_mm as i32)
+}
+
+/// M2-M3 for soldier `i` in `aim_and_fire` (per chunk: only his own
+/// `Combat::close` is written). A running phase counts down: at the end
+/// of the wind-up his id goes to `strikes` (resolved in the Damage stage)
+/// and the recovery starts; at the end of the recovery the strike is
+/// over. With `[melee] enabled` 1 a man who may strike (M2: not pinned,
+/// ducked, prone, serving a gun, throwing or carrying a crate, his weapon
+/// `wi` unable to fire within the wind-up) and has an enemy in reach
+/// starts one at the nearest. Returns true when he neither aims nor fires
+/// this tick (a phase runs or starts).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn strike_tick(
+    ctx: &FireCtx,
+    i: usize,
+    c: &mut Combat,
+    ws: &Weapon,
+    kit: &Kit,
+    wi: u16,
+    fed: bool,
+    strikes: &mut Vec<SimId>,
+) -> bool {
+    let setup = ctx.game.setup();
+    let id = SimId(i as u32);
+    match c.close.strike_phase {
+        STRIKE_WINDUP => {
+            c.close.strike = c.close.strike.saturating_sub(1);
+            if c.close.strike == 0 {
+                strikes.push(id);
+                c.close.strike_phase = STRIKE_RECOVER;
+                c.close.strike = melee_of(setup, wi).recover;
+            }
+            return true;
+        }
+        STRIKE_RECOVER => {
+            c.close.strike = c.close.strike.saturating_sub(1);
+            if c.close.strike == 0 {
+                c.close = Close {
+                    burn_until: c.close.burn_until,
+                    burn_by: c.close.burn_by,
+                    ..Close::default()
+                };
+            }
+            return true;
+        }
+        _ => {}
+    }
+    if setup.rules.melee.enabled == 0
+        || c.pinned
+        || c.ducked
+        || c.stance == Stance::Prone
+        || ctx.unit[i].serving.is_some()
+        || kit.windup.is_some()
+        || ctx.game.supply6().carries(id)
+    {
+        return false;
+    }
+    let w = &setup.weapons[wi as usize];
+    let m = melee_of(setup, wi);
+    // M2: his weapon cannot fire within the wind-up: a launcher, a mortar
+    // or a flamethrower that is dry (or off); a counted weapon that is dry
+    // (reloading or out: every reload outlasts a wind-up); any other whose
+    // cooldown (reload, bolt, burst pause) is longer than the wind-up. The
+    // first aim at a new target (half a second, his training's share) is
+    // not "not ready": a loaded SMG at 1 m shoots.
+    let aim = ctx.squad[i]
+        .and_then(|s| ctx.game.squad(s))
+        .map_or(0, |sq| {
+            crate::combat::pct_of(
+                setup.tick_hz / 2,
+                crate::combat::training_of(setup, sq).aim_time_pct,
+            )
+        });
+    let wait = (m.windup as u32).max(aim);
+    let ready = match w.class {
+        WeaponClass::Launcher | WeaponClass::Mortar => false,
+        WeaponClass::Flame => {
+            setup.rules.flame.enabled != 0 && c.mag > 0 && ws.cooldown as u32 <= wait
+        }
+        _ if fed && c.mag == 0 => false,
+        _ => ws.cooldown as u32 <= wait,
+    };
+    if ready {
+        return false;
+    }
+    let pos = ctx.transform[i].pos.xy();
+    let within = start_reach(setup, &m);
+    let Some((_, at)) = nearest_enemy(
+        |f| ctx.spatial.for_each_near(pos, within, f),
+        ctx.kind,
+        ctx.owner,
+        ctx.transform,
+        id,
+        ctx.owner[i].0,
+        pos,
+        within,
+    ) else {
+        return false;
+    };
+    c.close.strike_phase = STRIKE_WINDUP;
+    c.close.strike = m.windup;
+    c.close.strike_at = at;
+    true
+}
+
+impl MatchState {
+    /// M2 `Strike { units }` (direct control): each of the player's men
+    /// with no strike running and an enemy in reach starts one at once at
+    /// the nearest (his weapon's readiness is not asked). Refused with
+    /// `[melee] enabled` 0 or when no man starts one.
+    pub(crate) fn order_strike(&mut self, ctx: &mut Ctx, p: PlayerId, units: &[SimId]) -> bool {
+        use crate::fort::FortRefusal;
+        if self.setup.rules.melee.enabled == 0 {
+            return self.refuse_fort(p, None, FortRefusal::NotAllowed);
+        }
+        let Some(men) = self.unit_set(ctx, p, units) else {
+            return self.refuse_fort(p, None, FortRefusal::NotAllowed);
+        };
+        let mut any = false;
+        for m in men {
+            let i = m.index();
+            let Some(ty) = ctx.ents.squad[i]
+                .and_then(|s| self.squads.get(&s))
+                .map(|sq| &self.setup.squad_types[sq.type_idx as usize])
+            else {
+                continue;
+            };
+            let c = &ctx.ents.combat[i];
+            if c.close.strike_phase != STRIKE_NONE || c.hp == 0 {
+                continue;
+            }
+            let wi = crate::supply::active_weapon(ty, &ctx.ents.kit[i]);
+            let mel = melee_of(&self.setup, wi);
+            let within = start_reach(&self.setup, &mel);
+            let ents = &*ctx.ents;
+            let pos = ents.transform[i].pos.xy();
+            let near = |f: &mut dyn FnMut(SimId)| {
+                for s in ents.soldiers() {
+                    if ents.unit[s.index()].riding.is_none() {
+                        f(s);
+                    }
+                }
+            };
+            let Some((_, at)) = nearest_enemy(
+                near,
+                &ents.kind,
+                &ents.owner,
+                &ents.transform,
+                m,
+                p.0,
+                pos,
+                within,
+            ) else {
+                continue;
+            };
+            let c = &mut ctx.ents.combat[i].close;
+            c.strike_phase = STRIKE_WINDUP;
+            c.strike = mel.windup;
+            c.strike_at = at;
+            ctx.hash.mark_entity_chunk(m.chunk());
+            any = true;
+        }
+        if !any {
+            return self.refuse_fort(p, None, FortRefusal::NotAllowed);
+        }
+        true
+    }
+
+    /// M1, M4 (Damage stage, after this tick's blows, ascending striker
+    /// id): each striker still standing (one downed or killed earlier in
+    /// this stage does not strike) sweeps a segment `reach` long from his
+    /// chest (`fire_height` less 40 cm) toward `strike_at`, level. The
+    /// nearest enemy soldier capsule it touches (ties by id; downed men,
+    /// vehicles and pieces neither struck nor in the way) takes the
+    /// strike's damage through `hurt` in the W1 zone at the touch point,
+    /// class MELEE, and `[combat] hit_suppression`. No near miss.
+    pub(crate) fn resolve_strikes(
+        &mut self,
+        ctx: &mut DamageCtx,
+        strikes: &[SimId],
+        dead: &mut Vec<Fallen>,
+    ) {
+        let body = self.setup.rules.combat.body.clone();
+        let hit_supp = self.setup.rules.combat.hit_suppression;
+        for &s in strikes {
+            let i = s.index();
+            let ents = &*ctx.ents;
+            if ents.kind.get(i) != Some(&EntityKind::Soldier) || ents.combat[i].hp == 0 {
+                continue;
+            }
+            let Some(ty) = ents.squad[i]
+                .and_then(|q| self.squads.get(&q))
+                .map(|sq| &self.setup.squad_types[sq.type_idx as usize])
+            else {
+                continue;
+            };
+            let wi = crate::supply::active_weapon(ty, &ents.kit[i]);
+            let m = melee_of(&self.setup, wi);
+            let owner = ents.owner[i].0;
+            let c = &ents.combat[i];
+            let pos = ents.transform[i].pos;
+            let chest = (c.fire_height - Fx::from_milli(400)).max(Fx::from_milli(100));
+            let from = FxVec3::new(pos.x, pos.y, pos.z + chest);
+            let dir = (c.close.strike_at - pos.xy()).normalize_or_zero();
+            let s14 = &mut self.players[owner as usize].s14;
+            s14.strikes = s14.strikes.saturating_add(1);
+            if dir == FxVec2::ZERO {
+                continue;
+            }
+            let d = FxVec3::new(dir.x.mul(m.reach), dir.y.mul(m.reach), Fx::ZERO);
+            let mid = from.xy() + dir * m.reach.div_int(2);
+            let mut hit: Option<(Fx, SimId)> = None;
+            ctx.spatial
+                .for_each_near(mid, m.reach.div_int(2) + Fx::from_int(2), |id| {
+                    let j = id.index();
+                    if j == i
+                        || ents.owner[j].0 == owner
+                        || ents.kind[j] != EntityKind::Soldier
+                        || ents.combat[j].hp == 0
+                    {
+                        return;
+                    }
+                    let t = &ents.transform[j];
+                    let o = t.pos;
+                    let (a, b, r) = crate::combat::capsule(t, &ents.combat[j], &body);
+                    let (sv, dsq) = crate::combat::seg_seg(from - o, d, a - o, b - a);
+                    if dsq <= r.mul(r) && hit.is_none_or(|h| (sv, id) < h) {
+                        hit = Some((sv, id));
+                    }
+                });
+            let Some((sv, id)) = hit else { continue };
+            let j = id.index();
+            let z = (from + d * sv).z;
+            let zone = ctx.wounds.as_ref().map_or(crate::wounds::ZONE_TORSO, |w| {
+                crate::wounds::zone_at(&ctx.ents.transform[j], &ctx.ents.combat[j], z, w)
+            });
+            crate::combat::add_suppression(&mut ctx.ents.combat[j], hit_supp * 1000);
+            let fell = crate::combat::hurt(
+                ctx.ents,
+                ctx.hash,
+                dead,
+                id,
+                m.damage,
+                (owner, kill_class::MELEE),
+                (zone, false),
+                ctx.wounds.as_ref(),
+            );
+            let s14 = &mut self.players[owner as usize].s14;
+            s14.strike_hits = s14.strike_hits.saturating_add(1);
+            if fell {
+                s14.strike_kills = s14.strike_kills.saturating_add(1);
+            }
         }
     }
 }

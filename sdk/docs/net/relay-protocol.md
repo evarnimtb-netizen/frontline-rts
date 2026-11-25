@@ -158,8 +158,11 @@ kind the relay may not send. Clients cannot send relay messages.
   (`FortRefusal::NotAllowed`) until S14a Builds B and C, and then with
   `[clear] enabled` 0 / `[melee] enabled` 0. The setup gains the
   `[flame]`, `[melee]`, `[clear]` and `[ai.flame]` tables, `WeaponClass`
-  7 `Flame` and a member's `when`. The save version is `-s33`. The one
-  bump for the S14 slice.
+  7 `Flame`, a member's `when` and (S14a Build C, same version) a
+  weapon's optional `melee` (`reach_cm`, `damage`, `windup_ms`,
+  `recover_ms`: an `Option` of four `u32` after `core`). The save
+  version is `-s33`.
+  The one bump for the S14 slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
