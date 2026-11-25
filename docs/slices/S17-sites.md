@@ -299,11 +299,9 @@ wire and points, `ai/sweep.rs`, `ai/obstacles.rs`, `ai/supply.rs`, `ai/medic.rs`
 | `snapshot.rs:149` | Presenter (P) | `pub seen_by: u16,` |
 | `snapshot.rs:161` | Presenter (P) | `pub seen_by: u16,` |
 | `snapshot.rs:349` | Presenter (P) | `pub seen_by: u16,` |
-| `snapshot.rs:848` | Presenter (P) | `self.soldier_visible.push(c.seen_by \| (1 << owner));` |
 | `snapshot.rs:933` | Presenter (P) | `seen_by: c.seen_by,` |
 | `snapshot.rs:950` | Presenter (P) | `seen_by: c.seen_by,` |
 | `snapshot.rs:1402` | Presenter (P) | `seen_by: if wreck \|\| abandoned {` |
-| `snapshot.rs:1405` | Presenter (P) | `ents.combat()[i].seen_by \| (1 << owner)` |
 | `spotting.rs:220` | Own bit (spotting writes / reads its own bit) | `if seen != (ents.combat[i].seen_by & (1 << p.0) != 0) {` |
 | `spotting.rs:230` | Own bit (spotting writes / reads its own bit) | `ents.combat[r.vehicle.index()].seen_by & (1 << p.0) != 0 && game.rider_exposed(r);` |
 | `spotting.rs:231` | Own bit (spotting writes / reads its own bit) | `if seen != (c.seen_by & (1 << p.0) != 0) {` |
@@ -317,3 +315,8 @@ wire and points, `ai/sweep.rs`, `ai/obstacles.rs`, `ai/supply.rs`, `ai/medic.rs`
 | `teams.rs:147` | Teams API | `seen_by & self.sight[ix(p)] != 0` |
 | `teams.rs:153` | Teams API | `pub fn enemy_seen(&self, p: u8, t_owner: u8, seen_by: u16) -> bool {` |
 | `teams.rs:154` | Teams API | `self.hostile(p, t_owner) && self.sees(p, seen_by)` |
+| `snapshot.rs:851` | Sees (teams) (Presenter P: fog mask, checker after A 5; no-match fallback) | `.push(game.map_or(c.seen_by \| (1 << owner), \|g\| {` |
+| `snapshot.rs:852` | Sees (teams) (Presenter P) | `g.teams.visible_mask(owner, c.seen_by)` |
+| `snapshot.rs:1410` | Sees (teams) (Presenter P) | `g.teams.visible_mask(owner, ents.combat()[i].seen_by)` |
+| `teams.rs:154` | Teams API | `pub fn visible_mask(&self, owner: u8, seen_by: u16) -> u16 {` |
+| `teams.rs:156` | Teams API | `.filter(\|&q\| self.sees(q, seen_by) \|\| self.allied(q, owner))` |

@@ -127,7 +127,7 @@ tests and smoke, content, save fuzz), tools and site table, then docs.
   `handoff::sim_thread_publishes_frames` (a 400 ms wall-clock frame count; passes alone, failed under the parallel
   load). `resolved_defs` canonical snapshot blessed (Harrow Cross, the two A3/A4 switches). Save fuzz: 12,824
   mutations over 6 saves (the TEAMS save a Harrow Cross 2v2), 0 panicked, 0 bad re-saves. Clippy `-D warnings` all
-  targets on sim, content, cli, godot-bridge clean; fmt clean; `owner_sites.sh --check` 0 unclassified.
+  targets on sim, content, cli, godot-bridge clean; fmt clean; `owner_sites.sh --check` 0 unclassified (after `snapshot.rs` rows).
 - Godot 4.7.2 headless: `check_project` OK (menu, mock, real 1v1 and real 2v2 match on the built bridge);
   `test_match_view` 447/448 (the one miss is the pre-existing "16 vehicles under 0.2 ms" timing on a busy machine;
   0.29-0.54 ms here, it failed the same way before any change); `test_net_ui` 143/143.
@@ -136,9 +136,8 @@ tests and smoke, content, save fuzz), tools and site table, then docs.
 - **D5** 2v2 set: the user's 40-match set (mixed teams) is run; the plan's second layout (same-faction) is in
   `batch.sh teams` but not run here; plan 9's "one mid-match save/load per seed" is covered by the CLI test (one seed)
   and the save fuzz, not per seed of the set.
-- **D6** A6's report is a proxy: own points nearer a standing non-main hostile base than the main foe's base, counted
-  once a minute (point-minutes), not belt routes.
-- **D7** Own-fire deaths split own/ally, per-player kills/losses in the text summary and the 2v2 mock are not built.
+- **D6** A6's report is a proxy: own points nearer a non-main hostile base than the main foe's (point-minutes).
+- **D7** Not built: own-fire deaths split own/ally, per-player kills/losses in the text summary, the 2v2 mock.
 
 ### Findings
 - **F3** Path searches on Harrow Cross hit the 8000 cap at p99 (40 set: 129,677 searches, mean 1539, p99 8000; Linden
