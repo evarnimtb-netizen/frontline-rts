@@ -149,6 +149,27 @@ pub struct CorpseSnapshot {
     pub seen_by: u16,
 }
 
+/// S14: a flame particle in flight (`MatchState::flame`, never the
+/// projectile pool), ascending id.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FlameSnapshot {
+    pub id: u32,
+    pub pos: [f32; 3],
+    pub player: u8,
+}
+
+/// S14: a burning patch of ground, ascending id: burns within
+/// `[flame] patch_radius_cm` of `pos` until it goes out.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PatchSnapshot {
+    pub id: u32,
+    /// `[x, y, z]`, z on the ground.
+    pub pos: [f32; 3],
+    pub player: u8,
+    /// Ticks until it goes out.
+    pub ticks_left: u32,
+}
+
 /// S12: a downed man (`EntityKind::Downed`), ascending id: he lies prone
 /// where he fell (or where his carriers are).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -717,6 +738,9 @@ pub struct RenderSnapshot {
     pub soldier_ride_slot: Vec<u8>,
     /// S12, per entry of `soldiers` (match mode only): [`wound_bits`].
     pub soldier_wound: Vec<u8>,
+    /// S14, per entry of `soldiers` (match mode only): he is burning (a
+    /// flame hit or burning ground, `[flame] burn_s`).
+    pub soldier_burning: Vec<bool>,
     /// Detached soldiers, ascending id (match mode only).
     pub units: Vec<UnitSnapshot>,
     /// Dead soldiers, ascending id (match mode only).
@@ -731,6 +755,10 @@ pub struct RenderSnapshot {
     pub thrown: Vec<ThrownSnapshot>,
     /// Smoke clouds, ascending id (match mode only).
     pub smoke: Vec<SmokeSnapshot>,
+    /// S14: flame particles in flight, ascending id (match mode only).
+    pub flame: Vec<FlameSnapshot>,
+    /// S14: burning ground, ascending id (match mode only).
+    pub patches: Vec<PatchSnapshot>,
     /// Per live projectile, in slot order: `[x, y, z]`.
     pub projectiles: Vec<[f32; 3]>,
     /// Vehicles and wrecks, ascending id (match mode only, S3).
@@ -823,6 +851,7 @@ impl RenderSnapshot {
         self.soldier_riding.clear();
         self.soldier_ride_slot.clear();
         self.soldier_wound.clear();
+        self.soldier_burning.clear();
         self.units.clear();
         self.corpses.clear();
         self.casualties.clear();
@@ -879,6 +908,7 @@ impl RenderSnapshot {
                             .push(u.riding.map_or(u32::MAX, |r| r.vehicle.0));
                         self.soldier_ride_slot.push(u.riding.map_or(0, |r| r.slot));
                         let w = &c.wound;
+                        self.soldier_burning.push(c.close.burn_until > tick);
                         self.soldier_wound.push(
                             [
                                 (w.state == crate::wounds::WOUNDED, wound_bits::WOUNDED),
@@ -970,6 +1000,8 @@ impl RenderSnapshot {
         self.crates.clear();
         self.thrown.clear();
         self.smoke.clear();
+        self.flame.clear();
+        self.patches.clear();
         self.outcome = Outcome::Running;
         self.winner = None;
         let Some(g) = game else {
@@ -1047,6 +1079,18 @@ impl RenderSnapshot {
                 density: crate::fx::Fx::from_ratio(density as i64, 1000).to_f32(),
             });
         }
+        self.flame.extend(g.flame().iter().map(|f| FlameSnapshot {
+            id: f.id,
+            pos: f.pos.to_f32(),
+            player: f.player,
+        }));
+        self.patches
+            .extend(g.patches().iter().map(|q| PatchSnapshot {
+                id: q.id,
+                pos: q.pos.to_f32(),
+                player: q.player,
+                ticks_left: q.ends_at.saturating_sub(tick).min(u32::MAX as u64) as u32,
+            }));
         for (p, pl) in g.players().iter().enumerate() {
             let id = PlayerId(p as u8);
             self.players.push(PlayerSnapshot {

@@ -1642,3 +1642,42 @@ state).
 The bridge does not yet send `rules.wounds {enabled, reinforce}`; until it
 does the medic card stays hidden and the Aid button appears once the first
 wound, casualty or medic squad is in the state.
+
+## S14: flamethrowers, burning ground (mechanics half, Build A)
+
+Design: `docs/slices/S14-assault-kit.md` 3 (F1-F9). Everything is off
+unless the rules' `[flame] enabled` is 1 (0 in S14a; step-out also needs
+`step_out`). Build A has no flame def in the mod (Build B adds the
+flamethrowers and fuel), so no match shows any of this yet. The sim fills
+the snapshot fields below; the bridge does not send them yet (the
+presenter stage maps them to state keys, as named here), and the mock
+shows none of it.
+
+### Snapshot fields (sim, `RenderSnapshot`)
+
+- `flame[]: FlameSnapshot {id, pos: [x, y, z], player}` — flame particles
+  in flight, ascending id. They live in their own list, never in
+  `projectiles` (the pool).
+- `patches[]: PatchSnapshot {id, pos: [x, y, z], player, ticks_left}` —
+  burning ground, ascending id; it burns within `[flame]
+  patch_radius_cm` of `pos` until `ticks_left` runs out.
+- `soldier_burning[]: bool` — per entry of `soldiers` (match mode): he
+  burns (a flame hit or burning ground, `[flame] burn_s`).
+- Weapons: `WeaponClass::Flame` (`class` "flame" in defs); the bridge's
+  sound cue for its shots is the MG's (`"mg"`) until the presenter adds
+  one.
+
+### State keys (planned, presenter stage)
+
+- `flame[]: {id, pos: Vector3, player}`, `patches[]: {id, pos: Vector3,
+  player, seconds_left}`, `soldiers[].burning: bool` (only when true).
+
+### Intents
+
+- None in Build A. `clear_trench {squad, at}` and `strike {units}` exist
+  in the sim's command set but are refused (`not_allowed`) until Build B
+  and C.
+
+### Presenter
+
+Not built (no flame in a match before Build B).

@@ -1022,3 +1022,42 @@ fn flame_fuel_resupplies_as_explosives() {
         }
     }
 }
+
+// ------------------------------------------------------------ snapshot --
+
+/// Step 8: the snapshot lists every live particle and patch (ids,
+/// positions, players, patch ticks left) and flags burning men. Control:
+/// `[flame] enabled` 0 lists none and flags no one.
+#[test]
+fn snapshot_shows_flame_patches_and_burning() {
+    for on in [0u32, 1] {
+        let (mut w, ..) = flame_scene(on, 14, |_| {});
+        let (mut parts, mut burning) = (0, 0);
+        for _ in 0..240 {
+            w.step(&[]);
+            let g = w.game().unwrap();
+            let s = w.snapshot();
+            assert_eq!(s.flame.len(), g.flame().len());
+            for (a, b) in s.flame.iter().zip(g.flame()) {
+                assert_eq!((a.id, a.pos, a.player), (b.id, b.pos.to_f32(), b.player));
+            }
+            assert_eq!(s.patches.len(), g.patches().len());
+            for (a, b) in s.patches.iter().zip(g.patches()) {
+                assert_eq!((a.id, a.player), (b.id, b.player));
+                assert_eq!(a.ticks_left as u64, b.ends_at - w.tick());
+            }
+            assert_eq!(s.soldier_burning.len(), s.soldiers.len());
+            for (k, id) in s.soldier_ids.iter().enumerate() {
+                let c = &w.state.entities.combat[id.index()];
+                assert_eq!(s.soldier_burning[k], c.close.burn_until > w.tick());
+            }
+            parts += s.flame.len();
+            burning += s.soldier_burning.iter().filter(|b| **b).count();
+        }
+        if on == 0 {
+            assert_eq!((parts, burning), (0, 0), "control: switch off");
+        } else {
+            assert!(parts > 0 && burning > 0, "flame on: {parts} {burning}");
+        }
+    }
+}
