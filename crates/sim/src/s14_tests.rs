@@ -930,3 +930,95 @@ fn moving_man_does_not_step_out() {
     steps(&mut w, 30);
     assert_eq!(s14_of(&w, 0).stepped_out, 0, "his own move is kept");
 }
+
+// ------------------------------------------------------------- F7 fuel --
+
+/// A test-made fuel cartridge (supply kind explosives, `g` grams a unit)
+/// as the test flamer's feed: a new feed slot of the flamer squad type,
+/// the flame man's load one tank (`magazine`). Returns the feed slot.
+/// Build B replaces it with the mod's fuel cartridges.
+fn fuel_cartridge(s: &mut frontline_content::MatchSetup, wi: u16, g: u32) -> usize {
+    use frontline_content::setup::{CartridgeSetup, Feed};
+    s.cartridges.push(CartridgeSetup {
+        id: "test:fuel".into(),
+        name: "test fuel".into(),
+        kind: frontline_content::SupplyKind::Explosives,
+        g,
+    });
+    let feed = Feed::Cartridge((s.cartridges.len() - 1) as u16);
+    let w = &mut s.weapons[wi as usize];
+    w.feed = Some(feed);
+    let tank = w.magazine as u16;
+    let t = s.squad_type_index(RIFLES).unwrap() as usize;
+    let ty = &mut s.squad_types[t];
+    let k = ty.feeds.len();
+    assert!(k < frontline_content::setup::MAX_FEEDS, "a free feed slot");
+    ty.feeds.push(feed);
+    ty.members[1].rounds[k] = tank;
+    ty.feed_cap[k] = ty.feed_cap[k].max(tank);
+    k
+}
+
+/// F7: fuel is an explosives-kind cartridge, so the S5a base refill serves
+/// it with no flame code: a dry flame man in his own base gets fuel back,
+/// each unit paid at `explosives_mp_per_t` for its grams (`paid` and
+/// `refilled` of the explosives kind grow together). Control: the same dry
+/// man 150 m out of his base gets none and pays nothing. Seen: the base
+/// serves it at the bomb cadence `max(base_bomb_s * hz, 1)`, so with
+/// `base_bomb_s` 0 one unit a tick (a 60-unit tank in 2 s), not the
+/// plan's one unit per 2 s (S14-log, for Build B and the owner).
+#[test]
+fn flame_fuel_resupplies_as_explosives() {
+    let g = 200;
+    for home in [false, true] {
+        let (mut wi, mut k) = (0, 0);
+        let mut w = flat_world_with(1, |s| {
+            wi = make_flamer(s);
+            k = fuel_cartridge(s, wi, g);
+        });
+        let b = w.game().unwrap().base_of(PlayerId(0));
+        let at = if home {
+            b
+        } else {
+            b + FxVec2::from_int(150, 0)
+        };
+        let sq = spawn(&mut w, 0, RIFLES, at.x.floor_int(), at.y.floor_int());
+        let man = members(&w, sq)[1];
+        assert_eq!(w.state.entities.kit[man.index()].weapon, wi);
+        assert!(w.edit_soldier(man, |kit, c| {
+            kit.rounds[k] = 0;
+            c.mag = 0;
+        }));
+        let ex = frontline_content::SupplyKind::Explosives as usize;
+        let a0 = w.game().unwrap().players[0].ammo.clone();
+        steps(&mut w, 4 * super::s6_tests::HZ);
+        let a1 = &w.game().unwrap().players[0].ammo;
+        let fuel = w.state.entities.kit[man.index()].rounds[k] as u32
+            + w.state.entities.combat[man.index()].mag as u32;
+        let units = a1.refilled[ex] - a0.refilled[ex];
+        let paid = a1.paid[ex] - a0.paid[ex];
+        let price = crate::supply::micro_price(
+            w.match_setup().unwrap(),
+            frontline_content::SupplyKind::Explosives,
+            g,
+        );
+        if home {
+            assert!(
+                fuel > 0 && units >= fuel,
+                "fuel back in base ({fuel}, {units} units)"
+            );
+            assert!(price > 0);
+            assert_eq!(
+                paid,
+                units as u64 * price,
+                "each unit at the explosives price"
+            );
+        } else {
+            assert_eq!(
+                (fuel, units, paid),
+                (0, 0, 0),
+                "control: no source out of base"
+            );
+        }
+    }
+}
