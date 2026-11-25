@@ -1002,11 +1002,23 @@ tuning_table! {
         /// R3: heuristic weight on a map with roads is
         /// max(100, 130 x this / road pct) percent.
         heuristic_pct: 1..=200,
+        /// S16 review (F3): a road-priced vehicle search that stops at
+        /// `path_max_expansions` without its goal runs once more at this
+        /// heuristic weight (percent) and keeps that path if it reaches
+        /// the goal (0: no retry, a partial path as before; else 100..=200).
+        cap_retry_weight_pct: 0..=200,
     }
 }
 
 impl RoadTuning {
-    fn check_more(&self, _: &str, _: &mut Vec<Issue>) {}
+    fn check_more(&self, table: &str, out: &mut Vec<Issue>) {
+        if (1..100).contains(&self.cap_retry_weight_pct) {
+            out.push(Issue::new(
+                format!("{table}.cap_retry_weight_pct"),
+                "0 (no retry) or 100..=200",
+            ));
+        }
+    }
 
     /// Whether road rules apply on a map with `roads` road polylines.
     pub fn active(&self, roads: usize) -> bool {
@@ -1025,6 +1037,7 @@ impl Default for RoadTuning {
             reverse_pct: 100,
             path_cost: 0,
             heuristic_pct: 100,
+            cap_retry_weight_pct: 0,
         }
     }
 }

@@ -111,6 +111,12 @@ pub struct RoadPathCost {
     pub pct: u32,
     /// `[vehicles.road] heuristic_pct`.
     pub heuristic_pct: u32,
+    /// S16 review (F3): `[vehicles.road] cap_retry_weight_pct`. When a
+    /// search stops at `max_expansions` without its goal, it runs once more
+    /// at this heuristic weight (percent; 0: no retry) and takes that path
+    /// if it reaches the goal. Searches that reach their goal or prove it
+    /// unreachable are unchanged.
+    pub cap_retry_weight_pct: u32,
 }
 
 impl VehiclePathCost<'_> {
@@ -121,6 +127,7 @@ impl VehiclePathCost<'_> {
         (road.active(map.roads.len()) && road.path_cost == 1).then(|| RoadPathCost {
             pct: m.road_pct(road).max(1),
             heuristic_pct: road.heuristic_pct,
+            cap_retry_weight_pct: road.cap_retry_weight_pct,
         })
     }
 }
@@ -322,16 +329,42 @@ pub fn find_vehicle_path(
     max_expansions: u32,
     s: &mut PathScratch,
 ) -> PathResult {
-    search(
-        terrain,
-        from,
-        to,
-        cost,
-        Some(vehicle),
-        None,
-        max_expansions,
-        s,
-    )
+    let run = |weight: Option<u32>, s: &mut PathScratch| {
+        search_core(
+            terrain,
+            from,
+            to,
+            cost,
+            Some(vehicle),
+            None,
+            None,
+            vehicle.mines.as_ref(),
+            max_expansions,
+            weight,
+            s,
+        )
+    };
+    let mut r = run(None, s);
+    // S16 review (F3): a road-priced search that hit the cap runs once
+    // more at `cap_retry_weight_pct` and keeps that path only if it
+    // reaches the goal; both runs' expansions are charged (`PathQueue`
+    // debt, the observer). Never on a map without roads (`road_pct`
+    // `None`), so Kessel Ridge is unchanged.
+    if let Some(rp) = vehicle.road_pct
+        && rp.cap_retry_weight_pct > 0
+        && !r.reached
+        && !r.exhausted
+    {
+        let total = r.expansions;
+        let again = run(Some(rp.cap_retry_weight_pct), s);
+        let total = total.saturating_add(again.expansions);
+        if again.reached {
+            r = again;
+        }
+        r.expansions = total;
+    }
+    observe::record(r.expansions);
+    r
 }
 
 /// Vehicle step-cost multiplier (percent) into node `(mx, my)`, or `None`
@@ -413,6 +446,39 @@ fn search_with(
     max_expansions: u32,
     s: &mut PathScratch,
 ) -> PathResult {
+    let r = search_core(
+        terrain,
+        from,
+        to,
+        cost,
+        vehicle,
+        ditches,
+        wire,
+        mines,
+        max_expansions,
+        None,
+        s,
+    );
+    observe::record(r.expansions);
+    r
+}
+
+/// The grid search and smoothing; `weight_override` replaces the
+/// heuristic weight (percent; S16 review F3 cap retry).
+#[allow(clippy::too_many_arguments)]
+fn search_core(
+    terrain: &Heightfield,
+    from: FxVec2,
+    to: FxVec2,
+    cost: &PathCost,
+    vehicle: Option<&VehiclePathCost>,
+    ditches: Option<&BlockLayer>,
+    wire: Option<&WireCost>,
+    mines: Option<&MineCost>,
+    max_expansions: u32,
+    weight_override: Option<u32>,
+    s: &mut PathScratch,
+) -> PathResult {
     let ditch = |n: u32| ditches.is_some_and(|d| d.is_ditch(n));
     let dim = terrain.dim();
     let to = terrain.clamp(to);
@@ -428,7 +494,9 @@ fn search_with(
     s.parent[start as usize] = start;
     s.seen[start as usize] = stamp;
     let near = sx.abs_diff(tx).max(sy.abs_diff(ty)) <= TRENCH_SEARCH_NODES;
-    let weight = if vehicle.is_none() && near && terrain.is_trench(sx, sy) && !ditch(start) {
+    let weight = if let Some(w) = weight_override {
+        w
+    } else if vehicle.is_none() && near && terrain.is_trench(sx, sy) && !ditch(start) {
         H_WEIGHT_PCT * cost.trench_cost_pct / 100
     } else if let Some(r) = vehicle.and_then(|v| v.road_pct) {
         // S16a (R3): only on a map with roads (`road_pct` is `None`
@@ -587,7 +655,6 @@ fn search_with(
         wire,
         mines,
     );
-    observe::record(expansions);
     PathResult {
         points,
         expansions,
@@ -1074,6 +1141,7 @@ mod tests {
             road_pct: Some(RoadPathCost {
                 pct: 175,
                 heuristic_pct: 100,
+                cap_retry_weight_pct: 0,
             }),
         };
         let on_road = |pts: &[FxVec2]| {
@@ -1106,6 +1174,7 @@ mod tests {
             road_pct: Some(RoadPathCost {
                 pct: 175,
                 heuristic_pct: 100,
+                cap_retry_weight_pct: 0,
             }),
         };
         let (gx, gy) = t.nearest_grid(FxVec2::from_int(100, 100));

@@ -1825,3 +1825,11 @@ path_cost = 1
 # max(100, 130 x heuristic_pct / road pct) percent (100: plain A* at
 # least, so searches stay under path_max_expansions).
 heuristic_pct = 100
+# S16 review (F3): a road-map vehicle search that stops at
+# path_max_expansions without reaching its goal (about 1-5 % of searches
+# on Linden Brook, more for tracks) runs once more at this heuristic
+# weight in percent (130: the weight every Kessel Ridge search uses) and
+# keeps that path if it reaches the goal, instead of a partial path (and
+# an AI gun or belt route of None). 0: no retry. Searches that reach
+# their goal are unchanged; a map without roads never retries.
+cap_retry_weight_pct = 130

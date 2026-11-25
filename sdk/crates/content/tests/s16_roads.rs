@@ -47,6 +47,8 @@ fn kessel_ridge_loads_unchanged_with_no_roads() {
         (1, 175, 150, 140)
     );
     assert_eq!((r.reverse_pct, r.path_cost, r.heuristic_pct), (100, 1, 100));
+    // S16 review (F3): the cap retry runs at the Kessel Ridge weight.
+    assert_eq!(r.cap_retry_weight_pct, 130);
     assert!(
         s.vehicles
             .iter()
@@ -158,6 +160,14 @@ fn road_tuning_and_road_speed_pct_are_range_checked() {
             "vehicles.road.heuristic_pct",
         ),
         (
+            "[vehicles.road]\ncap_retry_weight_pct = 50\n",
+            "vehicles.road.cap_retry_weight_pct",
+        ),
+        (
+            "[vehicles.road]\ncap_retry_weight_pct = 201\n",
+            "vehicles.road.cap_retry_weight_pct",
+        ),
+        (
             "[defs.vehicles.\"ww2:ger_opel_blitz\".mobility]\nroad_speed_pct = 250\n",
             "road_speed_pct",
         ),
@@ -178,7 +188,11 @@ fn road_tuning_and_road_speed_pct_are_range_checked() {
     }
     // Control: an in-range patch is accepted.
     let f = dir.join("o.toml");
-    std::fs::write(&f, "[vehicles.road]\nwheeled_pct = 200\nenabled = 0\n").unwrap();
+    std::fs::write(
+        &f,
+        "[vehicles.road]\nwheeled_pct = 200\nenabled = 0\ncap_retry_weight_pct = 0\n",
+    )
+    .unwrap();
     let defs = ModDefs::load(&root).unwrap();
     defs.clone().apply_override(&f, "ww2:skirmish").unwrap();
     let _ = std::fs::remove_dir_all(&dir);

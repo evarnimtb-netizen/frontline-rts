@@ -277,3 +277,40 @@ fn a_truck_drives_the_roads_from_its_base_to_the_points() {
     let (_, pct) = drive_truck(&s, [512, 512]);
     assert!(pct <= 30, "{pct} % on road with roads off");
 }
+
+/// S16 review (finding F3): a road-map vehicle search that stops at the
+/// cap without its goal runs once more at `cap_retry_weight_pct` (130, the
+/// Kessel Ridge weight) and keeps that path when it reaches the goal; both
+/// runs are charged. A search that reaches its goal the first time is
+/// unchanged. Control: with the key 0 the same search is a partial path.
+#[test]
+fn a_capped_road_map_search_retries_at_the_kessel_weight() {
+    let mut s = setup("ww2:germany", "ww2:usa");
+    let t = Heightfield::generate_map(&s.map);
+    let cap = s.rules.movement.path_max_expansions;
+    assert_eq!(s.rules.vehicles.road.cap_retry_weight_pct, 130);
+    let truck = s
+        .vehicles
+        .iter()
+        .find(|v| v.id == "ww2:ger_opel_blitz")
+        .unwrap()
+        .mobility
+        .clone();
+    let from = at(s.map.bases[0].center);
+    // Behind the far ridge, off the roads: plain A* (weight 100) runs out.
+    let far = FxVec2::from_int(384, 896);
+    let near = FxVec2::from_int(512, 512);
+    let (ok, exp, way) = path(&s, &t, &truck, from, far);
+    assert!(ok && exp > cap, "retried: reached {ok}, {exp} expansions");
+    assert!(*way.last().unwrap() == far);
+    let (ok_c, exp_c, way_c) = path(&s, &t, &truck, from, near);
+    assert!(ok_c && exp_c < cap);
+    s.rules.vehicles.road.cap_retry_weight_pct = 0;
+    let (ok0, exp0, _) = path(&s, &t, &truck, from, far);
+    assert!(!ok0 && exp0 == cap, "control: partial at the cap ({exp0})");
+    assert_eq!(
+        path(&s, &t, &truck, from, near),
+        (ok_c, exp_c, way_c),
+        "a search that reaches its goal is the same with the retry off"
+    );
+}
