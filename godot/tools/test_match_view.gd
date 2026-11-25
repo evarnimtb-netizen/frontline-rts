@@ -101,6 +101,7 @@ func _run() -> void:
 	await _test_s10a()
 	await _test_s10b()
 	await _test_s12()
+	_test_s17()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1944,6 +1945,28 @@ func _test_s12() -> void:
 	_sel.select_only(PackedInt32Array())
 	_view.update_state(_source.get_state())
 	await _frames(1)
+
+
+## S17 (Presenter P): the ally colour and the "them" slot. A 1v1 frame
+## (no `allies`) keeps own blue and enemy red; a 2v2 frame colours slot 1
+## (the ally) green, picks slot 2 as the foe and lists slot 1 as the ally.
+func _test_s17() -> void:
+	var saved: Dictionary = _view.state
+	var lp: int = _view.local_player
+	_check(UiPalette.owner_color(1, 0) == UiPalette.ENEMY, "S17: 1v1 enemy stays red")
+	_check(_view.foe_slot() == 1 - lp, "S17: 1v1 foe is the other player")
+	var st: Dictionary = saved.duplicate()
+	st["local_player"] = 0
+	st["allies"] = 3
+	st["players"] = [{"faction": "germany"}, {"faction": "germany"}, {"faction": "usa"}, {"faction": "usa"}]
+	_view.update_state(st)
+	_check(UiPalette.owner_color(0, 0) == UiPalette.OWN, "S17: own blue")
+	_check(UiPalette.owner_color(1, 0) == UiPalette.ALLY, "S17: ally green")
+	_check(UiPalette.owner_color(2, 0) == UiPalette.ENEMY, "S17: enemy red")
+	_check(_view.foe_slot() == 2, "S17: the foe is the first hostile slot")
+	_check(_view.ally_slots() == [1], "S17: the ally slots")
+	_view.update_state(saved)
+	_check(not UiPalette.is_ally(1, lp), "S17: back to 1v1, no ally")
 
 
 func _check(ok: bool, what: String) -> void:

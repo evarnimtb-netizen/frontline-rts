@@ -62,14 +62,26 @@ const MAPS := {
 		"size_m": 1024,
 		"points": 5,
 		"blurb": "Rolling farmland split by a wooded ridge. Five points, the middle one on the crest.",
+		"mode": "1v1",
+	},
+	# S17: the four-base team map (2v2 only: player i takes base i).
+	"harrow_cross": {
+		"name": "Harrow Cross",
+		"size_m": 1536,
+		"points": 7,
+		"blurb": "Two roads cross on a low rise. Two bases on each edge; you and an AI ally hold the west.",
+		"mode": "2v2",
 	},
 }
+## S17: the skirmish modes (1v1, 2v2: you and an AI ally against two AIs).
+const MODES := ["1v1", "2v2"]
 
 var setup := {
 	"faction": "germany",
 	"difficulty": "normal",
 	"map": "kessel_ridge",
 	"seed": 1,
+	"mode": "1v1",
 }
 ## Filled by the match when it ends, for anything shown after it.
 var last_result := {}
@@ -153,6 +165,12 @@ func _ready() -> void:
 				i += 1
 			"--seed":
 				setup.seed = v.to_int()
+				i += 1
+			"--mode":
+				# S17: 2v2 plays Harrow Cross.
+				if v in MODES:
+					setup.mode = v
+					setup.map = map_for_mode(v)
 				i += 1
 			"--autoplay":
 				autoplay_minutes = maxf(v.to_float(), 0.5) if v.is_valid_float() else 5.0
@@ -378,6 +396,14 @@ func quit_game(code := 0) -> void:
 
 func map_info(id: String) -> Dictionary:
 	return MAPS.get(id, {})
+
+
+## S17: the first map that plays `mode`.
+func map_for_mode(mode: String) -> String:
+	for id in MAPS:
+		if MAPS[id].get("mode", "1v1") == mode:
+			return id
+	return "kessel_ridge"
 
 
 func _run_autoplay_menu() -> void:

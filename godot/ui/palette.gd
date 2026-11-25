@@ -18,6 +18,8 @@ const WARN := Color(0.89, 0.70, 0.25)
 const DANGER := Color(0.88, 0.38, 0.31)
 
 const OWN := Color(0.37, 0.66, 0.83)
+## S17 (S17-13): an ally's units, between own blue and neutral.
+const ALLY := Color(0.45, 0.74, 0.45)
 const ENEMY := Color(0.85, 0.38, 0.31)
 const NEUTRAL := Color(0.65, 0.66, 0.64)
 
@@ -38,11 +40,24 @@ const SQUAD_NAMES := {
 }
 
 
-## Colour of a side as seen by `local_player`; -1 is neutral.
+## S17: bit mask of the local player's team (him included), set by the
+## match view from each frame's `allies`; 0 = no team (every 1v1).
+static var ally_mask := 0
+
+
+## Is `owner` the local player's ally (never the local player himself)?
+static func is_ally(owner: int, local_player: int) -> bool:
+	return owner >= 0 and owner != local_player and owner < 16 and (ally_mask >> owner) & 1 == 1
+
+
+## Colour of a side as seen by `local_player`; -1 is neutral (S17: an
+## ally's side is ALLY).
 static func owner_color(owner: int, local_player: int) -> Color:
 	if owner < 0:
 		return NEUTRAL
-	return OWN if owner == local_player else ENEMY
+	if owner == local_player:
+		return OWN
+	return ALLY if is_ally(owner, local_player) else ENEMY
 
 
 static func faction_color(faction: String) -> Color:

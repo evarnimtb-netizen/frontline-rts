@@ -420,7 +420,10 @@ impl MatchFrame {
     pub fn fill(&mut self, world: &World, ctx: &mut FrameCtx, step_ms: f32, sched: Instant) {
         let snap = world.snapshot();
         let local = ctx.local;
-        let bit = 1u16 << local;
+        // S17: the local team's sight bits, and allies drawn as own.
+        let bit = ctx.sight_bits();
+        let (lc, allies, mine_bits) = (ctx.local, ctx.allies, ctx.mine_bits());
+        let ally = move |o: u8| o == lc || (o < 16 && allies & (1 << o) != 0);
         self.tick = snap.tick;
         self.step_ms = step_ms;
         self.sched = sched;
@@ -449,8 +452,11 @@ impl MatchFrame {
                 }),
         );
         self.visible.clear();
-        self.visible
-            .extend(snap.soldier_visible.iter().map(|v| v & bit != 0));
+        self.visible.extend(
+            snap.soldier_visible
+                .iter()
+                .map(|v| v & (1u16 << local) != 0),
+        );
         self.hp.clone_from(&snap.soldier_hp);
         self.suppression.clone_from(&snap.soldier_suppression);
         self.pinned.clone_from(&snap.soldier_pinned);
@@ -538,7 +544,7 @@ impl MatchFrame {
         self.corpse_visible.clear();
         for c in &self.corpses {
             self.corpse_visible
-                .push(c.owner == local || c.seen_by & bit != 0);
+                .push(ally(c.owner) || c.seen_by & bit != 0);
         }
 
         let combat = ents.combat();
@@ -560,16 +566,17 @@ impl MatchFrame {
                 vel: p.vel.to_f32(),
                 age: ((ttl0 - p.ttl as f32) / SUBSTEP_HZ as f32).max(0.0),
                 he,
-                visible: p.player == local || seen_by(p.owner.0),
+                visible: ally(p.player) || seen_by(p.owner.0),
             });
         }
 
-        // Own men's positions (sim xy) for the thrown-item and smoke fog.
+        // Own men's positions (sim xy) for the thrown-item and smoke fog
+        // (S17: and those of allies whose spots the local player shares).
         let own: Vec<[f32; 2]> = self
             .soldiers
             .iter()
             .zip(&self.owner)
-            .filter(|(_, o)| **o == local)
+            .filter(|(_, o)| **o < 16 && bit & (1 << **o) != 0)
             .map(|(p, _)| [p[0], p[1]])
             .collect();
         let near = |p: [f32; 3], r: f32| {
@@ -597,9 +604,7 @@ impl MatchFrame {
                         [vx, vy, vz - 9.81 * flown]
                     },
                     landed: ts.landed,
-                    visible: ts.owner == local
-                        || seen_by(t.thrower.0)
-                        || near(ts.pos, THROWN_NEAR_M),
+                    visible: ally(ts.owner) || seen_by(t.thrower.0) || near(ts.pos, THROWN_NEAR_M),
                 });
             }
         }
@@ -618,7 +623,7 @@ impl MatchFrame {
         // S6: structures and crates the local player knows of.
         self.structures.clear();
         for st in &snap.structures {
-            if st.owner == local || near([st.pos[0], st.pos[1], 0.0], ctx.sight_m) {
+            if ally(st.owner) || near([st.pos[0], st.pos[1], 0.0], ctx.sight_m) {
                 self.structures.push(st.clone());
             }
         }
@@ -634,10 +639,8 @@ impl MatchFrame {
                     ))
                     .to_f32();
             }
-            let carried_seen = c.carrier != u32::MAX && (c.owner == local || seen_by(c.carrier));
-            if c.owner == local
-                || carried_seen
-                || (c.carrier == u32::MAX && near(c.pos, ctx.sight_m))
+            let carried_seen = c.carrier != u32::MAX && (ally(c.owner) || seen_by(c.carrier));
+            if ally(c.owner) || carried_seen || (c.carrier == u32::MAX && near(c.pos, ctx.sight_m))
             {
                 self.crates.push(c);
             }
@@ -649,28 +652,28 @@ impl MatchFrame {
         fort.pieces.extend(
             sf.pieces
                 .iter()
-                .filter(|q| q.owner == local || near(q.center, ctx.sight_m))
+                .filter(|q| ally(q.owner) || near(q.center, ctx.sight_m))
                 .cloned(),
         );
         fort.wire.clear();
         fort.wire.extend(
             sf.wire
                 .iter()
-                .filter(|w| w.owner == local || near(w.a, ctx.sight_m) || near(w.b, ctx.sight_m))
+                .filter(|w| ally(w.owner) || near(w.a, ctx.sight_m) || near(w.b, ctx.sight_m))
                 .cloned(),
         );
         fort.works.clear();
         fort.works.extend(
             sf.works
                 .iter()
-                .filter(|w| w.owner == local || near(w.site, ctx.sight_m))
+                .filter(|w| ally(w.owner) || near(w.site, ctx.sight_m))
                 .cloned(),
         );
         fort.charges.clear();
         fort.charges.extend(
             sf.charges
                 .iter()
-                .filter(|c| c.owner == local || near(c.from, ctx.sight_m))
+                .filter(|c| ally(c.owner) || near(c.from, ctx.sight_m))
                 .cloned(),
         );
         // S10b: mines the local player knows (`known` holds the owner's team
@@ -679,7 +682,7 @@ impl MatchFrame {
         fort.mines.extend(
             sf.mines
                 .iter()
-                .filter(|m| local < 8 && m.known & (1u8 << local) != 0)
+                .filter(|m| m.known & mine_bits != 0)
                 .cloned(),
         );
         self.scene_ready = ctx
@@ -721,7 +724,8 @@ impl MatchFrame {
                 leader: lead.0,
                 anchor: ents.transform()[lead.index()].pos.to_f32(),
                 goal: sq.nav.goal.to_f32(),
-                visible: sq.owner.0 == local,
+                // S17: an ally's squads are shown (read-only roster).
+                visible: ally(sq.owner.0),
                 ..SquadView::default()
             };
             // S5a: ammunition share, crew weapon rounds, held fire, refill.
@@ -899,7 +903,7 @@ impl MatchFrame {
         seen_by: &dyn Fn(u32) -> bool,
     ) {
         let local = ctx.local;
-        let bit = 1u16 << local;
+        let bit = ctx.sight_bits();
         // Who the local player saw the tick before (armour events of a
         // vehicle knocked out this tick: it is a wreck now).
         std::mem::swap(&mut ctx.seen_vehicles, &mut ctx.seen_vehicles_prev);
@@ -910,7 +914,7 @@ impl MatchFrame {
             // S3c: an abandoned vehicle is an object anyone may inspect
             // (its damage, crew still inside), like a wreck.
             let abandoned = v.flags & vehicle_flags::ABANDONED != 0;
-            if wreck || abandoned || v.owner == local {
+            if wreck || abandoned || ctx.ally(v.owner) {
                 ctx.seen_vehicles.insert(v.id);
                 self.vehicles.push(v.clone());
             } else if v.seen_by & bit != 0 {
@@ -922,7 +926,7 @@ impl MatchFrame {
         self.shells.extend(
             shells
                 .iter()
-                .filter(|s| s.player == local || seen_by(s.shooter) || near(s.pos, THROWN_NEAR_M))
+                .filter(|s| ctx.ally(s.player) || seen_by(s.shooter) || near(s.pos, THROWN_NEAR_M))
                 .cloned(),
         );
     }
@@ -1001,6 +1005,10 @@ pub fn assign_slots(
 #[derive(Clone, Debug, Default)]
 pub struct FrameCtx {
     pub local: u8,
+    /// S17 (Presenter P): the local player's team (bit mask, him included)
+    /// and the `seen_by` bits he reads (his team's with shared sight).
+    pub allies: u16,
+    pub sight: u16,
     pub weapons: Vec<WeaponInfo>,
     /// Longest sight range (m) of the local faction's squad types (smoke
     /// cloud fog).
@@ -1050,12 +1058,31 @@ impl FrameCtx {
             .filter(|t| Some(t.faction) == faction)
             .map(|t| frontline_sim::Fx::from(t.sight).to_f32())
             .fold(150.0f32, f32::max);
+        let teams = frontline_sim::teams::Teams::of_setup(setup);
         FrameCtx {
             local,
+            allies: teams.allies_mask(local),
+            sight: teams.sight_mask(local),
             weapons,
             sight_m,
             ..FrameCtx::default()
         }
+    }
+
+    /// S17: is `owner` the local player or his ally? (Alone: `owner ==
+    /// local`, the test before S17.)
+    pub fn ally(&self, owner: u8) -> bool {
+        owner == self.local || (owner < 16 && self.allies & (1 << owner) != 0)
+    }
+
+    /// S17: the `seen_by` bits that mean "the local player sees it".
+    pub fn sight_bits(&self) -> u16 {
+        self.sight | 1 << self.local
+    }
+
+    /// S17: the mine `known` bits the local player reads (players 0..8).
+    pub fn mine_bits(&self) -> u8 {
+        (self.sight_bits() & 0xff) as u8
     }
 
     /// Updates the call-in and trench counters from this tick's squads.
@@ -1381,6 +1408,38 @@ mod tests {
     use super::tests_support::test_world;
     use super::*;
     use frontline_sim::{Command, CommandKind, Fx, FxVec2, PlayerId};
+
+    /// S17 (Presenter P): in a 2v2 from the menu the local player's ally
+    /// (slot 1) is drawn like him: his squads and men visible, his slot in
+    /// the team mask; the two opponents are not seen at the start. Control:
+    /// a 1v1 context is the old "owner == local" test.
+    #[test]
+    fn a_2v2_frame_shows_the_ally_and_hides_the_enemy() {
+        use crate::match_setup::{MenuChoice, find_mods_dir, mods_candidates, resolve};
+        let mods = find_mods_dir(&mods_candidates(None, None)).unwrap();
+        let choice = MenuChoice {
+            mode: "2v2".into(),
+            map: "harrow_cross".into(),
+            ..MenuChoice::default()
+        };
+        let w = World::new_match(resolve(&mods, &choice).unwrap(), 2).unwrap();
+        let setup = w.match_setup().unwrap().clone();
+        let mut ctx = FrameCtx::new(&setup, 0);
+        assert_eq!(ctx.allies, 0b0011);
+        assert!(ctx.ally(1) && !ctx.ally(2) && !ctx.ally(3));
+        let mut f = MatchFrame::empty();
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        assert_eq!(f.players.len(), 4);
+        assert!(f.squads.iter().any(|s| s.owner == 1));
+        for s in &f.squads {
+            assert_eq!(s.visible, s.owner < 2, "squad {} owner {}", s.id, s.owner);
+        }
+        for (o, v) in f.owner.iter().zip(&f.visible) {
+            assert_eq!(*v, *o < 2, "a man of player {o}");
+        }
+        let one = FrameCtx::new(&test_world(false).match_setup().unwrap().clone(), 0);
+        assert!(one.ally(0) && !one.ally(1));
+    }
 
     #[test]
     fn frame_matches_the_world() {

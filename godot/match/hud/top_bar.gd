@@ -75,7 +75,7 @@ func _draw() -> void:
 	var fs_small := HudStyle.FONT_SMALL
 	draw_rect(Rect2(Vector2.ZERO, size), HudStyle.BG_TOP)
 	var me := view.player(view.local_player)
-	var them := view.player(1 - view.local_player)
+	var them := view.player(view.foe_slot())
 	if me.is_empty() or them.is_empty():
 		return
 	var by := size.y * 0.5 + 5.0
@@ -86,6 +86,12 @@ func _draw() -> void:
 	fac = fac.to_upper()
 	HudStyle.text(self, bold, Vector2(x, by), fac, fs, HudStyle.TEXT)
 	x += HudStyle.text_w(bold, fac, fs) + 16.0
+	# S17: the ally's faction, in the ally colour (team matches only).
+	for a in view.ally_slots():
+		var af: String = String(UiPalette.FACTION_SHORT.get(view.player(a).get("faction", ""), "ALLY")).to_upper()
+		af = "+ " + af
+		HudStyle.text(self, bold, Vector2(x, by), af, fs, UiPalette.ALLY)
+		x += HudStyle.text_w(bold, af, fs) + 16.0
 	x = _pair(font, bold, x, by, "MP", "%d" % int(me.manpower))
 	HudStyle.text(self, font, Vector2(x, by), "+%.1f/s" % float(me.income), fs, HudStyle.DIM)
 	x += HudStyle.text_w(font, "+%.1f/s" % float(me.income), fs) + 16.0

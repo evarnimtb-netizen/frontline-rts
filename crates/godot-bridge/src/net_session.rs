@@ -639,6 +639,8 @@ impl NetSession {
                 faction,
                 human: true,
             })),
+            // S17: net matches stay 1v1 (online teams are S18).
+            mode: "1v1".into(),
             test_unlock: self.test_unlock,
         };
         resolve_with(defs, &choice)

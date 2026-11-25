@@ -255,6 +255,8 @@ func _ready() -> void:
 func update_state(s: Dictionary) -> void:
 	state = s
 	local_player = s.get("local_player", 0)
+	# S17: the local team for the ally colour (absent: alone).
+	UiPalette.ally_mask = int(s.get("allies", 1 << local_player))
 	_clock += get_process_delta_time()
 	# Once the match is over the readout keeps its last values: the other
 	# side stops talking after its goodbye, which would read "unstable".
@@ -767,6 +769,26 @@ func throw_range(item: String) -> Vector2:
 func player(idx: int) -> Dictionary:
 	var ps: Array = state.get("players", [])
 	return ps[idx] if idx >= 0 and idx < ps.size() else {}
+
+
+## S17: the slot shown as "them" (top bar, end screen): the first player
+## not on the local player's team (a 1v1: the other player).
+func foe_slot() -> int:
+	var ps: Array = state.get("players", [])
+	for i in ps.size():
+		if i != local_player and not UiPalette.is_ally(i, local_player):
+			return i
+	return 1 - local_player
+
+
+## S17: the local player's allies (slots), for the roster and top bar.
+func ally_slots() -> Array:
+	var out := []
+	var ps: Array = state.get("players", [])
+	for i in ps.size():
+		if UiPalette.is_ally(i, local_player):
+			out.append(i)
+	return out
 
 
 ## S5b: asks the source for the fire-mission preview of `squad` at `g`.

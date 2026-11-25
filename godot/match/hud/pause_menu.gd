@@ -110,7 +110,7 @@ func _ask(what: StringName) -> void:
 	_pending = what
 	var foe := "The AI"
 	if view.net_mode:
-		var n := String(view.player(1 - view.local_player).get("name", ""))
+		var n := String(view.player(view.foe_slot()).get("name", ""))
 		foe = n if n != "" else "Your opponent"
 	if what == &"surrender":
 		_confirm_text.text = "Surrender this match? %s wins and the match ends." % foe

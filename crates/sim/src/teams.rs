@@ -147,6 +147,16 @@ impl Teams {
         seen_by & self.sight[ix(p)] != 0
     }
 
+    /// The presenter's fog-of-war mask of a body owned by `owner` with
+    /// this `seen_by` (S17b, checker after A): bit `q` is set when `q`
+    /// sees it ([`Teams::sees`], T2) or `q` is `owner`'s ally. With every
+    /// player alone it is `seen_by | 1 << owner`, the mask before S17.
+    pub fn visible_mask(&self, owner: u8, seen_by: u16) -> u16 {
+        (0..MAX_TEAM_PLAYERS as u8)
+            .filter(|&q| self.sees(q, seen_by) || self.allied(q, owner))
+            .fold(0u16, |m, q| m | 1 << q)
+    }
+
     /// A target test: `t_owner` is hostile to `p` and `p` sees him
     /// (`seen_by`, T1 and T2 together).
     #[inline]
@@ -185,6 +195,24 @@ impl Teams {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// S17b: the presenter's mask is the old `seen_by | 1 << owner` with
+    /// every player alone; on a team the ally's men are always drawn and
+    /// what one ally sees the other does (shared sight), not without it.
+    #[test]
+    fn the_visible_mask_shows_allies_and_shared_spots() {
+        let t = Teams::alone(2);
+        for seen in 0..16u16 {
+            for o in 0..2u8 {
+                assert_eq!(t.visible_mask(o, seen), seen | 1 << o);
+            }
+        }
+        let t = Teams::new(&[0, 0, 1, 1], true);
+        assert_eq!(t.visible_mask(0, 0), 0b0011, "own and ally");
+        assert_eq!(t.visible_mask(2, 0b0001), 0b1111, "player 0 sees him");
+        let t = Teams::new(&[0, 0, 1, 1], false);
+        assert_eq!(t.visible_mask(2, 0b0001), 0b1101, "no shared sight");
+    }
 
     #[test]
     fn every_player_alone_is_the_one_bit_and_the_owner_test() {

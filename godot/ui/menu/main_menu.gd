@@ -19,6 +19,7 @@ const MP_CAPTURES := ["mp", "mp_errors", "lobby", "lobby_guest", "lobby_same_fac
 var _faction := "germany"
 var _difficulty := "normal"
 var _map := "kessel_ridge"
+var _mode := "1v1"
 
 @onready var _content: PanelContainer = %Content
 @onready var _skirmish_btn: Button = %SkirmishButton
@@ -33,12 +34,14 @@ var _faction_btns := {}
 var _diff_btns := {}
 var _diff_note: Label
 var _preview: TextureRect
+var _map_pick: OptionButton
 
 
 func _ready() -> void:
 	_faction = Session.setup.faction
 	_difficulty = Session.setup.difficulty
 	_map = Session.setup.map
+	_mode = Session.setup.get("mode", "1v1")
 	_skirmish = _build_skirmish()
 	_content.add_child(_skirmish)
 	_settings = SettingsPanel.new()
@@ -146,6 +149,18 @@ func _build_skirmish() -> Control:
 	box.add_child(head)
 	box.add_child(_dim("One map, one AI opponent. Hold the points, dig in, bleed their tickets."))
 
+	# S17: the mode pick (1v1; 2v2 with an AI ally on Harrow Cross).
+	box.add_child(_section("Mode"))
+	var mode_row := HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 10)
+	var mode_group := ButtonGroup.new()
+	for md in Session.MODES:
+		var mb := _choice("1 v 1" if md == "1v1" else "2 v 2 (AI ally)", mode_group, md == _mode)
+		mb.custom_minimum_size = Vector2(170, 40)
+		mb.pressed.connect(_set_mode.bind(md))
+		mode_row.add_child(mb)
+	box.add_child(mode_row)
+
 	box.add_child(_section("Faction"))
 	var fac_row := HBoxContainer.new()
 	fac_row.add_theme_constant_override("separation", 10)
@@ -196,6 +211,10 @@ func _build_skirmish() -> Control:
 	var map_pick := OptionButton.new()
 	for id in Session.MAPS:
 		map_pick.add_item(Session.MAPS[id].name)
+	# S17: the map follows the mode (each map plays one mode).
+	map_pick.selected = Session.MAPS.keys().find(_map)
+	map_pick.disabled = true
+	_map_pick = map_pick
 	map_pick.custom_minimum_size.x = 220
 	map_pick.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	map_info.add_child(map_pick)
@@ -239,7 +258,15 @@ func _draw_preview_marks() -> void:
 
 func _on_start() -> void:
 	AudioManager.play_ui(&"confirm")
-	Session.start_skirmish({"faction": _faction, "difficulty": _difficulty, "map": _map})
+	Session.start_skirmish({"faction": _faction, "difficulty": _difficulty, "map": _map, "mode": _mode})
+
+
+## S17: picks the mode and the map that plays it.
+func _set_mode(md: String) -> void:
+	_mode = md
+	_map = Session.map_for_mode(md)
+	if _map_pick != null:
+		_map_pick.selected = Session.MAPS.keys().find(_map)
 
 
 func _section(text: String) -> Label:

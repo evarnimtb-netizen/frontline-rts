@@ -906,6 +906,7 @@ fn menu_choice(d: &VarDictionary) -> MenuChoice {
         tickets: n("tickets").filter(|&t| t > 0).map(|t| t as u32),
         start_manpower: n("start_manpower").filter(|&t| t >= 0).map(|t| t as u32),
         slots: None,
+        mode: s("mode", "1v1"),
         test_unlock: d
             .get("test_unlock")
             .and_then(|v| v.try_to::<bool>().ok())
@@ -1356,7 +1357,8 @@ impl MatchRuntime {
             flashes: Vec::new(),
             team_tint,
             events_in: Vec::new(),
-            tracker: EventTracker::new(local),
+            tracker: EventTracker::new(local)
+                .with_allies(frontline_sim::teams::Teams::of_setup(&setup).allies_mask(local)),
             ui_events: Vec::new(),
             cues: Vec::new(),
             dig_cue: BTreeMap::new(),
@@ -2022,19 +2024,26 @@ impl MatchRuntime {
             },
         };
 
+        // S17 (Presenter P): who is on the local player's team.
+        let teams = frontline_sim::teams::Teams::of_setup(setup);
+        let allies = teams.allies_mask(local as u8);
         let mut players = VarArray::new();
         for (p, ps) in f.players.iter().enumerate() {
             let ps_setup = &setup.players[p];
             let fac = short_id(&setup.factions[ps_setup.faction as usize].id);
+            let ally = p != local && teams.allied(local as u8, p as u8);
             let name = match &self.net {
                 Some(n) if !n.names[p % 2].is_empty() => n.names[p % 2].clone(),
                 _ if p == local => "You".to_owned(),
                 _ if !ps_setup.is_ai => "Player".to_owned(),
+                _ if ally => format!("Ally AI ({:?})", ps_setup.difficulty).to_lowercase(),
                 _ => format!("AI ({:?})", ps_setup.difficulty).to_lowercase(),
             };
             players.push(
                 &vdict! {
                     "id" => p as i64,
+                    "team" => ps_setup.team as i64,
+                    "ally" => ally,
                     "faction" => fac,
                     "name" => name.as_str(),
                     "is_ai" => ps_setup.is_ai,
@@ -2574,7 +2583,7 @@ impl MatchRuntime {
                     .players
                     .iter()
                     .enumerate()
-                    .find(|(p, _)| *p != winner.0 as usize)
+                    .find(|(p, _)| teams.hostile(winner.0, *p as u8))
                     .and_then(|(_, ps)| ps.defeat);
                 let reason = match loser {
                     Some(frontline_sim::Defeat::Tickets) => "tickets",
@@ -2582,7 +2591,8 @@ impl MatchRuntime {
                     Some(frontline_sim::Defeat::Surrendered) => "surrender",
                     None => "tickets",
                 };
-                let st = if winner.0 as usize == local {
+                // S17: a win of the local player's team is his win.
+                let st = if teams.allied(winner.0, local as u8) {
                     "won"
                 } else {
                     "lost"
@@ -2613,6 +2623,8 @@ impl MatchRuntime {
             "time_s" => f.tick as f32 / hz,
             "paused" => paused,
             "local_player" => local as i64,
+            // S17: bit mask of the local player's team (him included).
+            "allies" => allies as i64,
             "map" => &map,
             "rules" => &rules_d,
             "players" => &players,

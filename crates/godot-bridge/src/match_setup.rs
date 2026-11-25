@@ -31,6 +31,10 @@ pub struct MenuChoice {
     /// Overrides `faction` and `ai_vs_ai`. Both clients resolve the same
     /// choice into the same setup (its hash is the `Ready` check).
     pub slots: Option<[SlotChoice; 2]>,
+    /// S17 (Presenter P): `1v1` (default) or `2v2`: the human (slot 0)
+    /// and an AI ally (slot 1, same faction) against two AIs of the other
+    /// faction (slots 2 and 3) on a map with four bases (Harrow Cross).
+    pub mode: String,
     /// S3: play the test rules override (`mods/ww2/tests/
     /// rules_test_unlock.toml`: vehicles unlocked at once), for scripted
     /// runs. The defs must hold it ([`load_defs`] with `test_unlock`).
@@ -56,10 +60,14 @@ impl Default for MenuChoice {
             tickets: None,
             start_manpower: None,
             slots: None,
+            mode: "1v1".into(),
             test_unlock: false,
         }
     }
 }
+
+/// S17: the menu's team modes.
+pub const MODES: [&str; 2] = ["1v1", "2v2"];
 
 pub const MOD_ID: &str = "ww2";
 /// Rules id of the S3 test override (vehicles unlocked at once).
@@ -132,6 +140,9 @@ pub fn resolve(mods: &Path, choice: &MenuChoice) -> Result<MatchSetup, String> {
 
 pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, String> {
     let d = difficulty(&choice.difficulty)?;
+    if !MODES.contains(&choice.mode.as_str()) {
+        return Err(format!("unknown mode {:?}", choice.mode));
+    }
     let slots = match &choice.slots {
         Some(s) => s.clone(),
         None => {
@@ -160,6 +171,23 @@ pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, S
     if slots[0].faction == slots[1].faction {
         return Err(format!("both slots are {:?}", slots[0].faction));
     }
+    // S17: in a 2v2 slot 0 (human, unless ai_vs_ai) and slot 1 (AI ally)
+    // play the chosen faction, slots 2 and 3 (AI) the other; teams 0 and 1.
+    let team_slots: Vec<(SlotChoice, Option<u8>)> =
+        if choice.mode == "2v2" && choice.slots.is_none() {
+            let ally = SlotChoice {
+                faction: slots[0].faction.clone(),
+                human: false,
+            };
+            vec![
+                (slots[0].clone(), Some(0)),
+                (ally, Some(0)),
+                (slots[1].clone(), Some(1)),
+                (slots[1].clone(), Some(1)),
+            ]
+        } else {
+            slots.iter().map(|s| (s.clone(), None)).collect()
+        };
     let req = MatchRequest {
         rules: if choice.test_unlock {
             TEST_UNLOCK_RULES.to_owned()
@@ -168,13 +196,13 @@ pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, S
         },
         map: format!("{MOD_ID}:{}", choice.map),
         seed: choice.seed,
-        players: slots
+        players: team_slots
             .iter()
-            .map(|s| PlayerRequest {
+            .map(|(s, team)| PlayerRequest {
                 faction: format!("{MOD_ID}:{}", s.faction),
                 ai: !s.human,
                 difficulty: d,
-                team: None,
+                team: *team,
             })
             .collect(),
     };
@@ -273,6 +301,38 @@ mod tests {
         let mut same = choice.clone();
         same.slots.as_mut().unwrap()[1].faction = "usa".into();
         assert!(resolve(&mods(), &same).is_err());
+    }
+
+    /// S17: the 2v2 menu choice on Harrow Cross: the human and an AI ally
+    /// of his faction (team 0) against two AIs of the other (team 1). A 2v2
+    /// on a two-base map and an unknown mode are refused.
+    #[test]
+    fn a_2v2_choice_gives_an_ally_and_two_opponents() {
+        let choice = MenuChoice {
+            mode: "2v2".into(),
+            map: "harrow_cross".into(),
+            ..MenuChoice::default()
+        };
+        let s = resolve(&mods(), &choice).unwrap();
+        let team: Vec<u8> = s.players.iter().map(|p| p.team).collect();
+        assert_eq!(team, [0, 0, 1, 1]);
+        let human: Vec<bool> = s.players.iter().map(|p| !p.is_ai).collect();
+        assert_eq!(human, [true, false, false, false]);
+        let f = |p: usize| short_id(&s.factions[s.players[p].faction as usize].id).to_owned();
+        assert_eq!(
+            [f(0), f(1), f(2), f(3)],
+            ["germany", "germany", "usa", "usa"]
+        );
+        let two_bases = MenuChoice {
+            mode: "2v2".into(),
+            ..MenuChoice::default()
+        };
+        assert!(resolve(&mods(), &two_bases).is_err());
+        let bad = MenuChoice {
+            mode: "3v3".into(),
+            ..choice
+        };
+        assert!(resolve(&mods(), &bad).is_err());
     }
 
     #[test]
