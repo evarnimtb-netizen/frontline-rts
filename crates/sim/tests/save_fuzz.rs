@@ -1250,7 +1250,7 @@ fn staged_s12(w: &mut World) {
         p.s12.torso_hits = [3, 4];
     }));
     // S14a Build A: two flame particles in flight, a burning patch, a
-    // burning man (a man mid-strike comes with Build C).
+    // burning man (Build C: a man mid-strike, below).
     use frontline_sim::fx::FxVec3;
     let p3 =
         |x: i32, y: i32, z: i32| FxVec3::new(Fx::from_int(x), Fx::from_int(y), Fx::from_int(z));
@@ -1278,6 +1278,20 @@ fn staged_s12(w: &mut World) {
     assert!(w.edit_player(PlayerId(1), |p| {
         p.s14.flame_fired = 2;
         p.s14.patches_made = 1;
+    }));
+    // S14a Build C: a man winding up a strike and one recovering from one
+    // (long phases, so the staged save still holds both).
+    use frontline_sim::flame::{STRIKE_RECOVER, STRIKE_WINDUP};
+    for (m, ph) in [(ms[8], STRIKE_WINDUP), (ms[9], STRIKE_RECOVER)] {
+        assert!(w.edit_soldier(m, |_, c| {
+            c.close.strike_phase = ph;
+            c.close.strike = 250;
+            c.close.strike_at = FxVec2::from_int(202, 700);
+        }));
+    }
+    assert!(w.edit_player(PlayerId(0), |p| {
+        p.s14.strikes = 1;
+        p.s14.strike_hits = 1;
     }));
     // S14a Build B: a squad mid-clear (phase 1, its second step) in a
     // short trench north of the S12 men.
@@ -1955,6 +1969,19 @@ fn staged_s10b_save_holds_its_state() {
     assert!(w.entities().combat().iter().any(|c| c.close.burn_until > 0));
     // S14a Build B: a squad mid-clear.
     assert!(g.clears().values().any(|c| c.phase == 1 && c.step == 1));
+    // S14a Build C: a man mid-wind-up and one recovering.
+    for ph in [
+        frontline_sim::flame::STRIKE_WINDUP,
+        frontline_sim::flame::STRIKE_RECOVER,
+    ] {
+        assert!(
+            w.entities()
+                .combat()
+                .iter()
+                .any(|c| c.close.strike_phase == ph && c.close.strike > 0),
+            "strike phase {ph} staged"
+        );
+    }
     let h = holds(&w);
     let miss: Vec<_> = STAGED_MUST_HOLD.iter().filter(|m| !h.contains(m)).collect();
     assert!(miss.is_empty(), "the staged save lacks {miss:?}");
