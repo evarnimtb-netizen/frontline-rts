@@ -410,6 +410,55 @@ fn a_pushed_gun_moves_at_its_push_speed_scaled_by_the_men() {
     assert!((8..=20).contains(&two), "two men {two} cm/s");
 }
 
+/// S16b (checker after S16a, R1): a pushed gun on a road node has road
+/// factor 100 and is not slowed by woods there, as R3 prices every road
+/// node without the woods factor. Control: the same woods off the road
+/// cap it at its `woods_speed_pct`.
+#[test]
+fn a_pushed_gun_on_a_road_in_woods_keeps_its_push_speed() {
+    use frontline_content::Fixed;
+    use frontline_content::setup::{CircleSetup, FixedVec2, RoadSetup};
+    let run = |road: bool| {
+        let mut w = flat_world_with(1, |s| {
+            s.map.woods.push(CircleSetup {
+                center: FixedVec2::from_m([560, 500]),
+                radius: Fixed::from_int(120),
+            });
+            if road {
+                s.map.roads.push(RoadSetup {
+                    points: vec![FixedVec2::from_m([400, 500]), FixedVec2::from_m([700, 500])],
+                    half_width: Fixed::from_int(4),
+                });
+            }
+        });
+        let g = gun(&mut w, 0, 500, 500);
+        let ty = &w.match_setup().unwrap().vehicles[w.game().unwrap().vehicles[&g].type_idx as usize];
+        assert_eq!(ty.mobility.woods_speed_pct, 50, "the default for a gun");
+        assert_eq!(w.terrain().road_at(FxVec2::from_int(520, 500)), road);
+        assert!(w.terrain().woods_at(FxVec2::from_int(520, 500)));
+        steps(&mut w, 2);
+        limber(&mut w, g);
+        send(
+            &mut w,
+            0,
+            CommandKind::PushGun {
+                guns: vec![g],
+                point: FxVec2::from_int(600, 500),
+            },
+        );
+        let t = secs(&w, 2);
+        steps(&mut w, t);
+        let a = xy(&w, g);
+        let t = secs(&w, 10);
+        steps(&mut w, t);
+        (xy(&w, g) - a).length().mul_int(10).floor_int()
+    };
+    let on = run(true);
+    assert!((30..=40).contains(&on), "on the road {on} cm/s");
+    let off = run(false);
+    assert!((12..=20).contains(&off), "woods off a road {off} cm/s");
+}
+
 #[test]
 fn a_gun_too_heavy_to_push_refuses_the_order_and_a_pushed_gun_arrives_limbered() {
     let mut w = flat_world(1);

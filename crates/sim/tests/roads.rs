@@ -195,6 +195,69 @@ fn woods_on_a_road_do_not_slow_a_truck() {
 }
 
 #[test]
+fn a_road_factor_of_100_still_clears_the_woods_cap() {
+    // S16b (checker after S16a): `road_speed_pct` 100 on a road through
+    // woods: no road gain, and no woods slowdown either (R1, as R3 skips
+    // the woods cost on every road node).
+    let mut s = setup(&[(ROAD_EW, 8)]);
+    woods(&mut s, [500, 500], 80);
+    let k = s.vehicles.iter().position(|v| v.id == TRUCK_ID).unwrap();
+    s.vehicles[k].mobility.road_speed_pct = Some(100);
+    assert!(s.vehicles[k].mobility.woods_speed_pct < 100);
+    let top = top_speed(&s, TRUCK_ID);
+    let (best, _, _) = drive_east(s, TRUCK, 30 * 50, 470, 530);
+    assert!(
+        best >= top - Fx::from_milli(50) && best <= top + Fx::from_milli(1),
+        "{} want {}",
+        best.to_f32(),
+        top.to_f32()
+    );
+}
+
+/// A truck facing east at x 500 told to go 30 m behind it: it reverses
+/// (`reverse_order_m`); its fastest reverse speed.
+fn reverse_top(s: MatchSetup) -> Fx {
+    let mut w = World::new_match(s, 1).unwrap();
+    let (sq, v) = spawn(&mut w, TRUCK, xy(500, 500));
+    w.step(&[]);
+    mv(&mut w, sq, xy(470, 500));
+    let mut best = Fx::ZERO;
+    for _ in 0..30 * 30 {
+        w.step(&[]);
+        best = best.max(-speed(&w, v));
+    }
+    assert!(pos(&w, v).x < Fx::from_int(480), "it backed up");
+    best
+}
+
+#[test]
+fn reverse_on_a_road_takes_reverse_pct() {
+    // R1: reverse on a road node uses `reverse_pct` (shipped 100), not the
+    // forward factor. With 150 the truck backs up at 150 % of reverse_cm_s.
+    let s = setup(&[(ROAD_EW, 8)]);
+    let k = s.vehicles.iter().find(|v| v.id == TRUCK_ID).unwrap();
+    let rev: Fx = k.mobility.reverse.into();
+    assert_eq!(s.rules.vehicles.road.reverse_pct, 100);
+    let shipped = reverse_top(s.clone());
+    assert!(
+        shipped >= rev - Fx::from_milli(50) && shipped <= rev + Fx::from_milli(1),
+        "{} want {}",
+        shipped.to_f32(),
+        rev.to_f32()
+    );
+    let mut s = s;
+    s.rules.vehicles.road.reverse_pct = 150;
+    let want = rev.mul_int(150).div_int(100);
+    let fast = reverse_top(s);
+    assert!(
+        fast >= want - Fx::from_milli(50) && fast <= want + Fx::from_milli(1),
+        "{} want {}",
+        fast.to_f32(),
+        want.to_f32()
+    );
+}
+
+#[test]
 fn enabled_0_restores_cross_country_on_a_road_map() {
     let mut s = setup(&[(ROAD_EW, 8)]);
     s.rules.vehicles.road.enabled = 0;

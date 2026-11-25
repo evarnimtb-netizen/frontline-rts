@@ -1903,9 +1903,11 @@ pub fn drive(
     pct = pct * (100 - m.slope_loss_pct as i64 * grade.min(max_slope) / max_slope) / 100;
     let xy = t.pos.xy();
     // S16a (R1): on a road node the cap is the road factor of the def's
-    // speed (applied with the other caps below), and woods do not slow.
+    // speed (applied with the other caps below), and woods do not slow,
+    // whatever the factor (100 for a gun, or a road_speed_pct of 100), as
+    // R3 skips the woods cost on every road node.
     let (road_f, road_r) = road_factors(r, m, ctx.terrain, xy);
-    if road_f == 100 && ctx.terrain.woods_at(xy) {
+    if !on_road(r, ctx.terrain, xy) && ctx.terrain.woods_at(xy) {
         pct = pct * m.woods_speed_pct as i64 / 100;
     }
     let driver = vs.seat(v, SeatRole::Driver).map_or(0, |s| s.hp as u32);
@@ -2149,11 +2151,17 @@ pub(crate) fn road_factors(
     terrain: &Heightfield,
     xy: FxVec2,
 ) -> (u32, u32) {
-    if r.road.enabled == 1 && terrain.road_at(xy) {
+    if on_road(r, terrain, xy) {
         (m.road_pct(&r.road), m.road_reverse_pct(&r.road))
     } else {
         (100, 100)
     }
+}
+
+/// S16a (R1): whether road rules apply to a hull centred at `xy` (road
+/// rules on and a road node there).
+fn on_road(r: &VehicleRulesSetup, terrain: &Heightfield, xy: FxVec2) -> bool {
+    r.road.enabled == 1 && terrain.road_at(xy)
 }
 
 /// S16a (R1): the drive controller's top speed for a hull at `xy`, forward

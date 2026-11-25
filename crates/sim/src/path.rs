@@ -1125,11 +1125,17 @@ mod tests {
             100_000,
             &mut s,
         );
+        // S16b (checker after A): a search whose start is its goal has no
+        // early return; it is counted too, with 0 expansions.
+        let same = FxVec2::from_int(20, 100);
+        let r0 = find_vehicle_path(&t, same, same, &COST, &v, 100_000, &mut s);
+        assert!(r0.reached);
+        assert_eq!(r0.expansions, 0);
         observe::set_thread_sink(None);
         let st = sink.lock().unwrap().clone();
         assert_eq!(
             (st.searches, st.expansions, st.max),
-            (1, r.expansions as u64, r.expansions)
+            (2, r.expansions as u64, r.expansions)
         );
         assert_eq!(st.percentile(99), r.expansions.min(st.max));
     }
