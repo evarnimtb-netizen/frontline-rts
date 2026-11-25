@@ -558,6 +558,30 @@ Plan `docs/slices/B3-balance.md` 9; stage contract `B3-run-1.md`; levers `docs/s
   B3 run 2 (`f4e610b`, B3-3 (A)): M36 `ai_heavy`; the 480 judge reads T179a-d pass (Panther 28.75, M36 41.25, Tiger 14.4,
   Jumbo 16.25 % of skirmish160 matches); the 76 W stays at 0 (T179e floor 0).
 
+## S14 assault kit owner questions (asked 2026-11-22 by the Plan stage; each runs on (A): "(A) assumed 2026-11-22")
+
+Plan `docs/slices/S14-assault-kit.md` 12 (notes `S14-research-history.md`, `S14-research-code-audit.md`). Nothing built; S14
+builds after S13. Minor data and scope points (the US weapon is the M1A1 for the 1944-06 card, fuel figures, unchanged prices,
+strike numbers) are settled in the plan and only reported there.
+
+- S14-1 Fire and own men. (A) The flame stream passes own men like every direct round, but burning ground burns everyone standing in
+  it, own men included (own burns count as own fire, not kills). **(A) assumed 2026-11-22.** (B) Burning ground harms enemies only.
+  (C) The stream hits own men too.
+- S14-2 Hits on the fuel tank. (A) No rupture rule: a hit on the operator is an ordinary hit (sources: rare in fact; no new random
+  draw). **(A) assumed 2026-11-22.** (B) A hit in the back ruptures the tank 1 time in 10: he burns and leaves a 2 m fire.
+- S14-3 Where the flamethrowers go. (A) Into the Sturmpioniergruppe and the Assault Section as the roster says, one man's weapon
+  swapped; squad size, price, cooldown and AI weights unchanged. **(A) assumed 2026-11-22.** (B) A separate two-man flamethrower
+  team card per side. (C) Both.
+- S14-4 Melee scope. (A) An automatic strike only when the man's weapon is not ready (reloading, empty, crew weapon), plus a Strike
+  key (`V`); rifle butt 1.0 m and spade 0.6 m, no bayonets. **(A) assumed 2026-11-22.** (B) Also a Fix bayonets order (1.8 m reach,
+  worse aim while fixed). (C) Automatic only, no key.
+- S14-5 Who may use Clear trench. (A) Any infantry squad with grenades, players and AI. **(A) assumed 2026-11-22.** (B) The two
+  assault cards only (Sturmpioniergruppe, Assault Section).
+- S14-6 Flame on vehicles and works. (A) Flame hurts men only: it stops on vehicles, fortification pieces, crates and wire with no
+  effect; open-top crews are safe in S14. **(A) assumed 2026-11-22.** (B) Open-top crews and exposed seats burn.
+- S14-7 Burning ground and movement. (A) Paths ignore fire; men standing in it step out on their own, and Clear trench waits for its
+  own fire to die. **(A) assumed 2026-11-22.** (B) Paths route around burning ground (a new navigation layer; costs tick time).
+
 ## Planned work queue
 
 1. Infra step (done; on main).
@@ -584,6 +608,7 @@ Plan `docs/slices/B3-balance.md` 9; stage contract `B3-run-1.md`; levers `docs/s
 17. **S11a2: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A and B, with the Fix of Build B (B-1..B-7). Verified: `check.sh quick 730e67f` all ok, 982 tests at the head `e149258`. GitHub CI on `affb26e` (S11a1 complete plus S11a2 stage A): Linux build, release and debug sim tests, simulate, clippy, rustfmt and cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on main (fixed by PR 1); macOS cancelled; cross-platform hash check skipped. CI on `e149258` was still running when written. Measured 480 at `e149258`: Germany 41.67 % (sets 46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0; 318 targets pass, 82 miss (44 hard). New hard misses: T9b, T54a, T54c, T81a, T81b, T119b; gone: T8a, T115d, T121d. `tools/verify.sh` not run. Spec `docs/slices/S11a2.md`, log `S11a2-log.md`, targets `S11a2.toml`. Owner questions S11a2-1..12 above. Next: the merge decisions for S10c-ai, S11a1, S11a2 and PR 1; then the open items in STATE.md; then S11b.
 18. **S11b: done on branch `claude/project-thread-e7nsak` (2026-11-19), waits for the owner's merge OK.** Built in Build A, B and C, with the Fix stage (spec `docs/slices/S11b.md`, stages `S11b-build-A.md`, `-B.md`, `-C.md`, targets `S11b.toml`, log `S11b-log.md`). Measured 480 at `88117de`: Germany 44.17 %, HE share 26.8 / 26.5 / 26.2 (cap 26.3). Owner questions S11b-1..14 above.
 19. **B2 balance pass: done on branch `claude/project-thread-e7nsak` (2026-11-19); NO default changed.** Plan `docs/slices/B2-balance.md` (item 14; stages `B2-run-1.md` and `B2-run-2.md`, targets `B2.toml`, levers `targets/B2-levers/`, log `B2-log.md`). No lever passed the plan's rule. `rg_gap25` was applied (`fc14f52`) and reverted (`63e4b04`) when judge rule J4 failed on T121b. Owner questions B2-1..12 above.
+20. **S14 assault kit: planned (2026-11-22), not built.** Plan `docs/slices/S14-assault-kit.md` (notes `S14-research-history.md`, `S14-research-code-audit.md`). Builds after S13 from a fresh main: S14a mechanics (Build A flame, B clear trench and data, C melee; all switches 0, neutral; the `flame_only` 480 gates the AI half), presenter P, then S14-ai (flame jobs, refuel, flame buy, AI clear trench; 480, ablations). SAVE +1 and PROTOCOL +1 (`ClearTrench`, `Strike`). Targets from T185. Owner questions S14-1..7 above, each on (A).
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 
