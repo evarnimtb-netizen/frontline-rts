@@ -3168,6 +3168,7 @@
         "ranging_step_pct": 50
       },
       "flame": {
+        "aim_cm": 80,
         "base_refill_ms": 2000,
         "burn_hp_per_s": 15,
         "burn_s": 4,
@@ -3182,6 +3183,7 @@
         "patch_z_cm": 100,
         "patches_max": 128,
         "pulse_ms": 500,
+        "slit_near_cm": 50,
         "step_out": 1,
         "step_out_m": 2,
         "ttl_ms": 2500

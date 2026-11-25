@@ -400,7 +400,7 @@ pub(crate) fn build_marks(
 }
 
 #[inline]
-fn range_sq(range: Fx) -> u64 {
+pub(crate) fn range_sq(range: Fx) -> u64 {
     let r = range.raw().max(0) as u64;
     r * r
 }
@@ -796,7 +796,21 @@ pub(crate) fn aim_and_fire(
             let range: Fx = w.range_max.into();
             let t = RngStream::new(ctx.seed, ctx.tick, id, Purpose::SUPPRESS)
                 .range_fx(Fx::ZERO, Fx::ONE);
-            let Some((aim, probe)) = suppress_aim(ctx.terrain, rules, &line, t, from, range) else {
+            // S14 Fix 1: a flame man aims his stream at the target's height.
+            let aimed = if w.class == WeaponClass::Flame {
+                crate::flame::flame_suppress_aim(
+                    ctx.game,
+                    ctx.terrain,
+                    owner,
+                    &line,
+                    t,
+                    from,
+                    range,
+                )
+            } else {
+                suppress_aim(ctx.terrain, rules, &line, t, from, range)
+            };
+            let Some((aim, probe)) = aimed else {
                 continue;
             };
             if !ctx.terrain.line_of_sight(from, probe) {

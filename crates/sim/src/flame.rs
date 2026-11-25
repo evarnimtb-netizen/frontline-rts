@@ -353,6 +353,68 @@ use crate::projectile::{NO_AMMO, Projectile};
 use crate::spatial::SpatialHash;
 use crate::terrain::Heightfield;
 
+/// S14 Fix 1: the height a flame man's `Suppress` shot aims at, at point
+/// `p` of his line. A point within `[flame] slit_near_cm` of the
+/// footprint of an enemy roof raised over a pit (a fort with a `pit`
+/// whose piece sits `z_from = "base"` above the undug surface: the
+/// bunker) is aimed at the middle of the gap under that roof (the slit,
+/// from the fort def: base + offset z / 2); any other point at the ground
+/// there (a trench's floor where dug) plus `[flame] aim_cm`.
+pub(crate) fn flame_aim_z(game: &MatchState, terrain: &Heightfield, owner: u8, p: FxVec2) -> Fx {
+    let f = &game.setup.rules.flame;
+    let near = Fx::from_int(f.slit_near_cm as i32).div_int(100);
+    for q in game.fort.pieces.values() {
+        if q.owner.0 == owner {
+            continue;
+        }
+        let Some(def) = game.setup.forts.get(q.fort as usize) else {
+            continue;
+        };
+        let Some(pd) = def.pieces.get(q.part as usize) else {
+            continue;
+        };
+        let up: Fx = pd.offset[2].into();
+        if def.pit.is_none() || !pd.z_from_base || up <= Fx::ZERO {
+            continue;
+        }
+        let (sn, cs) = q.yaw.sin_cos();
+        let face = FxVec2::new(cs, sn);
+        let d = p - q.pos;
+        let (hx, hy): (Fx, Fx) = (pd.half[0].into(), pd.half[1].into());
+        if d.dot(face).abs() <= hx + near && d.dot(face.perp()).abs() <= hy + near {
+            return q.z - up + up.div_int(2);
+        }
+    }
+    terrain.height_at(p) + Fx::from_int(f.aim_cm as i32).div_int(100)
+}
+
+/// S14 Fix 1: [`crate::combat::suppress_aim`] for a flame man: the aim
+/// height from the target ([`flame_aim_z`]); the probe `clear_cm` short
+/// of it as high as the aim or the undug surface there plus `aim_cm`.
+pub(crate) fn flame_suppress_aim(
+    game: &MatchState,
+    terrain: &Heightfield,
+    owner: u8,
+    line: &[FxVec2; 2],
+    t: Fx,
+    from: FxVec3,
+    range: Fx,
+) -> Option<(FxVec3, FxVec3)> {
+    let rules = &game.setup.rules;
+    let p = line[0] + (line[1] - line[0]) * t;
+    let aim = FxVec3::new(p.x, p.y, flame_aim_z(game, terrain, owner, p));
+    if (aim.xy() - from.xy()).length_sq_raw() > crate::combat::range_sq(range) {
+        return None;
+    }
+    let back = (from.xy() - p).normalize_or_zero()
+        * Fx::from_ratio(rules.combat.suppress.clear_cm as i64, 100);
+    let q = terrain.clamp(p + back);
+    let lift = Fx::from_ratio(rules.flame.aim_cm as i64, 100);
+    let ground = terrain.height_at(q).max(terrain.base_height_at(q));
+    let probe = FxVec3::new(q.x, q.y, aim.z.max(ground + lift));
+    Some((aim, probe))
+}
+
 /// A burn pulse event (F3, F5): no weapon, no pool slot.
 fn burn_event(player: u8, blow: Blow) -> BallisticEvent {
     BallisticEvent {

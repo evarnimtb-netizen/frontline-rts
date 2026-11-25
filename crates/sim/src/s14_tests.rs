@@ -883,15 +883,20 @@ fn two_flamers_stay_in_cap() {
 
 // ------------------------------------------------------- F2 slit, F6 --
 
-/// Particles of player 1 thrown down through the bunker's slit (S10b
-/// layout: player 0's bunker at (500, 500) facing +x, five men in the pit,
-/// their heads under the slit's bottom) from 0.4 m in front of the front
-/// walls, 30-36 cm over the slit's bottom and across its width, flying at
-/// (-12, 0, -5) m/s; `[flame] enabled` 1. Returns (player 1's S14 counters, men of
-/// the five hurt). `closed`: the front walls meet (no slit).
-fn slit_flame(closed: bool) -> (crate::flame::S14Counters, usize) {
-    let mut w = super::s10b_tests::bunker_world(1, |d| {
+/// The R1 slit by the real weapon (S14 Fix 1): player 0's S10b bunker at
+/// (500, 500) facing +x with five men in the pit (fire held, so the scene
+/// tests the flame path, not the duel); player 1's Assault Section's M1A1
+/// man 20 m in front of the front walls' centre line, `SuppressUnits` on
+/// a 0.6 m line across the slit there; 15 s.
+/// `closed`: the front walls meet (no slit); `back`: he stands behind the
+/// back wall and fires at it. Returns (player 1's S14 counters, men of the
+/// five hurt).
+fn slit_suppress(closed: bool, back: bool) -> (crate::flame::S14Counters, usize) {
+    let mut w = real_flame_world(|s| {
+        s.rules.fortify.as_mut().unwrap().carry_kg_per_man = 50;
+        let i = super::s10b_tests::fort(s, "ww2:bunker") as usize;
         if closed {
+            let d = &mut s.forts[i];
             for k in [4, 5] {
                 d.pieces[k].half[1] = frontline_content::setup::Fixed::from_ratio(185, 200);
                 d.pieces[k].offset[1] = frontline_content::setup::Fixed::from_ratio(
@@ -900,47 +905,66 @@ fn slit_flame(closed: bool) -> (crate::flame::S14Counters, usize) {
                 );
             }
         }
+        s.rules.combat.fire.hold_open_m = 0;
     });
-    game_mut(&mut w.state).setup.rules.flame.enabled = 1;
     let (_, men) = super::s10b_tests::bunker_at(&mut w, true);
     let before: Vec<u16> = men
         .iter()
         .map(|m| w.state.entities.combat[m.index()].hp)
         .collect();
-    let bottom = super::s10b_tests::fs(&w)
-        .pieces
-        .values()
-        .find(|q| q.part == 4)
-        .unwrap()
-        .z;
-    let mut parts = Vec::new();
-    for (k, (dz, dy)) in [
-        (300, -250),
-        (320, 0),
-        (340, 250),
-        (360, -100),
-        (310, 100),
-        (330, 0),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        parts.push(Flame {
-            id: k as u32,
-            pos: FxVec3::new(
-                Fx::from_int(502) + Fx::from_milli(300),
-                Fx::from_int(500) + Fx::from_milli(dy),
-                bottom + Fx::from_milli(dz),
-            ),
-            vel: FxVec3::new(Fx::from_int(-12), Fx::ZERO, Fx::from_int(-5)),
-            ttl: 60,
-            player: 1,
-            shooter: SimId(u32::MAX - 1),
-            weapon: 0,
-        });
+    let quiet: Vec<SimId> = (0..w.state.entities.kind.len())
+        .filter(|&i| {
+            w.state.entities.kind[i] == crate::ecs::EntityKind::Soldier
+                && w.state.entities.owner[i].0 == 0
+        })
+        .map(|i| SimId(i as u32))
+        .collect();
+    super::s6_tests::run(
+        &mut w,
+        0,
+        0,
+        CommandKind::SetFire {
+            units: quiet,
+            mode: crate::unit::FireMode::Hold,
+        },
+    );
+    let sign = if back { -1 } else { 1 };
+    let sq = spawn(&mut w, 1, "ww2:usa_assault_section", 500 + sign * 60, 440);
+    let all = members(&w, sq);
+    let s = w.match_setup().unwrap();
+    let man = *all
+        .iter()
+        .find(|m| {
+            let wi = w.state.entities.kit[m.index()].weapon as usize;
+            s.weapons[wi].class == frontline_content::WeaponClass::Flame
+        })
+        .expect("the M1A1 man");
+    let wall = Fx::from_int(500) + Fx::from_milli(sign * 1900);
+    let mut held = men.clone();
+    for (k, &m) in all.iter().enumerate() {
+        let p = if m == man {
+            FxVec2::new(Fx::from_int(500 + sign * 20), Fx::from_int(500))
+        } else {
+            FxVec2::from_int(500 + sign * 60 + k as i32, 440)
+        };
+        w.place_soldier(m, p);
+        held.push(m);
     }
-    assert!(w.stage_s14(parts, Vec::new()));
-    super::s10b_tests::hold(&mut w, &men, 60);
+    steps(&mut w, 1);
+    let half = Fx::from_milli(300);
+    super::s6_tests::run(
+        &mut w,
+        1,
+        0,
+        CommandKind::SuppressUnits {
+            units: vec![man],
+            line: vec![
+                FxVec2::new(wall, Fx::from_int(500) - half),
+                FxVec2::new(wall, Fx::from_int(500) + half),
+            ],
+        },
+    );
+    super::s10b_tests::hold(&mut w, &held, 15 * 30);
     let hurt = men
         .iter()
         .zip(&before)
@@ -952,23 +976,55 @@ fn slit_flame(closed: bool) -> (crate::flame::S14Counters, usize) {
     (s14_of(&w, 1), hurt)
 }
 
-/// F2 (RE done-when 1, the bunker falls by geometry): particles through
-/// the slit gap strike the men inside (counted in `flame_in_bunker_hits`)
-/// or burn on the pit floor. Control: with the slit closed the front walls
-/// stop every particle: no hit, no man hurt.
+/// F2 (RE done-when 1, the bunker falls by geometry; S14 Fix 1): a flame
+/// man's `SuppressUnits` at the slit, by the normal fire path, aims at
+/// the slit's middle (the def's gap under the roof) and his particles
+/// strike the men inside (`flame_in_bunker_hits` > 0, men hurt).
+/// Controls: the slit closed, and the same fire at the back wall: no man
+/// of the five struck.
 #[test]
 fn flame_through_the_slit_hits_men_inside() {
-    let (k, hurt) = slit_flame(false);
+    let (k, hurt) = slit_suppress(false, false);
+    assert!(k.flame_fired > 0, "{k:?}");
     assert!(
-        k.flame_hits > 0 && hurt > 0,
+        k.flame_in_bunker_hits > 0 && hurt > 0,
         "through the slit: {k:?}, {hurt} hurt"
     );
+    let (k, _) = slit_suppress(true, false);
+    assert!(k.flame_fired > 0, "{k:?}");
+    assert_eq!(k.flame_in_bunker_hits, 0, "control: closed slit {k:?}");
+    let (k, _) = slit_suppress(false, true);
+    assert!(k.flame_fired > 0, "{k:?}");
+    assert_eq!(k.flame_in_bunker_hits, 0, "control: back wall {k:?}");
+}
+
+/// S14 Fix 1: a flame man's `Suppress` aim height comes from the target:
+/// the slit's middle within `slit_near_cm` of an enemy bunker roof (base +
+/// the roof's offset / 2), the dug floor plus `aim_cm` in a trench, the
+/// ground plus `aim_cm` elsewhere; his own bunker is no target.
+#[test]
+fn flame_aim_height_follows_the_target() {
+    let mut w = super::s10b_tests::bunker_world(1, |_| {});
+    let (pieces, _) = super::s10b_tests::bunker_at(&mut w, true);
+    let g = w.game().unwrap();
+    let roof = &g.fort.pieces[&pieces[0]];
+    let base = roof.z - Fx::from_milli(400);
+    let slit = FxVec2::new(Fx::from_int(500) + Fx::from_milli(2100), Fx::from_int(500));
+    let t = &w.state.terrain;
+    let z = crate::flame::flame_aim_z(g, t, 1, slit);
+    assert_eq!(z, base + Fx::from_milli(200), "the slit's middle");
+    let own = crate::flame::flame_aim_z(g, t, 0, slit);
+    assert_eq!(own, t.height_at(slit) + Fx::from_milli(800), "own bunker");
+    let far = FxVec2::from_int(530, 500);
     assert_eq!(
-        k.flame_in_bunker_hits, k.flame_hits,
-        "every hit is under the roof"
+        crate::flame::flame_aim_z(g, t, 1, far),
+        t.height_at(far) + Fx::from_milli(800),
+        "open ground"
     );
-    let (k, hurt) = slit_flame(true);
-    assert_eq!((k.flame_hits, hurt), (0, 0), "control: closed slit");
+    let pit = FxVec2::from_int(500, 500);
+    let r = &g.setup.rules.flame;
+    assert!(r.slit_near_cm > 0);
+    assert!(t.height_at(pit) < t.base_height_at(pit), "the pit is dug");
 }
 
 /// F6: with `step_out` 1, men in formation whose feet are in burning

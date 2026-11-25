@@ -14,7 +14,7 @@ fn c(x: i32, y: i32) -> FxVec2 {
     FxVec2::from_int(x, y)
 }
 
-fn fort(s: &frontline_content::MatchSetup, id: &str) -> u16 {
+pub(super) fn fort(s: &frontline_content::MatchSetup, id: &str) -> u16 {
     s.forts.iter().position(|f| f.id == id).unwrap() as u16
 }
 

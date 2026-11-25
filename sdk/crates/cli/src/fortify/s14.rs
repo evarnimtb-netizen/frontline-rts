@@ -1066,6 +1066,25 @@ mod tests {
         }
     }
 
+    /// One-off: the R1 slit row alone on seeds 1..=`S14_SEEDS` (default
+    /// 5; prints the values); run by hand in release.
+    #[test]
+    #[ignore]
+    fn s14_slit_one_off() {
+        let n: u64 = std::env::var("S14_SEEDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5);
+        for seed in 1..n + 1 {
+            for own in [0u8, 1] {
+                let r = slit_once(&FortifyArgs::default(), seed, own, Slit::Open).unwrap();
+                eprintln!("seed {seed} own {own}: out, fired, hits, bunker hits, flamer out {r:?}");
+            }
+        }
+        let r = slit_row(&FortifyArgs::default(), 1..n + 1).unwrap();
+        eprintln!("{}", serde_json::to_string(&r).unwrap());
+    }
+
     /// One-off: the S14 rows on seeds 1..=`S14_SEEDS` (default 5; prints
     /// the values); run by hand in release.
     #[test]

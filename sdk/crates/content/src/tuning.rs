@@ -3330,7 +3330,20 @@ tuning_table! {
         /// F7: the own base refills a flamethrower's fuel one unit per
         /// this long (ms; plan 3.2 F7, design 6.5 "one unit per 2 s").
         base_refill_ms: 100..=60000 = "d_fl_base_refill_ms",
+        /// F2 (S14 Fix 1): a flame man's `Suppress` aims this high over
+        /// the ground at his line (a trench's floor where dug; cm) ...
+        aim_cm: 0..=500 = "d_fl_aim_cm",
+        /// ... but a point within this of an enemy bunker roof's
+        /// footprint is aimed at the middle of the slit under it (cm).
+        slit_near_cm: 0..=1000 = "d_fl_slit_near_cm",
     }
+}
+
+fn d_fl_aim_cm() -> u32 {
+    80
+}
+fn d_fl_slit_near_cm() -> u32 {
+    50
 }
 
 fn d_fl_zero() -> u32 {
@@ -3410,6 +3423,8 @@ impl Default for FlameTuning {
             step_out: 1,
             step_out_m: 2,
             base_refill_ms: 2000,
+            aim_cm: 80,
+            slit_near_cm: 50,
         }
     }
 }
