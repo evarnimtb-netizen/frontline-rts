@@ -198,6 +198,43 @@ fn direct_fire_passes_an_ally() {
     assert_eq!(p[1].kills + p[3].kills, p[0].losses + p[2].losses);
 }
 
+/// Checker after A (finding 1; T3, T8): an ally's HE burst beside my crate
+/// spares it as my own would (overpressure and fragments). Control: the same
+/// shell from a hostile player breaks it and it cooks off.
+#[test]
+fn an_allys_he_burst_spares_my_crate() {
+    use super::s6_tests::{add_crate_at, fire};
+    use frontline_content::setup::{StockKind, SupplyKind};
+    let mut w = world(&[0, 1, 0, 1], |_| {});
+    let d = super::s6_tests::def(&w, 0, StockKind::Crate, Some(SupplyKind::Shells));
+    let c = add_crate_at(&mut w, 0, d, FxVec2::from_int(500, 500));
+    w.step(&[]);
+    let h = w.state.terrain.height_at(FxVec2::from_int(500, 500));
+    let from = crate::fx::FxVec3::new(
+        Fx::from_ratio(4992, 10),
+        Fx::from_int(500),
+        h + Fx::from_int(3),
+    );
+    let down = crate::fx::FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::from_int(-300));
+    for (shooter, broken) in [(2u8, false), (1, true)] {
+        fire(
+            &mut w,
+            shooter,
+            "ww2:m3_75mm",
+            Some("ww2:75mm_m48"),
+            from,
+            down,
+        );
+        steps(&mut w, 3);
+        let g = game(&w).supply6();
+        assert_eq!(
+            !g.crates.contains_key(&c),
+            broken,
+            "a burst of player {shooter}"
+        );
+    }
+}
+
 // ---------------------------------------------------------- T4: capture --
 
 fn point_xy(w: &World, k: usize) -> (i32, i32) {

@@ -367,7 +367,14 @@ fn t23_a_bullet_stops_at_a_box() {
 /// Spawns a round of `weapon` (and `ammo`, `None`: small arms) for
 /// `player` at `from` with velocity `vel` (review S6 F6: staged real
 /// projectiles, not direct `hit_static` calls).
-fn fire(w: &mut World, player: u8, weapon: &str, ammo: Option<&str>, from: FxVec3, vel: FxVec3) {
+pub(super) fn fire(
+    w: &mut World,
+    player: u8,
+    weapon: &str,
+    ammo: Option<&str>,
+    from: FxVec3,
+    vel: FxVec3,
+) {
     let s = w.match_setup().unwrap();
     let wk = s.weapons.iter().position(|x| x.id == weapon).unwrap() as u16;
     let ak = ammo.map_or(crate::projectile::NO_AMMO, |a| {

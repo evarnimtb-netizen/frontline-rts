@@ -2756,8 +2756,10 @@ impl MatchState {
                 .iter()
                 .enumerate()
                 .filter(|&(k, sb)| {
+                    // S17b (checker after A): an ally's boxes are spared
+                    // like own ones (T3, T8).
                     tamped.is_none_or(|t| t.0 != k)
-                        && sb.owner != b.player
+                        && ctx.teams.hostile(b.player, sb.owner)
                         && sb.reach >= Fx::ZERO
                         && crate::armour::box_dist_sq_raw(&sb.frame, pos)
                             <= (blast_r.raw() as u64).pow(2)
@@ -3120,8 +3122,13 @@ impl MatchState {
                 && boxed.is_none_or(|(bt, _, _)| st < bt)
                 && man.is_none_or(|(ms, _)| st < ms)
             {
-                // S11a2 F3: an own box only stops the ray.
-                let own_box = self.statics.0.get(k).is_some_and(|sb| sb.owner == b.player);
+                // S11a2 F3: an own box only stops the ray (S17b: an
+                // ally's too, T3).
+                let own_box = self
+                    .statics
+                    .0
+                    .get(k)
+                    .is_some_and(|sb| ctx.teams.allied(b.player, sb.owner));
                 if !own_box && ctx.terrain.segment_hit(o, o + d * st).is_none() {
                     let lost = Fx::from_int(100 - he.frag_far_pct.min(100) as i32).mul(st);
                     let pct = (Fx::from_int(100) - lost).max(Fx::ZERO);

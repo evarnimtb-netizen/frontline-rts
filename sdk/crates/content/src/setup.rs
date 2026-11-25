@@ -1504,6 +1504,18 @@ impl ModDefs {
                 ),
             ));
         }
+        // S17b (S17 plan 3, Build A's D3): a mine's `known` mask holds one
+        // bit per player for players 0..8, so a match takes at most 8.
+        if req.players.len() > MINE_KNOWN_PLAYERS {
+            issues.push(Issue::new(
+                "players",
+                format!(
+                    "{} players requested; at most {MINE_KNOWN_PLAYERS} (a mine's `known` mask \
+                     holds {MINE_KNOWN_PLAYERS})",
+                    req.players.len()
+                ),
+            ));
+        }
         // S17a: a team number stays under the player limit, and a match
         // needs two teams (with every team left out each player is alone).
         let team_of = |i: usize, p: &PlayerRequest| p.team.unwrap_or(i as u8);
@@ -2691,6 +2703,10 @@ fn invalid(issues: Vec<Issue>) -> ContentError {
 /// Most players in one match (§2.2 lobby limit).
 pub const MAX_MATCH_PLAYERS: usize = 10;
 
+/// S17b: players a mine's `known` mask (one `u8` bit each) can tell; a match
+/// request or setup with more is refused.
+pub const MINE_KNOWN_PLAYERS: usize = 8;
+
 impl MatchSetup {
     /// Structural checks the sim relies on (indices in range, positions on
     /// the map, magnitudes that keep fixed-point math in range). Defs that
@@ -3635,6 +3651,11 @@ impl MatchSetup {
             (2..=MAX_MATCH_PLAYERS).contains(&self.players.len()),
             "players",
             "need 2..=10 players",
+        );
+        check(
+            self.players.len() <= MINE_KNOWN_PLAYERS,
+            "players",
+            "at most 8 players (a mine's `known` mask)",
         );
         for p in &self.players {
             check(

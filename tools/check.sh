@@ -7,7 +7,7 @@
 #   tools/check.sh full           # what the orchestrator runs before pushing
 #
 # quick: cargo fmt (applied, not only checked), clippy -D warnings (workspace),
-#   tools/test_neutral.py, tools/ablate.sh --dry-run, and the release
+#   tools/owner_sites.sh --check (S17), tools/test_neutral.py, tools/ablate.sh --dry-run, and the release
 #   tests (tools/ptest.py: test binaries three at a time, ignored tests left out)
 #   for the crates changed against BASE (default: $CHECK_BASE, else the
 #   merge-base with origin/<this branch>, else with main). Prints a pass/fail
@@ -129,6 +129,9 @@ quick() {
         bad fmt fmt
     fi
     step clippy clippy cargo clippy -q --workspace --all-targets -- -D warnings
+    # S17 (plan 11.1): every raw owner comparison and sight read in the sim
+    # is classed in docs/slices/S17-sites.md; a new one fails until it is.
+    step "owner sites" owner_sites tools/owner_sites.sh --check
     # S10a: the neutrality checker's unit tests (small fixtures, < 1 s).
     step neutral.py test_neutral python3 -I tools/test_neutral.py
     # S10a-ai: the ablation override files and tools/ablate.sh (dry run:

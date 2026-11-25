@@ -588,6 +588,8 @@ impl MatchState {
         let mut obs = Vec::new();
         let mut out = Vec::new();
         for (&qid, q) in &self.squads {
+            // Own (S17 checker after A): an ally's observers do not direct
+            // my missions (no shared fire support in S17, S17-5).
             if q.owner != sq.owner {
                 continue;
             }

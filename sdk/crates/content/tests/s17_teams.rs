@@ -78,3 +78,35 @@ fn base_sides_warn_when_unequal() {
     m.bases[1].side = None;
     assert_eq!(m.side_warnings().len(), 2);
 }
+
+/// Checker after A (finding 3; Build A's D3): a mine's `known` mask holds 8
+/// players (`fort.rs` folds higher slots), so a request or a setup for 9 is
+/// refused. Control: 2 players pass both checks.
+#[test]
+fn more_than_eight_players_are_refused() {
+    let mut r = req([None, None]);
+    let p = r.players[0].clone();
+    r.players = vec![p; 9];
+    let e = defs().resolve(&r).unwrap_err();
+    assert!(format!("{e}").contains("at most 8"), "{e}");
+    let mut s = defs().resolve(&req([None, None])).unwrap();
+    assert!(s.validate().is_empty());
+    let mut bases = s.map.bases.clone();
+    while bases.len() < 9 {
+        bases.push(s.map.bases[0].clone());
+    }
+    s.map.bases = bases;
+    s.players = (0..9u8)
+        .map(|i| {
+            let mut p = s.players[0].clone();
+            p.base = i;
+            p.team = i;
+            p
+        })
+        .collect();
+    let issues = s.validate();
+    assert!(
+        issues.iter().any(|i| format!("{i}").contains("at most 8")),
+        "{issues:?}"
+    );
+}

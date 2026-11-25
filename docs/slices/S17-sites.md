@@ -39,7 +39,7 @@ wire and points, `ai/sweep.rs`, `ai/obstacles.rs`, `ai/supply.rs`, `ai/medic.rs`
 | `demolish.rs:334` | Own | `if owner.0 == he.0 {` |
 | `ecs.rs:425` | Own / validation | `&& (self.owner[i] != PlayerId::default()` |
 | `fire_mission.rs:538` | Own | `.filter(\|q\| self.squads.get(q).is_some_and(\|c\| c.owner == sq.owner));` |
-| `fire_mission.rs:591` | Own | `if q.owner != sq.owner {` |
+| `fire_mission.rs:593` | Own (checker after A: an ally's observers do not direct my missions; no shared fire support in S17, S17-5) | `if q.owner != sq.owner {` |
 | `fire_mission.rs:810` | Own | `for q in self.squads.values().filter(\|q\| q.owner == p) {` |
 | `fire_mission.rs:979` | Own | `q.owner.0 as usize == owner` |
 | `fort.rs:456` | Own | `if squads.get(&w.builder).is_none_or(\|q\| q.owner != w.owner) {` |
@@ -312,3 +312,8 @@ wire and points, `ai/sweep.rs`, `ai/obstacles.rs`, `ai/supply.rs`, `ai/medic.rs`
 | `vehicle.rs:2436` | Own bit (spotting writes / reads its own bit) | `ents.combat[i].seen_by = ((1u32 << self.players.len()) - 1) as u16;` |
 | `world.rs:1088` | Own bit (spotting writes / reads its own bit) | `c.seen_by \|= 1 << p;` |
 | `world.rs:1090` | Own bit (spotting writes / reads its own bit) | `c.seen_by &= !(1u16 << p);` |
+| `ai.rs:2400` | Own+ally (teams) (S17b A3: ally squads at a point) | `.filter(\|sq\| sq.owner != self.me && g.teams.allied(self.me.0, sq.owner.0))` |
+| `teams.rs:146` | Teams API | `pub fn sees(&self, p: u8, seen_by: u16) -> bool {` |
+| `teams.rs:147` | Teams API | `seen_by & self.sight[ix(p)] != 0` |
+| `teams.rs:153` | Teams API | `pub fn enemy_seen(&self, p: u8, t_owner: u8, seen_by: u16) -> bool {` |
+| `teams.rs:154` | Teams API | `self.hostile(p, t_owner) && self.sees(p, seen_by)` |
