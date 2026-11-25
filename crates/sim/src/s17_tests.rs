@@ -301,6 +301,34 @@ fn an_ally_on_my_point_does_not_contest_it() {
     assert!(game(&w).points[k].contested, "control: an enemy contests");
 }
 
+/// S17 review (O1): a defeated player's men neither capture (the point
+/// stays neutral) nor contest (an enemy takes the point through them).
+/// Control: the same men of a standing player capture it.
+#[test]
+fn a_defeated_players_men_neither_capture_nor_contest() {
+    let k = 2;
+    for defeated in [true, false] {
+        let mut w = world(&[0, 1, 0, 1], |_| {});
+        let (x, y) = point_xy(&w, k);
+        let s = sq(&mut w, 2, x, y);
+        thin(&mut w, s, 2);
+        if defeated {
+            game_mut(&mut w).players[2].defeat = Some(Defeat::Surrendered);
+        }
+        let got = ticks_to_capture(&mut w, k, 4_000);
+        assert_eq!(got.is_none(), defeated, "defeated {defeated}: {got:?}");
+        if defeated {
+            let c = &game(&w).points[k];
+            assert_eq!((c.capturer, c.progress), (None, 0));
+            sq(&mut w, 3, x + 3, y);
+            steps(&mut w, 5);
+            assert!(!game(&w).points[k].contested);
+            ticks_to_capture(&mut w, k, 20_000).expect("the enemy takes it");
+            assert_eq!(game(&w).points[k].owner, Some(PlayerId(3)));
+        }
+    }
+}
+
 // ---------------------------------------------------- T6, T7: the match --
 
 /// Plan 9 T6: team drain equals the 1v1 drain for the same point gap.

@@ -29,7 +29,7 @@
 //! counted per team and a point is contested when two hostile teams are
 //! present (T4); one team present takes it for its member with the most men
 //! there (ties: lowest slot), and an ally on his ally's point acts as the
-//! owner. Income is per player (T5, `[teams] income_pct` for a player with
+//! owner; a defeated player's men count for nobody. Income is per player (T5, `[teams] income_pct` for a player with
 //! an ally). With `[teams] team_tickets` the drain is the gap between the
 //! best standing hostile team's held value and the player's team's (T6).
 //! A team is out when all its members are out; the last team standing wins
@@ -199,10 +199,14 @@ impl MatchState {
         let full = capture_full(r.capture_ticks);
         let np = self.players.len();
         let mut men = vec![0u32; np * self.points.len()];
+        // S17 review (O1): a defeated player's men (surrendered, or out of
+        // tickets with an ally still in) neither capture nor contest. In a
+        // 1v1 the first defeat ends the match, so this never applies there.
+        let out: Vec<bool> = self.players.iter().map(|p| p.defeat.is_some()).collect();
         for id in ents.soldiers() {
             let i = id.index();
             // S8a: men riding a transport neither capture nor contest.
-            if ents.unit[i].riding.is_some() {
+            if ents.unit[i].riding.is_some() || out[ents.owner[i].0 as usize] {
                 continue;
             }
             let retreating = ents.squad[i]
