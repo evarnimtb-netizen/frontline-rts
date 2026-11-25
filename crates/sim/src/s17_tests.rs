@@ -435,6 +435,26 @@ fn an_allys_abandoned_gun_cannot_be_captured() {
     );
 }
 
+/// Review (T8): an ally's set-down crate cannot be taken (crates serve
+/// their owner only). Control: a hostile player may take it (the S9 rule).
+#[test]
+fn an_allys_crate_cannot_be_taken() {
+    use super::s6_tests::{add_crate_at, run};
+    use frontline_content::setup::{StockKind, SupplyKind};
+    let mut w = world(&[0, 1, 0, 1], |_| {});
+    let d = super::s6_tests::def(&w, 0, StockKind::Crate, Some(SupplyKind::Shells));
+    let c = add_crate_at(&mut w, 0, d, FxVec2::from_int(500, 500));
+    let ally = sq(&mut w, 2, 520, 500);
+    let enemy = sq(&mut w, 1, 480, 500);
+    w.step(&[]);
+    let claim = |w: &World| game(w).supply6().crates[&c].claim;
+    let take = |squad| CommandKind::PickUpCrate { squad, crate_id: c };
+    run(&mut w, 2, 1, take(ally));
+    assert_eq!(claim(&w), None, "an ally may not take my crate");
+    run(&mut w, 1, 1, take(enemy));
+    assert_eq!(claim(&w), Some(enemy), "control: an enemy may");
+}
+
 /// Plan 9 T9: `pop_pct` caps a team player's pop, not a lone player's;
 /// the start keys apply only on a team. Control: the 1v1 values.
 #[test]

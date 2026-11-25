@@ -115,7 +115,7 @@ wire and points, `ai/sweep.rs`, `ai/obstacles.rs`, `ai/supply.rs`, `ai/medic.rs`
 | `structures.rs:429` | Own | `.is_some_and(\|b\| squads.get(&b).is_none_or(\|q\| q.owner != s.owner))` |
 | `structures.rs:444` | Own / validation | `if d.kind != StockKind::Crate \|\| c.owner.0 as usize >= np {` |
 | `structures.rs:459` | Own | `\|\| ents.owner[i] != c.owner` |
-| `structures.rs:847` | Own | `c.carrier.is_none() && (c.owner == p \|\| c.claim.is_none())` |
+| `structures.rs:850` | Own+hostile (review, T8: an ally's crate is never taken) | `&& (c.owner == p \|\| (c.claim.is_none() && teams.hostile_id(p, c.owner)))` |
 | `structures.rs:973` | Own | `&& ents.owner[i] == c.owner` |
 | `structures.rs:1115` | Own | `s.owner == p` |
 | `structures.rs:1129` | Own | `t.owner == p` |
