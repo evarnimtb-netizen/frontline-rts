@@ -346,7 +346,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 34,
+        version: 35,
         state: w.state(),
     });
     assert!(
@@ -751,7 +751,8 @@ fn team_path(path: &str) -> bool {
 
 /// S17a, moved to Harrow Cross in S17b: the seed match with four AI
 /// players on two teams (slots 0 and 1, side 0, against 2 and 3) with the
-/// A3 and A4 habits on as shipped, saved at `TEAM_TICK`.
+/// A3 and A4 habits on as shipped, saved at `TEAM_TICK`; S18: player 1
+/// surrendered half way and handed his troops to player 0 (H1).
 fn team_world() -> World {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
     let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
@@ -769,6 +770,17 @@ fn team_world() -> World {
     let s = defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
     let mut w = World::new_match(s, 1).unwrap();
     while w.tick() < TEAM_TICK {
+        // S18 H1: player 1 surrenders at 100 s and his troops go to his
+        // ally, player 0 (the save holds `handed` and `handed_to`).
+        if w.tick() == TEAM_TICK / 2 {
+            w.step(&[frontline_sim::Command {
+                player: PlayerId(1),
+                seq: 0,
+                kind: frontline_sim::CommandKind::Surrender,
+            }]);
+            assert_eq!(w.game().unwrap().players()[1].handed_to, Some(PlayerId(0)));
+            continue;
+        }
         w.step(&[]);
     }
     w
@@ -1050,6 +1062,7 @@ fn fuzz_plan_reaches_s10b_state() {
         "rules.teams",
         "ai.team",
         "seen_by",
+        "handed",
     ] {
         assert!(
             team.iter().any(|p| p.contains(want)),

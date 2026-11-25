@@ -64,7 +64,8 @@ fn ww2_ships_the_s17a_team_keys() {
     );
     assert_eq!(AiTeamTuning::default().share_points, 0);
     assert_eq!(AiTeamTuning::default().help_ally, 0);
-    assert_eq!(TeamsTuning::KEYS.len(), 7);
+    // S17 shipped 7 keys; S18 added handover, handover_pop, ping_gap_s.
+    assert_eq!(TeamsTuning::KEYS.len(), 10);
     assert_eq!(AiTeamTuning::KEYS.len(), 6);
     for &(k, lo, hi) in TeamsTuning::KEYS {
         if k.ends_with("_pct") {

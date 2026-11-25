@@ -497,6 +497,11 @@ pub struct PlayerState {
     pub s11b: crate::fire_mission::S11bCounters,
     /// S12: wound, medic and reinforcement counters (report).
     pub s12: crate::wounds::S12Counters,
+    /// S18 H1: the squads handed to this player by a surrendered ally
+    /// (ascending, ids never reused; `crate::handover`).
+    pub handed: Vec<SquadId>,
+    /// S18 H1: the ally this player's troops went to when he surrendered.
+    pub handed_to: Option<PlayerId>,
 }
 
 /// S8a per-player counters (saved and hashed, read only by reports;
@@ -865,6 +870,8 @@ impl MatchState {
                 cb: Vec::new(),
                 s11b: crate::fire_mission::S11bCounters::default(),
                 s12: crate::wounds::S12Counters::default(),
+                handed: Vec::new(),
+                handed_to: None,
             })
             .collect();
         let np = setup.players.len();
@@ -1049,23 +1056,34 @@ impl MatchState {
     /// `pop` (S3). S3b: no call-in waits anywhere, a bought squad is alive
     /// at once.
     pub fn population(&self, ents: &Entities, player: PlayerId) -> u32 {
+        // S18-6: with `[teams] handover_pop` 0 the squads a surrendered
+        // ally handed over never count (an empty list in every match
+        // without a hand-over: the filters below are then today's).
+        let free = self.setup.rules.teams.handover_pop == 0
+            && self
+                .players
+                .get(player.0 as usize)
+                .is_some_and(|p| !p.handed.is_empty());
+        let counted = |sq: Option<SquadId>| !free || !self.pop_free(player, sq);
         let alive = ents
             .soldiers()
-            .filter(|id| ents.owner[id.index()] == player)
+            .filter(|id| ents.owner[id.index()] == player && counted(ents.squad[id.index()]))
             .count() as u32;
         // S12 (S12-6 (A)): downed men count until they die or leave.
         let alive = alive
             + self
                 .casualties
-                .keys()
-                .filter(|id| ents.owner[id.index()] == player)
+                .iter()
+                .filter(|(id, c)| ents.owner[id.index()] == player && counted(Some(c.from_squad)))
                 .count() as u32;
         // S9: a gun counts its own `pop`; its crew are soldiers (above).
         let vehicles: u32 = self
             .vehicles
             .iter()
             .filter(|(id, _)| {
-                ents.kind[id.index()] == EntityKind::Vehicle && ents.owner[id.index()] == player
+                ents.kind[id.index()] == EntityKind::Vehicle
+                    && ents.owner[id.index()] == player
+                    && counted(ents.squad[id.index()])
             })
             .map(|(_, vs)| self.setup.vehicles[vs.type_idx as usize].pop)
             .sum();
@@ -1253,6 +1271,12 @@ impl MatchState {
                 let pl = &mut self.players[p.0 as usize];
                 pl.surrendered = true;
                 pl.defeat = Some(Defeat::Surrendered);
+                // S18 H1: his troops go to his lowest-slot standing ally.
+                if self.setup.rules.teams.handover != 0
+                    && let Some(to) = self.handover_target(p)
+                {
+                    self.hand_over(ctx, p, to);
+                }
                 self.update_outcome();
                 true
             }
@@ -2514,7 +2538,8 @@ impl MatchState {
             return Err("an id counter is exhausted");
         }
         // S6.
-        self.supply6.validate(s, ents, &self.squads)?;
+        let handed_to: Vec<Option<PlayerId>> = self.players.iter().map(|p| p.handed_to).collect();
+        self.supply6.validate(s, ents, &self.squads, &handed_to)?;
         // S10a.
         self.fort.validate(s, ents, &self.squads, tick)?;
         // S12.
@@ -2572,6 +2597,19 @@ impl MatchState {
                 || pl.drain_acc >= per_min
             {
                 return Err("bad player state");
+            }
+            // S18 H1: handed squads ascending and issued; a hand-over only
+            // from a surrendered player to an ally.
+            if pl.handed.windows(2).any(|w| w[0] >= w[1])
+                || pl.handed.iter().any(|q| q.0 >= self.next_squad)
+                || pl.handed_to.is_some_and(|t| {
+                    t.0 as usize >= np
+                        || t.0 as usize == p
+                        || !teams.allied(p as u8, t.0)
+                        || !pl.surrendered
+                })
+            {
+                return Err("bad hand-over state");
             }
             // Counters are bumped unchecked (the save fuzz).
             use crate::bounds::counters_ok;

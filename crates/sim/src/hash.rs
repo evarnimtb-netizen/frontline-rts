@@ -426,6 +426,9 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         put_postcard(&p.s11b, out);
         // S12.
         put_postcard(&p.s12, out);
+        // S18 H1.
+        put_postcard(&p.handed, out);
+        put_postcard(&p.handed_to, out);
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);

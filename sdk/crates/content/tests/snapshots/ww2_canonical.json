@@ -3819,7 +3819,10 @@
         "unfired_s": 3
       },
       "teams": {
+        "handover": 1,
+        "handover_pop": 0,
         "income_pct": 100,
+        "ping_gap_s": 2,
         "pop_pct": 67,
         "shared_sight": 1,
         "start_manpower_pct": 100,

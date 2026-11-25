@@ -219,15 +219,19 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // merge with the S16 review changed it; S17a alone: 0xcb9f4e0ca75ca07a,
 // 0x849012774e0715c8, 0xbd3132cf10459956, 0xcb9f4e0ca75ca07a,
 // 0x443d47b184c840ce, 0x50a82256756d98e6.
+// S18 (`[teams] handover`, `handover_pop`, `ping_gap_s`) changed it; the
+// S17 values were 0xf98a18730dcc69d8, 0x9adcb3c9bfc13124,
+// 0xa92afd3f29f2782e, 0xf98a18730dcc69d8, 0x19026291de206f2e,
+// 0xf7d2ea888b7deb7e.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xf98a18730dcc69d8),
-    ("skirmish usa-ger seed 7 hard", 0x9adcb3c9bfc13124),
-    ("test_unlock ger-usa seed 1 normal", 0xa92afd3f29f2782e),
-    ("example override ger-usa seed 1 normal", 0xf98a18730dcc69d8),
-    ("human ger vs ai usa seed 3 easy", 0x19026291de206f2e),
+    ("skirmish ger-usa seed 1 normal", 0xdc5b3cfb097da6d4),
+    ("skirmish usa-ger seed 7 hard", 0xaea25867b2cddc8e),
+    ("test_unlock ger-usa seed 1 normal", 0x65d381fb5f11e71b),
+    ("example override ger-usa seed 1 normal", 0xdc5b3cfb097da6d4),
+    ("human ger vs ai usa seed 3 easy", 0x8f02abf66578cecd),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xf7d2ea888b7deb7e,
+        0xbf207ae145c7d539,
     ),
 ];
 

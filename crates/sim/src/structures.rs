@@ -361,8 +361,10 @@ impl SupplyState {
         setup: &MatchSetup,
         ents: &Entities,
         squads: &BTreeMap<SquadId, crate::game::Squad>,
+        handed_to: &[Option<PlayerId>],
     ) -> Result<(), &'static str> {
         let np = setup.players.len();
+        let factions: Vec<u16> = setup.players.iter().map(|p| p.faction).collect();
         if self.accounts.len() != np {
             return Err("S6 accounts disagree with the players");
         }
@@ -420,7 +422,8 @@ impl SupplyState {
             if s.built == s.builder.is_some() {
                 return Err("a structure is built xor has a builder");
             }
-            if d.faction != setup.players[s.owner.0 as usize].faction {
+            // S18 H1: or of a player who handed his troops to the owner.
+            if !crate::handover::plays_faction(&factions, handed_to, s.owner, d.faction) {
                 return Err("structure def of another faction");
             }
             // The Status stage drops a structure whose builder is gone or

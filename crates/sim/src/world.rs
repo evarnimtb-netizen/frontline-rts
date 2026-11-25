@@ -488,7 +488,10 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `MobilitySetup::road_speed_pct`). One bump for the slice.
 /// 34: S17a (in the setup `PlayerSetup::team`, `[teams]` and `[ai.team]`;
 /// the team table is derived, not saved). One bump for the slice.
-const SAVE_VERSION: u32 = 34;
+/// 35: S18 (`PlayerState::{handed, handed_to}`, the H1 hand-over; in the
+/// setup `[teams] handover, handover_pop, ping_gap_s`). One bump for the
+/// slice.
+const SAVE_VERSION: u32 = 35;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -3082,6 +3085,9 @@ mod s13_tests;
 #[cfg(test)]
 #[path = "s17_tests.rs"]
 mod s17_tests;
+#[cfg(test)]
+#[path = "s18_tests.rs"]
+mod s18_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;

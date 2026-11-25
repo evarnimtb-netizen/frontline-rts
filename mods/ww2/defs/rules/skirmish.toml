@@ -1845,6 +1845,9 @@ pop_pct = 67                 # T9: pop cap of a team player, % of pop_cap (S17-2
 income_pct = 100             # T9: base and point income of a team player (%)
 start_manpower_pct = 100     # T9: start manpower of a team player (%)
 tickets_pct = 100            # T9: start tickets of a team player (%)
+handover = 1                 # S18 H1: a surrendered (or dropped) player's troops go to his ally
+handover_pop = 0             # S18-6: 1 = handed-over troops count against the ally's pop cap
+ping_gap_s = 2               # S18 H5: least seconds between two map pings of one player
 
 [ai.team]
 # S17 (plan 6): an AI with an ally. A3 and A4 (S17b) are on; an AI alone

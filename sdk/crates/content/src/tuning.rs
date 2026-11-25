@@ -3369,6 +3369,16 @@ tuning_table! {
         start_manpower_pct: 10..=300 = "d_t_hundred",
         /// T9: start tickets of such a player (%).
         tickets_pct: 10..=300 = "d_t_hundred",
+        /// S18 H1 switch: a surrendered player's (a dropped player's: the
+        /// relay surrenders him) troops, works and manpower go to his
+        /// lowest-slot standing ally; 0: they hold in place.
+        handover: 0..=1 = "d_t_one",
+        /// S18-6: 1 = handed-over troops count against the ally's pop cap
+        /// for new buys; 0 = never.
+        handover_pop: 0..=1 = "d_w_zero",
+        /// S18 H5: least time between two map pings of one player (s;
+        /// the presenter's gate, never a sim input).
+        ping_gap_s: 1..=60 = "d_t_ping_gap",
     }
 }
 
@@ -3380,6 +3390,9 @@ fn d_t_pop_pct() -> u32 {
 }
 fn d_t_hundred() -> u32 {
     100
+}
+fn d_t_ping_gap() -> u32 {
+    2
 }
 
 impl TeamsTuning {
@@ -3402,6 +3415,9 @@ impl Default for TeamsTuning {
             income_pct: 100,
             start_manpower_pct: 100,
             tickets_pct: 100,
+            handover: 1,
+            handover_pop: 0,
+            ping_gap_s: 2,
         }
     }
 }
