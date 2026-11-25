@@ -1329,6 +1329,16 @@ fn every_s6_field_is_saved_hashed_and_checked_on_load() {
             "accounts len",
             Box::new(|s| s.accounts.pop().map(|_| ()).unwrap()),
         ),
+        // S16a save fuzz finding: a tally at the top overflowed on the
+        // next crate set down.
+        (
+            "account stock_in_g near u64::MAX",
+            Box::new(|s| s.accounts[0].stock_in_g = u64::MAX - 1),
+        ),
+        (
+            "account truck_out_g near u64::MAX",
+            Box::new(|s| s.accounts[1].truck_out_g = u64::MAX - 1),
+        ),
         (
             "hq cap",
             Box::new(|s| {

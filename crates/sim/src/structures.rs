@@ -366,6 +366,24 @@ impl SupplyState {
         if self.accounts.len() != np {
             return Err("S6 accounts disagree with the players");
         }
+        // The gram and µMP tallies are summed unchecked; one near the top
+        // would overflow (no match comes near 2^62). S16a save fuzz finding.
+        if self.accounts.iter().any(|a| {
+            [
+                a.crate_micro,
+                a.stock_in_g,
+                a.stock_out_g,
+                a.stock_lost_g,
+                a.truck_load_micro,
+                a.truck_out_g,
+                a.truck_dropped_g,
+                a.truck_lost_g,
+            ]
+            .iter()
+            .any(|&v| v > 1 << 62)
+        }) {
+            return Err("an S6 account tally is out of range");
+        }
         if self.structures.len() > MAX_STRUCTURES
             || self.crates.len() > MAX_CRATES
             || self.cookoffs.len() > MAX_COOKOFFS
