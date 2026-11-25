@@ -318,6 +318,7 @@ fn holds(w: &World) -> Vec<&'static str> {
     let ai = |p: u8| g.ai(PlayerId(p)).unwrap();
     put((0..2).any(|p| !ai(p).forts.is_empty()), "ai_forts");
     put((0..2).any(|p| !ai(p).breaches.is_empty()), "ai_breaches");
+    put((0..2).any(|p| !ai(p).flame.jobs.is_empty()), "ai_flame_jobs");
     put(
         (0..2).any(|p| ai(p).material_run.is_some()),
         "ai_material_run",
@@ -1901,6 +1902,41 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             },
         );
     }));
+    // S14-ai Build D: a flame job in each phase (Close to Burn in player 0's
+    // AI, at most four; Clear in player 1's), a failed flame target and a
+    // dated AI clear order.
+    use frontline_sim::ai::{AiFlame, FlamePhase};
+    let man = w.game().unwrap().squads()[&builder].members[0];
+    let job = |phase, k: i32| AiFlame {
+        point: 0,
+        target: c(500 + k, 500),
+        aim: c(500 + k, 501),
+        stage: c(540 + k, 500),
+        stand: c(520 + k, 500),
+        bunker: k == 1,
+        man,
+        phase,
+        since: tick,
+        phase_at: tick,
+        best: 100,
+        best_at: tick,
+    };
+    let phases = [
+        (builder, FlamePhase::Close),
+        (veh_sq, FlamePhase::Smoke),
+        (sweep, FlamePhase::Go),
+        (demo, FlamePhase::Burn),
+    ];
+    assert!(w.with_ai_state(0, |ai| {
+        for (k, (sq, ph)) in phases.into_iter().enumerate() {
+            ai.flame.jobs.insert(sq, job(ph, k as i32));
+        }
+        ai.flame.failed.push((c(600, 600), tick));
+        ai.flame.cleared.insert(belt_sq, tick);
+    }));
+    assert!(w.with_ai_state(1, |ai| {
+        ai.flame.jobs.insert(belt_sq, job(FlamePhase::Clear, 4));
+    }));
     // Just before the save: the second sweeper squad is wiped out and the
     // second demolition's tank wrecked (the next plan drops both jobs).
     for m in w.game().unwrap().squads()[&gone_sq].members.clone() {
@@ -1950,6 +1986,14 @@ fn staged_s10b_save_holds_its_state() {
     assert!(ai.demolitions.values().any(|d| d.done == 1));
     assert_eq!((ai.sweeps.len(), ai.demolitions.len()), (3, 3));
     assert_eq!(ai.refused.len(), frontline_sim::ai::MAX_REFUSED);
+    // S14-ai: a flame job in each phase across the two AIs.
+    let mut phases: Vec<u8> = (0..2)
+        .flat_map(|p| g.ai(frontline_sim::PlayerId(p)).unwrap().flame.jobs.values())
+        .map(|j| j.phase as u8)
+        .collect();
+    phases.sort_unstable();
+    assert_eq!(phases, [0, 1, 2, 3, 4]);
+    assert!(!ai.flame.failed.is_empty() && !ai.flame.cleared.is_empty());
     for k in [
         frontline_sim::ai::JobKind::Sweep,
         frontline_sim::ai::JobKind::Demolish,

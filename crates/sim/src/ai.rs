@@ -186,6 +186,7 @@ pub(crate) mod arty;
 mod assault;
 mod breach;
 mod demolish;
+mod flame;
 pub(crate) mod fort;
 mod guns;
 pub(crate) mod medic;
@@ -209,6 +210,9 @@ pub use transport::{
 pub use arty::{AiArty, AiFo, ArtyPhase, MAX_ARTY, MAX_FO};
 pub use breach::{
     AiBreach, BreachEnd, BreachPhase, MAX_BREACH_TRIES, MAX_BREACHES, MAX_WIRE_KNOWN,
+};
+pub use flame::{
+    AiFlame, AiFlameState, FlamePhase, MAX_FLAME_CLEARED, MAX_FLAME_FAILED, MAX_FLAME_JOBS,
 };
 pub use fort::{
     AiFortJob, BUNKER_WHY, FRONT_WHY, FortPhase, FrontLane, MAX_FORT_JOBS, MAX_FORT_TRIES,
@@ -403,6 +407,9 @@ pub struct AiState {
     /// S13 H1: tick the current heavy plan (saving for an `ai_heavy` card)
     /// started (0: no plan).
     pub heavy_plan_since: u64,
+    /// S14-ai (`ai::flame`): flame jobs, failed flame targets and the AI's
+    /// clear orders.
+    pub flame: AiFlameState,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -828,6 +835,7 @@ impl AiState {
             fo_lost_at: 0,
             armour_seen_at: 0,
             heavy_plan_since: 0,
+            flame: AiFlameState::default(),
         }
     }
 
@@ -984,6 +992,8 @@ impl AiState {
             // S13.
             || self.armour_seen_at > tick
             || self.heavy_plan_since > tick
+            // S14-ai.
+            || !self.flame.valid(np, tick, ents_len, on_map, bad_squad)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             // Due one reaction delay after its plan at most (the save fuzz).
             || self.pending.last().is_some_and(|c| {
@@ -1104,7 +1114,9 @@ fn squad_of(kind: &CommandKind) -> Option<SquadId> {
         | CommandKind::ClearMines { squad, .. }
         | CommandKind::Demolish { squad, .. }
         // S12b: only the medic habit sends it.
-        | CommandKind::Reinforce { squad } => Some(*squad),
+        | CommandKind::Reinforce { squad }
+        // S14-ai: only the flame habit sends it.
+        | CommandKind::ClearTrench { squad, .. } => Some(*squad),
         _ => None,
     }
 }
@@ -1533,6 +1545,8 @@ impl Planner<'_> {
         // S10a-ai: enemy wire by sight, then the breach jobs keep theirs.
         self.wire_sight();
         self.breach_continue(&mut mine, &busy);
+        // S14-ai: the flame jobs and AI clears keep their squads.
+        self.flame_continue(&mut mine, &busy, &known);
         // S10b-ai: the sweep jobs keep their sweepers.
         self.sweep_continue(&mut mine, &busy);
         // S10b-ai: the demolition jobs keep their squads and vehicles.
@@ -1574,6 +1588,12 @@ impl Planner<'_> {
         // S10a-ai: new breach jobs take an attacker that can open wire.
         let breaching = self.breach_start(&mine, &assigned, &points, &hunting);
         hunting.extend(breaching);
+        // S14-ai: new flame jobs take a fuelled flame squad (A1), then
+        // attackers near a trench clear it (A4).
+        let flaming = self.flame_start(&mine, &assigned, &points, &known, &hunting);
+        hunting.extend(flaming);
+        let clearing = self.flame_clears(&mine, &assigned, &points, &known, &hunting);
+        hunting.extend(clearing);
         // S10b-ai: new sweep jobs take a `clear_mines` squad (R10).
         let sweeping = self.sweep_start(&mine, &assigned, &points, &hunting, None);
         hunting.extend(sweeping);
@@ -1994,11 +2014,17 @@ impl Planner<'_> {
         // sight than own AT teams and vehicles, an AT card ready), then
         // the floor.
         let mut urgent_builder = self.builder_floor_card();
+        // S14-ai A3: the faction's flame card (after the breach card).
+        let mut urgent_flame = self.flame_card(&faction.roster, &alive_by_type);
         // S13-ai H1 (plan 5): the heavy card the AI saves for, if any.
         let mut heavy = self.heavy_plan(veh_slot.is_some(), |t| ready(t, &bought, &alive_by_type));
         let mut saving_heavy = false;
         for _ in 0..self.g.setup.rules.ai.infantry.buys_per_plan {
-            if let Some(t) = urgent_breach.take()
+            let (urgent, flame) = match urgent_breach.take() {
+                Some(t) => (Some(t), false),
+                None => (urgent_flame.take(), true),
+            };
+            if let Some(t) = urgent
                 && ready(t, &bought, &alive_by_type)
             {
                 let ty = &s.squad_types[t as usize];
@@ -2018,6 +2044,7 @@ impl Planner<'_> {
                         c.bought.resize(s.squad_types.len(), 0);
                     }
                     c.bought[t as usize] += 1;
+                    c.flame_buys += u32::from(flame);
                     continue;
                 }
             }
@@ -3239,9 +3266,20 @@ impl Planner<'_> {
         self.ai
             .last_throw
             .retain(|id, t| g.squads.contains_key(id) && tick < t.saturating_add(cool));
+        // S14-ai: a squad ordered to clear a trench (A4) throws by the
+        // clear's own steps and is not regrouped (a later order ends it).
+        let clearing = |ai: &AiState, id: SquadId| {
+            g.clears.contains_key(&id)
+                || ai.pending.iter().any(
+                    |c| matches!(c.kind, CommandKind::ClearTrench { squad, .. } if squad == id),
+                )
+        };
         for m in mine {
             let sq = &g.squads[&m.id];
-            if sq.order == Order::Retreat || self.ai.last_throw.contains_key(&m.id) {
+            if sq.order == Order::Retreat
+                || self.ai.last_throw.contains_key(&m.id)
+                || clearing(self.ai, m.id)
+            {
                 continue;
             }
             // S7: into a stopped open-topped vehicle first.
@@ -3296,6 +3334,7 @@ impl Planner<'_> {
                 .any(|c| matches!(c.kind, CommandKind::Regroup { squad } if squad == m.id));
             // S5b: a mortar's spotter stays out.
             if !pending
+                && !clearing(self.ai, m.id)
                 && !self.ai.spotter_out(m.id)
                 && !self.sheltering(m.id)
                 && matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending)

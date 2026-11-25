@@ -476,7 +476,7 @@ impl super::Planner<'_> {
 
     /// Whether an own squad (the breach squad's task included: it was
     /// sent to attack) attacks point `p`, or bases fire for it.
-    fn point_attacked(&self, p: u8) -> bool {
+    pub(super) fn point_attacked(&self, p: u8) -> bool {
         self.ai.tasks.values().any(|t| {
             t.point == p
                 && matches!(
@@ -762,7 +762,7 @@ impl super::Planner<'_> {
 
     /// Throw range and full cloud radius of the smoke a man of squad `id`
     /// still carries (the squad type's smoke item), if any.
-    fn smoke_kit(&self, id: SquadId) -> Option<(Fx, Fx)> {
+    pub(super) fn smoke_kit(&self, id: SquadId) -> Option<(Fx, Fx)> {
         let s = &self.g.setup;
         let sq = self.g.squads.get(&id)?;
         let (_, it) = s.squad_types[sq.type_idx as usize].kit(&s.items, ItemKind::Smoke)?;
@@ -793,7 +793,7 @@ impl super::Planner<'_> {
     /// else of a squad attacking the point (ascending ids), who can throw
     /// it onto [`Self::smoke_aim`] (no cloud thrown short of the
     /// crossing). Whether one was ordered.
-    fn breach_smoke(&mut self, id: SquadId, job: &AiBreach, toward: FxVec2) -> bool {
+    pub(super) fn breach_smoke(&mut self, id: SquadId, job: &AiBreach, toward: FxVec2) -> bool {
         let g = self.g;
         let s = &g.setup;
         let mut squads = vec![id];
