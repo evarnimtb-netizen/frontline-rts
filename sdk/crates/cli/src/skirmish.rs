@@ -2349,7 +2349,18 @@ pub fn mods_dir(arg: Option<&Path>) -> Result<PathBuf> {
 /// Loads the mod (with `--rules-override`) and resolves an AI-vs-AI match
 /// from `args`.
 pub fn match_setup(args: &SkirmishArgs) -> Result<MatchSetup> {
-    let (defs, _) = crate::overrides::load_defs(args.mods.as_deref(), &args.rules_override)?;
+    match_setup_with(args, |_| {})
+}
+
+/// [`match_setup`] with `edit` applied to the loaded defs before they
+/// resolve (S14 rows: `[flame] enabled` 1 picks the cards' `flame_on`
+/// members).
+pub fn match_setup_with(
+    args: &SkirmishArgs,
+    edit: impl FnOnce(&mut frontline_content::ModDefs),
+) -> Result<MatchSetup> {
+    let (mut defs, _) = crate::overrides::load_defs(args.mods.as_deref(), &args.rules_override)?;
+    edit(&mut defs);
     let d0: Difficulty = args.difficulty.into();
     let d1: Difficulty = args.difficulty1.unwrap_or(args.difficulty).into();
     let req = MatchRequest {

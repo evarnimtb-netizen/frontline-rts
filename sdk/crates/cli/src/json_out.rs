@@ -808,10 +808,39 @@ fn row(id: &str, name: &str, value: Value) -> Value {
     json!({ "id": id, "name": name, "value": value })
 }
 
+/// The S14 hard checks (R2; R1 only while `SLIT_HARD`, else a report
+/// row): a failing one raises the document's `hard_failed`. A row not run
+/// (no verdict) is no check.
+fn s14_checks(s14: &crate::fortify::s14::S14Report) -> Vec<Value> {
+    let (slit, pool) = (&s14.slit, &s14.pool);
+    let mut checks = Vec::new();
+    if let Some(pass) = pool.pass {
+        checks.push(check(
+            "s14_pool",
+            "S14 R2: flame never takes a pool slot",
+            pool.drop_diff,
+            "drop_diff, pool_diff_ticks, over_cap 0; saturated, fired".into(),
+            pass,
+        ));
+    }
+    if slit.hard
+        && let Some(pass) = slit.pass
+    {
+        checks.push(check(
+            "s14_slit",
+            "S14 R1: flame at the bunker slit",
+            slit.out_pct,
+            "out >= 80 %, 8 of 10 runs >= 4 out; closed, back <= 10 %".into(),
+            pass,
+        ));
+    }
+    checks
+}
+
 /// The fortify-test document: hard checks (rifles, mortar, smoke) and the
 /// report rows (ranged mortar, grenades, MG suppression).
 pub fn fortify(r: &FortifyReport) -> Value {
-    let checks = vec![
+    let mut checks = vec![
         check(
             "rifles_trench_vs_open",
             r.rifles.name,
@@ -834,6 +863,8 @@ pub fn fortify(r: &FortifyReport) -> Value {
             r.smoke.pass,
         ),
     ];
+    checks.extend(s14_checks(&r.s14));
+    let slit = &r.s14.slit;
     let exp = |e: &crate::fortify::Experiment| {
         json!({
             "trench_losses": e.trench_losses,
@@ -901,6 +932,11 @@ pub fn fortify(r: &FortifyReport) -> Value {
             "T10 / T11 thresholds met",
             json!({ "t10": r.suppress.supported_met, "t11": r.suppress.unsupported_met }),
         ),
+        row(
+            "s14_slit",
+            "S14 R1: flame at the bunker slit (report while not hard)",
+            json!({ "hard": slit.hard, "pass": slit.pass, "out_pct": slit.out_pct }),
+        ),
     ];
     // S10a (spec 7): the wire, roof and breach rows, at `s10a.*`.
     let x = &r.s10a;
@@ -960,7 +996,8 @@ pub fn fortify(r: &FortifyReport) -> Value {
         "s11a2": serde_json::to_value(&r.s11a2).unwrap_or_default(),
         // S11b Build C (M2): `fortify10.s11b.{how_mask,how_barrage}.*`.
         "s11b": serde_json::to_value(&r.s11b).unwrap_or_default(),
-        // S14 Build A (R1, R2): `fortify10.s14.{slit,pool}.*`.
+        // S14 Builds A, B (R1-R4, R6):
+        // `fortify10.s14.{slit,pool,trench,clear,under_fire}.*`.
         "s14": serde_json::to_value(&r.s14).unwrap_or_default(),
         "hard_failed": checks.iter().filter(|c| c["pass"] == json!(false)).count(),
         "checks": checks,
@@ -1584,6 +1621,27 @@ pub fn s10c_blocks(c: &crate::skirmish::S10cFaction) -> (Value, Value) {
 
 #[cfg(test)]
 mod tests {
+    /// S14 Build B: a failing R2 is a hard check; R1 is one only when
+    /// `hard` (report only now); rows not run add none.
+    #[test]
+    fn s14_rows_feed_the_hard_checks() {
+        use crate::fortify::s14::S14Report;
+        assert!(s14_checks(&S14Report::default()).is_empty());
+        let mut r = S14Report::default();
+        r.pool.pass = Some(false);
+        r.slit.pass = Some(false);
+        let c = s14_checks(&r);
+        assert_eq!(c.len(), 1);
+        assert_eq!(
+            (c[0]["id"].as_str(), &c[0]["pass"]),
+            (Some("s14_pool"), &json!(false))
+        );
+        r.slit.hard = true;
+        let c = s14_checks(&r);
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[1]["id"], json!("s14_slit"));
+    }
+
     use super::*;
 
     /// Review finding 8 (T113): `matches_with_bunker_pct` is over all the

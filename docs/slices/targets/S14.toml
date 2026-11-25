@@ -9,12 +9,19 @@
 #     switches on). Owner change 2026-11-25: no balance runs in S14, so no
 #     pooled threshold for S14 (plan T189 and its paired-move stop are
 #     dropped); the copied S13 rows keep theirs.
-#   - R1 and R2 (T186, T187) run with test-made flame defs until S14a
-#     Build B adds the real flamethrowers; R5 (T188) has no scene before
-#     Build C (the row fails as missing until then).
+#   - R1 and R2 (T186, T187) run with the mod's flame men since S14a
+#     Build B (the assault cards resolved with `[flame] enabled` 1); R5
+#     (T188) has no scene before Build C (the row fails as missing until
+#     then).
+#   - S14a Build B: R1 (T186a-d) is report only (`kind = "report"`): the
+#     five in the pit kill the lone flame man in half the runs, and
+#     particles pass under the front timbers' bottom edge where the pit
+#     lip falls away (S10b geometry; the closed control reads above 10 %);
+#     the owner's no-tuning rule leaves both to the later balance pass
+#     (S14-log.md). New report rows T201 (R3), T202 (R4), T203 (R6).
 #   tools/measure.sh OUTDIR docs/slices/targets/S14.toml
 # Seeds, ROW HONESTY and three_parts_from as in S11b.toml.
-name = "S14: assault kit (S13 targets plus T185-T200)"
+name = "S14: assault kit (S13 targets plus T185-T203)"
 three_parts_from = "T109"
 
 [runs.skirmish40]
@@ -5128,6 +5135,7 @@ note = "plan T185: s14_off = base, match for match (neutral.py); here its German
 [[target]]
 id = "T186a"
 metric = "fortify10.s14.slit.out_pct"
+kind = "report"
 min = 80
 exposure = "fortify10.s14.slit.men"
 exposure_min = 50
@@ -5136,6 +5144,7 @@ note = "R1: men in the pit out (%), mean of 10 runs (min 80); exposure: men in t
 [[target]]
 id = "T186b"
 metric = "fortify10.s14.slit.runs_4_out"
+kind = "report"
 min = 8
 exposure = "fortify10.s14.slit.runs"
 exposure_min = 10
@@ -5144,6 +5153,7 @@ note = "R1: runs with at least 4 of 5 men out (min 8 of 10); exposure: runs; con
 [[target]]
 id = "T186c"
 metric = "fortify10.s14.slit.closed.out_pct"
+kind = "report"
 max = 10
 exposure = "fortify10.s14.slit.men"
 exposure_min = 50
@@ -5152,6 +5162,7 @@ note = "R1 control: slit closed (front walls meet), men out (%) (max 10)"
 [[target]]
 id = "T186d"
 metric = "fortify10.s14.slit.back.out_pct"
+kind = "report"
 max = 10
 exposure = "fortify10.s14.slit.men"
 exposure_min = 50
@@ -5196,6 +5207,81 @@ exposure = "fortify10.s14.melee.strikes"
 exposure_min = 100
 control = "fortify10.s14.melee.ahead_hits"
 note = "R5 control: 100 strikes at a man 0.9 m aside hit none"
+
+# --- T201-T203: S14a Build B report rows R3, R4, R6 (fortify10.s14) ----------
+# Source: S14-assault-kit.md 9 R3, R4, R6 (reports, no limit).
+[[target]]
+id = "T201a"
+metric = "fortify10.s14.trench.defenders_out_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s14.trench.runs"
+exposure_min = 10
+control = "fortify10.s14.trench.rifle.defenders_out_pct"
+note = "R3: the assault card with flame into the S10a trench, defenders out (%); control: the rifle baseline"
+[[target]]
+id = "T201b"
+metric = "fortify10.s14.trench.attackers_lost_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s14.trench.runs"
+exposure_min = 10
+control = "fortify10.s14.trench.rifle.attackers_lost_pct"
+note = "R3: attackers lost (%); control: the rifle baseline"
+[[target]]
+id = "T201c"
+metric = "fortify10.s14.trench.reached"
+min = 0
+kind = "report"
+exposure = "fortify10.s14.trench.runs"
+exposure_min = 10
+control = "fortify10.s14.trench.rifle.reached"
+note = "R3: runs in which an attacker reached the trench (to_trench_s beside it); control: the rifle baseline"
+[[target]]
+id = "T202a"
+metric = "fortify10.s14.clear.steps"
+min = 0
+kind = "report"
+exposure = "fortify10.s14.clear.runs"
+exposure_min = 10
+control = "fortify10.s14.clear.attack_move.steps"
+note = "R4: ClearTrench steps done (all runs); control: AttackMove (0)"
+[[target]]
+id = "T202b"
+metric = "fortify10.s14.clear.defenders_out_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s14.clear.runs"
+exposure_min = 10
+control = "fortify10.s14.clear.attack_move.defenders_out_pct"
+note = "R4: the four in the L trench out (%); control: AttackMove"
+[[target]]
+id = "T202c"
+metric = "fortify10.s14.clear.attackers_lost_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s14.clear.runs"
+exposure_min = 10
+control = "fortify10.s14.clear.attack_move.attackers_lost_pct"
+note = "R4: clearing squad lost (%); control: AttackMove"
+[[target]]
+id = "T203a"
+metric = "fortify10.s14.under_fire.out_pct"
+min = 0
+kind = "report"
+exposure = "fortify10.s14.under_fire.men"
+exposure_min = 50
+control = "fortify10.s14.under_fire.flamer_out"
+note = "R6: a suppressed trench line with a flame man at 25 m, men out (%); control: runs whose flame man was out"
+[[target]]
+id = "T203b"
+metric = "fortify10.s14.under_fire.stepped_out"
+min = 0
+kind = "report"
+exposure = "fortify10.s14.under_fire.runs"
+exposure_min = 10
+control = "fortify10.s14.under_fire.flame_fired"
+note = "R6: men who stepped out of burning ground (F6); control: particles fired"
 
 # --- T195-T200: plan-10 reports (0 with every S14 switch 0) ---------------------
 [[target]]
