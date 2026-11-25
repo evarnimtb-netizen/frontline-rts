@@ -151,6 +151,9 @@ AI A1 A2 A5; at most 8 players (mine `known` mask). S17b: AI point sharing (A3) 
 Presenter: ally colour (green), team fog in frames, top bar ally, 2v2 mode in the skirmish menu (you and an AI ally vs two
 AIs on Harrow Cross). No balance runs (owner rule 2026-11-25). Kessel Ridge 40 set same 40/40; 2v2 40 set on Harrow Cross:
 40/40 won, hashes equal at 1 and 4 threads (printout: team 0 18, team 1 22, median 20.6 min). Online teams are S18.
+Review fixes V1 (an ally's crate), V2; merged with the S16 review (`e585f9c`, `cap_retry_weight_pct`, Linden Brook in the
+menus: the menu map pick lists the maps of the mode); O1 (a defeated player's men do not capture), O4 (2v2 with net slots
+refused, CLI `--difficulty2`/`--difficulty3`) fixed; O2 (an AI's pieces can block an ally) open in TODO.
 
 ## Known gaps
 

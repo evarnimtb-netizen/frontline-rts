@@ -3,14 +3,11 @@ Spec: `docs/slices/S17-team-play.md`. Branch `s17-build` (local, not pushed), ba
 `claude/project-thread-1d8xx3`; SAVE 33, PROTOCOL 17). Commit only your files, never `git add -A`, never `target/`, `.claude/`.
 
 ## For the next stage (rewritten by every stage; at most 30 lines)
-**State: S17b Build B and Presenter P done**, checker-after-A findings fixed (owner rule 2026-11-25: no balance runs; every
-new number is a TOML key). Next: orchestrator `tools/verify.sh`, Review (gate: save layout, rules, the sweep), Fix, Docs.
-**Versions:** SAVE **34** unchanged since Build A (Build B adds no saved field: A3/A4 read state, the CLI observers are
-not saved), PROTOCOL **17** unchanged (net matches stay 1v1).
-**Kessel Ridge is neutral:** 40 set after Build B (A3, A4 on) **same 40/40** against Build A (`target/s17a/new`, which is
-`d85f622`'s sim: the commits after `15b9367` touch tests, tools and docs only) in `target/s17b/kr`.
-**Read before Review:** F3-F5 below (path cap on the 1536 m map, A6 is a report proxy, `winner` is the lowest slot of
-the winning team so faction win tables read "germany 40/40" in the default 2v2 layout).
+**State: S17 Review done, merged with the S16 review (`claude/project-thread-1d8xx3` at `e585f9c`) and O1, O3, O4
+fixed**; O2 is an open item in `docs/TODO.md`. Next: Docs, then the owner's merge to main.
+**Versions:** SAVE **34**, PROTOCOL **17** (unchanged by the merge and the fixes; net matches stay 1v1).
+**Kessel Ridge is neutral:** after the merge and fixes **same 40/40** against the S16 review's set
+(`/home/user/frontline-rts/target/s16r/kr` vs `target/s17m/kr`; the only new fields are the path observer's counts).
 
 ## Build A (S17a, plan 10 step 1)
 Commits: layout (content keys, `team`, `side`, `teams.rs`), sweep and rules (T1-T9, A1, A2, A5, SAVE 34), tests (sim named
@@ -190,3 +187,25 @@ save/load and hash, setup hash and protocol, CLI `--teams`, Harrow Cross, presen
   1v1 maps.
 - **O4 (low)** `MenuChoice.mode = "2v2"` with `slots` set falls back to a 1v1 without an error; `--difficulty1` in a
   CLI 2v2 sets player 1, the ally of player 0.
+
+## Merge with S16 and fixes
+- **Merge** `claude/project-thread-1d8xx3` (`e585f9c`: `b0256d0` `cap_retry_weight_pct`, `cffa98e` verify.sh `--map`,
+  `608c9b7` presenter) with `--no-ff` (`76db096`). `skirmish.toml`: the key in `[vehicles.road]` above `[teams]`;
+  `resolved_defs` setup-bytes baseline re-blessed (S17a and S16 review values kept in its comment; canonical snapshot
+  merged clean, passes). Menu (O3): the map pick stays enabled and lists the maps of the mode by `Session.MAPS` `bases`
+  (1v1: Kessel Ridge, Linden Brook; 2v2: Harrow Cross); a mode switch keeps a map that plays it; `--mode` too.
+- **O1** `rules.rs`: a defeated player's men neither capture nor contest (1v1: the first defeat ends the match). Test
+  `a_defeated_players_men_neither_capture_nor_contest` (control: a standing player captures; fails without the fix).
+- **O4** `MenuChoice` 2v2 with `slots` is refused (online teams: S18). CLI: `--difficulty` sets every player,
+  `--difficulty1` player 1 (in a 2v2 the ally of player 0), new `--difficulty2`/`--difficulty3` (need `--teams`). Test.
+- **O2** not fixed: the AI demolishes enemy pieces only (`ai/demolish.rs`); `ai/fort.rs` `count_own_blocked` is a
+  counter, so an ally case is not a few lines. Recorded in TODO.
+- Path observer: `capped` and `capped_unreached` (still short after the S16 retry) in the text and JSON report.
+- Results: tests (release) sim, content, cli, godot-bridge 1284 passed, 0 failed, 26 ignored; net 37 passed
+  (`ipv6_loopback_handshake` skipped). Clippy `-D warnings` all targets, fmt, `owner_sites.sh --check` clean. Godot
+  4.7.2 headless: `check_project` OK, `test_match_view` 448/448, `test_net_ui` 143/143, `test_mock_maps` 25/25 (with
+  menu map pick checks), `test_data_reload` 21/21. Kessel Ridge 40: same 40/40 (above); 438 of 96,983 searches capped.
+  Harrow Cross 2v2 40 (mixed, 45 min, `target/s17m/hc1`, `hc4`): exit 0, no panic, 40/40 won (no draw, no time limit),
+  hashes equal 40/40 at 1 and 4 threads (only tick p99 differs). Path cap: 2,137 of 125,458 searches capped (1.7 %),
+  the S16 retry reached the goal in 1,975 (92 %), 162 still short. Printout: team 0 16, team 1 24, median 21.0 min.
+
