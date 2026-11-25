@@ -46,7 +46,7 @@ in the AI, HE for the 57 mm.
 
 `SAVE_VERSION` **31** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **32** and **16** on the branch
 `claude/project-thread-aj1tww` (B3 code: `[ai.arty] direct_in_budget`, `AiCounters::arty_direct_holds`; no new command). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
-S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16 (branch); S16a 33/17 (branch `claude/project-thread-1d8xx3`); S17a 34/17 (branch `s17-build`, log `docs/slices/S17-log.md`); S17b and its presenter 34/17 (no layout change). A save, hash or command change
+S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16 (branch); S16a 33/17 (branch `claude/project-thread-1d8xx3`); S17a 34/17 (branch `s17-build`, log `docs/slices/S17-log.md`); S17b and its presenter 34/17 (no layout change); S18 35/18 (branch `s18-build`, log `docs/slices/S18-log.md`). A save, hash or command change
 bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
 BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 
@@ -154,6 +154,17 @@ AIs on Harrow Cross). No balance runs (owner rule 2026-11-25). Kessel Ridge 40 s
 Review fixes V1 (an ally's crate), V2; merged with the S16 review (`e585f9c`, `cap_retry_weight_pct`, Linden Brook in the
 menus: the menu map pick lists the maps of the mode); O1 (a defeated player's men do not capture), O4 (2v2 with net slots
 refused, CLI `--difficulty2`/`--difficulty3`) fixed; O2 (an AI's pieces can block an ally) open in TODO.
+
+## S18 online teams (branch `s18-build`; log `S18-log.md`)
+
+SAVE 35, PROTOCOL 18. Four-slot relay (`max_slots` 4, `--max-slots`, `--no-ai`, `--distinct-factions`, `--ping-gap-ms`):
+the host sets the lobby size (2 or 4), teams and AI fill; joiners take the lowest open slot or move (`TakeSlot`); Ready
+carries the lobby revision. Turns close round-robin over the slots; any two players' hashes differing is a desync, and
+every client dumps all hashes. H1 hand-over (`crates/sim/src/handover.rs`, `[teams] handover` 1): a surrendering or
+dropped player's troops, structures, works and manpower go to his lowest-slot standing ally, once; `handed_to` saved and
+hashed; handed squads free of the pop cap (`handover_pop` 0). Map pings to allies ("." key). Presenter: 2v2 lobby on
+Harrow Cross with AI rows, Add/Remove AI, Move here; MockNet plays four slots. 1v1 unchanged: Kessel Ridge 40 set same
+40/40 against `f58bcbd`. Team loopback (2+2 AI, 4 humans, drops, blackouts, forced desync): 0 mismatches. No balance runs.
 
 ## Known gaps
 

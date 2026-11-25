@@ -567,6 +567,16 @@ Plan `docs/slices/B3-balance.md` 9; stage contract `B3-run-1.md`; levers `docs/s
   counter, no demolition), so an ally's route through them stays failed until repathed. Not a few-line fix: it needs an
   ally-piece case in the demolish job (target choice, L3/L4, the Demolish order on an allied piece). For S18 or later.
 
+## S18 open owner questions (plan `docs/slices/S18-online-teams.md` 7; log `S18-log.md`; each runs on (A): "(A) assumed")
+
+- S18-1 A dropped or surrendered ally's troops. (A) They go to his ally, with his manpower (`[teams] handover` 1). (B) They hold in place and fight on without orders. (C) They are removed. **(A) assumed.**
+- S18-2 AI in online lobbies. (A) Yes, any empty slot may be AI (co-op vs AI; relay `--no-ai` turns it off). (B) Humans only. **(A) assumed.**
+- S18-3 Lobby size. (A) Up to four slots (2v2, co-op 2 vs 2 AI, 1v1; relay `--max-slots`). (B) Up to six (3v3), with a larger map later. **(A) assumed.**
+- S18-4 Who may pause. (A) Any player, with today's limit. (B) The host only. **(A) assumed.**
+- S18-5 Talking to the ally. (A) A map ping only ("." key, `[teams] ping_gap_s` 2, relay `--ping-gap-ms` 500). (B) Ping and text chat. (C) Nothing in S18. **(A) assumed.**
+- S18-6 (settled (A)) Handed-over troops and the pop cap: they never block the ally's cap (`[teams] handover_pop` 0; 1 counts them fully, not "for new buys only").
+- Open from S18 (log "Unfinished"): no per-player net overlay redesign; no real two-client co-op run through `autoplay_net.gd`; the host leaving still ends the match for all.
+
 ## S12 open items (2026-11-21; branch `claude/project-thread-aj1tww`, log `docs/slices/S12-log.md`)
 
 - S12-16 **T8 known miss (accepted for now, first item of the next balance pass).** With wounds on, HE's share of
