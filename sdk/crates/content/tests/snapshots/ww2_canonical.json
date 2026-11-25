@@ -3061,6 +3061,14 @@
           "tank_crate_far_m": 300
         },
         "tank_standoff_m": 160,
+        "team": {
+          "ally_squad_pct": 100,
+          "foe_first": 0,
+          "help_ally": 0,
+          "help_demand": 1,
+          "help_priority": 80,
+          "share_points": 0
+        },
         "threat_radius_m": 80,
         "throw_cooldown_s": 10,
         "transport": {
@@ -3530,6 +3538,15 @@
         "structure_bomb_s": 2,
         "truck_load_kg_s": 8,
         "unfired_s": 3
+      },
+      "teams": {
+        "income_pct": 100,
+        "pop_pct": 67,
+        "shared_sight": 1,
+        "start_manpower_pct": 100,
+        "team_tickets": 1,
+        "tickets_pct": 100,
+        "wiped_waits": 1
       },
       "tick_hz": 30,
       "tickets": 500,

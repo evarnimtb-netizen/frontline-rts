@@ -384,7 +384,7 @@ impl MatchState {
                 self.kill(ctx.ents, ctx.hash, id, corpse_ticks);
                 // Checker F2: every death counts in `deaths`.
                 stats.deaths += 1;
-                self.credit_finish(by, by.0 == owner);
+                self.credit_finish(by, self.teams.allied(by.0, owner));
             }
         }
         // W6: the possible tenders (buddies, medics) and the carriers.
@@ -448,7 +448,7 @@ impl MatchState {
                 self.kill(ctx.ents, ctx.hash, id, corpse_ticks);
                 // Checker F2: every death counts in `deaths`.
                 stats.deaths += 1;
-                self.credit_kill(by, by.0 == owner);
+                self.credit_kill(by, self.teams.allied(by.0, owner));
             } else {
                 ctx.ents.combat[i].hp = 1;
                 self.down(ctx.ents, ctx.hash, Some(ctx.terrain), id, by, tick, seed);

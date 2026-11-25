@@ -2390,11 +2390,13 @@ pub fn match_setup(args: &SkirmishArgs) -> Result<MatchSetup> {
                 faction: args.faction0.clone(),
                 ai: true,
                 difficulty: d0,
+                team: None,
             },
             PlayerRequest {
                 faction: args.faction1.clone(),
                 ai: true,
                 difficulty: d1,
+                team: None,
             },
         ],
     };

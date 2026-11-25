@@ -119,7 +119,8 @@ impl MatchState {
         let mut heard = 0u32;
         for e in 0..self.players.len() {
             let hearer = PlayerId(e as u8);
-            if hearer == firer {
+            // S17a: allies do not mark each other's guns.
+            if !self.teams.hostile_id(hearer, firer) {
                 continue;
             }
             // The listener now: the hearer's nearest living soldier.
@@ -288,14 +289,22 @@ impl MatchState {
     }
 
     /// K4: the error (mm) of player `p`'s marker nearest `pt` within
-    /// `intel_snap_m` (ties: the lower index), if any.
+    /// `intel_snap_m` (ties: the lower index), if any. S17a T2: with shared
+    /// sight his allies' markers count too (ties: the lower slot).
     pub(crate) fn own_marker_err(&self, p: PlayerId, pt: FxVec2) -> Option<u32> {
         let fm = self.setup.rules.fire_mission.as_ref()?;
         let snap = Fx::from_int(fm.intel_snap_m as i32);
         let r = FxVec2::new(snap, Fx::ZERO).length_sq_raw();
-        let pl = self.players.get(p.0 as usize)?;
+        self.players.get(p.0 as usize)?;
+        let mask = self.teams.sight_mask(p.0);
         let mut best: Option<(u64, u32)> = None;
-        for s in pl.cb.iter().filter(|s| s.marked) {
+        let spots = self
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(q, _)| *q < 16 && mask & (1 << q) != 0)
+            .flat_map(|(_, pl)| pl.cb.iter());
+        for s in spots.filter(|s| s.marked) {
             let d = (s.at - pt).length_sq_raw();
             if d <= r && best.is_none_or(|(bd, _)| d < bd) {
                 best = Some((d, s.err_mm));

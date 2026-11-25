@@ -22,11 +22,13 @@ fn setup(seed: u64, d0: Difficulty, d1: Difficulty, ai0: bool) -> MatchSetup {
                 faction: "ww2:germany".into(),
                 ai: ai0,
                 difficulty: d0,
+                team: None,
             },
             PlayerRequest {
                 faction: "ww2:usa".into(),
                 ai: true,
                 difficulty: d1,
+                team: None,
             },
         ],
     };

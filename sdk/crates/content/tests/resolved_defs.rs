@@ -52,11 +52,13 @@ fn ai_vs_ai(rules: &str, a: &str, b: &str, seed: u64, difficulty: Difficulty) ->
                 faction: a.into(),
                 ai: true,
                 difficulty,
+                team: None,
             },
             PlayerRequest {
                 faction: b.into(),
                 ai: true,
                 difficulty,
+                team: None,
             },
         ],
     }
@@ -208,15 +210,19 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // `MobilitySetup::road_speed_pct`) changed it; the B3 code values were
 // 0xeab40cb2122960c1, 0x2a81f7b3b47897ee, 0xc871cc8b8240ceb5,
 // 0xeab40cb2122960c1, 0x4f30ae2d701308a1, 0x2f7da91f46cf2629.
+// S17a Build A (`PlayerSetup::team`, `[teams]`, `[ai.team]`) changed it;
+// the S16a values were 0x4c3937e52dc6d9e0, 0x581ae4dfdf332bd5,
+// 0x663b27e422e8b1a2, 0x4c3937e52dc6d9e0, 0xa5335681da2200b6,
+// 0xf295242268d1ecfa.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x4c3937e52dc6d9e0),
-    ("skirmish usa-ger seed 7 hard", 0x581ae4dfdf332bd5),
-    ("test_unlock ger-usa seed 1 normal", 0x663b27e422e8b1a2),
-    ("example override ger-usa seed 1 normal", 0x4c3937e52dc6d9e0),
-    ("human ger vs ai usa seed 3 easy", 0xa5335681da2200b6),
+    ("skirmish ger-usa seed 1 normal", 0xcb9f4e0ca75ca07a),
+    ("skirmish usa-ger seed 7 hard", 0x849012774e0715c8),
+    ("test_unlock ger-usa seed 1 normal", 0xbd3132cf10459956),
+    ("example override ger-usa seed 1 normal", 0xcb9f4e0ca75ca07a),
+    ("human ger vs ai usa seed 3 easy", 0x443d47b184c840ce),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xf295242268d1ecfa,
+        0x50a82256756d98e6,
     ),
 ];
 

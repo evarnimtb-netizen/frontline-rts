@@ -118,19 +118,21 @@ impl super::Planner<'_> {
         let b = &self.g.fort.blasts;
         self.ai.suspects_seen = b.len().min(crate::fort::MAX_BLASTS) as u32;
         b.iter()
-            .filter(|x| x.owner != self.me && self.tick.saturating_sub(x.tick) < keep)
+            .filter(|x| {
+                self.g.teams.hostile_id(self.me, x.owner) && self.tick.saturating_sub(x.tick) < keep
+            })
             .map(|x| x.pos)
             .collect()
     }
 
-    /// Other players' mines this AI knows.
+    /// Hostile players' mines this AI (S17a: its team, T2) knows.
     fn known_enemy_mines(&self) -> Vec<FxVec2> {
-        let bit = 1u8 << self.me.0.min(7);
+        let kmask = self.g.teams.known_mask(self.me.0);
         self.g
             .fort
             .mines
             .values()
-            .filter(|m| m.owner != self.me && m.known & bit != 0)
+            .filter(|m| self.g.teams.hostile_id(self.me, m.owner) && m.known & kmask != 0)
             .map(|m| m.pos)
             .collect()
     }
@@ -159,11 +161,11 @@ impl super::Planner<'_> {
     /// later than tick `since`.
     fn lane_blast_since(&self, a: FxVec2, b: FxVec2, since: u64) -> bool {
         let half = self.lane_half();
-        self.g
-            .fort
-            .blasts
-            .iter()
-            .any(|x| x.owner != self.me && x.tick > since && near_segment(x.pos, a, b, half))
+        self.g.fort.blasts.iter().any(|x| {
+            self.g.teams.hostile_id(self.me, x.owner)
+                && x.tick > since
+                && near_segment(x.pos, a, b, half)
+        })
     }
 
     /// R10: the lane of point `p` attacked from `from`, if a suspect or a
@@ -188,13 +190,12 @@ impl super::Planner<'_> {
         }
         // A swept lane does not cover a blast later than its sweep
         // (finding 19).
-        let newer = |q: FxVec2, since: u64| {
-            self.g
-                .fort
-                .blasts
-                .iter()
-                .any(|x| x.owner != self.me && x.pos == q && x.tick > since)
-        };
+        let newer =
+            |q: FxVec2, since: u64| {
+                self.g.fort.blasts.iter().any(|x| {
+                    self.g.teams.hostile_id(self.me, x.owner) && x.pos == q && x.tick > since
+                })
+            };
         let covered = |q: FxVec2| {
             self.ai.sweeps.values().any(|j| {
                 j.point as usize == p

@@ -138,13 +138,16 @@ pub fn mod_dir(root: &Path) -> FileResult {
     }
 }
 
-/// S16a (R5): the mirror warnings of every map (`MapFileDef::mirror_warnings`),
-/// each path prefixed with the map id.
+/// S16a (R5): the mirror warnings of every map (`MapFileDef::mirror_warnings`;
+/// S17a: and `side_warnings`), each path prefixed with the map id.
 pub fn map_warnings(defs: &ModDefs) -> Vec<Problem> {
     defs.maps
         .iter()
         .flat_map(|(id, m)| {
-            m.mirror_warnings().into_iter().map(move |i| {
+            let mut w = m.mirror_warnings();
+            // S17a: the bases' `side` values.
+            w.extend(m.side_warnings());
+            w.into_iter().map(move |i| {
                 let mut p = Problem::from(i);
                 p.path = format!("maps.{id}.{}", p.path);
                 p
@@ -171,6 +174,7 @@ fn resolve_all(defs: &ModDefs, problems: &mut Vec<Problem>) {
                         faction: f.clone(),
                         ai: true,
                         difficulty: Default::default(),
+                        team: None,
                     })
                     .collect(),
             };

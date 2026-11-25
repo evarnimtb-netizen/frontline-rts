@@ -1028,7 +1028,7 @@ impl MatchState {
         for id in ids {
             if Some(id) == skip
                 || ctx.ents.kind.get(id.index()) != Some(&EntityKind::Vehicle)
-                || ctx.ents.owner[id.index()].0 == player
+                || self.teams.allied(player, ctx.ents.owner[id.index()].0)
             {
                 continue;
             }
@@ -1144,7 +1144,7 @@ impl MatchState {
         let rr = (r.raw().max(0) as u64).pow(2);
         for id in ids {
             if ctx.ents.kind.get(id.index()) != Some(&EntityKind::Vehicle)
-                || ctx.ents.owner[id.index()].0 == by.0
+                || self.teams.allied(by.0, ctx.ents.owner[id.index()].0)
             {
                 continue;
             }
@@ -1279,7 +1279,7 @@ impl MatchState {
             p.losses += n;
         }
         if let Some(p) = by.and_then(|b| self.players.get_mut(b as usize))
-            && by != Some(owner.0)
+            && by.is_some_and(|b| self.teams.hostile(b, owner.0))
         {
             p.kills += n;
             p.kills_by[kill_class::base(class) as usize] += n;
@@ -1350,7 +1350,7 @@ impl MatchState {
         // S7: the knock-out per shooting vehicle type (the round that did
         // it; a later fire carries none).
         if let (Some(t), Some(b)) = (kill_class::vehicle(class), by)
-            && b != owner.0
+            && self.teams.hostile(b, owner.0)
             && let Some(k) = self
                 .players
                 .get_mut(b as usize)

@@ -443,6 +443,7 @@ fn blows_now(
         ff_hit: Vec::new(),
         wounds: (g.setup.rules.wounds.enabled != 0).then(|| g.setup.rules.wounds.clone()),
         downed: any_down.then_some(&*downed),
+        teams: g.teams,
     };
     pre(g, &mut ctx);
     g.apply_blows(

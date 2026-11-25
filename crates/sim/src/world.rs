@@ -486,7 +486,9 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// 33: S16a (`FLAG_ROAD` in the terrain flag layer and the point-symmetry
 /// blend; in the setup `MapSetup::roads`, `[vehicles.road]` and
 /// `MobilitySetup::road_speed_pct`). One bump for the slice.
-const SAVE_VERSION: u32 = 33;
+/// 34: S17a (in the setup `PlayerSetup::team`, `[teams]` and `[ai.team]`;
+/// the team table is derived, not saved). One bump for the slice.
+const SAVE_VERSION: u32 = 34;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -1417,6 +1419,7 @@ impl World {
                         downed: (!g.casualties.is_empty()).then_some(&*downed),
                         wounds: (g.setup().rules.wounds.enabled != 0)
                             .then_some(&g.setup().rules.wounds),
+                        teams: g.teams,
                     };
                     threads.install(|| {
                         projectiles
@@ -1500,6 +1503,7 @@ impl World {
                     .as_ref()
                     .is_some_and(|g| !g.casualties.is_empty())
                     .then_some(&*downed),
+                teams: game.as_ref().map(|g| g.teams).unwrap_or_default(),
             };
             game.as_mut().expect("match world").apply_blows(
                 &mut ctx,
@@ -5613,6 +5617,7 @@ mod tests {
             ff_hit: Vec::new(),
             wounds: None,
             downed: None,
+            teams: Default::default(),
         };
         let g = game.as_mut().unwrap();
         g.deal(
@@ -5732,6 +5737,7 @@ mod tests {
                 ff_hit: Vec::new(),
                 wounds: None,
                 downed: None,
+                teams: Default::default(),
             };
             let g = state.game.as_mut().unwrap();
             let ko = g.deal(

@@ -71,6 +71,7 @@ pub mod structures;
 pub mod supply;
 mod sweep;
 mod systems;
+pub mod teams;
 pub mod terrain;
 pub mod transport;
 pub mod unit;

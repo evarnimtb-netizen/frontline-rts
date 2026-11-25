@@ -8,8 +8,8 @@ use frontline_content::ItemKind;
 use super::AiKind;
 
 use super::{
-    AiHunt, AiState, Known, KnownVehicle, Mine, MyTank, NO_POINT, Planner, PointEval, Rel,
-    TaskKind, sq_m,
+    AiHunt, AiState, Known, KnownVehicle, Mine, MyTank, NO_POINT, Planner, PointEval, TaskKind,
+    sq_m,
 };
 use crate::command::CommandKind;
 use crate::ecs::EntityKind;
@@ -219,7 +219,7 @@ impl Planner<'_> {
         let cfg = &g.setup.rules.ai.assault;
         let mut claimed = Vec::new();
         for (i, pt) in points.iter().enumerate() {
-            if pt.rel == Rel::Own {
+            if pt.rel.friendly() {
                 continue;
             }
             let here: Vec<&Mine> = assigned

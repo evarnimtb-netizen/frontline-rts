@@ -1057,7 +1057,7 @@ impl RenderSnapshot {
                 surrendered: pl.surrendered,
                 defeat: pl.defeat,
                 pop: g.population(ents, id),
-                pop_cap: g.setup().rules.pop_cap,
+                pop_cap: g.pop_cap_of(id),
                 kills: pl.kills,
                 losses: pl.losses,
                 points_held: g.points().iter().filter(|c| c.owner == Some(id)).count() as u8,

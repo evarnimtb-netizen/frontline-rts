@@ -554,6 +554,7 @@ impl FortState {
         on_map: &dyn Fn(FxVec2) -> bool,
     ) -> Result<(), &'static str> {
         let np = setup.players.len();
+        let teams = crate::teams::Teams::of_setup(setup);
         let mut per: BTreeMap<(u8, u16), u32> = BTreeMap::new();
         for (&id, m) in &self.mines {
             if id >= self.next_mine || m.owner.0 as usize >= np || !on_map(m.pos) {
@@ -633,7 +634,7 @@ impl FortState {
                         && self
                             .mines
                             .get(l)
-                            .is_none_or(|m| m.known & (1 << q.owner.0.min(7)) == 0)
+                            .is_none_or(|m| m.known & teams.known_mask(q.owner.0) == 0)
                     {
                         return Err("ClearMines lifts a mine its player does not know");
                     }
@@ -1615,7 +1616,7 @@ impl MatchState {
         let d = b - a;
         self.statics.0.iter().any(|sb| {
             matches!(sb.of, StaticRef::Piece(_))
-                && sb.owner != player
+                && self.teams.hostile(player, sb.owner)
                 && sb.reach >= Fx::ZERO
                 && crate::armour::segment_near(a, d, sb.frame.center, sb.reach)
                 && crate::armour::segment_box(&sb.frame, a, d).is_some()
@@ -1842,14 +1843,15 @@ impl FortState {
     }
 
     /// S10a-ai: whether `pos` lies inside the band of a standing section
-    /// not owned by `player` (false at once without wire).
+    /// of a player hostile to `player` (false at once without wire).
     pub fn in_enemy_wire(
         &self,
         forts: &[frontline_content::setup::FortSetup],
         pos: FxVec2,
         player: PlayerId,
+        teams: &crate::teams::Teams,
     ) -> bool {
-        self.in_band_of(forts, pos, |s| s.owner != player)
+        self.in_band_of(forts, pos, |s| teams.hostile_id(player, s.owner))
     }
 
     /// S10a-ai (S17): whether the straight step `a -> b` comes within half
@@ -1963,12 +1965,14 @@ impl FortState {
         self.mine_layer.key.as_ref() == Some(&self.mine_key(dim, bands_cm))
     }
 
-    /// The full scan: player `p`'s known enemy mines of one trigger
+    /// The full scan: player `p`'s known enemy mines of one trigger (S17a:
+    /// mines of a hostile player that `p`'s team knows, T2)
     /// (`vehicle`: AT, else AP) with band `cm`, nodes within the band plus
     /// [`WIRE_NODE_SLACK_M`] (a step that comes within the band of a mine
     /// has an end among them).
     pub(crate) fn scan_mine_set(
         &self,
+        teams: &crate::teams::Teams,
         items: &[frontline_content::setup::ItemSetup],
         dim: u32,
         p: PlayerId,
@@ -1980,8 +1984,8 @@ impl FortState {
             .mines
             .values()
             .filter(|m| {
-                m.owner != p
-                    && m.known >> p.0 & 1 == 1
+                teams.hostile_id(p, m.owner)
+                    && m.known & teams.known_mask(p.0) != 0
                     && items
                         .get(m.item as usize)
                         .and_then(|it| it.mine.as_ref())
@@ -2014,6 +2018,7 @@ impl FortState {
     /// band changed since the last build. Cheap when nothing changed.
     pub(crate) fn refresh_mine_layer(
         &mut self,
+        teams: &crate::teams::Teams,
         items: &[frontline_content::setup::ItemSetup],
         dim: u32,
         bands_cm: (u32, u32),
@@ -2026,8 +2031,8 @@ impl FortState {
             .map(|p| {
                 let p = PlayerId(p as u8);
                 [
-                    self.scan_mine_set(items, dim, p, false, bands_cm.0),
-                    self.scan_mine_set(items, dim, p, true, bands_cm.1),
+                    self.scan_mine_set(teams, items, dim, p, false, bands_cm.0),
+                    self.scan_mine_set(teams, items, dim, p, true, bands_cm.1),
                 ]
             })
             .collect();
@@ -2241,7 +2246,7 @@ impl MatchState {
             .fort
             .wire
             .iter()
-            .filter(|(_, s)| s.owner.0 != player)
+            .filter(|(_, s)| self.teams.hostile(player, s.owner.0))
             .filter_map(|(&id, s)| {
                 let q = closest_on(pos.xy(), s.a, s.b);
                 let at = q.extend(terrain.height_at(q) + half_up(s));
@@ -2275,7 +2280,7 @@ impl MatchState {
     ) -> Vec<(u32, Fx)> {
         let mut out = Vec::new();
         for (&id, s) in &self.fort.wire {
-            if s.owner.0 == player {
+            if !self.teams.hostile(player, s.owner.0) {
                 continue;
             }
             let Some(f) = crossing(o.xy(), d.xy(), s.a, s.b) else {
@@ -2549,6 +2554,7 @@ impl MatchState {
         tick: u64,
         out: &mut Vec<crate::items::Thrown>,
     ) {
+        let teams = self.teams;
         // S10b-ai: blasts older than `BLAST_KEEP_S` are dropped.
         if !self.fort.blasts.is_empty() {
             let keep = BLAST_KEEP_S * self.setup.tick_hz.max(1) as u64;
@@ -2582,7 +2588,7 @@ impl MatchState {
                     if any.is_none()
                         && ents.is_alive(s)
                         && ents.kind[i] == crate::ecs::EntityKind::Soldier
-                        && ents.owner[i] != m.owner
+                        && teams.hostile_id(m.owner, ents.owner[i])
                         && ents.unit[i].riding.is_none()
                         && (ents.transform[i].pos.xy() - m.pos).length_sq_raw() <= r2
                     {
@@ -2657,7 +2663,7 @@ impl MatchState {
         ids.dedup();
         ids.into_iter().find(|&id| {
             if ents.kind.get(id.index()) != Some(&crate::ecs::EntityKind::Vehicle)
-                || ents.owner[id.index()] == m.owner
+                || !self.teams.hostile_id(m.owner, ents.owner[id.index()])
             {
                 return false;
             }
@@ -2694,6 +2700,7 @@ impl MatchState {
     /// player's `at_exposure_ticks` (one index query per AT mine; nothing
     /// without AT mines).
     fn at_exposure(&mut self, ents: &Entities) {
+        let teams = self.teams;
         let r = Fx::from_int(AT_EXPOSURE_M);
         let r2 = (r.raw() as u64).pow(2);
         let mut seen: Vec<(u8, SimId)> = Vec::new();
@@ -2710,7 +2717,7 @@ impl MatchState {
             self.vderived.index.for_each_near(m.pos, r, |id| {
                 let i = id.index();
                 if ents.kind.get(i) == Some(&crate::ecs::EntityKind::Vehicle)
-                    && ents.owner[i] != m.owner
+                    && teams.hostile_id(m.owner, ents.owner[i])
                     && self
                         .vehicles
                         .get(&id)

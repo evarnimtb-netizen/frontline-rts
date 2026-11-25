@@ -464,6 +464,8 @@ impl MatchState {
     /// (or a seat over the rim) takes it in, and it comes to rest on that
     /// box's floor and rides with the vehicle until its fuse runs out.
     pub(crate) fn fly_thrown(&mut self, terrain: &Heightfield, substeps: u32) {
+        // S17a T3: a thrown item passes allied vehicles and pieces as own.
+        let teams = self.teams;
         let half_g = GRAVITY.div_int(2);
         let max_step = (MAX_FLIGHT_S * SUBSTEP_HZ) as u16;
         let vd = &self.vderived;
@@ -538,7 +540,7 @@ impl MatchState {
                     ids.dedup();
                     for id in ids {
                         let Some(f) = vd.frame(id) else { continue };
-                        if !f.wreck && f.owner == t.owner {
+                        if !f.wreck && teams.allied(f.owner.0, t.owner.0) {
                             continue;
                         }
                         let Some(a) = armour.vehicles.get(f.type_idx as usize) else {
@@ -567,7 +569,7 @@ impl MatchState {
                 if pieces {
                     for sb in statics {
                         if !matches!(sb.of, crate::structures::StaticRef::Piece(_))
-                            || sb.owner == t.owner.0
+                            || teams.allied(sb.owner, t.owner.0)
                             || sb.reach < Fx::ZERO
                             || !crate::armour::segment_near(t.pos, d, sb.frame.center, sb.reach)
                         {
@@ -1009,7 +1011,7 @@ impl MatchState {
             let Some(f) = self.vderived.frame(id) else {
                 continue;
             };
-            if f.wreck || f.owner == owner {
+            if f.wreck || self.teams.allied(f.owner.0, owner.0) {
                 continue;
             }
             let v = &self.setup.vehicles[f.type_idx as usize];

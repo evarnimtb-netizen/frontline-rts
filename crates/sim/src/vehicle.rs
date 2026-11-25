@@ -2537,6 +2537,7 @@ impl MatchState {
             vehicles,
             squads,
             vderived,
+            teams,
             ..
         } = self;
         for (&id, vs) in vehicles.iter_mut() {
@@ -2574,6 +2575,7 @@ impl MatchState {
                             v,
                             geo,
                             drv: &setup.rules.vehicles.driving,
+                            teams: *teams,
                             rules: &setup.rules.vehicles,
                             hz,
                             tick,
@@ -2667,6 +2669,8 @@ struct Follow<'a> {
     geo: &'a Geo,
     drv: &'a DrivingTuning,
     /// S16a: the vehicle rules (`[vehicles.road]` for the road top speed).
+    /// S17a: allied men count as own for the friendly-ahead yield.
+    teams: crate::teams::Teams,
     rules: &'a VehicleRulesSetup,
     hz: u32,
     tick: u64,
@@ -3037,7 +3041,7 @@ fn yield_cap(c: &Follow, dir: FxVec2) -> (Option<Fx>, bool) {
     let walk = Fx::from_milli(c.drv.walk_mm_s as i32);
     c.soldiers.for_each_near(front, ahead + hy + Fx::ONE, |s| {
         let si = s.index();
-        if c.ents.owner[si] != owner || c.ents.kind[si] != EntityKind::Soldier {
+        if c.teams.hostile_id(owner, c.ents.owner[si]) || c.ents.kind[si] != EntityKind::Soldier {
             return;
         }
         let rel = c.ents.transform[si].pos.xy() - front;

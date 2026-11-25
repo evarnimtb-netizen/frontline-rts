@@ -416,6 +416,7 @@ impl MatchState {
             return false;
         }
         let mut job = DigJob::new(
+            &self.teams,
             line,
             men.len(),
             p,
@@ -740,6 +741,7 @@ impl MatchState {
                             let goal = if cover {
                                 let mut slot = [goal];
                                 squad::seek_cover(
+                                    &self.teams,
                                     sq.owner,
                                     goal,
                                     &[m],

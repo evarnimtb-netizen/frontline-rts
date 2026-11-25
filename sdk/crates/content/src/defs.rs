@@ -1657,6 +1657,10 @@ fn default_point_value() -> u32 {
 pub struct BaseDef {
     pub pos: [u32; 2],
     pub radius_m: u32,
+    /// S17a: which side the base belongs to in a team match (a hint for
+    /// menus and tools; the sim never reads it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<u8>,
 }
 
 /// Game-mode rules (`defs/rules/*.toml`).
@@ -1714,6 +1718,9 @@ pub struct RulesDef {
     /// Without it: the S13 values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub armour: Option<crate::tuning::ArmourTuning>,
+    /// S17a: team play (`[teams]`). Without it: the S17a values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub teams: Option<crate::tuning::TeamsTuning>,
     /// S10a: fortification rules (`[fortify]`). Without it no blueprint
     /// can be built.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2161,6 +2168,9 @@ pub struct AiDef {
     /// S12: `[ai.medic]` (default: the S12a values, switches off).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub medic: Option<AiMedicTuning>,
+    /// S17: `[ai.team]` (default: the S17a values, habits off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team: Option<crate::tuning::AiTeamTuning>,
 }
 
 impl AiDef {
@@ -3029,6 +3039,34 @@ impl MapFileDef {
         out
     }
 
+    /// S17a (plan 4): on a map whose bases name a `side`, the sides must be
+    /// two of equal size and every base must name one. Warnings, not errors
+    /// (the sim never reads `side`); empty when no base names a side.
+    pub fn side_warnings(&self) -> Vec<Issue> {
+        let mut out = Vec::new();
+        if self.bases.iter().all(|b| b.side.is_none()) {
+            return out;
+        }
+        let mut count = std::collections::BTreeMap::<u8, usize>::new();
+        for (i, b) in self.bases.iter().enumerate() {
+            match b.side {
+                Some(s) => *count.entry(s).or_default() += 1,
+                None => out.push(Issue::new(
+                    format!("bases[{i}].side"),
+                    "names no side while other bases do",
+                )),
+            }
+        }
+        let sizes: Vec<usize> = count.values().copied().collect();
+        if sizes.len() != 2 || sizes[0] != sizes[1] {
+            out.push(Issue::new(
+                "bases",
+                format!("the bases' sides are not two of equal size ({count:?})"),
+            ));
+        }
+        out
+    }
+
     /// S16a (R5): on a `symmetry = "point"` map, every hand-placed item
     /// (capture point, base, woods patch, road point) needs a mirror
     /// through the map centre within [`MIRROR_TOLERANCE_M`] among the same
@@ -3474,6 +3512,8 @@ impl RulesDef {
                 wounds: &self.wounds.clone().unwrap_or_default(),
                 ai_medic: &a.medic.clone().unwrap_or_default(),
                 armour: &self.armour.clone().unwrap_or_default(),
+                teams: &self.teams.clone().unwrap_or_default(),
+                ai_team: &a.team.clone().unwrap_or_default(),
             },
         );
         match (a.barrage_rounds, &a.mortar) {

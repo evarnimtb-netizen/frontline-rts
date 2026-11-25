@@ -1047,9 +1047,7 @@ impl super::Planner<'_> {
         let s = &g.setup;
         let a = &s.rules.ai.guns;
         let p = points[point_to_cover(points)?].pos;
-        let enemy = (0..s.players.len() as u8)
-            .map(PlayerId)
-            .find(|&o| o != self.me)?;
+        let enemy = g.main_foe(self.me)?;
         let enemy_base = g.base_of(enemy);
         let toward = kv
             .iter()

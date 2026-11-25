@@ -174,6 +174,7 @@ pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, S
                 faction: format!("{MOD_ID}:{}", s.faction),
                 ai: !s.human,
                 difficulty: d,
+                team: None,
             })
             .collect(),
     };

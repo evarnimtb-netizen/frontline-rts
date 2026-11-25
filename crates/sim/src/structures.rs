@@ -2131,17 +2131,18 @@ fn static_box(
     }
 }
 
-/// The first live static box not owned by `player` that the segment
+/// The first live static box not owned by `player` (S17a: nor an ally,
+/// `allies` his team mask) that the segment
 /// `from → from + d` enters: `(t, index)`, earliest first, ties by index.
 pub(crate) fn first_static(
     statics: &[StaticBox],
     from: FxVec3,
     d: FxVec3,
-    player: u8,
+    allies: u16,
 ) -> Option<(Fx, usize)> {
     let mut best: Option<(Fx, usize)> = None;
     for (k, b) in statics.iter().enumerate() {
-        if b.owner == player || b.reach < Fx::ZERO {
+        if allies & (1 << (b.owner % 16)) != 0 || b.reach < Fx::ZERO {
             continue;
         }
         if !crate::armour::segment_near(from, d, b.frame.center, b.reach) {
@@ -2177,10 +2178,10 @@ mod tests {
         let d = FxVec3::new(Fx::from_int(20), Fx::ZERO, Fx::ZERO);
         let list = [b(0, 5, 2), b(1, 10, 2), b(1, 8, -1)];
         // Player 0's own box at 5 m is skipped; the broken one at 8 too.
-        let (t, k) = first_static(&list, from, d, 0).expect("hit");
+        let (t, k) = first_static(&list, from, d, 1).expect("hit");
         assert_eq!(k, 1);
         assert_eq!(t, Fx::from_ratio(9, 20));
         // Player 1 hits player 0's box first.
-        assert_eq!(first_static(&list, from, d, 1).map(|x| x.1), Some(0));
+        assert_eq!(first_static(&list, from, d, 2).map(|x| x.1), Some(0));
     }
 }

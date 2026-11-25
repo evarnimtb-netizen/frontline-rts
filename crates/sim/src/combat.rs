@@ -121,6 +121,7 @@ use crate::projectile::{NO_AMMO, Projectile, ProjectileEnd, SUBSTEP_HZ, advance,
 use crate::rng::{Purpose, RngStream};
 use crate::spatial::SpatialHash;
 use crate::systems::FireRequest;
+use crate::teams::Teams;
 use crate::terrain::Heightfield;
 use crate::unit::{FireMode, StanceOrder, Unit, UnitOrder};
 use crate::vehicle::{VehicleDerived, VehicleFrame};
@@ -309,7 +310,7 @@ pub(crate) fn vehicle_aim(
 ) -> Option<FxVec3> {
     // S8a-18: only a weapon with a penetration table picks vehicles.
     let reach_tab = game.armour.reach.get(wi as usize)?;
-    if reach_tab.is_empty() || m.owner == owner || m.seen_by & (1 << owner) == 0 {
+    if reach_tab.is_empty() || !game.teams.enemy_seen(owner, m.owner, m.seen_by) {
         return None;
     }
     let f = game.vderived.frame(m.id)?;
@@ -406,8 +407,9 @@ fn range_sq(range: Fx) -> u64 {
 }
 
 /// The mark of `t` if it is an enemy of `owner` that `owner` sees within
-/// `range_sq` (Q32) of `from`.
+/// `range_sq` (Q32) of `from` (S17a: hostile, seen by `owner`'s team).
 fn valid_target<'a>(
+    teams: &Teams,
     marks: &'a [Mark],
     mark_of: &[u32],
     t: SimId,
@@ -417,9 +419,7 @@ fn valid_target<'a>(
 ) -> Option<&'a Mark> {
     let k = *mark_of.get(t.index())?;
     let m = marks.get(k as usize)?;
-    (m.owner != owner
-        && m.seen_by & (1 << owner) != 0
-        && (m.pos.xy() - from).length_sq_raw() <= range_sq)
+    (teams.enemy_seen(owner, m.owner, m.seen_by) && (m.pos.xy() - from).length_sq_raw() <= range_sq)
         .then_some(m)
 }
 
@@ -429,6 +429,7 @@ impl MatchState {
     /// Updates every squad's focus target (see the module docs).
     pub(crate) fn update_focus(&mut self, ents: &Entities, marks: &[Mark], mark_of: &[u32]) {
         let setup = &self.setup;
+        let teams = self.teams;
         for sq in self.squads.values_mut() {
             let ty = &setup.squad_types[sq.type_idx as usize];
             let w = &setup.weapons[small_arms_of(setup, sq) as usize];
@@ -446,13 +447,13 @@ impl MatchState {
             let r = range_sq(w.range_max.into());
             if sq
                 .focus
-                .is_some_and(|f| valid_target(marks, mark_of, f, owner, lead, r).is_some())
+                .is_some_and(|f| valid_target(&teams, marks, mark_of, f, owner, lead, r).is_some())
             {
                 continue;
             }
             sq.focus = marks
                 .iter()
-                .filter(|m| m.owner != owner && m.seen_by & (1 << owner) != 0)
+                .filter(|m| teams.enemy_seen(owner, m.owner, m.seen_by))
                 .map(|m| ((m.pos.xy() - lead).length_sq_raw(), m.id))
                 .filter(|(d, _)| *d <= r)
                 .min()
@@ -515,7 +516,7 @@ fn search(
     let mut cands = [(u64::MAX, SimId(u32::MAX), 0u32); 1 + SWEEP_POOL];
     let mut n = 0usize;
     if let Some(f) = focus
-        && valid_target(ctx.marks, ctx.mark_of, f, owner, xy, r).is_some()
+        && valid_target(&ctx.game.teams, ctx.marks, ctx.mark_of, f, owner, xy, r).is_some()
     {
         cands[0] = (0, f, ctx.mark_of[f.index()]);
         n = 1;
@@ -523,7 +524,7 @@ fn search(
     let first = n;
     let cap = first + pool.min(SWEEP_POOL);
     for (k, m) in ctx.marks.iter().enumerate() {
-        if Some(m.id) == focus || m.owner == owner || m.seen_by & (1 << owner) == 0 {
+        if Some(m.id) == focus || !ctx.game.teams.enemy_seen(owner, m.owner, m.seen_by) {
             continue;
         }
         let d = (m.pos.xy() - xy).length_sq_raw();
@@ -812,7 +813,16 @@ pub(crate) fn aim_and_fire(
                 vaim = vmark(t).and_then(|m| vehicle_aim(ctx.game, owner, from, wi, m, r));
                 vaim.is_some()
             } else {
-                valid_target(ctx.marks, ctx.mark_of, t, owner, pos.xy(), r).is_some()
+                valid_target(
+                    &ctx.game.teams,
+                    ctx.marks,
+                    ctx.mark_of,
+                    t,
+                    owner,
+                    pos.xy(),
+                    r,
+                )
+                .is_some()
             };
             if !ok {
                 c.target = None;
@@ -1404,9 +1414,9 @@ impl MatchState {
         let foe = |ents: &Entities, t: SimId| {
             let ti = t.index();
             ents.kind.get(ti) == Some(&EntityKind::Soldier)
-                && ents.owner[ti] != owner
+                && self.teams.hostile_id(owner, ents.owner[ti])
                 && ents.unit[ti].riding.is_none()
-                && ents.combat[ti].seen_by & (1 << owner.0) != 0
+                && self.teams.sees(owner.0, ents.combat[ti].seen_by)
         };
         if let Some(m) = p.man {
             let i = m.index();
@@ -1419,7 +1429,7 @@ impl MatchState {
                         // Ids are not generational (review A-2): a slot
                         // reused by an own man is not the target.
                         ents.kind.get(t.index()) == Some(&EntityKind::Soldier)
-                            && ents.owner[t.index()] != owner
+                            && self.teams.hostile_id(owner, ents.owner[t.index()])
                             && band(from, ents.transform[t.index()].pos.xy())
                     })
                     && band(from, p.at);
@@ -1830,8 +1840,8 @@ impl MatchState {
     ) -> bool {
         let ti = t.index();
         if ents.kind.get(ti) != Some(&EntityKind::Vehicle)
-            || ents.owner[ti] == owner
-            || ents.combat[ti].seen_by & (1 << owner.0) == 0
+            || !self.teams.hostile_id(owner, ents.owner[ti])
+            || !self.teams.sees(owner.0, ents.combat[ti].seen_by)
         {
             return false;
         }
@@ -2179,6 +2189,8 @@ pub(crate) struct FlightCtx<'a> {
     /// `enabled` (hit zones).
     pub downed: Option<&'a SpatialHash>,
     pub wounds: Option<&'a frontline_content::tuning::WoundsTuning>,
+    /// S17a T3: rounds pass the shooter's allies as they pass his own men.
+    pub teams: Teams,
 }
 
 /// A soldier near a round's segment this substep.
@@ -2216,7 +2228,7 @@ fn first_box(
     let mut best: Option<(Fx, SimId, ArmourHit)> = None;
     vd.index.for_each_near(mid.xy(), reach, |id| {
         let Some(f) = vd.frame(id) else { return };
-        if !f.wreck && f.owner.0 == player {
+        if !f.wreck && ctx.teams.allied(player, f.owner.0) {
             return;
         }
         let Some(a) = ctx.armour.vehicles.get(f.type_idx as usize) else {
@@ -2311,7 +2323,7 @@ pub(crate) fn fly(
             let sboxed = if ctx.statics.is_empty() {
                 None
             } else {
-                crate::structures::first_static(ctx.statics, from, d, player)
+                crate::structures::first_static(ctx.statics, from, d, ctx.teams.allies_mask(player))
             };
             let static_first = sboxed.is_some_and(|(st, _)| boxed.is_none_or(|(vt, _, _)| st < vt));
             let any_box_t = if static_first {
@@ -2328,7 +2340,7 @@ pub(crate) fn fly(
                 let len_sq = d.dot(d);
                 ctx.spatial.for_each_near(mid.xy(), reach, |id| {
                     let i = id.index();
-                    if ents.owner[i].0 == player || id == shooter {
+                    if ctx.teams.allied(player, ents.owner[i].0) || id == shooter {
                         return;
                     }
                     let t = &ents.transform[i];
@@ -2359,7 +2371,7 @@ pub(crate) fn fly(
                 if let Some(dh) = ctx.downed {
                     dh.for_each_near(mid.xy(), reach, |id| {
                         let i = id.index();
-                        if ents.owner[i].0 == player {
+                        if ctx.teams.allied(player, ents.owner[i].0) {
                             return;
                         }
                         let t = &ents.transform[i];
@@ -2552,6 +2564,8 @@ pub(crate) struct DamageCtx<'a> {
     pub wounds: Option<frontline_content::tuning::WoundsTuning>,
     /// S12: the downed men's spatial hash (`None` without any).
     pub downed: Option<&'a SpatialHash>,
+    /// S17a T3: an ally is spared or hit as an own man.
+    pub teams: Teams,
 }
 
 /// A soldier at 0 HP this tick: `(victim, killer's player, kill class,
@@ -2614,7 +2628,7 @@ fn hurt_by(
         hit,
         ctx.wounds.as_ref(),
     );
-    if b.ff && ctx.ents.owner[id.index()].0 == b.player {
+    if b.ff && ctx.teams.allied(b.player, ctx.ents.owner[id.index()].0) {
         ctx.ff_hit.push(id);
         if killed {
             ctx.ff_dead.push(id);
@@ -2684,8 +2698,9 @@ impl MatchState {
         ctx.ff_hit.clear();
         for id in ids {
             let i = id.index();
-            // S11a2 F2: an own mission burst spares no own man.
-            let own = ctx.ents.owner[i].0 == b.player;
+            // S11a2 F2: an own mission burst spares no own man (S17a T3: an
+            // ally counts as own).
+            let own = ctx.teams.allied(b.player, ctx.ents.owner[i].0);
             let downed = ctx.ents.kind[i] == EntityKind::Downed;
             if (ctx.ents.kind[i] != EntityKind::Soldier && !downed) || (own && !b.ff) {
                 continue;
@@ -2930,7 +2945,7 @@ impl MatchState {
             let c = &ctx.ents.combat[i];
             // S11a2 F3: an own mission burst's fragments find own men too.
             if !matches!(ctx.ents.kind[i], EntityKind::Soldier | EntityKind::Downed)
-                || (ctx.ents.owner[i].0 == b.player && !b.ff)
+                || (ctx.teams.allied(b.player, ctx.ents.owner[i].0) && !b.ff)
                 || c.hp == 0
             {
                 continue;
@@ -2979,7 +2994,7 @@ impl MatchState {
             .iter()
             .enumerate()
             .filter(|(_, sb)| {
-                (sb.owner != b.player || b.ff)
+                (ctx.teams.hostile(b.player, sb.owner) || b.ff)
                     && sb.reach >= Fx::ZERO
                     && armour::segment_near(o, FxVec3::ZERO, sb.frame.center, reach + sb.reach)
             })
@@ -3889,9 +3904,12 @@ impl MatchState {
         // S10a-ai: a man killed inside an enemy wire band.
         if !self.fort.wire.is_empty()
             && !self.fort_off
-            && self
-                .fort
-                .in_enemy_wire(&self.setup.forts, fell_at, PlayerId(owner as u8))
+            && self.fort.in_enemy_wire(
+                &self.setup.forts,
+                fell_at,
+                PlayerId(owner as u8),
+                &self.teams,
+            )
             && let Some(a) = self.fort.accounts.get_mut(owner)
         {
             a.men_lost_in_wire = a.men_lost_in_wire.saturating_add(1);
@@ -4279,7 +4297,7 @@ impl MatchState {
             },
         );
         self.bump_s12(owner, |c| &mut c.downed);
-        if by.0 != owner {
+        if self.teams.hostile(by.0, owner) {
             let k = kill_class::base(by.1) as usize;
             if let Some(p) = self.players.get_mut(by.0 as usize)
                 && let Some(n) = p.s12.downed_by_class.get_mut(k)
@@ -4672,6 +4690,7 @@ mod tests {
                 statics: &[],
                 downed: None,
                 wounds: None,
+                teams: Teams::default(),
             };
             let (mut ended, mut events) = (Vec::new(), Vec::new());
             for _ in 0..60 {
@@ -4706,6 +4725,7 @@ mod tests {
                 ff_hit: Vec::new(),
                 wounds: None,
                 downed: None,
+                teams: Teams::default(),
             };
             let ev = [BallisticEvent {
                 weapon: mortar,
@@ -4829,6 +4849,7 @@ mod tests {
             statics: &[],
             downed: None,
             wounds: None,
+            teams: Teams::default(),
         };
         let (mut ended, mut events) = (Vec::new(), Vec::new());
         fly(0, &mut slots, &ctx, 2, &mut ended, &mut events, &mut 0);
@@ -4890,6 +4911,7 @@ mod tests {
             ff_hit: Vec::new(),
             wounds: None,
             downed: None,
+            teams: Teams::default(),
         };
         let mg = r
             .game

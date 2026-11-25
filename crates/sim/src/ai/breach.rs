@@ -46,7 +46,7 @@ use frontline_content::MatchSetup;
 use frontline_content::setup::Capability;
 use serde::{Deserialize, Serialize};
 
-use super::{AiKind, AiState, Known, Mine, PointEval, Rel, TaskKind, sq_m};
+use super::{AiKind, AiState, Known, Mine, PointEval, TaskKind, sq_m};
 use crate::command::CommandKind;
 use crate::ecs::{Entities, PlayerId, SimId};
 use crate::fort::{closest_on, crossing, near_segment};
@@ -167,7 +167,10 @@ impl super::Planner<'_> {
         }
         let unknown: Vec<u32> = wire
             .iter()
-            .filter(|(id, w)| w.owner != me && self.ai.wire_known.binary_search(id).is_err())
+            .filter(|(id, w)| {
+                self.g.teams.hostile_id(me, w.owner)
+                    && self.ai.wire_known.binary_search(id).is_err()
+            })
             .map(|(&id, _)| id)
             .collect();
         let start = unknown.partition_point(|&id| id <= self.ai.wire_cursor);
@@ -237,7 +240,7 @@ impl super::Planner<'_> {
         }
         let near = Fx::from_int(s.rules.ai.fort.breach_near_m as i32);
         (0..g.points.len()).any(|i| {
-            g.points[i].owner != Some(me)
+            g.points[i].owner.is_none_or(|o| g.teams.hostile_id(me, o))
                 && self.ai.tasks.values().any(|t| {
                     t.point == i as u8 && matches!(t.kind, TaskKind::Attack | TaskKind::Capture)
                 })
@@ -277,7 +280,7 @@ impl super::Planner<'_> {
         for &p in pts {
             let d = p - prev;
             if self.g.fort.wire.iter().any(|(id, w)| {
-                w.owner != me
+                self.g.teams.hostile_id(me, w.owner)
                     && self.ai.wire_known.binary_search(id).is_err()
                     && crossing(prev, d, w.a, w.b).is_some()
             }) {
@@ -349,7 +352,7 @@ impl super::Planner<'_> {
             if self.ai.breaches.len() >= MAX_BREACHES {
                 break;
             }
-            if pt.rel == Rel::Own || self.ai.breaches.values().any(|b| b.point == i as u8) {
+            if pt.rel.friendly() || self.ai.breaches.values().any(|b| b.point == i as u8) {
                 continue;
             }
             let here: Vec<&Mine> = assigned
@@ -497,11 +500,9 @@ impl super::Planner<'_> {
         let me = self.me;
         // Through: no standing enemy section near the crossing.
         let clear = Fx::from_int(f.gap_clear_m as i32);
-        let open = !g
-            .fort
-            .wire
-            .values()
-            .any(|w| w.owner != me && near_segment(job.crossing, w.a, w.b, clear));
+        let open = !g.fort.wire.values().any(|w| {
+            g.teams.hostile_id(me, w.owner) && near_segment(job.crossing, w.a, w.b, clear)
+        });
         if open {
             job.phase = BreachPhase::Through;
             self.ai.counters.breaches_opened += 1;
@@ -952,7 +953,13 @@ impl super::Planner<'_> {
         let known = self.known_enemies();
         self.wire_sight();
         let had = self.ai.breaches.contains_key(&breach);
-        if !had && !g.fort.wire.values().any(|w| w.owner != me) {
+        if !had
+            && !g
+                .fort
+                .wire
+                .values()
+                .any(|w| g.teams.hostile_id(me, w.owner))
+        {
             // No enemy wire: nothing to breach.
             return Some(None);
         }
@@ -975,7 +982,7 @@ impl super::Planner<'_> {
         }
         if !had {
             let mut points = self.evaluate_points(&known, &[]);
-            if points[p].rel == Rel::Own {
+            if points[p].rel.friendly() {
                 return Some(None);
             }
             let assigned: Vec<(usize, usize)> = (0..mine.len()).map(|j| (j, p)).collect();

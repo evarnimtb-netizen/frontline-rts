@@ -305,11 +305,13 @@ pub fn net_setup_rules(
                 faction: "ww2:germany".into(),
                 ai,
                 difficulty: Difficulty::Normal,
+                team: None,
             },
             PlayerRequest {
                 faction: "ww2:usa".into(),
                 ai,
                 difficulty: Difficulty::Normal,
+                team: None,
             },
         ],
     };

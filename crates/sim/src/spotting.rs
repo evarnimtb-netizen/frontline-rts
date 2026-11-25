@@ -99,10 +99,16 @@ pub(crate) fn spot(
     for i in 0..n {
         let kind = ents.kind[i];
         if ents.owner[i] != p {
-            enemies += matches!(
-                kind,
-                EntityKind::Soldier | EntityKind::Corpse | EntityKind::Vehicle | EntityKind::Downed
-            ) as u32;
+            // S17a: an ally is neither observer nor target (T2: his own
+            // observers spot for the team).
+            enemies += game.teams.hostile_id(p, ents.owner[i]) as u32
+                * matches!(
+                    kind,
+                    EntityKind::Soldier
+                        | EntityKind::Corpse
+                        | EntityKind::Vehicle
+                        | EntityKind::Downed
+                ) as u32;
             continue;
         }
         let id = SimId(i as u32);
@@ -188,7 +194,9 @@ pub(crate) fn spot(
         // S12: a downed man's marker refreshes as a corpse's does.
         let corpse = matches!(ents.kind[i], EntityKind::Corpse | EntityKind::Downed);
         let vehicle = ents.kind[i] == EntityKind::Vehicle;
-        if !(corpse || vehicle || ents.kind[i] == EntityKind::Soldier) || ents.owner[i] == p {
+        if !(corpse || vehicle || ents.kind[i] == EntityKind::Soldier)
+            || !game.teams.hostile_id(p, ents.owner[i])
+        {
             continue;
         }
         let reserve = if vehicle { 2 * k_max } else { k_max } as u32;

@@ -790,12 +790,12 @@ impl MatchState {
             return true;
         }
         // (d) an enemy seen now within the snap distance.
-        let bit = 1u16 << p.0;
         for i in 0..ents.len() {
             let k = ents.kind[i];
             if !matches!(k, EntityKind::Soldier | EntityKind::Vehicle)
-                || ents.owner[i] == p
-                || ents.combat[i].seen_by & bit == 0
+                || !self
+                    .teams
+                    .enemy_seen(p.0, ents.owner[i].0, ents.combat[i].seen_by)
                 || (k == EntityKind::Soldier && ents.combat[i].hp == 0)
             {
                 continue;
@@ -840,14 +840,13 @@ impl MatchState {
         let cols = intel_cols(self.setup.map.size_m, fm.intel_cell_m) as i32;
         let keep = fm.intel_keep_s as u64 * hz;
         let trench_keep = fm.intel_trench_keep_s as u64 * hz;
+        let teams = self.teams;
         for (p, pl) in self.players.iter_mut().enumerate() {
-            let bit = 1u16 << p;
             for i in 0..ents.len() {
                 let k = ents.kind[i];
                 let soldier = k == EntityKind::Soldier;
                 if !(soldier || k == EntityKind::Vehicle)
-                    || ents.owner[i].0 as usize == p
-                    || ents.combat[i].seen_by & bit == 0
+                    || !teams.enemy_seen(p as u8, ents.owner[i].0, ents.combat[i].seen_by)
                     || (soldier && ents.combat[i].hp == 0)
                 {
                     continue;
@@ -880,7 +879,7 @@ impl MatchState {
         let r = m(fm.cb_near_m);
         let near = self.vehicles.iter().any(|(&v, vs)| {
             ents.kind.get(v.index()) == Some(&EntityKind::Vehicle)
-                && ents.owner[v.index()].0 as usize != owner
+                && self.teams.hostile(owner as u8, ents.owner[v.index()].0)
                 && self.setup.vehicles[vs.type_idx as usize].role
                     == frontline_content::VehicleRole::InfGun
                 && within(ents.transform[v.index()].pos.xy(), p, r)

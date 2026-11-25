@@ -241,12 +241,12 @@ fn wire_index_matches_a_full_scan() {
             let pl = PlayerId(rng.next(2) as u8);
             let q = [
                 fresh.in_wire(forts, a),
-                fresh.in_enemy_wire(forts, a, pl),
+                fresh.in_enemy_wire(forts, a, pl, &crate::teams::Teams::alone(2)),
                 fresh.step_in_wire(forts, a, b),
             ];
             let s = [
                 scan.in_wire(forts, a),
-                scan.in_enemy_wire(forts, a, pl),
+                scan.in_enemy_wire(forts, a, pl, &crate::teams::Teams::alone(2)),
                 scan.step_in_wire(forts, a, b),
             ];
             assert_eq!(q, s, "at {a:?} -> {b:?}");

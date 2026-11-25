@@ -1234,6 +1234,16 @@ enum Rel {
     Own,
     Neutral,
     Enemy,
+    /// S17a A2: held by an ally: priority 0, demand 0, never attacked or
+    /// garrisoned.
+    Ally,
+}
+
+impl Rel {
+    /// Own or an ally's: not a point to take.
+    fn friendly(self) -> bool {
+        matches!(self, Rel::Own | Rel::Ally)
+    }
 }
 
 struct PointEval {
@@ -1610,12 +1620,14 @@ impl Planner<'_> {
     }
 
     fn known_enemies(&self) -> Vec<Known> {
-        let bit = 1u16 << self.me.0;
+        // S17a A5: hostile men the team sees (T2).
+        let teams = &self.g.teams;
+        let me = self.me.0;
         self.ents
             .soldiers()
             .filter(|id| {
                 let i = id.index();
-                self.ents.owner[i] != self.me && self.ents.combat[i].seen_by & bit != 0
+                teams.enemy_seen(me, self.ents.owner[i].0, self.ents.combat[i].seen_by)
             })
             .map(|id| {
                 let i = id.index();
@@ -1747,6 +1759,8 @@ impl Planner<'_> {
     fn buy(&mut self, kv: &[KnownVehicle]) {
         let g = self.g;
         let s = &g.setup;
+        // S17a T9: a player with an ally has the `[teams] pop_pct` share.
+        let pop_cap = g.pop_cap_of(self.me) as i64;
         let p = self.me.0 as usize;
         let faction = &s.factions[s.players[p].faction as usize];
         let ai = &s.rules.ai;
@@ -1992,7 +2006,7 @@ impl Planner<'_> {
             {
                 let ty = &s.squad_types[t as usize];
                 let men = ty.pop(&s.vehicles) as i64;
-                if budget >= ty.cost as i64 && pop + men <= s.rules.pop_cap as i64 {
+                if budget >= ty.cost as i64 && pop + men <= pop_cap {
                     self.ai
                         .emit(self.due, CommandKind::CallIn { squad_type: t });
                     budget -= ty.cost as i64;
@@ -2026,7 +2040,7 @@ impl Planner<'_> {
             {
                 let ty = &s.squad_types[t as usize];
                 let men = ty.pop(&s.vehicles) as i64;
-                if budget >= ty.cost as i64 && pop + men <= s.rules.pop_cap as i64 {
+                if budget >= ty.cost as i64 && pop + men <= pop_cap {
                     self.ai
                         .emit(self.due, CommandKind::CallIn { squad_type: t });
                     budget -= ty.cost as i64;
@@ -2053,7 +2067,7 @@ impl Planner<'_> {
             {
                 let ty = &s.squad_types[h as usize];
                 let men = ty.pop(&s.vehicles) as i64;
-                if budget >= ty.cost as i64 && pop + men <= s.rules.pop_cap as i64 {
+                if budget >= ty.cost as i64 && pop + men <= pop_cap {
                     self.ai
                         .emit(self.due, CommandKind::CallIn { squad_type: h });
                     budget -= ty.cost as i64;
@@ -2158,7 +2172,7 @@ impl Planner<'_> {
                 (wave_tie
                     && s.type_has_tag(t, "heavy_wave")
                     && budget >= ty.cost as i64
-                    && pop + ty.pop(&s.vehicles) as i64 <= s.rules.pop_cap as i64)
+                    && pop + ty.pop(&s.vehicles) as i64 <= pop_cap)
                     .then(|| (g.card_unlock_ticks(t), k))
             };
             let ready_cards: Vec<u16> = cards[r]
@@ -2193,7 +2207,7 @@ impl Planner<'_> {
                 if budget < ty.cost as i64 {
                     return;
                 }
-                if pop + ty.pop(&s.vehicles) as i64 > s.rules.pop_cap as i64 {
+                if pop + ty.pop(&s.vehicles) as i64 > pop_cap {
                     // S4 report: held back by the pop cap.
                     self.ai.counters.pop_cap_holds += 1;
                     return;
@@ -2312,6 +2326,7 @@ impl Planner<'_> {
             let rel = match c.owner {
                 Some(o) if o == self.me => Rel::Own,
                 None => Rel::Neutral,
+                Some(o) if !g.teams.hostile_id(self.me, o) => Rel::Ally,
                 Some(_) => Rel::Enemy,
             };
             let threat = self.threat_at(known, pos);
@@ -2320,19 +2335,21 @@ impl Planner<'_> {
                 .iter()
                 .filter(|v| (v.pos - pos).length_sq_raw() <= armour_r)
                 .count() as u32;
-            let under_capture = c.capturer.is_some_and(|q| q != self.me);
+            let under_capture = c.capturer.is_some_and(|q| g.teams.hostile_id(self.me, q));
             let mut priority = ps.value as i64 * 100 - dist_m(pos, base) / 8;
             priority += match rel {
                 Rel::Neutral => 150,
                 Rel::Enemy => 100,
                 Rel::Own if threat > 0 || under_capture => 80 + threat as i64 * 10,
                 Rel::Own => 20,
+                Rel::Ally => 0,
             };
             let extra = (threat / 4).min(2);
             let demand = match rel {
                 Rel::Own if threat == 0 && !under_capture => 1,
                 Rel::Own | Rel::Neutral => 1 + extra,
                 Rel::Enemy => 2 + extra,
+                Rel::Ally => 0,
             };
             let trench = self.ai.trenches.iter().position(|t| t.point as usize == i);
             let trench_done = trench.is_some_and(|k| {
@@ -2373,6 +2390,10 @@ impl Planner<'_> {
             }
             let cur = self.ai.tasks.get(&m.id).map(|t| t.point);
             for (i, pt) in points.iter().enumerate() {
+                // S17a A2: an ally's point gets no squad.
+                if pt.rel == Rel::Ally {
+                    continue;
+                }
                 let mut score = pt.priority - dist_m(m.lead, pt.pos) / 4;
                 if cur == Some(i as u8) {
                     score += 60;
@@ -2550,7 +2571,7 @@ impl Planner<'_> {
             // S10b-ai Build E: through a swept lane in single file; once
             // every man is past, a squad order gathers the detached men.
             let mut regather = false;
-            if pt.rel != Rel::Own
+            if !pt.rel.friendly()
                 && holds[i].is_none()
                 && let Some(lane) = files[i]
             {
@@ -2619,6 +2640,8 @@ impl Planner<'_> {
                 }
                 Rel::Neutral => (TaskKind::Capture, ring_slot(pt.pos, k)),
                 Rel::Enemy => (TaskKind::Attack, ring_slot(pt.pos, k)),
+                // Never assigned (A2); stand by as on an own point.
+                Rel::Ally => (TaskKind::Defend, ring_slot(pt.pos, k)),
             };
             let target = self.terrain.clamp(target);
             if shelter && self.shelter_men(m.id, target) {
@@ -2729,15 +2752,15 @@ impl Planner<'_> {
     // --------------------------------------------------------- vehicles --
 
     fn known_vehicles(&self) -> Vec<KnownVehicle> {
-        let bit = 1u16 << self.me.0;
+        let teams = &self.g.teams;
+        let me = self.me.0;
         self.g
             .vehicles
             .iter()
             .filter(|(id, _)| {
                 let i = id.index();
                 self.ents.kind[i] == EntityKind::Vehicle
-                    && self.ents.owner[i] != self.me
-                    && self.ents.combat[i].seen_by & bit != 0
+                    && teams.enemy_seen(me, self.ents.owner[i].0, self.ents.combat[i].seen_by)
             })
             .map(|(&id, vs)| {
                 let t = &self.ents.transform[id.index()];
@@ -2882,7 +2905,7 @@ impl Planner<'_> {
     /// infantry assigned to it (then priority), else `None`.
     fn vehicle_point(&self, points: &[PointEval], assigned: &[(usize, usize)]) -> Option<usize> {
         (0..points.len())
-            .filter(|&i| points[i].rel != Rel::Own)
+            .filter(|&i| !points[i].rel.friendly())
             .max_by_key(|&i| {
                 let n = assigned.iter().filter(|a| a.1 == i).count();
                 (n, points[i].priority, -(i as i64))
@@ -2956,7 +2979,7 @@ impl Planner<'_> {
                 continue;
             };
             let point = e.point as usize;
-            if point >= points.len() || points[point].rel == Rel::Own {
+            if point >= points.len() || points[point].rel.friendly() {
                 self.release(&e, v, busy);
                 continue;
             }

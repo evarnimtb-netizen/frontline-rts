@@ -128,6 +128,10 @@ pub struct PlayerRequest {
     pub ai: bool,
     #[serde(default)]
     pub difficulty: Difficulty,
+    /// S17a: team number; none = the player's slot (everyone alone on his
+    /// team: a free-for-all, which with two players is today's 1v1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team: Option<u8>,
 }
 
 /// What the lobby (menu, CLI) asks for. Player `i` starts at the map's
@@ -155,11 +159,13 @@ impl MatchRequest {
                     faction: human.into(),
                     ai: false,
                     difficulty,
+                    team: None,
                 },
                 PlayerRequest {
                     faction: ai.into(),
                     ai: true,
                     difficulty,
+                    team: None,
                 },
             ],
         }
@@ -505,6 +511,8 @@ pub struct RulesSetup {
     pub wounds: WoundsTuning,
     /// S13: `[armour]` (rule O1; or the S13 values).
     pub armour: crate::tuning::ArmourTuning,
+    /// S17a: `[teams]` (or the S17a values).
+    pub teams: crate::tuning::TeamsTuning,
 }
 
 impl RulesSetup {
@@ -701,6 +709,8 @@ pub struct AiSetup {
     pub arty: AiArtyTuning,
     /// S12: `[ai.medic]` (or the S12a values, switches off).
     pub medic: AiMedicTuning,
+    /// S17: `[ai.team]` (or the S17a values, habits off).
+    pub team: crate::tuning::AiTeamTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1455,6 +1465,9 @@ pub struct PlayerSetup {
     pub difficulty: Difficulty,
     /// Index into [`MapSetup::bases`].
     pub base: u8,
+    /// S17a: team number (the request's `team`, else the slot). Players with
+    /// the same number are allies; every other player is hostile.
+    pub team: u8,
 }
 
 // -------------------------------------------------------------- resolve --
@@ -1490,6 +1503,29 @@ impl ModDefs {
                     req.players.len()
                 ),
             ));
+        }
+        // S17a: a team number stays under the player limit, and a match
+        // needs two teams (with every team left out each player is alone).
+        let team_of = |i: usize, p: &PlayerRequest| p.team.unwrap_or(i as u8);
+        for (i, p) in req.players.iter().enumerate() {
+            if p.team.is_some_and(|t| t as usize >= MAX_MATCH_PLAYERS) {
+                issues.push(Issue::new(
+                    format!("players[{i}].team"),
+                    format!("must be under {MAX_MATCH_PLAYERS}"),
+                ));
+            }
+        }
+        if req.players.len() >= 2
+            && req
+                .players
+                .iter()
+                .enumerate()
+                .all(|(i, p)| team_of(i, p) == team_of(0, &req.players[0]))
+        {
+            issues.push(
+                Issue::new("players", "every player is on one team; a match needs two")
+                    .with_hint("give the players at least two different `team` values"),
+            );
         }
         for (i, p) in req.players.iter().enumerate() {
             if !self.factions.contains_key(&p.faction) {
@@ -1987,6 +2023,7 @@ impl ModDefs {
                 is_ai: p.ai,
                 difficulty: p.difficulty,
                 base: i as u8,
+                team: p.team.unwrap_or(i as u8),
             })
             .collect();
 
@@ -2195,6 +2232,7 @@ impl ModDefs {
                         obstacles: a.obstacles.clone().unwrap_or_default(),
                         arty: a.arty.clone().unwrap_or_default(),
                         medic: a.medic.clone().unwrap_or_default(),
+                        team: a.team.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2212,6 +2250,7 @@ impl ModDefs {
                 fortify: rules.fortify.clone(),
                 wounds: rules.wounds.clone().unwrap_or_default(),
                 armour: rules.armour.clone().unwrap_or_default(),
+                teams: rules.teams.clone().unwrap_or_default(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -3095,6 +3134,8 @@ impl MatchSetup {
                 wounds: &r.wounds,
                 ai_medic: &a.medic,
                 armour: &r.armour,
+                teams: &r.teams,
+                ai_team: &a.team,
             },
         );
         r.at_ditch
@@ -3606,7 +3647,17 @@ impl MatchSetup {
                 "players.base",
                 "index out of range",
             );
+            check(
+                (p.team as usize) < MAX_MATCH_PLAYERS,
+                "players.team",
+                "index out of range",
+            );
         }
+        check(
+            self.players.len() < 2 || self.players.iter().any(|p| p.team != self.players[0].team),
+            "players.team",
+            "a match needs two teams",
+        );
         out
     }
 
