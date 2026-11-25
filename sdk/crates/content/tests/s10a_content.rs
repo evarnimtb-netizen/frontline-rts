@@ -136,7 +136,9 @@ fn promoted_capabilities_parse() {
         caps("ww2:ger_sturmpioniergruppe"),
         // S14-ai Build D: `[flame] enabled` 1 in the mod keeps its flame
         // man, so the derived `flame` capability is there.
-        [DigBasic, Recrew, ClearWire, Breach, ClearMines, Demolish, Flame]
+        [
+            DigBasic, Recrew, ClearWire, Breach, ClearMines, Demolish, Flame
+        ]
     );
     assert_eq!(
         caps("ww2:ger_baupioniergruppe"),

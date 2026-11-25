@@ -5,36 +5,35 @@ Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never
 Owner rule 2026-11-25: no balance runs, no tuning; every number a TOML key with a range, behind switches that stay off.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S14a mechanics done (Builds A-C); presenter P and S14-ai next.** SAVE 33 / PROTOCOL 17. Every S14 switch is 0 in
-`mods/ww2/defs/rules/skirmish.toml`. **T185:** `target/s14-C-40` vs `target/s14-base40`, `neutral.py` "same 40/40". R2, R5 hard and
-passing; R1 report only. **Code map (`crates/sim/src/flame.rs`).** Layout and load checks (`Flame`, `Patch`, `Close`, `Clear`,
-`S14Counters`, `close_ok`, `validate_s14`); F1 `spawn_flame` (from `aim_and_fire` requests); F2-F5 `flame_stage` (Ballistics, serial,
-after `fly_thrown`); F6 `walkable`, `step_out_tick` (Status); C1-C5 `order_clear`, `clear_ended_by`, `clear_tick`, `next_step`;
-M1-M5 `melee_of` (weapon `[melee]` block else the rules'), `strike_tick` (called from `combat::aim_and_fire`, per chunk, own fields;
-wind-up end -> `World::strike_bufs`), `order_strike`, `resolve_strikes` (`apply_blows`, after every blow, ascending striker id, via
-`DamageCtx::strikes`). Fuel refill `supply.rs`; flame data `mods/ww2/defs/weapons/{fmw41,m1a1_flamethrower,m2_2_flamethrower}`,
-butt strokes on `kar98k`, `m1_garand`, `m1_carbine`, `bar_m1918a2` (100/50/600/1000) and `mp40`, `m3_smg`, `stg44` (80/40/500/1000).
-Content: `WeaponDef::melee` / `WeaponSetup::melee` (`MeleeDef`), `MeleeTuning` (+ `drop_cm`). Rows `sdk/crates/cli/src/fortify/s14.rs`
-R1 `slit`, R2 `pool`, R3 `trench`, R4 `clear`, R5 `melee`, R6 `under_fire`; `json_out::s14_checks` (R2, R5; R1 while `SLIT_HARD`).
-**Presenter needs.** Snapshot (`RenderSnapshot`): `flame[]`, `patches[]`, `soldier_burning[]`, `soldier_strike[]` (0 none, 1 wind-up,
-2 recovery: the strike pose). Intents: `strike_units {units}` (bridge -> `Strike`; key `V`); `ClearTrench {squad, at}` has no bridge
-intent yet (presenter adds `clear_trench`). Refusals come as `fort_refused` `not_allowed` / `bad_spot`. `godot/docs/match_state.md`
-S14 lists the planned state keys; the mock shows none of it.
-**What S14-ai calls.** `ClearTrench` (C1 refusals: switch, squad, no frag, `bad_spot`), `SuppressUnits` at a slit or trench cell for a
-flame man (F1), `MatchState::flame_men`, `Capability::Flame` (derived). Strikes need no AI (automatic, M2). Switches to turn on:
-`[flame] enabled`, `[melee] enabled`, `[clear] enabled`, `[ai.flame] jobs/refuel/buy/clear`. JSON `s14` block and targets T189-T200.
-**Open owner questions.** (1) R1 slit geometry: particles pass under the bunker's front timbers where the pit lip falls away (also
-the closed control's 18 %). (2) R1 report only: five alert defenders kill the lone flame man (balance pass). (3) R3: the flame man
-walks last and never fires; R6: the MG at 150 m does not keep the trench down (reports). (4) Melee: the plan's level strike from the
-chest passes over a crouched or prone man, and a struck man crouches (hit suppression), so a second strike at him misses;
-`[melee] drop_cm` (default 0, the plan) lowers the far end for a later pass.
-**Deviations (C).** (1) New key `[melee] drop_cm` (above). (2) M2 readiness: the first aim at a new target (half a second times
-training) is not "not ready" (a loaded SMG shoots); a dry counted weapon is always not ready. (3) Start distance: horizontal, to the
-enemy's position, within reach + `start_pad_cm` + body radius; he need not see him. (4) `Strike` asks no readiness or pinned check,
-only no strike running and an enemy in reach. (5) `strike_kills` = struck to 0 HP (downed or killed); `strikes` counted at the
-resolution. (6) A phase runs on if he is pinned or ducks mid-strike. (7) `Strike` ends a squad's clear (Build B's rule). (8) R5: one
-run (no RNG), 50 strikes each way, staged a tick before the wind-up ends, both men restored fresh each strike. (9) `melee_off_is_base`
-compares entity stores (setup bytes are in the state hash). (10) Damage values cite the design doc only. Builds A, B: their sections.
+**State: S14-ai Build D done; Review next.** SAVE 33 / PROTOCOL 17. Every S14 switch is 1 in `mods/ww2/defs/rules/skirmish.toml`
+(`[flame]`, `[melee]`, `[clear] enabled`; `[ai.flame] jobs/refuel/buy/clear`). **T185:** `target/s14-D-off40` (`s14_off.toml`) vs
+`target/s14-base40`: `neutral.py` "same 40/40". **Default 40** (`target/s14-D-40`, breakage read only): no winner 0; length min
+10.65 / median 20.43 / max 31.31 min; no panic; Germany 22 of 40 (reported, not judged). **Code map.** `crates/sim/src/ai/flame.rs`:
+`AiFlameState` (`AiState::flame`: `jobs` by squad, `failed` targets, `cleared` squads), A1 `flame_start` / `flame_continue` /
+`run_flame` (phases Close, Smoke, Go, Burn, Clear; ends `END_*` = `FLAME_END_NAMES`), `flame_target` (bunker slit = roof centre +
+facing x roof half depth; else the known enemy in a dug cell nearest the point), `flame_focus` (the base of fire's aim,
+`ai/assault.rs` beside `breach_focus`), A2 `tank_pct`/`tank_low` (hook in `ai/ammo.rs` refills), A3 `flame_card` (urgent buy after
+the breach card in `ai.rs` `buy`), A4 `flame_clears`; `ai.rs` `throws` skips a squad clearing or with a `ClearTrench` pending (its
+`Regroup` ended the clear). JSON `factions.<f>.s14_derived` (`json_out::s14_derived`); targets T189-T200 (`targets/S14.toml`: T190
+no winner / length 10-40 and T192 `flame_jobs_open_per_match` <= 4 hard, the rest reports); `tools/pool.py` S14 line.
+**S14 rules in the default 40 (ger / usa, totals).** Flame jobs 2 / 4 (ends: usa done 1, deadline 1, weak 1; 2 + 1 open at the end);
+flame buys 8 / 4; refuels 0 / 0; AI clear orders 15 / 9, clears done 3 / 4, clear steps 6 / 3; strikes 24 / 25, strike hits 0 / 0;
+flame fired 0 / 19, flame hits 0 / 1, in a trench or pit 0 / 0 (`flame_matches_pct` 0); burn downs / kills 0 / 2, 0 / 3; patches
+0 / 19; stepped out 6 / 0; capped 0, patches dropped 0.
+**Open owner questions.** (1) Layout: the plan said S14-ai adds no saved field, but A1's deadline, stall and L3 recheck need job
+state; Build D added `AiState::flame` (one field, inside SAVE 33, which is not on main yet; no SAVE bump). Alternative: a stateless
+job read from the men's orders, without L1. (2) Few jobs: a man crouched in a trench is seen only when he rises to fire, so A1's
+"known enemy in a dug cell" is rare; German flame never fired in 40 matches. Widen the target (a known dug cell or enemy trench
+near the point) or leave to the balance pass? (3) A2 never fired: no tank reached the reserve (19 particles in all). Note the
+flamethrower is a crew weapon, so S5a's squad share already is the tank's; A2 adds only "at the reserve, even under threat".
+(4) Strikes 49, hits 0 (Build C question 4: the level strike passes over a crouched man). (5) R1 geometry and R3/R6 as Build C.
+**Deviations (D).** (1) `AiState::flame` (above). (2) Close and Go use `Move`, not `AttackMove` (as the breach stage: an
+AttackMove halts at every enemy in sight and the job stalls). (3) A squad already within `stage_m` skips Close; a flame man
+within `stand_m` burns from where he is. (4) A3: "no live own flame squad" read as none attacking that point, with `cards_max`
+the cap on living flame squads. (5) A4: the *point* within `clear_near_m` of the known trench enemy (the plan's wording), not the
+squad. (6) L3 waits are per target (8 m) for A1 and per squad for A4, both `recheck_s`. (7) Smoke waits `[ai.fort]
+suppress_lead_s` (the breach rule). (8) Test worlds: `flat_world_with` resolves with flame off and calls `s14_off`;
+`real_flame_world` calls `s14_off` then turns flame on (they were written with the switches off).
 
 ## S14a A (Build A)
 Commits: 176525e layout; 8aca2e1 keys, when, class, ablations, targets; 3c55b01 F1-F5, F8, F9; f22d8a1 log, clippy; 4d3b6c1
@@ -78,3 +77,15 @@ and one recovering; s14_rows_feed_the_hard_checks covers R5.
 `tools/check.sh quick a27ce63` at ae3131b: fmt ok, neutral.py ok, every ablate dry run ok (S14 included), tests 1310 passed, 1
 failed (`udp::ipv6_loopback_handshake`, no IPv6 in the cloud, as before); clippy failed on too many arguments of
 `flame::nearest_enemy`, fixed with this log (workspace clippy then clean).
+
+## S14-ai D (Build D)
+Commits: dbb1508 A1-A4, liveness, `AiState::flame`, tests, save fuzz; 28fbc6a `s14_derived`, T189-T200, pool.py; 0fc8d39 switches on,
+canonical snapshot, S14-off test worlds; 496748d tuning.md; 530ceac check fixes; then this log. 40 sets: `target/s14-D-40` (default),
+`target/s14-D-off40` (`s14_off`: neutral.py same 40/40 against `target/s14-base40`).
+Tests added (`crates/sim/src/s14_ai_tests.rs`): ai_flame_job_runs_its_phases, flame_job_ends_when_operator_dies,
+flame_job_ends_on_deadline, flame_job_ends_on_stall, refuel_when_tank_dry, flame_buy_once_per_cap, ai_flames_the_slit,
+ai_clears_after_burn, ai_clear_orders_near_a_trench, flame_ai_hash_is_thread_count_free (1 vs 4 threads, save/load in each phase
+reached), flame_ai_state_saves_and_is_checked; `json_out` s14_derived_reads_per_match; save_fuzz stages a flame job in each phase.
+`tools/check.sh quick a27ce63` at 530ceac: fmt ok, clippy ok, neutral.py ok, every ablate dry run ok, tests 1322 passed, 1 failed
+(`udp::ipv6_loopback_handshake`, no IPv6 in the cloud, as before). Step 5 (rules that never fired: A2 refuel, strike hits, German
+flame) not investigated further for lack of room: see the open questions above.
