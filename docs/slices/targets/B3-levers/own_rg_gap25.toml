@@ -1,0 +1,8 @@
+# B3 lever, OWNER CLASS (B2-9, still open): [items] rifle_grenade_gap_s
+# 15 -> 25, the B2 lever `rg_gap25` unchanged. B2 measured HE -0.8 (480) and
+# -1.0 (fresh 320) on the old kills metric, Germany unchanged. Screened again
+# because the metric is now casualties; it enters a candidate set only when
+# docs/TODO.md shows B2-9 answered or assumed (A). Own counter: rifle grenades
+# fired a match per side.
+[items]
+rifle_grenade_gap_s = 25

@@ -1,0 +1,13 @@
+target/b3/s3101/c_he.json: 160 matches, Germany 50.0 %, HE share of casualties 26.63, median 19.7 min
+  germany casualties caused 63.7 a match, HE 34.4 %: tank_he 13.51 (outright 7.56, downs 5.96) mortar 5.69 (outright 0.72, downs 4.97) rifle_grenade 2.71 (outright 1.58, downs 1.13)
+    HE rounds 191.7, base-gun rounds 19.4 (howitzer 6.1), shells 5.17 % of income, budget holds 71.2, gun missions 4.47, rifle grenades fired 6.16
+    base-gun direct rounds 8.1, direct holds 142.7, gun kills 4.67
+    S13 cards bought in matches: ger_panther_g 25.6 % ger_tiger_1 8.8 %; heavy plans 140 buys 59 drops 21
+    vehicle and gun cards a match: ger_lefh18 0.92 ger_leig18 1.02 ger_opel_blitz 1.10 ger_pak40 1.98 ger_panther_g 0.28 ger_pz4_h 0.70 ger_sdkfz234_1 1.79 ger_sdkfz251_1 0.09 ger_stug3_g 0.16 ger_tiger_1 0.09
+    own downs: stabilised 3.4 %, bled out 49.5 %, killed while down 40.8 %; mortar 14.6 % and all vehicles 34.1 % of its kills
+  usa casualties caused 79.6 a match, HE 21.3 %: tank_he 6.21 (outright 3.46, downs 2.76) mortar 5.85 (outright 0.92, downs 4.93) rifle_grenade 4.91 (outright 2.53, downs 2.38)
+    HE rounds 43.1, base-gun rounds 12.0 (howitzer 4.5), shells 5.83 % of income, budget holds 123.8, gun missions 1.79, rifle grenades fired 8.29
+    base-gun direct rounds 4.4, direct holds 213.7, gun kills 3.52
+    S13 cards bought in matches: usa_m36 1.2 % usa_m4a3_76w 0.0 % usa_m4a3e2 31.2 %; heavy plans 136 buys 62 drops 24
+    vehicle and gun cards a match: usa_105mm_m2a1 0.89 usa_105mm_m3 1.01 usa_57mm_m1 1.81 usa_cckw 0.93 usa_m10 0.07 usa_m36 0.01 usa_m3a1 0.02 usa_m4a3_75 0.47 usa_m4a3e2 0.39 usa_m8 1.49
+    own downs: stabilised 3.6 %, bled out 46.0 %, killed while down 44.8 %; mortar 12.4 % and all vehicles 27.2 % of its kills

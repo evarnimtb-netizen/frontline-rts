@@ -1,0 +1,8 @@
+# B3 lever (tier 1, goal 2 heavies; H1 timing, item 5 of S13 plan 7).
+# [ai.armour] heavy_save_max_s 240 -> 360 (range 240-360). Why: of 417 German
+# heavy plans on 480 matches 141 end in a buy and 99 are dropped at 240 s
+# (USA 416 / 184 / 89); 240 s of income is 960-1200 MP, the Panther costs 1050
+# and the Tiger 1200. Risk: no other buy but the urgent ones for up to 6
+# minutes. Own counter: heavy_drops, and Panther / Tiger / Jumbo matches.
+[ai.armour]
+heavy_save_max_s = 360

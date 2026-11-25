@@ -1,0 +1,10 @@
+# B3 run 2 candidate C_he (docs/slices/B3-run-2.md): code_direct_budget_cap6
+# + own_m17_160_64 (B3-2 (A)). Screen: cap6 HE 28.01 -> 26.56, Germany -0.6;
+# m17 HE -0.36, Germany +0.6. Same keys as the two lever files.
+[ai.arty]
+direct_in_budget = 1
+shell_mp_max_pct = 6
+
+[defs.ammo."ww2:m17_rifle_grenade".he]
+blast_radius_cm = 160
+frag_count = 64

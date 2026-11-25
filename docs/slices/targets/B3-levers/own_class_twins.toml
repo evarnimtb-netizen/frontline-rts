@@ -1,0 +1,11 @@
+# B3 lever, OWNER CLASS (B3-4 = S13-1b, S13-F1): the two old rounds that are
+# twins of rounds S13 already classed get the same obliquity class. The 7.5 cm
+# PzGr 40 (PaK 40, Panzer IV, StuG; APCR as the PzGr 40/42) and the 3-inch M62
+# (M10, 3-inch M5; the 76 mm M62's projectile). No plate and no penetration
+# row changes: only `slope_class`, the opt-in of rule O1. Read with
+# `queue.sh armour own_class_twins` (case 45 and every check that moves), not
+# on a 160 set.
+[defs.ammo."ww2:75mm_pzgr40"]
+slope_class = "apcr"
+[defs.ammo."ww2:3in_m62"]
+slope_class = "apcbc"

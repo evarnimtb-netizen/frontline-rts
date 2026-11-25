@@ -984,6 +984,26 @@ fn load_rejects_bad_fort_state() {
     }
 }
 
+/// B3 run 2 cut the M17 rifle grenade's burst (blast 160 cm, 64 fragments;
+/// B3-2 (A)). This test's match was found with the Mk 2 hand grenade's
+/// burst it had before: restore that blast radius and fragment count.
+fn m17_burst_pre_b3(s: &mut frontline_content::MatchSetup) {
+    let mk2 = s
+        .items
+        .iter()
+        .find(|i| i.id == "ww2:mk2_grenade")
+        .and_then(|i| i.he.as_ref())
+        .map(|h| (h.blast.blast_radius, h.blast.frag_count))
+        .expect("the Mk 2 grenade's burst");
+    let m17 = s
+        .ammo
+        .iter_mut()
+        .find(|a| a.id == "ww2:m17_rifle_grenade")
+        .and_then(|a| a.blast.as_mut())
+        .expect("the M17's burst");
+    (m17.blast.blast_radius, m17.blast.frag_count) = mk2;
+}
+
 #[test]
 fn empty_fort_state_changes_nothing() {
     // An AI-vs-AI skirmish on the real map (hills, woods) for 15 game
@@ -1014,6 +1034,8 @@ fn empty_fort_state_changes_nothing() {
         // S12b Build C: and wounds and the medic AI (found without).
         setup.s12_off();
         setup.s13_off();
+        // B3 run 2: and the M17's old burst (the fight was found with it).
+        m17_burst_pre_b3(&mut setup);
         // S11a1 Build C: and the artillery AI (the fight was found without).
         let a = &mut setup.rules.ai.arty;
         (a.buy, a.fo, a.prep) = (0, 0, 0);

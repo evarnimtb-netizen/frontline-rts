@@ -346,7 +346,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 31,
+        version: 32,
         state: w.state(),
     });
     assert!(
@@ -501,6 +501,26 @@ fn save_roundtrip_carries_s11a2_state() {
     println!("s11a2 roundtrip: marker and counter-fire held at tick {tick}");
 }
 
+/// B3 run 2 cut the M17 rifle grenade's burst (blast 160 cm, 64 fragments;
+/// B3-2 (A)). This test's match was found with the Mk 2 hand grenade's
+/// burst it had before: restore that blast radius and fragment count.
+fn m17_burst_pre_b3(s: &mut frontline_content::MatchSetup) {
+    let mk2 = s
+        .items
+        .iter()
+        .find(|i| i.id == "ww2:mk2_grenade")
+        .and_then(|i| i.he.as_ref())
+        .map(|h| (h.blast.blast_radius, h.blast.frag_count))
+        .expect("the Mk 2 grenade's burst");
+    let m17 = s
+        .ammo
+        .iter_mut()
+        .find(|a| a.id == "ww2:m17_rifle_grenade")
+        .and_then(|a| a.blast.as_mut())
+        .expect("the M17's burst");
+    (m17.blast.blast_radius, m17.blast.frag_count) = mk2;
+}
+
 /// S11b Build C: a played save with the S11b switches on (howitzer
 /// buy, light mortars, rifle grenades, counter-fire turns, pending
 /// call-ins) carries real S11b state: the match is saved and loaded every
@@ -530,6 +550,8 @@ fn save_roundtrip_carries_s11b_state() {
     // S11b fix: the AI's light mortars are off by default (S11b-14); this
     // test of saved S11b state turns them on.
     s.rules.ai.arty.light = 1;
+    // B3 run 2: the state was found with the M17's old burst.
+    m17_burst_pre_b3(&mut s);
     let how = s.tag("field_howitzer");
     let mut w = World::new_match(s, 1).unwrap();
     let has_how = |w: &World| {

@@ -719,7 +719,7 @@ impl S10bAiSeen {
 
 /// S11a1 (docs/slices/S11a1.md 3, 7): the AI's S11a1 counters in report
 /// order (names of [`S11a1Player::ai`]).
-pub const S11A1_AI: [&str; 14] = [
+pub const S11A1_AI: [&str; 15] = [
     "arty_buys",
     "fo_buys",
     "arty_missions",
@@ -734,6 +734,7 @@ pub const S11A1_AI: [&str; 14] = [
     "fo_lost",
     "breach_prep_waits",
     "breach_prep_timeouts",
+    "arty_direct_holds",
 ];
 
 /// S11a1 numbers of one player in one match.
@@ -742,7 +743,7 @@ pub struct S11a1Player {
     /// The player's infantry-gun counters (saved in the sim).
     pub s11: frontline_sim::fire_mission::S11Counters,
     /// [`S11A1_AI`] order (zero for a human).
-    pub ai: [u32; 14],
+    pub ai: [u32; 15],
     /// Review B-1: every fire-mission refusal of a gun squad (any kind),
     /// read from the refusal events (the sim counts only `masked` and
     /// `not_ready`).
@@ -751,7 +752,7 @@ pub struct S11a1Player {
 
 impl S11a1Player {
     /// The S11a1 counters of `a` in [`S11A1_AI`] order.
-    pub fn ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 14] {
+    pub fn ai_counters(a: &frontline_sim::ai::AiCounters) -> [u32; 15] {
         [
             a.arty_buys,
             a.fo_buys,
@@ -767,6 +768,7 @@ impl S11a1Player {
             a.fo_lost,
             a.breach_prep_waits,
             a.breach_prep_timeouts,
+            a.arty_direct_holds,
         ]
     }
 }
@@ -795,7 +797,7 @@ pub struct S11a1Faction {
     /// Review B-1: gun-squad refusals of every kind.
     pub gun_refused: u64,
     /// [`S11A1_AI`] order.
-    pub ai: [u64; 14],
+    pub ai: [u64; 15],
     /// The faction's kills and income (MP) over the run (denominators).
     pub kills: u64,
     pub income_mp: u64,
@@ -2683,7 +2685,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                 s5b: pl.fm,
                 s11a1: S11a1Player {
                     s11: pl.s11,
-                    ai: ai.map_or([0; 14], |a| S11a1Player::ai_counters(&a.counters)),
+                    ai: ai.map_or([0; 15], |a| S11a1Player::ai_counters(&a.counters)),
                     gun_refused: gun_refused.get(p).copied().unwrap_or(0),
                 },
                 s11a2: S11a2Player {

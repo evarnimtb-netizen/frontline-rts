@@ -1,0 +1,6 @@
+# B3 lever, OWNER CLASS (B3-3 option B; optional): M36 `ai_weight` 100 -> 150.
+# The vehicle slot then picks and saves for the M36 (760) first once it is
+# unlocked, and the Sherman (590) second: with about 0.5 slot buys a match the
+# Sherman would fall from 45 % of matches. Own counter: M36 and Sherman matches.
+[defs.units."ww2:usa_m36_squad"]
+ai_weight = 150

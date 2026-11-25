@@ -1,0 +1,11 @@
+# B3 lever, OWNER CLASS (B3-2; figures of S11b-7 are "owner to confirm"): the
+# M17 rifle grenade's burst from the Mk 2 hand grenade's block (blast 200 cm,
+# 96 fragments) to blast 160 cm, 64 fragments (the German Gewehr-Sprenggranate
+# has 160 cm, 48). Why: at the S13 head a US grenade takes 0.73 men out of the
+# fight per grenade fired (5.9 a match, 7.2 % of all the USA's casualties
+# caused), a German one 0.43 (2.7 a match); the M17's blast radius is larger
+# than a 105 mm shell's (175 cm). No plate or penetration value changes.
+# Own counter: US rifle-grenade casualties a match (paired.py --counters).
+[defs.ammo."ww2:m17_rifle_grenade".he]
+blast_radius_cm = 160
+frag_count = 64

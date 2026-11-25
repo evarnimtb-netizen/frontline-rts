@@ -1,0 +1,5 @@
+# B3 lever (tier 1, goal 1; optional). [ai.arty] mission_rounds 4 -> 3
+# (range 3-4): an AI gun mission is one round shorter (6.5 missions a match
+# for Germany's guns). Own counter: base-gun rounds a match.
+[ai.arty]
+mission_rounds = 3

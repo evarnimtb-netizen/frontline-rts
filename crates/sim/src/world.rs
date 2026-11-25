@@ -481,7 +481,9 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// special_min_pct`, the S13 `[ai.armour]` keys, `AmmoSetup::slope_class`,
 /// `SquadTypeSetup::ai_heavy` and `VehicleSetup::ai_overwatch`). One bump for
 /// the whole slice.
-const SAVE_VERSION: u32 = 31;
+/// 32: B3 code (`AiCounters::arty_direct_holds`; in the setup `[ai.arty]
+/// direct_in_budget`).
+const SAVE_VERSION: u32 = 32;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -2987,6 +2989,9 @@ impl World {
 #[path = "s6_tests.rs"]
 mod s6_tests;
 
+#[cfg(test)]
+#[path = "b3_tests.rs"]
+mod b3_tests;
 #[cfg(test)]
 #[path = "s10a_ai_tests.rs"]
 mod s10a_ai_tests;

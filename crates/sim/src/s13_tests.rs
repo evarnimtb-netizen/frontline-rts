@@ -93,7 +93,8 @@ fn s13_setup_keys_are_hashed_and_checked() {
     let ap = base
         .ammo
         .iter()
-        .position(|a| a.mechanism == AmmoMechanism::Aphe)
+        // B3 run 2 classes the 3-inch M62 (aphe): an unclassed one.
+        .position(|a| a.mechanism == AmmoMechanism::Aphe && a.slope_class.is_none())
         .expect("an aphe round");
     let he = base
         .ammo
@@ -475,7 +476,8 @@ fn t151h_old_rounds_are_unchanged() {
         },
     );
     assert_eq!(s.rules.armour.obliquity, 1);
-    // S13a Build B: the seven new AP rounds are classed; every other table
+    // S13a Build B: the seven new AP rounds are classed (B3 run 2, B3-4 (A):
+    // and their two old twins, 7.5 cm PzGr 40 and 3-inch M62); every other table
     // (all the old rounds, the HE rounds) is equal with the rule on and off,
     // and a classed round is the only difference.
     let mut on_old = on.clone();
@@ -489,7 +491,7 @@ fn t151h_old_rounds_are_unchanged() {
         }
     }
     assert_eq!(on_old, off);
-    assert_eq!(s.ammo.iter().filter(|a| a.slope_class.is_some()).count(), 7);
+    assert_eq!(s.ammo.iter().filter(|a| a.slope_class.is_some()).count(), 9);
     let mut a = s.ammo[0].clone();
     a.mechanism = AmmoMechanism::Aphe;
     a.slope_class = Some(SlopeClass::Apcbc);

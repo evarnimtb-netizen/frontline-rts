@@ -20,6 +20,8 @@ drag_coeff = 0
 penetration = [[100, 118], [457, 114], [914, 108], [1371, 101], [1829, 92]]
 pen_reference_angle_deg = 0
 ricochet_angle_deg = 70
+# B3 run 2 (B3-4 (A), S13-1b): O1 class of the twin of 76mm_m62 (the same projectile); armour case 45.
+slope_class = "apcbc"
 # As the M61 (S3b): damage to a struck barrel and to a track in the band.
 nonpen_damage = 40
 track_damage = 60

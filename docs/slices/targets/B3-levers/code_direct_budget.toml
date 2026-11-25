@@ -1,0 +1,12 @@
+# B3 code lever (goal 1 HE share; symmetric AI switch; needs the B3 code
+# commit, SAVE 32). [ai.arty] direct_in_budget 0 -> 1. Why: run 1's
+# he_shell_cap6 held missions but the base guns then fired over open sights
+# (direct rounds 10.4->14.7 / 6.9->11.1 a match), which the budget did not
+# hold, and HE rose. With the switch an AI gun over shell_mp_max_pct also
+# holds direct fire beyond [vehicles.guns] self_defence_m (40 m; struck, or
+# enemy armour known within [ai.guns] engage_still_m: no hold). At the
+# shipped 25 % the budget rarely binds (holds 0 at the S13 head), so this
+# alone should move little: it is the control for code_direct_budget_cap6.
+# Own counter: base-gun direct rounds and direct holds (paired.py --counters).
+[ai.arty]
+direct_in_budget = 1

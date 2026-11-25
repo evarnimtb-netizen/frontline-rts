@@ -1577,7 +1577,7 @@ fo_max = 1                   # A3: observer teams alive at once
 fo_rebuy_s = 180             # s (A3): wait after an observer team is lost
 mission_rounds = 4           # A4: rounds of one AI gun mission
 reserve_pct = 30             # % (A4, A5): no new mission at or under this share of the gun's HE (D 6.4)
-shell_mp_max_pct = 25        # % (A5): gun shells cost at most this share of the income so far (D 6.4)
+shell_mp_max_pct = 6         # % (A5): gun shells cost at most this share of the income so far (D 6.4; B3 run 2: 25 -> 6 with direct_in_budget 1, HE share of casualties 27.90 -> 26.05 on 320 fresh pairs)
 danger_close_m = 50          # m (A4, A6): own men this close to the target: no mission, or lift (D 4.5)
 post_m = 300                 # m (A3): the first post candidate this far short of the point ...
 post_side_m = 60             # m: ... and this far either side
@@ -1602,6 +1602,8 @@ how_max = 1                  # H1: howitzers alive or called in at once (D 789, 
 how_income_pct = 15          # % (H1): howitzer cards cost at most this share of the income so far, apart from income_max_pct (S11b-3; 0..100)
 how_reserve_mp = 300         # H1: manpower that stays after the howitzer buy (plan value, S11b-13; 0..100000)
 light = 0                    # L1 switch: cards tagged light_mortar join the mortar slot of the buy mix (0..1); 0: the AI buys none, a human can (S11b-14: Germany 11/40 with it on)
+# B3 code (docs/slices/B3-log.md): direct fire inside the shell budget; 0 = as before. B3 run 2 applies 1 (B3-run-2.md).
+direct_in_budget = 1         # switch (0..1): over shell_mp_max_pct an AI gun holds direct fire beyond [vehicles.guns] self_defence_m (struck, or enemy armour known within [ai.guns] engage_still_m: no hold)
 
 # S5b: mortar fire missions (docs/modding/fire-missions.md; design
 # artillery-on-map.md §4.1 fire modes, §4.8 flight time). A mission is fired

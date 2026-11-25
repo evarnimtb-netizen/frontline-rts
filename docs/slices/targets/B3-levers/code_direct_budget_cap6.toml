@@ -1,0 +1,11 @@
+# B3 code lever (goal 1 HE share; symmetric AI keys; needs the B3 code
+# commit, SAVE 32). [ai.arty] direct_in_budget 0 -> 1 and shell_mp_max_pct
+# 25 -> 6: he_shell_cap6 with its leak closed. Over the 6 % budget an AI gun
+# neither starts missions nor fires over open sights beyond
+# [vehicles.guns] self_defence_m (40 m; struck, or enemy armour known within
+# [ai.guns] engage_still_m: no hold). Own counter: base-gun rounds, direct
+# rounds, budget holds and direct holds (paired.py --counters); compare with
+# he_shell_cap6 (run 1: HE 28.01 -> 28.67, direct rounds up).
+[ai.arty]
+direct_in_budget = 1
+shell_mp_max_pct = 6
