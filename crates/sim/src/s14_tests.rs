@@ -55,7 +55,14 @@ pub(super) fn staged() -> (World, SquadId, SimId, SimId) {
     let (burn, strike) = (m[1], m[2]);
     let tick = w.tick();
     let cell = dug_cell(&w);
-    let wpn = 0u16;
+    // A Flame-class weapon (S14 Fix 16: the load check asks for one).
+    let wpn = w
+        .match_setup()
+        .unwrap()
+        .weapons
+        .iter()
+        .position(|x| x.class == frontline_content::WeaponClass::Flame)
+        .unwrap() as u16;
     let s = &mut w.state;
     *close(s, burn) = Close {
         burn_until: tick + 60,
@@ -315,13 +322,17 @@ fn load_rejects_bad_s14_keys() {
         Box::new(|s| s.rules.flame.patches_max = 64),
         Box::new(|s| s.rules.flame.step_out = 0),
         Box::new(|s| s.rules.flame.step_out_m = 3),
+        Box::new(|s| s.rules.flame.patches = 0),
+        Box::new(|s| s.rules.flame.aim_cm = 50),
+        Box::new(|s| s.rules.flame.slit_near_cm = 0),
         Box::new(|s| s.rules.melee.enabled = 1),
         Box::new(|s| s.rules.melee.reach_cm = 100),
         Box::new(|s| s.rules.melee.damage = 50),
         Box::new(|s| s.rules.melee.windup_ms = 600),
         Box::new(|s| s.rules.melee.recover_ms = 900),
         Box::new(|s| s.rules.melee.start_pad_cm = 20),
-        Box::new(|s| s.rules.melee.drop_cm = 40),
+        Box::new(|s| s.rules.melee.down_cm = 40),
+        Box::new(|s| s.rules.melee.up_cm = 40),
         Box::new(|s| s.rules.clear.enabled = 1),
         Box::new(|s| s.rules.clear.step_m = 6),
         Box::new(|s| s.rules.clear.steps_max = 4),
@@ -1064,6 +1075,51 @@ fn men_step_out_of_burning_ground() {
     }
 }
 
+/// F6 (S14 Fix 8): a squad marching across burning ground keeps its men
+/// (none steps out; they walk on with it). Control: the same squad
+/// holding on the patch steps out (`men_step_out_of_burning_ground`).
+#[test]
+fn marching_squad_keeps_its_men() {
+    let (mut w, sq, ..) = flame_scene(1, 0, |s| {
+        (s.rules.flame.patch_hp_per_s, s.rules.flame.burn_hp_per_s) = (0, 0);
+    });
+    steps(&mut w, 2);
+    super::s6_tests::run(
+        &mut w,
+        0,
+        0,
+        CommandKind::Move {
+            squad: sq,
+            target: FxVec2::from_int(360, 300),
+        },
+    );
+    steps(&mut w, 30);
+    let lead = members(&w, sq)[0];
+    let at = w.state.entities.transform[lead.index()].pos;
+    let tick = w.tick();
+    let g = game_mut(&mut w.state);
+    g.patches = vec![Patch {
+        id: 0,
+        pos: at + FxVec3::new(Fx::from_int(4), Fx::ZERO, Fx::ZERO),
+        ends_at: tick + 900,
+        player: 1,
+        by: (1, kill_class::FLAME),
+    }];
+    g.next_patch = 1;
+    steps(&mut w, 150);
+    assert_eq!(
+        s14_of(&w, 0).stepped_out,
+        0,
+        "nobody steps out on the march"
+    );
+    assert!(
+        members(&w, sq)
+            .iter()
+            .all(|m| !w.state.entities.unit[m.index()].detached),
+        "no man left behind"
+    );
+}
+
 /// F6: a man with a move order of his own (detached, moving) and a gun
 /// crew or rider are left alone; only men in formation or idle step out.
 /// Control: the same man idle steps out (previous test).
@@ -1270,6 +1326,60 @@ fn downed_man_keeps_burning() {
     assert_eq!(p1.s14.burn_downs, 1);
 }
 
+/// S14 Fix 7: a burn of 0 HP a pulse is suppression only: a downed man
+/// burning at `burn_hp_per_s` 0 lies on (no `hurt`, which kills a downed
+/// man, W3). Control: at 15 HP/s the next pulse kills him.
+#[test]
+fn zero_hp_burn_spares_a_downed_man() {
+    for hp_s in [0u32, 15] {
+        let (mut w, sq, ..) = flame_scene(1, 0, |s| {
+            s.rules.wounds.enabled = 1;
+            s.rules.flame.step_out = 0;
+            s.rules.flame.burn_hp_per_s = hp_s;
+        });
+        steps(&mut w, 2);
+        let m = members(&w, sq)[5];
+        assert!(w.down_soldier(m, (1, kill_class::RIFLE)));
+        set_burning(&mut w, m, 900);
+        steps(&mut w, 60);
+        let k = w.state.entities.kind[m.index()];
+        if hp_s == 0 {
+            assert_eq!(k, crate::ecs::EntityKind::Downed, "0 HP: he lies on");
+        } else {
+            assert_eq!(k, crate::ecs::EntityKind::Corpse, "control: killed");
+        }
+    }
+}
+
+/// S14 Fix 7: the switch `[flame] patches` 0 makes no burning ground (the
+/// `no_patches` ablation): a flame man firing at the ground makes no patch
+/// and burns nobody there. Control: `patches` 1 makes patches.
+#[test]
+fn patches_switch_makes_no_ground_fire() {
+    for on in [0u32, 1] {
+        let (mut w, _sq, man, _) = flame_scene(1, 0, |s| s.rules.flame.patches = on);
+        steps(&mut w, 2);
+        super::s6_tests::run(
+            &mut w,
+            0,
+            0,
+            CommandKind::SuppressUnits {
+                units: vec![man],
+                line: vec![FxVec2::from_int(315, 299), FxVec2::from_int(315, 301)],
+            },
+        );
+        steps(&mut w, 90);
+        let k = s14_of(&w, 0);
+        assert!(k.flame_fired > 0, "{k:?}");
+        if on == 0 {
+            assert_eq!(k.patches_made, 0, "{k:?}");
+            assert!(w.game().unwrap().patches().is_empty());
+        } else {
+            assert!(k.patches_made > 0, "control: {k:?}");
+        }
+    }
+}
+
 /// F5, F8 (S14-1 (A)): an own patch that kills an own man is own fire, not
 /// a kill (no `kills_by`, no `burn_kills`, no `patch_hits`; S11a2
 /// `ff_kills`). Control: an enemy patch kills him as a FLAME kill.
@@ -1470,6 +1580,38 @@ fn dry_flamer_draws_his_sidearm() {
         } else {
             assert!(!on_side && fired > 0, "control: he flames");
         }
+    }
+}
+
+/// M2 (S14 Fix 3): a dry flame man (no fuel) with an enemy 0.8 m off
+/// draws his P 38 (the dry fire path) instead of striking: he is on his
+/// sidearm within a second. Control: the dry man with no enemy near draws
+/// too (the S5a rule).
+#[test]
+fn dry_man_in_reach_draws_his_sidearm() {
+    for near in [true, false] {
+        let mut w = real_flame_world(|s| s.rules.melee.enabled = 1);
+        let (_sq, man, _wi, k, _) = sturm(&mut w, 0, 300, 300);
+        let us = spawn(&mut w, 1, US_RIFLES, 340, 360);
+        let foe = members(&w, us)[0];
+        assert!(w.edit_soldier(man, |kit, c| {
+            kit.rounds[k] = 0;
+            c.mag = 0;
+        }));
+        let at = FxVec2::from_int(300, 300);
+        let foe_at = if near {
+            at + FxVec2::new(Fx::from_milli(800), Fx::ZERO)
+        } else {
+            FxVec2::from_int(340, 360)
+        };
+        let mut on_side = false;
+        for _ in 0..30 {
+            w.place_soldier(man, at);
+            w.place_soldier(foe, foe_at);
+            w.step(&[]);
+            on_side |= w.state.entities.kit[man.index()].on_sidearm;
+        }
+        assert!(on_side, "near {near}: he draws his sidearm");
     }
 }
 
@@ -1706,8 +1848,23 @@ fn load_rejects_bad_s14_state_more() {
             "flame shooter out of range",
             Box::new(|s| game_mut(s).flame[0].shooter = SimId(u32::MAX)),
         ),
+        (
+            "flame of a weapon not Flame-class",
+            Box::new(|s| game_mut(s).flame[0].weapon = 0),
+        ),
+        (
+            "flame speed out of bounds",
+            Box::new(|s| game_mut(s).flame[0].vel.x = Fx::from_int(5000)),
+        ),
+        (
+            "flame height out of bounds",
+            Box::new(|s| game_mut(s).flame[0].pos.z = Fx::from_int(-5000)),
+        ),
+        (
+            "strike point off the map",
+            Box::new(move |s| close(s, strike).strike_at.x = Fx::from_int(-5)),
+        ),
     ];
-    let _ = strike;
     for (name, e) in cases {
         let mut x = World::load(&bytes, 1).unwrap();
         e(&mut x.state);
@@ -1788,6 +1945,31 @@ fn clear_trench_walks_the_trench() {
     assert!(cells.iter().any(|c| c.0 > 78), "round the bend: {cells:?}");
 }
 
+/// C3 (S14 Fix 11): the first step point is the entry cell (the enemy the
+/// order names stands there), not one `step_m` past it: the squad's
+/// first throws go where he is. Control: the second step is a different
+/// cell along the trench.
+#[test]
+fn clear_first_step_is_the_entry_cell() {
+    let (mut w, sq) = clear_scene(|_| {});
+    order_clear(&mut w, sq, FxVec2::from_int(310, 300));
+    let entry = clear_of(&w, sq).expect("accepted").from;
+    let mut cells = Vec::new();
+    for _ in 0..120 * super::s6_tests::HZ {
+        w.step(&[]);
+        match clear_of(&w, sq) {
+            Some(c) if c.phase == 1 && cells.len() < c.step as usize => cells.push(c.cell),
+            Some(_) => {}
+            None => break,
+        }
+        if cells.len() >= 2 {
+            break;
+        }
+    }
+    assert_eq!(cells.first(), Some(&entry), "{cells:?}");
+    assert!(cells.len() == 2 && cells[1] != entry, "control: {cells:?}");
+}
+
 /// C1: a point farther than 8 m from any dug cell is refused (`BadSpot`),
 /// and a squad with no frag is refused. Control: the same squad at the
 /// trench is accepted.
@@ -1842,10 +2024,12 @@ fn clear_ends_on_new_order() {
     }
 }
 
-/// C3 (S14-7 (A)): with `[flame]` on, the squad's flame man fires at the
-/// step point and the squad waits until no own patch burns within 2 m of
-/// it, longer than the fuse and `settle_s`. Control: with the switch off
-/// (no flame man, no patch) the wait is the fuse and `settle_s`.
+/// C3 (S14-7 (A)): with `[flame]` on, the squad's flame man fires one
+/// burst at the step point (S14 Fix 5: no more than his weapon's
+/// `burst_rounds` particles by the advance) and the squad waits until no
+/// own patch burns within 2 m of it, longer than the fuse and
+/// `settle_s`. Control: with the switch off (no flame man, no patch) the
+/// wait is the fuse and `settle_s`.
 #[test]
 fn clear_waits_for_own_fire() {
     let mut waits = Vec::new();
@@ -1876,11 +2060,50 @@ fn clear_waits_for_own_fire() {
         }
         let wait = wait.unwrap_or_else(|| panic!("on {on}: a step waited and advanced"));
         if on == 1 {
-            assert!(s14_of(&w, 0).flame_fired > 0, "he fired at the point");
+            let fired = s14_of(&w, 0).flame_fired;
+            let s = w.match_setup().unwrap();
+            let burst = s
+                .weapons
+                .iter()
+                .find(|x| x.id == "ww2:fmw41")
+                .unwrap()
+                .burst_rounds;
+            assert!(fired > 0, "he fired at the point");
+            assert!(fired <= burst, "one burst a step: {fired} of {burst}");
         }
         waits.push(wait);
     }
     assert!(waits[1] > waits[0], "own fire holds the squad: {waits:?}");
+}
+
+/// S14 Fix 6: a clear whose step cell a crater levels (no longer dug)
+/// ends in the same tick, so a save never holds a clear the load check
+/// refuses; the save loads. Control: with no crater the clear runs on.
+#[test]
+fn clear_ends_when_its_cell_is_levelled() {
+    for crater in [false, true] {
+        let (mut w, sq) = clear_scene(|_| {});
+        order_clear(&mut w, sq, FxVec2::from_int(310, 290));
+        for _ in 0..120 * super::s6_tests::HZ {
+            w.step(&[]);
+            if clear_of(&w, sq).is_some_and(|c| c.phase == 1) {
+                break;
+            }
+        }
+        let c = clear_of(&w, sq).expect("mid-step");
+        if crater {
+            let s = crate::terrain::SPACING_M;
+            let at = FxVec2::from_int(c.cell.0 as i32 * s, c.cell.1 as i32 * s);
+            let tick = w.tick();
+            w.state
+                .terrain
+                .crater_cut(at, Fx::from_int(3), Fx::from_milli(900), tick);
+            w.refresh_hashes();
+        }
+        w.step(&[]);
+        assert_eq!(clear_of(&w, sq).is_none(), crater, "crater {crater}");
+        World::load(&w.save(), 1).expect("the save loads");
+    }
 }
 
 /// C1: with `[clear] enabled` 0 the order is refused and nothing starts.

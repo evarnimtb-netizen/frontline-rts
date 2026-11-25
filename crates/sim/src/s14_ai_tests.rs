@@ -44,13 +44,31 @@ fn flame_ai_world(threads: usize, edit: impl FnOnce(&mut MatchSetup)) -> World {
     s.factions.iter_mut().for_each(|f| f.start_squads.clear());
     s.squad_types.iter_mut().for_each(|t| t.ai_weight = 0);
     s.rules.clear.enabled = 1;
-    // Every gun but the flamethrowers hurts and frightens nobody: the
-    // defenders fire (a man in a trench is seen when he rises to fire)
-    // and the scene lasts until the flame decides it.
-    for wp in s.weapons.iter_mut() {
+    // Every gun but the flamethrowers hurts nobody; the US guns still
+    // suppress (S14 Fix 9: the defenders fire, duck under the attack's
+    // fire and are seen only when they rise to fire), the German ones do
+    // not (the attack is not pinned); the scene lasts until the flame
+    // decides it.
+    let ger = s
+        .factions
+        .iter()
+        .position(|f| f.id == "ww2:germany")
+        .unwrap();
+    let mut german = vec![false; s.weapons.len()];
+    for &t in &s.factions[ger].roster {
+        for m in &s.squad_types[t as usize].members {
+            german[m.weapon as usize] = true;
+            if let Some(x) = m.sidearm {
+                german[x as usize] = true;
+            }
+        }
+    }
+    for (k, wp) in s.weapons.iter_mut().enumerate() {
         if wp.class != frontline_content::WeaponClass::Flame {
             wp.damage = 0;
-            wp.suppression = 0;
+            if german[k] {
+                wp.suppression = 0;
+            }
         }
     }
     let f = &mut s.rules.ai.flame;
@@ -144,7 +162,10 @@ fn trench_scene(threads: usize, edit: impl FnOnce(&mut MatchSetup)) -> (World, S
 }
 
 /// A1: the job starts on a trench target, closes, goes and burns: the
-/// flame man's `SuppressUnits` point is a German man's trench cell.
+/// flame man's `SuppressUnits` point is a German man's trench cell. S14
+/// Fix 2, 9: against defenders who fire and duck (seen only while up),
+/// the burn lasts (remembered sightings, `burn_min_s`): his tank is
+/// burnt to the reserve and the flame reaches men in the trench.
 /// Control: `jobs` 0 starts none.
 #[test]
 fn ai_flame_job_runs_its_phases() {
@@ -173,6 +194,15 @@ fn ai_flame_job_runs_its_phases() {
         matches!(u.order, UnitOrder::Suppress { line } if line[0] == j.aim),
         "{:?}",
         u.order
+    );
+    play_until(&mut w, 60, |w| {
+        job(w).is_none_or(|(_, j)| j.phase == FlamePhase::Clear)
+    });
+    let k = &w.game().unwrap().players()[1].s14;
+    assert!(k.flame_fired >= 60, "the tank burns down: {k:?}");
+    assert!(
+        k.flame_in_trench_hits + k.patch_hits > 0,
+        "the flame reaches the trench: {k:?}"
     );
     let (mut c, _, _) = trench_scene(1, |s| s.rules.ai.flame.jobs = 0);
     play_until(&mut c, 150, |_| false);
@@ -322,16 +352,29 @@ fn ai_flames_the_slit() {
         .iter()
         .position(|f| f.id == "ww2:bunker")
         .unwrap() as u16;
+    // S14 Fix 9: the S10b layout (`s10b_tests::bunker_at`): the pit dug,
+    // five men held in it along the facing, 0.4 m apart.
+    let half = Fx::from(w.match_setup().unwrap().rules.bunker_pit.pit_line).div_int(2);
+    assert!(w.dig_pit_now(
+        &[pos - dir * half, pos + dir * half],
+        frontline_content::DigProfile::BunkerPit
+    ));
     assert!(w.build_now(f, &[pos, pos + dir * Fx::from_int(10)], PlayerId(0)));
     let d = at(&mut w, 0, GER, pos);
     unarm(&mut w, d);
-    for (k, m) in members(&w, d).into_iter().enumerate().take(3) {
-        w.place_soldier(m, pos + dir.perp() * Fx::from_int(k as i32 - 1));
+    let five: Vec<SimId> = members(&w, d).into_iter().take(5).collect();
+    for (k, &m) in five.iter().enumerate() {
+        w.place_soldier(m, pos + dir * Fx::from_milli(400 * (k as i32 - 2)));
     }
     attacker(&mut w);
-    let ok = play_until(&mut w, 150, |w| {
-        job(w).is_some_and(|(_, j)| j.phase == FlamePhase::Burn)
-    });
+    let mut ok = false;
+    for _ in 0..150 {
+        super::s10b_tests::hold(&mut w, &five, 30);
+        if job(&w).is_some_and(|(_, j)| j.phase == FlamePhase::Burn) {
+            ok = true;
+            break;
+        }
+    }
     assert!(ok, "a slit burn: {:?}", job(&w));
     let (_, j) = job(&w).unwrap();
     assert!(j.bunker);
@@ -354,9 +397,34 @@ fn ai_flames_the_slit() {
         "{gap:?} {:?}",
         j.aim
     );
-    play_until(&mut w, 3, |_| false);
+    super::s10b_tests::hold(&mut w, &five, 3 * 30);
     let u = &w.state.entities.unit[j.man.index()];
     assert!(matches!(u.order, UnitOrder::Suppress { line } if line[0] == j.aim));
+    // S14 Fix 1, 9: the effect, not only the order: the stream passes the
+    // slit (a particle under the roof, inside its footprint, or a man
+    // inside struck). Whether it then reaches crouched men in the pit is
+    // the R1 question (TODO S14-8): a flat stream through a 40 cm slit
+    // passes over them and ends on the back wall's side (S14-6 (A)).
+    let (rp, rz) = (roof.pos, roof.z);
+    let mut under = 0;
+    for _ in 0..30 * 30 {
+        super::s10b_tests::hold(&mut w, &five, 1);
+        under += w
+            .game()
+            .unwrap()
+            .flame()
+            .iter()
+            .filter(|p| {
+                let d = p.pos.xy() - rp;
+                d.x.abs() < Fx::from_milli(1700) && d.y.abs() < Fx::from_milli(1700) && p.pos.z < rz
+            })
+            .count();
+    }
+    let k = &w.game().unwrap().players()[1].s14;
+    assert!(
+        under > 0 || k.flame_in_bunker_hits > 0,
+        "the stream passes the slit: {under} {k:?}"
+    );
 }
 
 /// A1 Clear: with the trench burnt out (its men gone), the job orders
@@ -365,7 +433,13 @@ fn ai_flames_the_slit() {
 #[test]
 fn ai_clears_after_burn() {
     for clear in [1u32, 0] {
-        let (mut w, a, d) = trench_scene(1, |s| s.rules.ai.flame.clear = clear);
+        // Burnt from 20 m (out of the point's capture radius: from the
+        // lip, the squad takes the point once its men are gone, which ends
+        // the job done before it can clear).
+        let (mut w, a, d) = trench_scene(1, |s| {
+            s.rules.ai.flame.clear = clear;
+            s.rules.ai.flame.stand_trench_m = 20;
+        });
         assert!(play_until(&mut w, 150, |w| job(w)
             .is_some_and(|(_, j)| j.phase == FlamePhase::Burn)));
         for m in members(&w, d) {
@@ -383,6 +457,14 @@ fn ai_clears_after_burn() {
             assert!(ends(&w)[0] > 0, "done");
         } else {
             assert!(ai_ro(&w).counters.clear_orders >= 1);
+            // S14 Fix 4, 9: the clear runs to its own end (the AI's
+            // bookkeeping does not end it).
+            let done = play_until(&mut w, 300, |w| {
+                w.game().unwrap().players()[1].s14.clears_done > 0
+            });
+            let k = &w.game().unwrap().players()[1].s14;
+            assert!(done, "the clear ends done: {k:?}");
+            assert!(k.clear_steps >= 1, "{k:?}");
         }
     }
 }
@@ -396,7 +478,7 @@ fn ai_clear_orders_near_a_trench() {
             s.rules.ai.flame.jobs = 0;
             s.rules.ai.flame.clear = clear;
         });
-        defenders(&mut w, true);
+        let d = defenders(&mut w, true);
         let (pos, dir) = axis(&w);
         let r = at(&mut w, 1, US_RIFLES, pos + dir * Fx::from_int(25));
         let frag = ItemKind::Frag.index();
@@ -415,11 +497,26 @@ fn ai_clear_orders_near_a_trench() {
             ai_ro(&w).counters.clear_orders
         );
         assert_eq!(ai_ro(&w).counters.clear_orders, clear, "once per recheck_s");
+        if clear == 1 {
+            // S14 Fix 4: past `recheck_s` the clear still runs to its own
+            // end (done), the squad kept out of the assignment meanwhile.
+            // The attack's guns hurt nobody here: the defenders go, so
+            // the AttackMove does not halt to fight for ever.
+            for m in members(&w, d) {
+                w.kill_soldier(m);
+            }
+            let done = play_until(&mut w, 300, |w| {
+                w.game().unwrap().players()[1].s14.clears_done > 0
+            });
+            let k = &w.game().unwrap().players()[1].s14;
+            assert!(done, "the clear ends done: {k:?}");
+        }
     }
 }
 
-/// Liveness, determinism: the scene's hashes are equal at 1 and 4
-/// threads, and through a save and load in each job phase reached.
+/// Liveness, determinism: the scene's hashes are equal at 1, 2, 3, 4 and
+/// 8 threads (S14 Fix 9: plan 8's counts), and through a save and load in
+/// each job phase reached.
 #[test]
 fn flame_ai_hash_is_thread_count_free() {
     let ticks = 30 * 90;
@@ -444,7 +541,9 @@ fn flame_ai_hash_is_thread_count_free() {
     };
     let (one, phases) = run(1);
     assert!(phases.len() >= 2, "{phases:?}");
-    assert_eq!(run(4).0, one);
+    for n in [2, 3, 4, 8] {
+        assert_eq!(run(n).0, one, "{n} threads");
+    }
 }
 
 /// The S14-ai state is saved, hashed and checked on load.

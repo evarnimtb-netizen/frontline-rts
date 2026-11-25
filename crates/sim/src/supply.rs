@@ -301,6 +301,53 @@ pub(crate) fn spawn_load(setup: &MatchSetup, ty: &SquadTypeSetup, kit: &mut Kit,
     }
 }
 
+/// What [`reload_dry`] does for a dry man: `Some((on_sidearm after, the
+/// weapon loaded, its feed slot))`, or `None` (he stays dry). Pure: the
+/// S14 strike asks it without loading (S14 Fix 3).
+pub(crate) fn dry_load(
+    setup: &MatchSetup,
+    ty: &SquadTypeSetup,
+    kit: &Kit,
+) -> Option<(bool, u16, usize)> {
+    let slot = ty.members.get(kit.slot as usize);
+    let main = &setup.weapons[kit.weapon as usize];
+    let side = slot
+        .and_then(|m| m.sidearm)
+        .map(|w| (w, &setup.weapons[w as usize]));
+    let main_k = ty.feed_slot(main);
+    let has = |k: Option<usize>| k.is_some_and(|k| kit.rounds[k] > 0);
+    if kit.on_sidearm {
+        // S5a-23: back to the main weapon at the next reload once it has
+        // rounds again.
+        if let Some(k) = main_k
+            && has(main_k)
+        {
+            return Some((false, kit.weapon, k));
+        }
+        if let Some((sw, sws)) = side
+            && let Some(k) = ty.feed_slot(sws)
+            && kit.rounds[k] > 0
+        {
+            return Some((true, sw, k));
+        }
+        return None;
+    }
+    if let Some(k) = main_k
+        && kit.rounds[k] > 0
+    {
+        return Some((false, kit.weapon, k));
+    }
+    if let Some((sw, sws)) = side
+        && let Some(k) = ty.feed_slot(sws)
+        && kit.rounds[k] > 0
+        && sws.he.is_none()
+        && sws.class != WeaponClass::Launcher
+    {
+        return Some((true, sw, k));
+    }
+    None
+}
+
 /// A dry man (magazine empty, cooldown done): reloads his weapon from his
 /// pouches, switches between his main weapon and his slot's sidearm (S5a
 /// "Sidearm"), or stays dry. True when he reloaded or switched (the
@@ -312,59 +359,16 @@ pub(crate) fn reload_dry(
     c: &mut Combat,
     ws: &mut Weapon,
 ) -> bool {
-    let slot = ty.members.get(kit.slot as usize);
-    let main = &setup.weapons[kit.weapon as usize];
-    let side = slot
-        .and_then(|m| m.sidearm)
-        .map(|w| (w, &setup.weapons[w as usize]));
-    let main_k = ty.feed_slot(main);
-    let has = |kit: &Kit, k: Option<usize>| k.is_some_and(|k| kit.rounds[k] > 0);
-    let load = |kit: &mut Kit,
-                c: &mut Combat,
-                ws: &mut Weapon,
-                w: &frontline_content::setup::WeaponSetup,
-                k: usize| {
-        let take = (w.magazine.min(u16::MAX as u32) as u16).min(kit.rounds[k]);
-        kit.rounds[k] -= take;
-        c.mag = take;
-        ws.cooldown = w.reload_ticks.max(1).min(u16::MAX as u32) as u16;
-    };
-    if kit.on_sidearm {
-        // S5a-23: back to the main weapon at the next reload once it has
-        // rounds again.
-        if let Some(k) = main_k
-            && has(kit, main_k)
-        {
-            kit.on_sidearm = false;
-            load(kit, c, ws, main, k);
-            return true;
-        }
-        if let Some((_, sw)) = side
-            && let Some(k) = ty.feed_slot(sw)
-            && kit.rounds[k] > 0
-        {
-            load(kit, c, ws, sw, k);
-            return true;
-        }
+    let Some((side, wi, k)) = dry_load(setup, ty, kit) else {
         return false;
-    }
-    if let Some(k) = main_k
-        && kit.rounds[k] > 0
-    {
-        load(kit, c, ws, main, k);
-        return true;
-    }
-    if let Some((_, sw)) = side
-        && let Some(k) = ty.feed_slot(sw)
-        && kit.rounds[k] > 0
-        && sw.he.is_none()
-        && sw.class != WeaponClass::Launcher
-    {
-        kit.on_sidearm = true;
-        load(kit, c, ws, sw, k);
-        return true;
-    }
-    false
+    };
+    let w = &setup.weapons[wi as usize];
+    kit.on_sidearm = side;
+    let take = (w.magazine.min(u16::MAX as u32) as u16).min(kit.rounds[k]);
+    kit.rounds[k] -= take;
+    c.mag = take;
+    ws.cooldown = w.reload_ticks.max(1).min(u16::MAX as u32) as u16;
+    true
 }
 
 /// S5a squad ammunition share (%, the AI's reserve and the HUD marker):

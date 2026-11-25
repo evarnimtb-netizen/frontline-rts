@@ -2604,18 +2604,22 @@
         "dig_length_m": 20,
         "dig_offset_m": 10,
         "flame": {
+          "burn_min_s": 10,
           "buy": 1,
           "cards_max": 2,
           "clear": 1,
+          "clear_max_s": 300,
           "clear_near_m": 15,
           "job_max_s": 180,
           "jobs": 1,
+          "memory_s": 60,
           "recheck_s": 60,
           "refuel": 1,
           "reserve_pct": 10,
           "stage_m": 40,
           "stall_s": 45,
           "stand_m": 20,
+          "stand_trench_m": 2,
           "target_m": 40
         },
         "fort": {
@@ -3181,6 +3185,7 @@
         "patch_radius_cm": 100,
         "patch_s": 15,
         "patch_z_cm": 100,
+        "patches": 1,
         "patches_max": 128,
         "pulse_ms": 500,
         "slit_near_cm": 50,
@@ -3250,11 +3255,12 @@
       },
       "melee": {
         "damage": 60,
-        "drop_cm": 0,
+        "down_cm": 200,
         "enabled": 1,
         "reach_cm": 60,
         "recover_ms": 1000,
-        "start_pad_cm": 30,
+        "start_pad_cm": 0,
+        "up_cm": 200,
         "windup_ms": 500
       },
       "movement": {

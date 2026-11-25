@@ -3323,6 +3323,9 @@ tuning_table! {
         patch_merge_cm: 1..=1000 = "d_fl_patch_merge_cm",
         /// F5: patches at most (hard ceiling 256); one over is dropped.
         patches_max: 1..=256 = "d_fl_patches_max",
+        /// F5 switch (S14 Fix 7): landings make burning ground (0: none;
+        /// the `no_patches` ablation).
+        patches: 0..=1 = "d_fl_one",
         /// F6 switch: men leave burning ground ...
         step_out: 0..=1 = "d_fl_one",
         /// ... to this far beyond its edge (m).
@@ -3420,6 +3423,7 @@ impl Default for FlameTuning {
             patch_z_cm: 100,
             patch_merge_cm: 50,
             patches_max: 128,
+            patches: 1,
             step_out: 1,
             step_out_m: 2,
             base_refill_ms: 2000,
@@ -3447,11 +3451,12 @@ tuning_table! {
         /// M2: a strike starts with an enemy capsule within reach plus this
         /// (cm).
         start_pad_cm: 0..=1000 = "d_ml_start_pad_cm",
-        /// M1 (S14a Build C): the strike segment's far end lies this far
-        /// below its start at the chest (cm; 0: level, the plan's rule,
-        /// which passes over a crouched or prone man). A later balance
-        /// pass may lower it.
-        drop_cm: 0..=300 = "d_fl_zero",
+        /// M1 (S14 Fix 3): a strike reaches a target whose feet are up to
+        /// this far below the striker's (a man in a trench struck from its
+        /// lip; cm) ...
+        down_cm: 0..=1000 = "d_ml_reach_z_cm",
+        /// ... or up to this far above them (cm).
+        up_cm: 0..=1000 = "d_ml_reach_z_cm",
     }
 }
 
@@ -3468,7 +3473,10 @@ fn d_ml_recover_ms() -> u32 {
     1000
 }
 fn d_ml_start_pad_cm() -> u32 {
-    30
+    0
+}
+fn d_ml_reach_z_cm() -> u32 {
+    200
 }
 
 impl MeleeTuning {
@@ -3484,8 +3492,9 @@ impl Default for MeleeTuning {
             damage: 60,
             windup_ms: 500,
             recover_ms: 1000,
-            start_pad_cm: 30,
-            drop_cm: 0,
+            start_pad_cm: 0,
+            down_cm: 200,
+            up_cm: 200,
         }
     }
 }
@@ -3576,7 +3585,32 @@ tuning_table! {
         clear_near_m: 1..=1000 = "d_af_clear_near_m",
         /// A1 L3, A4: a failed target or squad waits this long (s).
         recheck_s: 1..=3600 = "d_af_recheck_s",
+        /// A1, A3, A4 (S14 Fix 2): an enemy seen in a dug cell is
+        /// remembered there this long (s; a target while remembered).
+        memory_s: 1..=3600 = "d_af_memory_s",
+        /// A1 (S14 Fix 2): Burn runs at least this long before the "nobody
+        /// left" test (s).
+        burn_min_s: 0..=600 = "d_af_burn_min_s",
+        /// A4 (S14 Fix 4): an AI clear running this long is ended (s).
+        clear_max_s: 1..=3600 = "d_af_clear_max_s",
+        /// A1 (S14 Fix 2): the flame man burns a trench target from this
+        /// far (m; `stand_m` is a bunker's): a flat stream from farther
+        /// ends on the near parapet.
+        stand_trench_m: 1..=1000 = "d_af_stand_trench_m",
     }
+}
+
+fn d_af_memory_s() -> u32 {
+    60
+}
+fn d_af_burn_min_s() -> u32 {
+    10
+}
+fn d_af_clear_max_s() -> u32 {
+    300
+}
+fn d_af_stand_trench_m() -> u32 {
+    2
 }
 
 fn d_af_target_m() -> u32 {
@@ -3628,6 +3662,10 @@ impl Default for AiFlameTuning {
             cards_max: 2,
             clear_near_m: 15,
             recheck_s: 60,
+            memory_s: 60,
+            burn_min_s: 10,
+            clear_max_s: 300,
+            stand_trench_m: 2,
         }
     }
 }

@@ -1819,6 +1819,7 @@ patch_hp_per_s = 20          # F5: HP a second to a man in it (0..=1000; 0 = pat
 patch_z_cm = 100             # F5: his feet within this height of it (1..=1000 cm)
 patch_merge_cm = 50          # F5: a landing this close refreshes a patch (1..=1000 cm)
 patches_max = 128            # F5: patches at most; one over is dropped and counted (1..=256)
+patches = 1                  # switch F5: landings make burning ground (0..=1; 0: none, the no_patches ablation)
 step_out = 1                 # switch F6: men leave burning ground (0..=1)
 step_out_m = 2               # F6: to this far beyond its edge (1..=50 m)
 base_refill_ms = 2000        # F7: the own base refills fuel one unit per this long (100..=60000 ms; design 6.5)
@@ -1833,8 +1834,9 @@ reach_cm = 60                # M1: strike length (1..=1000 cm; infantry-structur
 damage = 60                  # M1: strike damage (0..=1000 HP; a torso strike wounds, W3)
 windup_ms = 500              # M3: wind-up (1..=4000 ms)
 recover_ms = 1000            # M3: recovery with no fire (1..=4000 ms)
-start_pad_cm = 30            # M2: start with an enemy within reach + this (0..=1000 cm)
-drop_cm = 0                  # M1: the strike's far end this far below the chest (0..=300 cm; 0: level)
+start_pad_cm = 0             # M2: start with an enemy within reach + this (0..=1000 cm; S14 Fix 3: 0, a start beyond reach misses)
+down_cm = 200                # M1: strike a man whose feet are up to this far below the striker's (0..=1000 cm; a 180 cm trench from its lip)
+up_cm = 200                  # M1: ... or up to this far above them (0..=1000 cm; the lip from a trench)
 
 # S14 ClearTrench C1-C5 (plan 2, 6). Switch on since S14-ai Build D.
 [clear]
@@ -1860,3 +1862,7 @@ stall_s = 45                 # A1 L2: or with no phase progress this long (1..=3
 cards_max = 2                # A3: flame cards alive at most (0..=8)
 clear_near_m = 15            # A4: clear a trench with a known enemy this close to the point (1..=1000 m)
 recheck_s = 60               # A1 L3, A4: a failed target or squad waits this long (1..=3600 s)
+memory_s = 60                # A1, A3, A4: an enemy seen in a dug cell is remembered there this long (1..=3600 s; S14 Fix 2)
+burn_min_s = 10              # A1: Burn runs at least this long before the "nobody left" test (0..=600 s; S14 Fix 2)
+clear_max_s = 300            # A4: an AI clear running this long is ended (1..=3600 s; S14 Fix 4)
+stand_trench_m = 2           # A1: the flame man burns a trench target from this far, its lip (1..=1000 m; S14 Fix 2; stand_m is a bunker's)

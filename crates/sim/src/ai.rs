@@ -3321,12 +3321,29 @@ impl Planner<'_> {
             self.ai.last_throw.insert(m.id, tick);
         }
         // Throwers stay detached where they stood; take them along again
-        // once their squad walks on.
+        // once their squad walks on. S14 Fix 8: men who stepped out of
+        // burning ground (detached, idle) rejoin a holding squad once no
+        // patch is near them (only with F6 on: nothing changes with S14
+        // off).
+        let fl = &g.setup.rules.flame;
+        let step_out = fl.enabled != 0 && fl.step_out != 0;
+        let clear_m = Fx::from_int(fl.patch_radius_cm as i32).div_int(100)
+            + Fx::from_int(fl.step_out_m as i32 + 1);
         for m in mine {
             let sq = &g.squads[&m.id];
             let unit = |id: &SimId| &self.ents.unit[id.index()];
             let kit = |id: &SimId| &self.ents.kit[id.index()];
             let detached = sq.members.iter().filter(|id| unit(id).detached);
+            let back = step_out
+                && sq.nav.phase == NavPhase::Holding
+                && detached.clone().next().is_some()
+                && detached.clone().all(|id| {
+                    let p = self.ents.transform[id.index()].pos.xy();
+                    unit(id).order == crate::unit::UnitOrder::Idle
+                        && g.patches()
+                            .iter()
+                            .all(|q| (q.pos.xy() - p).length() > clear_m)
+                });
             let pending = self
                 .ai
                 .pending
@@ -3337,8 +3354,9 @@ impl Planner<'_> {
                 && !clearing(self.ai, m.id)
                 && !self.ai.spotter_out(m.id)
                 && !self.sheltering(m.id)
-                && matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending)
-                && detached.clone().next().is_some()
+                && (back
+                    || matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending)
+                        && detached.clone().next().is_some())
                 && detached.clone().all(|id| kit(id).windup.is_none())
             {
                 self.ai.emit(self.due, CommandKind::Regroup { squad: m.id });

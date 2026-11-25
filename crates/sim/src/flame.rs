@@ -17,6 +17,9 @@ use crate::game::{MatchState, SquadId, kill_class};
 /// Hard ceiling of flame particles in flight per player (`[flame]
 /// particles_per_player` is at most this).
 pub const MAX_FLAME_PER_PLAYER: usize = 256;
+/// Load bound of a particle's height (m) and of each velocity component
+/// (m/s) (S14 Fix 16).
+pub const FLAME_BOUND_M: i32 = 1000;
 /// Hard ceiling of burning-ground patches (`[flame] patches_max` is at
 /// most this).
 pub const MAX_PATCHES: usize = 256;
@@ -125,13 +128,15 @@ pub struct S14Counters {
 }
 
 /// Load check of one entity's `Close` (spec 3.1). `burn_max`: the latest
-/// tick a burn may end at.
+/// tick a burn may end at; `size`: the map's side (a strike's point is
+/// on the map, S14 Fix 16).
 pub(crate) fn close_ok(
     kind: EntityKind,
     c: &Close,
     players: usize,
     vehicles: usize,
     burn_max: u64,
+    size: Fx,
 ) -> bool {
     let man = matches!(kind, EntityKind::Soldier | EntityKind::Downed);
     if !man {
@@ -149,7 +154,10 @@ pub(crate) fn close_ok(
     };
     let strike_ok = match c.strike_phase {
         STRIKE_NONE => c.strike == 0 && c.strike_at == FxVec2::default(),
-        STRIKE_WINDUP | STRIKE_RECOVER => c.strike > 0 && kind == EntityKind::Soldier,
+        STRIKE_WINDUP | STRIKE_RECOVER => {
+            let on = |v: Fx| v >= Fx::ZERO && v <= size;
+            c.strike > 0 && kind == EntityKind::Soldier && on(c.strike_at.x) && on(c.strike_at.y)
+        }
         _ => false,
     };
     burn_ok && strike_ok
@@ -259,10 +267,18 @@ impl MatchState {
                 return Err("flame particle ids are not ascending");
             }
             last = Some(p.id);
+            // S14 Fix 16: a Flame-class weapon, a height and speed in
+            // bounds.
+            let lim_m = Fx::from_int(FLAME_BOUND_M);
             if p.player as usize >= np
                 || p.weapon as usize >= s.weapons.len()
+                || s.weapons[p.weapon as usize].class != frontline_content::WeaponClass::Flame
                 || p.shooter.index() >= ents.kind().len()
                 || !on_map(p.pos)
+                || p.pos.z.abs() > lim_m
+                || p.vel.x.abs() > lim_m
+                || p.vel.y.abs() > lim_m
+                || p.vel.z.abs() > lim_m
             {
                 return Err("a flame particle is bad");
             }
@@ -579,7 +595,11 @@ impl MatchState {
             }
             landed.push((at, player));
         }
-        // F5: landings make patches or refresh one within `patch_merge_cm`.
+        // F5: landings make patches or refresh one within `patch_merge_cm`
+        // (none with the switch `patches` 0, S14 Fix 7).
+        if f.patches == 0 {
+            landed.clear();
+        }
         let merge = Fx::from_int(f.patch_merge_cm as i32).div_int(100);
         let ends = tick + lim.patch_ticks;
         for (pt, player) in landed {
@@ -755,6 +775,15 @@ impl MatchState {
             if u.riding.is_some()
                 || u.serving.is_some()
                 || (u.detached && u.order != crate::unit::UnitOrder::Idle)
+            {
+                continue;
+            }
+            // S14 Fix 8: a man in formation steps out only while his squad
+            // holds or arrives (a walking squad's men leave by themselves).
+            if !u.detached
+                && !ctx.ents.squad[i]
+                    .and_then(|s| self.squads.get(&s))
+                    .is_some_and(|q| matches!(q.nav.phase, NavPhase::Holding | NavPhase::Arriving))
             {
                 continue;
             }
@@ -952,8 +981,10 @@ impl MatchState {
     }
 
     /// C1: any later order to a clearing squad (or to one of its men) ends
-    /// its clear (not counted as done).
-    pub(crate) fn clear_ended_by(&mut self, ents: &Entities, kind: &crate::command::CommandKind) {
+    /// its clear (not counted as done); S14 Fix 15: the C2 crouch ends with
+    /// it.
+    pub(crate) fn clear_ended_by(&mut self, ctx: &mut Ctx, kind: &crate::command::CommandKind) {
+        let ents = &*ctx.ents;
         use crate::command::CommandKind as K;
         let units: &[SimId] = match kind {
             K::ClearTrench { .. } => return,
@@ -985,13 +1016,20 @@ impl MatchState {
             ended.extend(squads.iter().copied());
         }
         for sq in ended {
-            self.clears.remove(&sq);
+            if self.clears.remove(&sq).is_some()
+                && let Some(q) = self.squads.get(&sq)
+            {
+                let (p, men) = (q.owner, q.members.clone());
+                self.set_stance(ctx, p, &men, crate::unit::StanceOrder::Auto);
+            }
         }
     }
 
     /// C2-C5 (Status stage, ascending squad id): each clearing squad
-    /// approaches (0), throws at and waits on its step point (1), advances
-    /// into it (2), step by step until the job ends (C5).
+    /// approaches (0), throws at and waits on its step point (1; the first
+    /// step point is the entry cell, S14 Fix 11), advances into it (2),
+    /// step by step until the job ends (C5; S14 Fix 6: also when its cell
+    /// or entry is no longer dug).
     pub(crate) fn clear_tick(&mut self, ctx: &mut Ctx) {
         if self.clears.is_empty() {
             return;
@@ -1015,8 +1053,14 @@ impl MatchState {
             let frag = ItemKind::Frag.index();
             let frags = men.iter().any(|m| ctx.ents.kit[m.index()].items[frag] > 0);
             let fuel = self.flame_men(ctx.ents, &men).next().is_some();
-            // C5: under half strength, or nothing left to clear with.
-            let end = (men.len() as u32) * 2 < ty.men as u32 || (!frags && !fuel);
+            // C5: under half strength, or nothing left to clear with; S14
+            // Fix 6: or its cell or entry no longer dug (a crater filled
+            // it): a clear never holds a cell a save would refuse.
+            let undug = |c: (u16, u16)| !dug(ctx.terrain, c.0 as i64, c.1 as i64);
+            let end = (men.len() as u32) * 2 < ty.men as u32
+                || (!frags && !fuel)
+                || undug(cl.cell)
+                || undug(cl.from);
             let near = |to: FxVec2, m: i32| {
                 (lead - to).length_sq_raw()
                     <= FxVec2::new(Fx::from_int(m), Fx::ZERO).length_sq_raw()
@@ -1032,15 +1076,23 @@ impl MatchState {
                             CLEAR_ARRIVE_M
                         };
                         if holding || near(to, reach) {
+                            // S14 Fix 11: the first step is the entry cell
+                            // itself (the enemy the order named stands
+                            // there), then the walk along the trench.
+                            let next = if cl.phase == 0 {
+                                Some(cl.cell)
+                            } else {
+                                next_step(
+                                    ctx.terrain,
+                                    cl.cell,
+                                    cl.from,
+                                    rules.step_m,
+                                    rules.walk_cells,
+                                )
+                            };
                             if cl.phase == 2 && cl.step as u32 >= rules.steps_max {
                                 done = true;
-                            } else if let Some(next) = next_step(
-                                ctx.terrain,
-                                cl.cell,
-                                cl.from,
-                                rules.step_m,
-                                rules.walk_cells,
-                            ) {
+                            } else if let Some(next) = next {
                                 cl.cell = next;
                                 cl.step += 1;
                                 cl.phase = 1;
@@ -1054,6 +1106,11 @@ impl MatchState {
                     }
                     _ => {
                         let pt = cell_pos(cl.cell);
+                        // S14 Fix 5: the flame man fires one burst (C3),
+                        // then holds (stateless: from `phase_at`).
+                        if flame_on {
+                            self.clear_burst_end(ctx, &men, pt, cl.phase_at);
+                        }
                         let wait = self.clear_fuse(ty) + rules.settle_s as u64 * hz;
                         let due = ctx.tick >= cl.phase_at + wait;
                         let r = Fx::from_int(CLEAR_FIRE_M);
@@ -1077,8 +1134,10 @@ impl MatchState {
             if done {
                 self.clears.remove(&sq);
                 self.players[p.0 as usize].s14.clears_done += 1;
-                // The squad holds the trench where it stands.
+                // The squad holds the trench where it stands; S14 Fix 15:
+                // the C2 crouch ends with the clear.
                 self.order_stop(ctx, p, sq);
+                self.set_stance(ctx, p, &men, crate::unit::StanceOrder::Auto);
             } else {
                 self.clears.insert(sq, cl);
             }
@@ -1105,6 +1164,27 @@ impl MatchState {
                         .and_then(|ty| ty.feed_slot(w))
                         .is_some_and(|f| k.rounds[f] > 0))
         })
+    }
+
+    /// S14 Fix 5 (C3 "fires one burst"): from `burst` ticks after the step
+    /// began (his weapon's `burst_rounds` shots at its interval, at least
+    /// one), a flame man of `men` on the detached `Suppress` of the step
+    /// point `pt` holds fire (idle, detached: he rejoins at the advance).
+    fn clear_burst_end(&self, ctx: &mut Ctx, men: &[SimId], pt: FxVec2, from: u64) {
+        for &m in men {
+            let i = m.index();
+            let u = &ctx.ents.unit[i];
+            if !u.detached || u.order != (crate::unit::UnitOrder::Suppress { line: [pt, pt] }) {
+                continue;
+            }
+            let w = &self.setup.weapons[ctx.ents.kit[i].weapon as usize];
+            let shots = w.burst_rounds.max(1) as u64;
+            let burst = (shots * w.interval_milli as u64).div_ceil(1000).max(1);
+            if ctx.tick >= from + burst {
+                ctx.ents.unit[i].order = crate::unit::UnitOrder::Idle;
+                ctx.hash.mark_entity_chunk(m.chunk());
+            }
+        }
     }
 
     /// C3: the longest frag wind-up plus fuse of the squad's card (ticks).
@@ -1190,8 +1270,9 @@ pub(crate) fn melee_of(setup: &MatchSetup, wi: u16) -> Melee {
 }
 
 /// M2: the nearest enemy of `owner` among `near` (live soldiers on foot)
-/// whose body axis lies within `within` plus the capsule radius of `at`
-/// horizontally; ties by id. Returns him and his position.
+/// whose body axis lies within `within` of `at` horizontally and whose
+/// feet are inside the strike's height window `z` (S14 Fix 3,
+/// [`strike_window`]); ties by id. Returns him and his position.
 #[allow(clippy::too_many_arguments)]
 fn nearest_enemy(
     near: impl FnOnce(&mut dyn FnMut(SimId)),
@@ -1202,6 +1283,7 @@ fn nearest_enemy(
     owner: u8,
     at: FxVec2,
     within: Fx,
+    z: (Fx, Fx),
 ) -> Option<(SimId, FxVec2)> {
     let lim = within.raw().max(0) as u64;
     let lim_sq = lim * lim;
@@ -1209,6 +1291,10 @@ fn nearest_enemy(
     near(&mut |id: SimId| {
         let j = id.index();
         if id == me || kind.get(j) != Some(&EntityKind::Soldier) || owners[j].0 == owner {
+            return;
+        }
+        let fz = transform[j].pos.z;
+        if fz < z.0 || fz > z.1 {
             return;
         }
         let d = (transform[j].pos.xy() - at).length_sq_raw();
@@ -1219,12 +1305,36 @@ fn nearest_enemy(
     best.map(|(_, id)| (id, transform[id.index()].pos.xy()))
 }
 
-/// M2: how far (m) a strike may start: reach, `start_pad_cm` and the
-/// target's capsule radius.
+/// M2: how far (m) a strike may start: reach, `start_pad_cm` (0 in the
+/// mod since S14 Fix 3: the strike reaches only reach plus the radius)
+/// and the target's capsule radius.
 fn start_reach(setup: &MatchSetup, m: &Melee) -> Fx {
     m.reach
         + Fx::from_ratio(setup.rules.melee.start_pad_cm.min(1000) as i64, 100)
         + Fx::from_milli(setup.rules.combat.body.radius_mm as i32)
+}
+
+/// S14 Fix 3: the point of segment `a`-`b` nearest `p`.
+fn axis_point(a: FxVec3, b: FxVec3, p: FxVec3) -> FxVec3 {
+    let d = b - a;
+    let len = d.dot(d);
+    if len <= Fx::ZERO {
+        return a;
+    }
+    let t = (p - a).dot(d).div(len).clamp(Fx::ZERO, Fx::ONE);
+    a + d * t
+}
+
+/// S14 Fix 3: the feet heights a strike from a man with feet at `z`
+/// reaches: from `[melee] down_cm` below to `up_cm` above (any stance:
+/// crouched, prone, a man in a trench struck from its lip or the lip
+/// struck from the trench).
+fn strike_window(setup: &MatchSetup, z: Fx, _c: &Combat) -> (Fx, Fx) {
+    let r = &setup.rules.melee;
+    (
+        z - Fx::from_ratio(r.down_cm.min(1000) as i64, 100),
+        z + Fx::from_ratio(r.up_cm.min(1000) as i64, 100),
+    )
 }
 
 /// M2-M3 for soldier `i` in `aim_and_fire` (per chunk: only his own
@@ -1243,6 +1353,7 @@ pub(crate) fn strike_tick(
     c: &mut Combat,
     ws: &Weapon,
     kit: &Kit,
+    ty: &frontline_content::setup::SquadTypeSetup,
     wi: u16,
     fed: bool,
     strikes: &mut Vec<SimId>,
@@ -1299,6 +1410,14 @@ pub(crate) fn strike_tick(
             )
         });
     let wait = (m.windup as u32).max(aim);
+    // S14 Fix 3: a dry man who can reload from his pouches or draw his
+    // sidearm does that (the dry fire path) instead of striking.
+    if c.mag == 0
+        && (fed || w.class == WeaponClass::Flame)
+        && crate::supply::dry_load(setup, ty, kit).is_some()
+    {
+        return false;
+    }
     let ready = match w.class {
         WeaponClass::Launcher | WeaponClass::Mortar => false,
         WeaponClass::Flame => {
@@ -1312,6 +1431,7 @@ pub(crate) fn strike_tick(
     }
     let pos = ctx.transform[i].pos.xy();
     let within = start_reach(setup, &m);
+    let z = strike_window(setup, ctx.transform[i].pos.z, c);
     let Some((_, at)) = nearest_enemy(
         |f| ctx.spatial.for_each_near(pos, within, f),
         ctx.kind,
@@ -1321,6 +1441,7 @@ pub(crate) fn strike_tick(
         ctx.owner[i].0,
         pos,
         within,
+        z,
     ) else {
         return false;
     };
@@ -1361,6 +1482,7 @@ impl MatchState {
             let within = start_reach(&self.setup, &mel);
             let ents = &*ctx.ents;
             let pos = ents.transform[i].pos.xy();
+            let z = strike_window(&self.setup, ents.transform[i].pos.z, c);
             let near = |f: &mut dyn FnMut(SimId)| {
                 for s in ents.soldiers() {
                     if ents.unit[s.index()].riding.is_none() {
@@ -1377,6 +1499,7 @@ impl MatchState {
                 p.0,
                 pos,
                 within,
+                z,
             ) else {
                 continue;
             };
@@ -1395,13 +1518,15 @@ impl MatchState {
 
     /// M1, M4 (Damage stage, after this tick's blows, ascending striker
     /// id): each striker still standing (one downed or killed earlier in
-    /// this stage does not strike) sweeps a segment `reach` long
-    /// (horizontally) from his chest (`fire_height` less 40 cm) toward
-    /// `strike_at`, its far end `[melee] drop_cm` lower (0: level). The
-    /// nearest enemy soldier capsule it touches (ties by id; downed men,
-    /// vehicles and pieces neither struck nor in the way) takes the
-    /// strike's damage through `hurt` in the W1 zone at the touch point,
-    /// class MELEE, and `[combat] hit_suppression`. No near miss.
+    /// this stage does not strike) strikes, S14 Fix 3, at the body of the
+    /// enemy soldier nearest `strike_at` as he stands at resolution (ties
+    /// by id) whose feet lie in the `[melee] down_cm` / `up_cm` window
+    /// and whose capsule axis is within `reach` plus the capsule radius
+    /// horizontally (any stance; downed men, vehicles and pieces neither
+    /// struck nor in the way). He takes the strike's damage through `hurt`
+    /// in the W1 zone at the axis point nearest the striker's chest
+    /// (`fire_height` less 40 cm), class MELEE, and `[combat]
+    /// hit_suppression`. No near miss; no such enemy: a miss.
     pub(crate) fn resolve_strikes(
         &mut self,
         ctx: &mut DamageCtx,
@@ -1429,19 +1554,18 @@ impl MatchState {
             let pos = ents.transform[i].pos;
             let chest = (c.fire_height - Fx::from_milli(400)).max(Fx::from_milli(100));
             let from = FxVec3::new(pos.x, pos.y, pos.z + chest);
-            let dir = (c.close.strike_at - pos.xy()).normalize_or_zero();
             let s14 = &mut self.players[owner as usize].s14;
             s14.strikes = s14.strikes.saturating_add(1);
-            if dir == FxVec2::ZERO {
-                continue;
-            }
-            // `[melee] drop_cm` lowers the far end (0: level).
-            let drop = Fx::from_ratio(self.setup.rules.melee.drop_cm.min(300) as i64, 100);
-            let d = FxVec3::new(dir.x.mul(m.reach), dir.y.mul(m.reach), -drop);
-            let mid = from.xy() + dir * m.reach.div_int(2);
-            let mut hit: Option<(Fx, SimId)> = None;
+            // S14 Fix 3: the strike goes at the body of the enemy nearest
+            // `strike_at` as he stands now (any stance or height inside
+            // the window), whose capsule axis is within reach plus its
+            // radius horizontally.
+            let win = strike_window(&self.setup, pos.z, c);
+            let reach = m.reach + Fx::from_milli(body.radius_mm as i32);
+            let aim = c.close.strike_at;
+            let mut hit: Option<(u64, SimId, FxVec3)> = None;
             ctx.spatial
-                .for_each_near(mid, m.reach.div_int(2) + Fx::from_int(2), |id| {
+                .for_each_near(pos.xy(), reach + Fx::from_int(2), |id| {
                     let j = id.index();
                     if j == i
                         || ents.owner[j].0 == owner
@@ -1451,16 +1575,24 @@ impl MatchState {
                         return;
                     }
                     let t = &ents.transform[j];
-                    let o = t.pos;
-                    let (a, b, r) = crate::combat::capsule(t, &ents.combat[j], &body);
-                    let (sv, dsq) = crate::combat::seg_seg(from - o, d, a - o, b - a);
-                    if dsq <= r.mul(r) && hit.is_none_or(|h| (sv, id) < h) {
-                        hit = Some((sv, id));
+                    if t.pos.z < win.0 || t.pos.z > win.1 {
+                        return;
+                    }
+                    let (a, b, _) = crate::combat::capsule(t, &ents.combat[j], &body);
+                    // The axis point nearest his chest, then horizontally.
+                    let q = axis_point(a, b, from);
+                    let flat = FxVec2::new(q.x - from.x, q.y - from.y);
+                    if flat.length() > reach {
+                        return;
+                    }
+                    let d = (t.pos.xy() - aim).length_sq_raw();
+                    if hit.is_none_or(|h| (d, id) < (h.0, h.1)) {
+                        hit = Some((d, id, q));
                     }
                 });
-            let Some((sv, id)) = hit else { continue };
+            let Some((_, id, q)) = hit else { continue };
             let j = id.index();
-            let z = (from + d * sv).z;
+            let z = q.z;
             let zone = ctx.wounds.as_ref().map_or(crate::wounds::ZONE_TORSO, |w| {
                 crate::wounds::zone_at(&ctx.ents.transform[j], &ctx.ents.combat[j], z, w)
             });

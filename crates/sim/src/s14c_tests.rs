@@ -87,6 +87,14 @@ fn tick_held(w: &mut World, (a, pa): (SimId, FxVec2), (b, pb): (SimId, FxVec2), 
     w.step(&[]);
 }
 
+/// A dry man: empty magazine and nothing left in his pouches to reload
+/// (S14 Fix 3: a man who can reload or draw does that instead of
+/// striking).
+fn empty(k: &mut crate::items::Kit, c: &mut crate::ecs::Combat) {
+    c.mag = 0;
+    k.rounds.iter_mut().for_each(|r| *r = 0);
+}
+
 /// Stages `m` one tick from the end of his wind-up, striking toward `at`.
 fn wind_up(w: &mut World, m: SimId, at: FxVec2) {
     assert!(w.edit_soldier(m, |_, c| {
@@ -104,13 +112,14 @@ fn phase(w: &World, m: SimId) -> u8 {
     w.state.entities.combat[m.index()].close.strike_phase
 }
 
-/// M1: a strike toward a point 2 m east touches the capsule of a man 0.9
+/// M1: a strike toward a point 2 m east touches the capsule of a man 0.8
 /// m east (one strike, one hit, damage, class MELEE wound or down);
-/// control: a man 0.9 m north of the same segment is not touched (one
-/// strike, no hit, no damage).
+/// control (S14 Fix 3: the strike goes at the nearest body in reach): a
+/// man 1.2 m north, beyond reach, is not touched (one strike, no hit, no
+/// damage).
 #[test]
 fn strike_hits_only_a_touched_capsule() {
-    for (dx, dy, touched) in [(90, 0, true), (0, 90, false)] {
+    for (dx, dy, touched) in [(80, 0, true), (0, 120, false)] {
         let (mut w, a, b) = duel(1, "ww2:kar98k", "ww2:m1_garand", (dx, dy), |_| {});
         let full = hp(&w, b);
         wind_up(&mut w, a, off(200, 0));
@@ -151,23 +160,24 @@ fn target_steps_back_strike_misses() {
     }
 }
 
-/// M2: a man with a loaded SMG and an enemy at 1 m shoots (no strike);
-/// control: the same man with an empty magazine (reloading) strikes.
+/// M2: a man with a loaded SMG and an enemy at 0.8 m shoots (no
+/// strike); control: the same man dry (empty magazine, nothing left to
+/// reload) strikes.
 #[test]
 fn loaded_smg_shoots_not_strikes() {
     for dry in [false, true] {
-        let (mut w, a, b) = duel(1, "ww2:mp40", "ww2:m1_garand", (100, 0), |_| {});
+        let (mut w, a, b) = duel(1, "ww2:mp40", "ww2:m1_garand", (80, 0), |_| {});
         if dry {
-            w.edit_soldier(a, |_, c| c.mag = 0);
+            w.edit_soldier(a, empty);
         }
         let full = hp(&w, b);
         let mut struck = false;
         for _ in 0..60 {
-            tick_held(&mut w, (a, off(0, 0)), (b, off(100, 0)), true);
+            tick_held(&mut w, (a, off(0, 0)), (b, off(80, 0)), true);
             struck |= phase(&w, a) != STRIKE_NONE;
         }
         if dry {
-            assert!(struck, "control: reloading, he strikes");
+            assert!(struck, "control: dry, he strikes");
         } else {
             assert!(!struck, "loaded: no strike");
             assert_eq!(s14_of(&w, 0).strikes, 0);
@@ -202,44 +212,62 @@ fn reloading_rifle_strikes() {
     }
 }
 
+/// M2 (S14 Fix 3): an automatic strike (no staging: a rifleman reloading
+/// with an enemy 0.8 m off) lands on a crouched, suppressed man.
+#[test]
+fn automatic_strike_hits_a_crouched_man() {
+    let (mut w, a, b) = duel(1, "ww2:kar98k", "ww2:m1_garand", (80, 0), |_| {});
+    w.edit_soldier(a, |_, c| c.mag = 0);
+    for _ in 0..60 {
+        w.edit_soldier(b, |_, c| {
+            c.stance = crate::ecs::Stance::Crouch;
+            c.height = Fx::from_milli(1200);
+            c.suppression = c.suppression.max(30_000);
+        });
+        tick_held(&mut w, (a, off(0, 0)), (b, off(80, 0)), true);
+    }
+    let k = s14_of(&w, 0);
+    assert!(k.strikes >= 1 && k.strike_hits >= 1, "{k:?}");
+}
+
 /// M2: a pinned man does not strike; control: the same man not pinned
 /// does.
 #[test]
 fn pinned_man_does_not_strike() {
     for pinned in [true, false] {
-        let (mut w, a, b) = duel(1, "ww2:kar98k", "ww2:m1_garand", (100, 0), |_| {});
+        let (mut w, a, b) = duel(1, "ww2:kar98k", "ww2:m1_garand", (80, 0), |_| {});
         let mut struck = false;
         for _ in 0..30 {
-            w.edit_soldier(a, |_, c| {
-                c.mag = 0;
+            w.edit_soldier(a, |k, c| {
+                empty(k, c);
                 if pinned {
                     c.pinned = true;
                     c.suppression = 100_000;
                 }
             });
-            tick_held(&mut w, (a, off(0, 0)), (b, off(100, 0)), true);
+            tick_held(&mut w, (a, off(0, 0)), (b, off(80, 0)), true);
             struck |= phase(&w, a) != STRIKE_NONE;
         }
         assert_eq!(struck, !pinned, "pinned {pinned}");
     }
 }
 
-/// M1, M2 (W12): a downed enemy at 0.9 m starts no strike, and a strike
+/// M1, M2 (W12): a downed enemy at 0.8 m starts no strike, and a strike
 /// staged at him passes over him (no hit, no HP lost); control: the same
 /// man standing is struck.
 #[test]
 fn no_strike_at_downed() {
     for down in [true, false] {
-        let (mut w, a, b) = duel(1, "ww2:kar98k", "ww2:m1_garand", (90, 0), |_| {});
+        let (mut w, a, b) = duel(1, "ww2:kar98k", "ww2:m1_garand", (80, 0), |_| {});
         if down {
             assert!(w.down_soldier(b, (0, kill_class::RIFLE)));
         }
         let mut started = false;
         for _ in 0..20 {
-            w.edit_soldier(a, |_, c| c.mag = 0);
+            w.edit_soldier(a, empty);
             w.place_soldier(a, off(0, 0));
             if !down {
-                tick_held(&mut w, (a, off(0, 0)), (b, off(90, 0)), true);
+                tick_held(&mut w, (a, off(0, 0)), (b, off(80, 0)), true);
             } else {
                 w.step(&[]);
             }
@@ -248,7 +276,7 @@ fn no_strike_at_downed() {
         if down {
             assert!(!started, "no strike starts at a downed man");
             let before = hp(&w, b);
-            wind_up(&mut w, a, off(90, 0));
+            wind_up(&mut w, a, off(80, 0));
             w.place_soldier(a, off(0, 0));
             w.step(&[]);
             let k = s14_of(&w, 0);
@@ -420,29 +448,67 @@ fn melee_scene_hash_is_thread_count_free() {
     }
 }
 
-/// M1 `[melee] drop_cm`: the plan's level strike from the chest passes
-/// over a crouched man 0.9 m ahead; with the far end 80 cm lower it
-/// touches him. Control: the same level strike touches him standing.
+/// M1 (S14 Fix 3): a strike reaches a crouched or prone man 0.8 m ahead
+/// (the level chest segment of S14a missed both). Control: the same
+/// standing man is hit.
 #[test]
-fn drop_cm_lowers_the_strike() {
-    for (drop, crouched, touched) in [(0, true, false), (80, true, true), (0, false, true)] {
-        let (mut w, a, b) = duel(1, "ww2:kar98k", "ww2:m1_garand", (90, 0), |s| {
-            s.rules.melee.drop_cm = drop;
-        });
+fn strike_hits_any_stance() {
+    for (stance, height) in [
+        (crate::ecs::Stance::Stand, 0),
+        (crate::ecs::Stance::Crouch, 1200),
+        (crate::ecs::Stance::Prone, 400),
+    ] {
+        let (mut w, a, b) = duel(1, "ww2:kar98k", "ww2:m1_garand", (80, 0), |_| {});
         wind_up(&mut w, a, off(200, 0));
-        if crouched {
-            w.edit_soldier(b, |_, c| {
-                c.stance = crate::ecs::Stance::Crouch;
-                c.height = Fx::from_milli(1200);
-            });
-        }
-        tick_held(&mut w, (a, off(0, 0)), (b, off(90, 0)), true);
+        w.edit_soldier(b, |_, c| {
+            c.stance = stance;
+            if height > 0 {
+                c.height = Fx::from_milli(height);
+            }
+        });
+        tick_held(&mut w, (a, off(0, 0)), (b, off(80, 0)), true);
         let k = s14_of(&w, 0);
-        assert_eq!(k.strikes, 1);
-        assert_eq!(
-            k.strike_hits,
-            u32::from(touched),
-            "drop {drop} crouched {crouched}"
-        );
+        assert_eq!((k.strikes, k.strike_hits), (1, 1), "{stance:?}");
+    }
+}
+
+/// M1 (S14 Fix 3): a man on a trench's lip strikes the man in it 0.8 m
+/// off (his feet more than a metre lower), and the man in the trench
+/// strikes the man on the lip. Control: `[melee] down_cm` / `up_cm` 50:
+/// both miss.
+#[test]
+fn strike_reaches_into_a_trench() {
+    for (win, touched) in [(200, true), (50, false)] {
+        for down in [true, false] {
+            let (mut w, a, b) = duel(1, "ww2:kar98k", "ww2:m1_garand", (80, 0), |s| {
+                (s.rules.melee.down_cm, s.rules.melee.up_cm) = (win, win);
+            });
+            let t = Fx::from_int(AT) + Fx::from_milli(800);
+            assert!(w.dig_trench_now(
+                &[
+                    FxVec2::new(t, Fx::from_int(AT - 6)),
+                    FxVec2::new(t, Fx::from_int(AT + 6))
+                ],
+                0
+            ));
+            let (striker, target) = if down { (a, b) } else { (b, a) };
+            let (sp, tp) = if down {
+                (off(0, 0), off(80, 0))
+            } else {
+                (off(80, 0), off(0, 0))
+            };
+            wind_up(&mut w, striker, tp);
+            tick_held(&mut w, (striker, sp), (target, tp), true);
+            let z = |m: SimId| w.state.entities.transform[m.index()].pos.z;
+            let dz = (z(a) - z(b)).abs();
+            assert!(dz > Fx::ONE, "a metre or more apart in height: {dz:?}");
+            let owner = if down { 0 } else { 1 };
+            let k = s14_of(&w, owner);
+            assert_eq!(
+                (k.strikes, k.strike_hits),
+                (1, u32::from(touched)),
+                "window {win} down {down} dz {dz:?}"
+            );
+        }
     }
 }

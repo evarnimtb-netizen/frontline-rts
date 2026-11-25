@@ -1258,6 +1258,14 @@ fn staged_s12(w: &mut World) {
     use frontline_sim::fx::FxVec3;
     let p3 =
         |x: i32, y: i32, z: i32| FxVec3::new(Fx::from_int(x), Fx::from_int(y), Fx::from_int(z));
+    // A Flame-class weapon (S14 Fix 16: the load check asks for one).
+    let fwi = w
+        .match_setup()
+        .unwrap()
+        .weapons
+        .iter()
+        .position(|x| x.class == frontline_content::WeaponClass::Flame)
+        .unwrap() as u16;
     let flame = |id, x| frontline_sim::flame::Flame {
         id,
         pos: p3(x, 705, 1),
@@ -1265,7 +1273,7 @@ fn staged_s12(w: &mut World) {
         ttl: 60,
         player: 1,
         shooter: frontline_sim::SimId(0),
-        weapon: 0,
+        weapon: fwi,
     };
     let patch = frontline_sim::flame::Patch {
         id: 0,

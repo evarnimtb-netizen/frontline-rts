@@ -1337,7 +1337,7 @@ impl MatchState {
         };
         // S14 C1: any later order to a clearing squad ends its clear.
         if ok && !self.clears.is_empty() {
-            self.clear_ended_by(ctx.ents, &c.kind);
+            self.clear_ended_by(ctx, &c.kind);
         }
         ok
     }
@@ -2848,6 +2848,7 @@ impl MatchState {
         }
         let bandage_ticks = s.rules.wounds.bandage_s as u64 * s.tick_hz as u64;
         let burn_max = crate::bounds::MAX_TICK + self.s14_limits().burn_ticks;
+        let map_side = Fx::from_int(s.map.size_m);
         for (i, c) in ents.combat.iter().enumerate() {
             let kind = ents.kind[i];
             let vehicle = matches!(
@@ -2865,7 +2866,7 @@ impl MatchState {
                     && (c.hp == 0 || c.corpse != 0 || ents.squad[i].is_some()))
                 || !crate::wounds::wound_ok(kind, &c.wound, np, s.vehicles.len(), bandage_ticks)
                 // S14.
-                || !crate::flame::close_ok(kind, &c.close, np, s.vehicles.len(), burn_max)
+                || !crate::flame::close_ok(kind, &c.close, np, s.vehicles.len(), burn_max, map_side)
                 || (vehicle
                     && *c
                         != crate::ecs::Combat {

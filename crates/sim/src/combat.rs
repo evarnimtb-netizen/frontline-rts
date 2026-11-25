@@ -724,7 +724,7 @@ pub(crate) fn aim_and_fire(
         let feed = ty.feed_slot(w);
         // S14 M2-M3: a strike running or starting takes his turn (no aim,
         // no fire; nothing with `[melee] enabled` 0 and no strike).
-        if crate::flame::strike_tick(ctx, i, c, ws, kit, wi, feed.is_some(), strikes) {
+        if crate::flame::strike_tick(ctx, i, c, ws, kit, ty, wi, feed.is_some(), strikes) {
             continue;
         }
         // A launcher carrier fires in `fire_launchers` (S3).
@@ -3571,6 +3571,12 @@ impl MatchState {
                         continue;
                     }
                     add_suppression(&mut ctx.ents.combat[i], supp * 1000);
+                    // S14 Fix 7: a 0 HP pulse is suppression only (no
+                    // `hurt`: it would kill a downed man and reset his care).
+                    if dmg == 0 {
+                        ctx.hash.mark_entity_chunk(id.chunk());
+                        continue;
+                    }
                     let fell = hurt(
                         ctx.ents,
                         ctx.hash,

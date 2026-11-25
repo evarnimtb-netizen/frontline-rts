@@ -74,6 +74,8 @@ pub const MAX_FLAME_JOBS: usize = 4;
 pub const MAX_FLAME_FAILED: usize = 16;
 /// Most squads with a dated AI clear order (A4).
 pub const MAX_FLAME_CLEARED: usize = 64;
+/// Most remembered trench sightings (S14 Fix 2; full: the oldest goes).
+pub const MAX_FLAME_SEEN: usize = 32;
 /// A1 end indices (`AiCounters::flame_job_ends`).
 pub const END_DONE: usize = 0;
 pub const END_SPENT: usize = 1;
@@ -143,8 +145,14 @@ pub struct AiFlameState {
     /// most [`MAX_FLAME_FAILED`]).
     pub failed: Vec<(FxVec2, u64)>,
     /// A4: the tick of each squad's last AI `ClearTrench` (at most
-    /// [`MAX_FLAME_CLEARED`]; dropped after `recheck_s`).
+    /// [`MAX_FLAME_CLEARED`]; dropped after `recheck_s` once its clear is
+    /// over, S14 Fix 4; a clear older than `clear_max_s` is ended).
     pub cleared: BTreeMap<SquadId, u64>,
+    /// S14 Fix 2: enemies seen in a dug cell: the man, where and when he
+    /// was last seen (at most [`MAX_FLAME_SEEN`]; dropped after `memory_s`
+    /// or once he is no longer a living man on his feet), in first-seen
+    /// order: the targets of A1, A3 and A4.
+    pub seen: Vec<(SimId, FxVec2, u64)>,
 }
 
 impl AiFlameState {
@@ -176,6 +184,11 @@ impl AiFlameState {
                 .cleared
                 .iter()
                 .all(|(id, &t)| !bad_squad(id) && t <= tick)
+            && self.seen.len() <= MAX_FLAME_SEEN
+            && self
+                .seen
+                .iter()
+                .all(|&(m, p, t)| m.index() < ents_len && on_map(p) && t <= tick)
     }
 }
 
@@ -251,6 +264,9 @@ impl super::Planner<'_> {
         let manned = sq_m(Fx::from_int(BUNKER_MANNED_M));
         if let Some(b) = super::fort::fort_of(s, super::fort::WorkKind::Bunker) {
             let me = self.me;
+            // S14 Fix 2: a bunker is a target when an enemy is seen or
+            // remembered in it, or its ground is known (the S5b lasting
+            // knowledge rule: a point's area or an intel cell).
             let roof = g
                 .fort
                 .pieces
@@ -260,9 +276,11 @@ impl super::Planner<'_> {
                         && q.fort == b
                         && q.part == 0
                         && (q.pos - pos).length_sq_raw() <= r
-                        && known
+                        && (known
                             .iter()
                             .any(|k| (k.pos - q.pos).length_sq_raw() <= manned)
+                            || self.remembered_near(q.pos, manned)
+                            || g.known_by_record(me, q.pos))
                 })
                 .min_by_key(|q| ((q.pos - pos).length_sq_raw(), q.pos.x.raw(), q.pos.y.raw()));
             if let Some(q) = roof {
@@ -276,11 +294,23 @@ impl super::Planner<'_> {
                 return Some((q.pos, self.terrain.clamp(aim), Some(face)));
             }
         }
+        // S14 Fix 2: an enemy seen in a dug cell now, else remembered
+        // there (`memory_s`), nearest the point.
         known
             .iter()
             .filter(|k| k.in_trench && (k.pos - pos).length_sq_raw() <= r)
             .min_by_key(|k| ((k.pos - pos).length_sq_raw(), k.id))
-            .map(|k| (k.pos, k.pos, None))
+            .map(|k| k.pos)
+            .or_else(|| {
+                self.ai
+                    .flame
+                    .seen
+                    .iter()
+                    .filter(|e| (e.1 - pos).length_sq_raw() <= r)
+                    .min_by_key(|e| ((e.1 - pos).length_sq_raw(), e.0))
+                    .map(|e| e.1)
+            })
+            .map(|p| (p, p, None))
     }
 
     /// L3: a target near one that failed less than `recheck_s` ago.
@@ -315,6 +345,46 @@ impl super::Planner<'_> {
             .values()
             .filter(|j| j.point as usize == p)
             .count()
+    }
+
+    /// S14 Fix 2: notes this plan's sightings of enemies in dug cells
+    /// (ascending id: a man remembered moves and is refreshed, else he is
+    /// added, the oldest dropped when full) and forgets sightings older
+    /// than `memory_s` and men dead or down (their fall is seen).
+    pub(super) fn flame_remember(&mut self, known: &[Known]) {
+        let s = &self.g.setup;
+        if s.rules.flame.enabled == 0 && s.rules.clear.enabled == 0 {
+            return;
+        }
+        let hz = s.tick_hz.max(1) as u64;
+        let keep = s.rules.ai.flame.memory_s as u64 * hz;
+        let tick = self.tick;
+        let ents = self.ents;
+        let seen = &mut self.ai.flame.seen;
+        seen.retain(|&(m, _, t)| {
+            tick - t < keep && ents.kind.get(m.index()) == Some(&EntityKind::Soldier)
+        });
+        // A remembered man now seen out of a trench is no longer there.
+        seen.retain(|e| !known.iter().any(|k| k.id == e.0 && !k.in_trench));
+        for k in known.iter().filter(|k| k.in_trench) {
+            if let Some(e) = seen.iter_mut().find(|e| e.0 == k.id) {
+                *e = (k.id, k.pos, tick);
+                continue;
+            }
+            if seen.len() >= MAX_FLAME_SEEN {
+                seen.remove(0);
+            }
+            seen.push((k.id, k.pos, tick));
+        }
+    }
+
+    /// S14 Fix 2: a remembered enemy within `r` (m², raw) of `at`.
+    fn remembered_near(&self, at: FxVec2, r: u64) -> bool {
+        self.ai
+            .flame
+            .seen
+            .iter()
+            .any(|e| (e.1 - at).length_sq_raw() <= r)
     }
 
     // ------------------------------------------------------------ start --
@@ -379,9 +449,17 @@ impl super::Planner<'_> {
             let stage = self
                 .terrain
                 .clamp(from + dir * Fx::from_int(cfg.stage_m as i32));
+            // S14 Fix 2: a trench target is burnt from its lip
+            // (`stand_trench_m`: a flat stream from farther ends on the
+            // near parapet), a bunker from `stand_m`.
+            let stand_m = if face.is_some() {
+                cfg.stand_m
+            } else {
+                cfg.stand_trench_m
+            };
             let stand = self
                 .terrain
-                .clamp(from + dir * Fx::from_int(cfg.stand_m as i32));
+                .clamp(from + dir * Fx::from_int(stand_m as i32));
             self.ai.counters.flame_jobs += 1;
             // Its task (the end rule reads it; the assignment skips it).
             self.task(m.id, TaskKind::Attack, i as u8, pt.pos);
@@ -435,15 +513,31 @@ impl super::Planner<'_> {
         busy: &[SquadId],
         known: &[Known],
     ) {
+        self.flame_remember(known);
         let g = self.g;
         let me = self.me;
         let hz = g.setup.tick_hz.max(1) as u64;
         let wait = g.setup.rules.ai.flame.recheck_s as u64 * hz;
         let tick = self.tick;
-        self.ai
-            .flame
-            .cleared
-            .retain(|id, t| g.squads.get(id).is_some_and(|q| q.owner == me) && tick - *t < wait);
+        // S14 Fix 4: a squad's entry stays while its clear runs (it keeps
+        // the squad out of the assignment), at most `clear_max_s`: an older
+        // clear is ended (any order ends it).
+        let max = g.setup.rules.ai.flame.clear_max_s as u64 * hz;
+        let mut stale = Vec::new();
+        self.ai.flame.cleared.retain(|id, t| {
+            let live = g.squads.get(id).is_some_and(|q| q.owner == me);
+            let running = g.clears.contains_key(id);
+            if live && running && tick - *t >= max {
+                stale.push(*id);
+                return false;
+            }
+            live && (running || tick - *t < wait)
+        });
+        for id in stale {
+            if !self.ai.flame.jobs.contains_key(&id) {
+                self.ai.emit(self.due, CommandKind::Stop { squad: id });
+            }
+        }
         self.ai.flame.failed.retain(|&(_, t)| tick - t < wait);
         let clearing: Vec<SquadId> = self
             .ai
@@ -455,8 +549,24 @@ impl super::Planner<'_> {
             .collect();
         mine.retain(|m| !clearing.contains(&m.id));
         let ids: Vec<SquadId> = self.ai.flame.jobs.keys().copied().collect();
+        let cfg = &g.setup.rules.ai.flame;
         for id in ids {
             if busy.contains(&id) && g.squads.get(&id).is_some_and(|q| q.owner == me) {
+                // S14 Fix 13: a busy squad still meets its deadline and
+                // stall tests.
+                let job = &self.ai.flame.jobs[&id];
+                let end = if tick > job.since + cfg.job_max_s as u64 * hz {
+                    Some(END_DEADLINE)
+                } else if tick > job.best_at + cfg.stall_s as u64 * hz {
+                    Some(END_STALL)
+                } else {
+                    None
+                };
+                if let Some(end) = end {
+                    let job = self.ai.flame.jobs.remove(&id).expect("listed");
+                    self.flame_end(&job, end);
+                    self.flame_keep_clear(id);
+                }
                 continue;
             }
             let mut job = self.ai.flame.jobs[&id].clone();
@@ -469,11 +579,26 @@ impl super::Planner<'_> {
             if let Some(end) = self.run_flame(&m, &mut job, known, true) {
                 self.ai.flame.jobs.remove(&id);
                 self.flame_end(&job, end);
+                // S14 Fix 4: a clear the job leaves running keeps the
+                // squad out of the assignment while it runs.
+                if self.flame_keep_clear(id) {
+                    mine.remove(k);
+                }
                 continue;
             }
             self.ai.flame.jobs.insert(id, job);
             mine.remove(k);
         }
+    }
+
+    /// S14 Fix 4: a squad whose job ended with its clear running is kept as
+    /// an A4 clear (dated now). True when kept.
+    fn flame_keep_clear(&mut self, id: SquadId) -> bool {
+        if !self.g.clears.contains_key(&id) || self.ai.flame.cleared.len() >= MAX_FLAME_CLEARED {
+            return false;
+        }
+        self.ai.flame.cleared.entry(id).or_insert(self.tick);
+        true
     }
 
     /// Counts an ended job; a failure dates its target (L3).
@@ -539,6 +664,9 @@ impl super::Planner<'_> {
         if m.strength_pct < 50 {
             return Some(END_WEAK);
         }
+        // (S14 Fix 13, not changed: the job's own Attack task counts here,
+        // so "no longer attacked" ends a job only with the point taken; a
+        // lone flame squad's job is bounded by `job_max_s`. TODO S14-12.)
         if g.points[job.point as usize].owner == Some(self.me)
             || (check && !self.point_attacked(job.point))
         {
@@ -556,9 +684,12 @@ impl super::Planner<'_> {
         let fuel = self.fuel_pct(job.man);
         let spent = fuel.is_none_or(|p| p <= cfg.reserve_pct);
         let near = sq_m(Fx::from_int(TARGET_CLEAR_M));
+        // S14 Fix 2: seen now or remembered; Burn runs `burn_min_s` first.
         let enemy_left = known
             .iter()
-            .any(|k| (k.pos - job.target).length_sq_raw() <= near);
+            .any(|k| (k.pos - job.target).length_sq_raw() <= near)
+            || self.remembered_near(job.target, near)
+            || (job.phase == FlamePhase::Burn && tick < job.phase_at + cfg.burn_min_s as u64 * hz);
         let clear_on = cfg.clear != 0 && s.rules.clear.enabled != 0;
         if job.phase != FlamePhase::Burn && job.phase != FlamePhase::Clear && spent {
             return Some(END_SPENT);
@@ -612,7 +743,12 @@ impl super::Planner<'_> {
             FlamePhase::Go => {
                 let at = self.ents.transform[job.man.index()].pos.xy();
                 let d = (at - job.stand).length();
-                let inside = (at - job.target).length() <= Fx::from_int(cfg.stand_m as i32);
+                let stand_m = if job.bunker {
+                    cfg.stand_m
+                } else {
+                    cfg.stand_trench_m
+                };
+                let inside = (at - job.target).length() <= Fx::from_int(stand_m as i32);
                 if d > Fx::from_int(STAND_ARRIVE_M) && !inside {
                     self.flame_progress(job, dm(d), WALK_PROGRESS_DM);
                     let u = &self.ents.unit[job.man.index()];
@@ -755,11 +891,21 @@ impl super::Planner<'_> {
                 continue;
             }
             let pos = points[i].pos;
+            // S14 Fix 2: seen now, else remembered in a dug cell.
             let Some(at) = known
                 .iter()
                 .filter(|e| e.in_trench && (e.pos - pos).length_sq_raw() <= r)
                 .min_by_key(|e| ((e.pos - m.lead).length_sq_raw(), e.id))
                 .map(|e| e.pos)
+                .or_else(|| {
+                    self.ai
+                        .flame
+                        .seen
+                        .iter()
+                        .filter(|e| (e.1 - pos).length_sq_raw() <= r)
+                        .min_by_key(|e| ((e.1 - m.lead).length_sq_raw(), e.0))
+                        .map(|e| e.1)
+                })
             else {
                 continue;
             };
