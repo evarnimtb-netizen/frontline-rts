@@ -5,34 +5,36 @@ Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never
 Owner rule 2026-11-25: no balance runs, no tuning; every number a TOML key with a range, behind switches that stay off.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S14a Build B done; Build C (melee M1-M5, `Strike`, R5) next.** SAVE 33 / PROTOCOL 17 (unchanged by B). **T185 passes
-again:** `target/s14-B-40` (batch at 16b2178) vs `target/s14-base40`: `neutral.py` "same 40/40". Switches stay off.
-**Code map (B).** `flame.rs` C1-C5 (after the F-sections): `order_clear` (C1; `game.rs` dispatches `ClearTrench`), `clear_tick`
-(C2-C5; `world.rs` Status stage after `step_out_tick`), `next_step` (BFS on dug 4 m cells), `clear_ended_by` (a new unit order
-ends it; `apply` calls it on accepted commands), `walkable` (F6). `supply.rs` fuel refill at `[flame] base_refill_ms`. Data:
-`mods/ww2/defs/weapons/{fmw41,m1a1_flamethrower,m2_2_flamethrower}.toml`, cartridges `{fmw41,m1a1}_fuel`; `when` pairs in
-`ger_sturmpioniergruppe`, `usa_assault_section`; derived capability `flame` (`Capability::Flame` 15). Rows: `cli/fortify/s14.rs`
-`flame_world` (defs resolve with `[flame] enabled` 1, `skirmish::match_setup_with`), R1 `slit`, R2 `pool`, R3 `trench`, R4
-`clear`, R6 `under_fire`; `json_out::s14_checks` (R2 hard check; R1 only while `SLIT_HARD`). Targets T186 report, T201-T203 new.
-**What Build C must know.** `Strike` is still refused (`NotAllowed`); `Close::strike` has load checks; the strike tick fits a
-u8 at 20/30 Hz. `save_fuzz` staging has a squad mid-clear, not yet a man mid-strike. The sim tests use the mod's flamers
-(`s14_tests.rs` `real_flame_world`, `sturm`). R5 (T188) still has no scene.
-**Rows (5 seeds x both owners, at 0c8f742).** R1 report only: out 34 %, runs_4_out 2 of 10, flame man out in 5 of 10, closed
-18 %, back 0 (fails). Two causes: the five kill the lone flame man in half the runs (no tuning: later balance pass), and
-particles pass under the front timbers' bottom (z base-0.2 m) where the pit lip falls away, into the pit, and leave a patch
-on its floor (S10b bunker/pit geometry, also the closed control's 18 %; not changed here: owner question). R2 passes (drop_diff
-0, pool_diff_ticks 0, over_cap 0, 1210 fired). R3: attackers lost 100 % with and without flame, none reached the trench, the
-flame man never fired (he walks last; the 60 m walk kills the card). R4: 49 steps, 10 clears done, defenders out 100 %,
-attackers lost 21 % (AttackMove control: 0 steps, 100 %, 7 %). R6: out 0 %, stepped out 0, 70 fired, the flame man out in 10
-of 10 (the MG at 150 m does not keep the trench down). All reports; no tuning.
-**Deviations (B).** (1) M2-2 uses `m1a1_fuel` (a third cartridge for 135 g not made). (2) Fuel cartridges carry `caliber_mm`
-1 (none). (3) A flamethrower is never a squad's main weapon (setup and the launcher-main check skip Flame). (4) Own burns have
-no counter (no spare saved field); an own burn kill is own fire (`ff_dead`). (5) Pulse HP spread statelessly by pulse index.
-(6) The fuel refill follows the S5a bombs-wait brake. (7) C2 "fires one burst" is a `Suppress` at the step point until the
-advance. (8) Crouch stays after a clear. (9) C3's frontier: cells at walk >= ceil(step_m/4) cells, farthest from the entry.
-(10) The fuse wait uses the card's frag item. (11) `walkable` = slope <= `max_slope_pct` and no static box at 0.1/0.5 m.
-(12) The setup bytes baseline moved for the new key only. (13) R1 report only (above); R3 walks straight in (no grenades).
-(14) R2 takes one flame man from each of two assault cards. (15) Report rows T201-T203 are new ids.
+**State: S14a mechanics done (Builds A-C); presenter P and S14-ai next.** SAVE 33 / PROTOCOL 17. Every S14 switch is 0 in
+`mods/ww2/defs/rules/skirmish.toml`. **T185:** `target/s14-C-40` vs `target/s14-base40`, `neutral.py` "same 40/40". R2, R5 hard and
+passing; R1 report only. **Code map (`crates/sim/src/flame.rs`).** Layout and load checks (`Flame`, `Patch`, `Close`, `Clear`,
+`S14Counters`, `close_ok`, `validate_s14`); F1 `spawn_flame` (from `aim_and_fire` requests); F2-F5 `flame_stage` (Ballistics, serial,
+after `fly_thrown`); F6 `walkable`, `step_out_tick` (Status); C1-C5 `order_clear`, `clear_ended_by`, `clear_tick`, `next_step`;
+M1-M5 `melee_of` (weapon `[melee]` block else the rules'), `strike_tick` (called from `combat::aim_and_fire`, per chunk, own fields;
+wind-up end -> `World::strike_bufs`), `order_strike`, `resolve_strikes` (`apply_blows`, after every blow, ascending striker id, via
+`DamageCtx::strikes`). Fuel refill `supply.rs`; flame data `mods/ww2/defs/weapons/{fmw41,m1a1_flamethrower,m2_2_flamethrower}`,
+butt strokes on `kar98k`, `m1_garand`, `m1_carbine`, `bar_m1918a2` (100/50/600/1000) and `mp40`, `m3_smg`, `stg44` (80/40/500/1000).
+Content: `WeaponDef::melee` / `WeaponSetup::melee` (`MeleeDef`), `MeleeTuning` (+ `drop_cm`). Rows `sdk/crates/cli/src/fortify/s14.rs`
+R1 `slit`, R2 `pool`, R3 `trench`, R4 `clear`, R5 `melee`, R6 `under_fire`; `json_out::s14_checks` (R2, R5; R1 while `SLIT_HARD`).
+**Presenter needs.** Snapshot (`RenderSnapshot`): `flame[]`, `patches[]`, `soldier_burning[]`, `soldier_strike[]` (0 none, 1 wind-up,
+2 recovery: the strike pose). Intents: `strike_units {units}` (bridge -> `Strike`; key `V`); `ClearTrench {squad, at}` has no bridge
+intent yet (presenter adds `clear_trench`). Refusals come as `fort_refused` `not_allowed` / `bad_spot`. `godot/docs/match_state.md`
+S14 lists the planned state keys; the mock shows none of it.
+**What S14-ai calls.** `ClearTrench` (C1 refusals: switch, squad, no frag, `bad_spot`), `SuppressUnits` at a slit or trench cell for a
+flame man (F1), `MatchState::flame_men`, `Capability::Flame` (derived). Strikes need no AI (automatic, M2). Switches to turn on:
+`[flame] enabled`, `[melee] enabled`, `[clear] enabled`, `[ai.flame] jobs/refuel/buy/clear`. JSON `s14` block and targets T189-T200.
+**Open owner questions.** (1) R1 slit geometry: particles pass under the bunker's front timbers where the pit lip falls away (also
+the closed control's 18 %). (2) R1 report only: five alert defenders kill the lone flame man (balance pass). (3) R3: the flame man
+walks last and never fires; R6: the MG at 150 m does not keep the trench down (reports). (4) Melee: the plan's level strike from the
+chest passes over a crouched or prone man, and a struck man crouches (hit suppression), so a second strike at him misses;
+`[melee] drop_cm` (default 0, the plan) lowers the far end for a later pass.
+**Deviations (C).** (1) New key `[melee] drop_cm` (above). (2) M2 readiness: the first aim at a new target (half a second times
+training) is not "not ready" (a loaded SMG shoots); a dry counted weapon is always not ready. (3) Start distance: horizontal, to the
+enemy's position, within reach + `start_pad_cm` + body radius; he need not see him. (4) `Strike` asks no readiness or pinned check,
+only no strike running and an enemy in reach. (5) `strike_kills` = struck to 0 HP (downed or killed); `strikes` counted at the
+resolution. (6) A phase runs on if he is pinned or ducks mid-strike. (7) `Strike` ends a squad's clear (Build B's rule). (8) R5: one
+run (no RNG), 50 strikes each way, staged a tick before the wind-up ends, both men restored fresh each strike. (9) `melee_off_is_base`
+compares entity stores (setup bytes are in the state hash). (10) Damage values cite the design doc only. Builds A, B: their sections.
 
 ## S14a A (Build A)
 Commits: 176525e layout; 8aca2e1 keys, when, class, ablations, targets; 3c55b01 F1-F5, F8, F9; f22d8a1 log, clippy; 4d3b6c1
@@ -64,3 +66,15 @@ s14_rows_feed_the_hard_checks; rewritten on the mod's data: flame_never_takes_po
 flame_fuel_resupplies_as_explosives, fortify_s14_rows_run.
 `tools/check.sh quick a27ce63` at 0c8f742: fmt ok, clippy ok, neutral.py ok, every ablate dry run ok (S14 included), tests 1296
 passed, 1 failed (`udp::ipv6_loopback_handshake`, no IPv6 in the cloud, as before).
+
+## S14a C (Build C)
+Commits: 6f5d64f weapon `[melee]` block and data; 98cf249 M1-M4, `Strike`, intent, snapshot, M5 tests; 6241ba4 save_fuzz mid-strike;
+ae3131b R5 row, checks, `drop_cm`; then this log. T185: same 40/40 (`target/s14-C-40`). R5: 100 strikes ahead hit 100, aside 0.
+Tests added: strike_hits_only_a_touched_capsule, target_steps_back_strike_misses, loaded_smg_shoots_not_strikes,
+reloading_rifle_strikes, pinned_man_does_not_strike, no_strike_at_downed, two_strikers_resolve_in_id_order, melee_off_is_base,
+strike_command_needs_a_man_in_reach, strike_saves_and_loads_mid_windup, melee_scene_hash_is_thread_count_free,
+drop_cm_lowers_the_strike, s14_strike_intent_names_its_men, s14_melee_row_hits_only_ahead; save_fuzz stages a man mid-wind-up
+and one recovering; s14_rows_feed_the_hard_checks covers R5.
+`tools/check.sh quick a27ce63` at ae3131b: fmt ok, neutral.py ok, every ablate dry run ok (S14 included), tests 1310 passed, 1
+failed (`udp::ipv6_loopback_handshake`, no IPv6 in the cloud, as before); clippy failed on too many arguments of
+`flame::nearest_enemy`, fixed with this log (workspace clippy then clean).

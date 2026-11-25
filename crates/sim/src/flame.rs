@@ -1130,6 +1130,7 @@ pub(crate) fn melee_of(setup: &MatchSetup, wi: u16) -> Melee {
 /// M2: the nearest enemy of `owner` among `near` (live soldiers on foot)
 /// whose body axis lies within `within` plus the capsule radius of `at`
 /// horizontally; ties by id. Returns him and his position.
+#[allow(clippy::too_many_arguments)]
 fn nearest_enemy(
     near: impl FnOnce(&mut dyn FnMut(SimId)),
     kind: &[EntityKind],
