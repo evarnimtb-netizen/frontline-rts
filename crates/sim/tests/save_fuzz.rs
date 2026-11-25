@@ -727,6 +727,55 @@ const STAGED: usize = FUZZ_SAVES.len();
 const ROADS: usize = STAGED + 1;
 /// S16a: the road-map match's save tick.
 const ROAD_TICK: u64 = 7_200;
+/// S17a: the four-player, two-team save's index in `fuzz_set`.
+const TEAMS: usize = ROADS + 1;
+/// S17a: the team match's save tick.
+const TEAM_TICK: u64 = 6_000;
+
+/// S17a: the paths the team save mutates: the players and their teams, the
+/// bases, `[teams]` and `[ai.team]`, capture points, the outcome, the
+/// players' state and AI state, and the entities' owners and sight bits.
+fn team_path(path: &str) -> bool {
+    path.starts_with("state.game.setup.players")
+        || path.starts_with("state.game.setup.map.bases")
+        || path.contains("rules.teams")
+        || path.contains("ai.team")
+        || path.starts_with("state.game.points")
+        || path.starts_with("state.game.outcome")
+        || path.starts_with("state.game.players")
+        || path.starts_with("state.entities.owner")
+        || path.contains("seen_by")
+        || path.starts_with("state.config")
+        || (path.starts_with("state.game.ai") && path.contains(".tasks"))
+}
+
+/// S17a: the seed match with four AI players on two teams (slots 0 and 2
+/// against 1 and 3) on Kessel Ridge with two more bases (the other two
+/// corners), saved at `TEAM_TICK`.
+fn team_world() -> World {
+    use frontline_content::setup::FixedVec2;
+    let mut s = setup(SEED);
+    let base = s.map.bases[0].clone();
+    for at in [[96, 928], [928, 96]] {
+        let mut b = base.clone();
+        b.center = FixedVec2::from_m(at);
+        s.map.bases.push(b);
+    }
+    let proto = s.players.clone();
+    s.players = (0..4)
+        .map(|i| {
+            let mut p = proto[i % 2].clone();
+            p.base = i as u8;
+            p.team = (i % 2) as u8;
+            p
+        })
+        .collect();
+    let mut w = World::new_match(s, 1).unwrap();
+    while w.tick() < TEAM_TICK {
+        w.step(&[]);
+    }
+    w
+}
 
 /// S16a: the paths the road-map save mutates: the map's roads, the terrain
 /// flag layer, `[vehicles.road]` and each vehicle's `road_speed_pct`.
@@ -820,6 +869,8 @@ fn plan(save: usize, l: &save_layout::Layout) -> Vec<Mutation> {
             _ if save == STAGED => (2, 3),
             _ if save == ROADS && !road_path(path) => continue,
             _ if save == ROADS => (3, 3),
+            _ if save == TEAMS && !team_path(path) => continue,
+            _ if save == TEAMS => (2, 2),
             _ if setup && p % 3 != save => continue,
             _ if setup => (1, 1),
             _ if focus(path) => (2, 3),
@@ -965,6 +1016,10 @@ fn fuzz_set() -> &'static (Vec<save_layout::Layout>, Vec<u64>) {
         let r = road_world();
         saves.push(layout(&r));
         ticks.push(r.tick());
+        // S17a: four players on two teams (`TEAMS`).
+        let t = team_world();
+        saves.push(layout(&t));
+        ticks.push(t.tick());
         (saves, ticks)
     })
 }
@@ -985,6 +1040,17 @@ fn fuzz_plan_reaches_s10b_state() {
         assert!(
             road.iter().any(|p| p.contains(want)),
             "no road mutation reaches {want}: {road:?}"
+        );
+    }
+    // S17a: the team save's mutations reach the team field and the keys.
+    let team: Vec<&str> = plan(TEAMS, &saves[TEAMS])
+        .into_iter()
+        .map(|m| saves[TEAMS].paths[m.field.path as usize].as_str())
+        .collect();
+    for want in ["setup.players", ".team", "rules.teams", "ai.team", "seen_by"] {
+        assert!(
+            team.iter().any(|p| p.contains(want)),
+            "no team mutation reaches {want}: {team:?}"
         );
     }
     let planned: Vec<&str> = (0..saves.len())

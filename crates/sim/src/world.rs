@@ -3080,6 +3080,9 @@ mod s12b_tests;
 #[path = "s13_tests.rs"]
 mod s13_tests;
 #[cfg(test)]
+#[path = "s17_tests.rs"]
+mod s17_tests;
+#[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;
 #[cfg(test)]
