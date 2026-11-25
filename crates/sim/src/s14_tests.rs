@@ -990,7 +990,7 @@ fn flame_fuel_resupplies_as_explosives() {
             c.mag = 0;
         }));
         let ex = frontline_content::SupplyKind::Explosives as usize;
-        let a0 = w.game().unwrap().players[0].ammo.clone();
+        let a0 = w.game().unwrap().players[0].ammo;
         steps(&mut w, 4 * super::s6_tests::HZ);
         let a1 = &w.game().unwrap().players[0].ammo;
         let fuel = w.state.entities.kit[man.index()].rounds[k] as u32
