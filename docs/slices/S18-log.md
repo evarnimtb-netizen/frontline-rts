@@ -79,3 +79,27 @@ Docs (`docs/net/playing-online.md`), then the owner's merge.
 - No per-player net overlay redesign: the existing overlay and disconnect screen name any slot through the per-slot names.
 - No real two-client co-op run through `autoplay_net.gd` (headless Godot here has no second instance driver).
 - `docs/net/playing-online.md` (Docs stage).
+
+## Review (independent, protocol/relay/save gate)
+Checked: turn close over 4 slots (relay clock, round-robin `tick mod players`, AI slots have no queue; a 1v1 is
+unchanged); D = max suggestion over the slots; AI fill is the sim's AI commander from `Start.players[i].ai` on every
+client (no AI input on the wire, so clients cannot disagree); hand-over fires only from `Surrender` in the turn stream
+(own, or relay-injected on Bye/timeout), never from a local timer; once only, defeated players' commands refused;
+`handed`/`handed_to` saved, hashed and validated (chain check); relay slot moves keep the token (lookup by token),
+clear Ready, refuse slot 0 and AI slots; version is an exact match, older Hellos get `Reject(Version)`; pings use the
+`Start` teams; desync carries `Vec<Option<u64>>` into the dump manifest.
+- **High, fixed**: `NetClient::map_ping` sent any point; one off the map (cursor past its edge: `ground_pick` gives
+  negative metres) failed the relay's decode, was never acked and jammed that client's reliable control stream (later
+  hashes, pauses, bye). Now clamped to `0..=MAX_PING_M`; `map_pings_reach_allies_only_and_are_spaced` extended (fails
+  without the fix).
+- **Medium, fixed**: `Ready` was stamped by the net thread with the newest revision it had heard, while `NetSession`
+  hashed its own (possibly older) lobby view, so a stale hash could pass the revision check. New
+  `NetClient::ready_for(hash, rev)` / `ToNet::ReadyFor`; `NetSession` sends `self.lobby.rev`. Test
+  `a_ready_names_the_revision_its_hash_was_made_from`. Not a desync risk (every client builds from `Start`).
+- **Test added**: `an_older_protocol_is_rejected_with_the_relay_version` (a v17 Hello gets `Reject(Version)`, 18).
+- Deviation "stale Ready dropped": fine (better than the old "setups differ" note); with the fix above it is exact.
+- Deviation "host leaving ends the match": the relay lives in the host's process, so acceptable for now, but in a 2v2
+  it ends the match for three people. TODO: keep the relay thread running when the host leaves to the menu mid-match
+  while others remain (only app exit stops it), or host migration later.
+- Open (low): two slots silent at once wait one full timeout each (sequential `Waiting`); one human + AI fill never
+  confirms hashes, so the desync recorder keeps every bundle from tick 0 (small, bounded by match length).

@@ -425,7 +425,12 @@ impl NetSession {
                 let h = frontline_net::setup_hash(&setup);
                 self.ready_hash = Some(h);
                 self.mismatch.clear();
-                self.send(ToNet::Ready(h));
+                // The revision this hash was made from: the net thread may
+                // already hold a newer lobby than `self.lobby`.
+                self.send(ToNet::ReadyFor {
+                    setup_hash: h,
+                    rev: self.lobby.rev,
+                });
             }
             Err(e) => self.mismatch = e,
         }

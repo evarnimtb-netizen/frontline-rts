@@ -314,9 +314,9 @@ direction.
 | Message | Meaning |
 |---|---|
 | `LobbySet { faction, seed: Option<u64>, map: Option<String>, d: Option<u8>, team: Option<u8>, players: Option<u8>, ai: Option<Vec<AiPick>> }` | Lobby choice. Only slot 0's `seed`, `map`, `d`, `players` and `ai` count (`d: None` means "use the suggestion"; others are clamped to 2..=`max_d`). `team`: the sender's team (`None`: alone; team numbers 0–3). `players`: slots in the match, 2 to the opened slots, never below the highest taken slot + 1 (AI slots past it go). `ai` replaces the AI fill (none with `--no-ai`; never slot 0 or a player's slot). Any `LobbySet` clears every Ready and bumps the lobby revision. |
-| `Ready { setup_hash: u64, rev: u32 }` | xxh3-64 of postcard(`MatchSetup`) from the client's own resolve, made from lobby revision `rev`. A `Ready` for an older revision is dropped (the lobby changed after it was made). |
+| `Ready { setup_hash: u64, rev: u32 }` | xxh3-64 of postcard(`MatchSetup`) from the client's own resolve, made from lobby revision `rev`. A `Ready` for an older revision is dropped (the lobby changed after it was made). A client sends the revision of the lobby state it resolved the setup from, not merely the newest it has heard. |
 | `TakeSlot(u8)` | Lobby: move to that open slot of the match (not to or from slot 0, not to an AI slot). The relay answers `Down::Slot`, clears every Ready and bumps the revision. |
-| `MapPing { x: i32, y: i32 }` | Match: a map ping (metres, 0–65,535) for the sender's connected allies. At most one per `--ping-gap-ms` (500 ms) per slot is forwarded; the game gates its own at `[teams] ping_gap_s`. |
+| `MapPing { x: i32, y: i32 }` | Match: a map ping (metres, 0–65,535) for the sender's connected allies. At most one per `--ping-gap-ms` (500 ms) per slot is forwarded; the game gates its own at `[teams] ping_gap_s`. A client clamps the point into the range before sending: a control message that fails the relay's decode is never acked, so it would hold back the rest of that client's control stream. |
 | `Hash { tick, hash }` | A published sim hash: the state hash after `tick` ticks (every `hash_interval` = 30 ticks). |
 | `PauseReq` | Pause the match. |
 | `ResumeReq` | Resume a player pause. A slot's pause and resume requests closer than 250 ms to its previous accepted one are ignored. |

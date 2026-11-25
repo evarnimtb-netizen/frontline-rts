@@ -31,6 +31,12 @@ pub enum ToNet {
     },
     Lobby(LobbySet),
     Ready(u64),
+    /// S18: `Ready` for the lobby revision the hash was made from
+    /// ([`NetClient::ready_for`]).
+    ReadyFor {
+        setup_hash: u64,
+        rev: u32,
+    },
     Pause,
     Resume,
     Bye(ByeReason),
@@ -139,6 +145,9 @@ impl NetHandle {
                                 ToNet::Hash { tick, hash } => client.send_hash(tick, hash),
                                 ToNet::Lobby(l) => client.set_lobby(l),
                                 ToNet::Ready(h) => client.ready(h),
+                                ToNet::ReadyFor { setup_hash, rev } => {
+                                    client.ready_for(setup_hash, rev)
+                                }
                                 ToNet::Pause => client.request_pause(),
                                 ToNet::Resume => client.request_resume(),
                                 ToNet::Bye(r) => client.bye(r),

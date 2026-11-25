@@ -497,4 +497,86 @@ fn map_pings_reach_allies_only_and_are_spaced() {
     n.clients[0].map_ping(12, 22);
     n.run(100_000);
     assert_eq!(pings(&n, 1), [(0, 10, 20), (0, 12, 22)]);
+    // Review: a ping off the map (the cursor past its edge) is clamped
+    // into the wire range; unclamped it failed the relay's decode and
+    // jammed slot 0's reliable control stream (no later ping, hash or
+    // bye got through).
+    n.run(500_000);
+    n.clients[0].map_ping(-40, 70_000);
+    n.run(600_000);
+    n.clients[0].map_ping(13, 23);
+    n.run(100_000);
+    assert_eq!(
+        pings(&n, 1),
+        [(0, 10, 20), (0, 12, 22), (0, 0, 65_535), (0, 13, 23)]
+    );
+}
+
+/// Review: a `Ready` carries the lobby revision its hash was made from
+/// (`ready_for`), not the newest one the client thread heard: a hash made
+/// from revision `r` is dropped once the lobby moved on, even if the
+/// client already holds the newer state.
+#[test]
+fn a_ready_names_the_revision_its_hash_was_made_from() {
+    let mut n = Net::new(["A", "B"]);
+    n.run(50_000);
+    for (i, f) in ["ger", "usa"].iter().enumerate() {
+        n.clients[i].set_lobby(LobbySet {
+            faction: (*f).into(),
+            seed: (i == 0).then_some(3),
+            ..LobbySet::default()
+        });
+    }
+    n.run(100_000);
+    let old = last_lobby(&n, 1).rev;
+    n.clients[0].set_lobby(LobbySet {
+        faction: "ger".into(),
+        seed: Some(4),
+        ..LobbySet::default()
+    });
+    n.run(100_000);
+    let new = last_lobby(&n, 1).rev;
+    assert_ne!(old, new);
+    n.clients[0].ready(42);
+    n.clients[1].ready_for(42, old);
+    n.run(300_000);
+    assert_eq!(n.relay.phase(), Phase::Lobby);
+    assert!(!last_lobby(&n, 0).slots[1].as_ref().unwrap().ready);
+    n.clients[1].ready_for(42, new);
+    n.run(300_000);
+    assert_eq!(n.relay.phase(), Phase::Running);
+}
+
+/// Review: a client of the S17 protocol (version 17) is told the relay's
+/// version in a `Reject`, and nothing else of it is read.
+#[test]
+fn an_older_protocol_is_rejected_with_the_relay_version() {
+    use frontline_net::protocol::{
+        Hello, PROTOCOL_VERSION, Packet, decode, encode, reject_version,
+    };
+    let mut relay = Relay::new(RelayConfig::default(), TokenSource::seeded(1));
+    let from: SocketAddr = "10.0.0.9:5000".parse().unwrap();
+    let mut bytes = Vec::new();
+    encode(
+        0,
+        &Packet::Hello(Hello {
+            nonce: 1,
+            build_id: "test".into(),
+            content_hash: 7,
+            name: "old".into(),
+        }),
+        &mut bytes,
+    )
+    .unwrap();
+    bytes[4..6].copy_from_slice(&17u16.to_le_bytes());
+    relay.on_datagram(from, &bytes, 1_000_000);
+    let out: Vec<_> = relay.drain_out().collect();
+    assert_eq!(out.len(), 1);
+    assert_eq!(reject_version(&out[0].1), Some(PROTOCOL_VERSION));
+    match decode(&out[0].1) {
+        Ok((_, Packet::Reject(r))) => assert_eq!(r.reason, RejectReason::Version),
+        other => panic!("not a reject: {other:?}"),
+    }
+    // No slot was taken: the lobby is still empty.
+    assert!(relay.status(1_000_000).slots.iter().all(|s| s.is_none()));
 }

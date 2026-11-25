@@ -388,6 +388,16 @@ impl NetClient {
         });
     }
 
+    /// Ready with `setup_hash`, made from lobby revision `rev` (the
+    /// `LobbyState::rev` the caller resolved the setup from). A caller on
+    /// another thread than this client's must use this, not [`Self::ready`]:
+    /// this client may already have heard a newer revision than the one
+    /// the hash was made from, and stamping that one would let a stale
+    /// hash through.
+    pub fn ready_for(&mut self, setup_hash: u64, rev: u32) {
+        self.ctl_out.push(Up::Ready { setup_hash, rev });
+    }
+
     /// S18: asks to move to open slot `slot` (lobby only).
     pub fn take_slot(&mut self, slot: u8) {
         if self.phase == ClientPhase::Lobby {
@@ -396,9 +406,14 @@ impl NetClient {
     }
 
     /// S18 H5: pings the map at `(x, y)` metres for the allies (match
-    /// only; the relay drops pings closer together than its gap).
+    /// only; the relay drops pings closer together than its gap). The
+    /// point is clamped to the wire range (`0..=MAX_PING_M`): an off-map
+    /// point would fail the relay's decode, and the reliable control
+    /// stream would resend it forever, holding back every later hash,
+    /// pause and bye.
     pub fn map_ping(&mut self, x: i32, y: i32) {
         if self.phase == ClientPhase::Running {
+            let (x, y) = (x.clamp(0, MAX_PING_M), y.clamp(0, MAX_PING_M));
             self.ctl_out.push(Up::MapPing { x, y });
         }
     }
