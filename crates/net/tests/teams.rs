@@ -150,7 +150,9 @@ fn four_people_with_a_drop_and_a_ping() {
     let spec = VirtualSpec {
         seed: 12,
         seconds: 240,
-        blackouts: vec![(1, 60_000_000, 75_000_000)],
+        // Slot 3 drops for 10 s and comes back (the relay waits for it,
+        // then resumes); slot 1 drops for good.
+        blackouts: vec![(3, 30_000_000, 10_000_000), (1, 60_000_000, 75_000_000)],
         bye_on_end: false,
         team: Some(Vec::new()),
         map_pings: vec![(0, 20_000_000), (2, 20_000_000)],
@@ -163,5 +165,51 @@ fn four_people_with_a_drop_and_a_ping() {
     assert_eq!(r.pings[3], vec![(2, 102, 200)], "{s1}");
     assert!(r.pings[0].is_empty(), "{s1}");
     assert!(r.pings[2].is_empty(), "{s1}");
+    assert!(
+        r.relay_log.iter().any(|l| matches!(
+            l,
+            LogRecord::Paused {
+                cause: frontline_net::relay::PauseKind::Waiting(3),
+                ..
+            }
+        )),
+        "the relay waited for slot 3: {s1}"
+    );
+    assert!(r.resumes >= 2, "{s1}");
     assert_team_run(&r, 1, 0, 4000);
+}
+
+/// A forced desync in a four-player match (slot 2 runs one extra local
+/// order): every client stops at the pause turn and each writes its dump,
+/// whose manifest lists the hash of every slot.
+#[test]
+fn a_four_player_desync_is_dumped_with_every_hash() {
+    let dump = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("desync-dump-4");
+    let _ = std::fs::remove_dir_all(&dump);
+    let s = setup(13, &[]);
+    let spec = VirtualSpec {
+        seed: 13,
+        seconds: 60,
+        inject_desync: Some((2, 1000)),
+        dump_dir: Some(dump.clone()),
+        team: Some(Vec::new()),
+        ..VirtualSpec::default()
+    };
+    let r = harness::run_virtual(&s, &spec);
+    let s1 = summary(&r);
+    let tick = r.relay_desync.expect("the relay saw the desync");
+    assert!(tick > 1000 && tick <= 1030, "detected at {tick}: {s1}");
+    assert!(
+        r.desync.iter().all(|d| d.is_some_and(|(t, _)| t == tick)),
+        "{s1}"
+    );
+    for slot in 0..4 {
+        let m = std::fs::read_to_string(dump.join(format!("slot{slot}/manifest.json")))
+            .unwrap_or_else(|e| panic!("slot {slot}: {e}"));
+        let v: serde_json::Value = serde_json::from_str(&m).unwrap();
+        let hashes = v["hashes"].as_array().unwrap();
+        assert_eq!(hashes.len(), 4, "{m}");
+        assert!(hashes.iter().filter(|h| h.is_string()).count() >= 2, "{m}");
+    }
+    assert!(dump.join("relay.jsonl").is_file());
 }

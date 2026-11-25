@@ -1269,10 +1269,14 @@ impl MatchState {
             &CommandKind::CallIn { squad_type } => self.call_in(ctx, p, squad_type),
             CommandKind::Surrender => {
                 let pl = &mut self.players[p.0 as usize];
+                // A second Surrender (his own, then the relay's as he
+                // quits) changes nothing more: the hand-over is once.
+                let first = !pl.surrendered;
                 pl.surrendered = true;
                 pl.defeat = Some(Defeat::Surrendered);
                 // S18 H1: his troops go to his lowest-slot standing ally.
-                if self.setup.rules.teams.handover != 0
+                if first
+                    && self.setup.rules.teams.handover != 0
                     && let Some(to) = self.handover_target(p)
                 {
                     self.hand_over(ctx, p, to);

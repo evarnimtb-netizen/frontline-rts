@@ -690,15 +690,23 @@ impl Relay {
             (None, Some(i)) => {
                 let token = self.tokens.next_token();
                 // Two players with one name would make "waiting for
-                // Player" ambiguous: the second gets a suffix.
+                // Player" ambiguous: a later one gets a suffix, " (2)",
+                // " (3)", ... (S18: up to four players).
                 let mut name = hello.name;
-                if self.slots.iter().flatten().any(|s| s.name == name) {
+                let taken = |n: &str| self.slots.iter().flatten().any(|s| s.name == n);
+                if taken(&name) {
                     let mut cut = name.len().min(MAX_NAME - 4);
                     while !name.is_char_boundary(cut) {
                         cut -= 1;
                     }
                     name.truncate(cut);
-                    name.push_str(" (2)");
+                    let base = name.clone();
+                    for k in 2..=MAX_SLOTS + 1 {
+                        name = format!("{base} ({k})");
+                        if !taken(&name) {
+                            break;
+                        }
+                    }
                 }
                 self.log.push(LogRecord::Joined {
                     t: now,

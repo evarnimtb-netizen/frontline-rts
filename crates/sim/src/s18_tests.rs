@@ -299,6 +299,14 @@ fn with_no_standing_ally_nothing_moves() {
             winner: PlayerId(2)
         }
     );
+    // Player 1 surrenders again (his own order, then the relay's as he
+    // quits): nothing moves again and his hand-over target stays, so the
+    // structure check on load still holds.
+    run(&mut w, 1, 1, CommandKind::Surrender);
+    assert_eq!(game(&w).players[1].handed_to, Some(PlayerId(0)));
+    let h = w.state_hash();
+    let back = World::load(&w.save(), 1).unwrap();
+    assert_eq!(back.state_hash(), h);
     // Control: 1v1.
     let mut w = super::s6_tests::flat_world(1);
     spawn(&mut w, 0, GER, 300, 300);
