@@ -965,6 +965,9 @@ pub struct WeaponSetup {
     /// range (rows rising; empty: never), and the core past the plate.
     pub pen: Vec<crate::vehicle::PenRowSetup>,
     pub core: Option<crate::vehicle::CoreSetup>,
+    /// S14 M1: the weapon's own strike (`[melee]` block, def units: cm,
+    /// HP, ms); `None`: the rules' `[melee]` strike.
+    pub melee: Option<crate::defs::MeleeDef>,
 }
 
 /// S5b: a mortar's charges and laying limits, lowered. The tangents are
@@ -1602,6 +1605,7 @@ impl ModDefs {
                     length: Fixed::from_cm(c.length_cm),
                     max_boxes: c.max_boxes as u8,
                 }),
+                melee: w.melee,
             })
             .collect();
         let cartridge_ids: Vec<&String> = self.cartridges.keys().collect();
@@ -3290,6 +3294,16 @@ impl MatchSetup {
                     && w.hold_beyond_pct <= 100,
                 "weapons.feed",
                 "unknown feed, or load, bursts or hold_beyond_pct out of range",
+            );
+            // S14 M1: a weapon's strike in the rules' `[melee]` ranges.
+            check(
+                w.melee.is_none_or(|m| {
+                    let mut v = Vec::new();
+                    m.check("", &mut v);
+                    v.is_empty()
+                }),
+                "weapons.melee",
+                "melee reach, damage, wind-up or recovery out of range",
             );
         }
         for c in &self.cartridges {

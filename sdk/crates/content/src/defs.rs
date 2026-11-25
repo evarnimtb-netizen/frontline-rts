@@ -713,6 +713,37 @@ pub struct WeaponDef {
     /// S8a: what a penetrating round does inside (needs `penetration`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub core: Option<SmallCoreDef>,
+    /// S14 M1 (docs/slices/S14-assault-kit.md 4.3, 5): the man's own
+    /// strike with this weapon in his hands (a butt stroke). Absent: the
+    /// rules' `[melee]` strike (the entrenching spade).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub melee: Option<MeleeDef>,
+}
+
+/// S14 M1: a weapon's `[melee]` block. Ranges as the rules' `[melee]`:
+/// `reach_cm` 1..=1000, `damage` 0..=1000, `windup_ms` and `recover_ms`
+/// 1..=4000 (a strike phase fits `Close::strike`, a u8 tick count).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MeleeDef {
+    /// The strike segment's length from the chest (cm).
+    pub reach_cm: u32,
+    /// HP dealt to the man it touches (through the W1 zone).
+    pub damage: u32,
+    /// Wind-up before the strike (ms; no fire).
+    pub windup_ms: u32,
+    /// Recovery after it (ms; no fire).
+    pub recover_ms: u32,
+}
+
+impl MeleeDef {
+    /// Range issues under `at` (e.g. `melee.`).
+    pub fn check(&self, at: &str, out: &mut Vec<Issue>) {
+        range(out, &format!("{at}reach_cm"), self.reach_cm, 1, 1000);
+        range(out, &format!("{at}damage"), self.damage, 0, 1000);
+        range(out, &format!("{at}windup_ms"), self.windup_ms, 1, 4000);
+        range(out, &format!("{at}recover_ms"), self.recover_ms, 1, 4000);
+    }
 }
 
 /// S8a: a small-arms round past a plate: it goes on `length_cm` and hits at
@@ -2753,6 +2784,9 @@ impl WeaponDef {
         }
         if let Some(ind) = &self.indirect {
             ind.check(self, &mut out);
+        }
+        if let Some(m) = &self.melee {
+            m.check("melee.", &mut out);
         }
         if self.class == WeaponClass::Cannon && self.he.is_some() {
             out.push(Issue::new(

@@ -18019,6 +18019,12 @@
       "id": "ww2:bar_m1918a2",
       "load": 220,
       "magazine": 20,
+      "melee": {
+        "damage": 50,
+        "reach_cm": 100,
+        "recover_ms": 1000,
+        "windup_ms": 600
+      },
       "min_range_m": 0,
       "muzzle_velocity_m_s": 860,
       "name": "BAR M1918A2",
@@ -18043,7 +18049,8 @@
       "setup_ms": 0,
       "short_name": "BAR",
       "sources": [
-        "Wikipedia, M1918 Browning Automatic Rifle (weight, rates, magazine, velocity)"
+        "Wikipedia, M1918 Browning Automatic Rifle (weight, rates, magazine, velocity)",
+        "docs/design/roster/infantry-structures.md 4.2 (melee reach and timings: rifle butt 1.0 m, wind-up 0.4-0.8 s, recovery 1 s); damage per docs/slices/S14-assault-kit.md 4.3 (a torso strike wounds, two down a man)"
       ],
       "spread_mrad": 14,
       "spread_urad": 0,
@@ -18152,6 +18159,12 @@
       "id": "ww2:kar98k",
       "load": 60,
       "magazine": 5,
+      "melee": {
+        "damage": 50,
+        "reach_cm": 100,
+        "recover_ms": 1000,
+        "windup_ms": 600
+      },
       "min_range_m": 0,
       "muzzle_velocity_m_s": 760,
       "name": "Kar98k",
@@ -18174,6 +18187,9 @@
       "rounds_carried": 0,
       "rounds_per_min": 15,
       "setup_ms": 0,
+      "sources": [
+        "docs/design/roster/infantry-structures.md 4.2 (melee reach and timings: rifle butt 1.0 m, wind-up 0.4-0.8 s, recovery 1 s); damage per docs/slices/S14-assault-kit.md 4.3 (a torso strike wounds, two down a man)"
+      ],
       "spread_mrad": 10,
       "spread_urad": 0,
       "suppression": 8
@@ -18532,6 +18548,12 @@
       "id": "ww2:m1_carbine",
       "load": 75,
       "magazine": 15,
+      "melee": {
+        "damage": 50,
+        "reach_cm": 100,
+        "recover_ms": 1000,
+        "windup_ms": 600
+      },
       "min_range_m": 0,
       "muzzle_velocity_m_s": 607,
       "name": "M1 carbine",
@@ -18542,7 +18564,8 @@
       "setup_ms": 0,
       "short_name": "M1 carbine",
       "sources": [
-        "Wikipedia, M1 carbine (velocity, practical range, magazine)"
+        "Wikipedia, M1 carbine (velocity, practical range, magazine)",
+        "docs/design/roster/infantry-structures.md 4.2 (melee reach and timings: rifle butt 1.0 m, wind-up 0.4-0.8 s, recovery 1 s); damage per docs/slices/S14-assault-kit.md 4.3 (a torso strike wounds, two down a man)"
       ],
       "spread_mrad": 14,
       "spread_urad": 0,
@@ -18561,6 +18584,12 @@
       "id": "ww2:m1_garand",
       "load": 136,
       "magazine": 8,
+      "melee": {
+        "damage": 50,
+        "reach_cm": 100,
+        "recover_ms": 1000,
+        "windup_ms": 600
+      },
       "min_range_m": 0,
       "muzzle_velocity_m_s": 850,
       "name": "M1 Garand",
@@ -18583,6 +18612,9 @@
       "rounds_carried": 0,
       "rounds_per_min": 24,
       "setup_ms": 0,
+      "sources": [
+        "docs/design/roster/infantry-structures.md 4.2 (melee reach and timings: rifle butt 1.0 m, wind-up 0.4-0.8 s, recovery 1 s); damage per docs/slices/S14-assault-kit.md 4.3 (a torso strike wounds, two down a man)"
+      ],
       "spread_mrad": 11,
       "spread_urad": 0,
       "suppression": 8
@@ -18993,6 +19025,12 @@
       "id": "ww2:m3_smg",
       "load": 180,
       "magazine": 30,
+      "melee": {
+        "damage": 40,
+        "reach_cm": 80,
+        "recover_ms": 1000,
+        "windup_ms": 500
+      },
       "min_range_m": 0,
       "muzzle_velocity_m_s": 280,
       "name": "M3 SMG",
@@ -19001,6 +19039,9 @@
       "rounds_carried": 0,
       "rounds_per_min": 350,
       "setup_ms": 0,
+      "sources": [
+        "docs/design/roster/infantry-structures.md 4.2 (melee reach and timings: rifle butt 1.0 m, wind-up 0.4-0.8 s, recovery 1 s); damage per docs/slices/S14-assault-kit.md 4.3 (a torso strike wounds, two down a man)"
+      ],
       "spread_mrad": 35,
       "spread_urad": 0,
       "suppression": 6
@@ -19265,6 +19306,12 @@
       "id": "ww2:mp40",
       "load": 192,
       "magazine": 32,
+      "melee": {
+        "damage": 40,
+        "reach_cm": 80,
+        "recover_ms": 1000,
+        "windup_ms": 500
+      },
       "min_range_m": 0,
       "muzzle_velocity_m_s": 400,
       "name": "MP 40",
@@ -19273,6 +19320,9 @@
       "rounds_carried": 0,
       "rounds_per_min": 400,
       "setup_ms": 0,
+      "sources": [
+        "docs/design/roster/infantry-structures.md 4.2 (melee reach and timings: rifle butt 1.0 m, wind-up 0.4-0.8 s, recovery 1 s); damage per docs/slices/S14-assault-kit.md 4.3 (a torso strike wounds, two down a man)"
+      ],
       "spread_mrad": 35,
       "spread_urad": 0,
       "suppression": 6
@@ -19424,6 +19474,12 @@
       "id": "ww2:stg44",
       "load": 180,
       "magazine": 30,
+      "melee": {
+        "damage": 40,
+        "reach_cm": 80,
+        "recover_ms": 1000,
+        "windup_ms": 500
+      },
       "min_range_m": 0,
       "muzzle_velocity_m_s": 685,
       "name": "StG 44",
@@ -19435,7 +19491,8 @@
       "short_name": "StG 44",
       "sources": [
         "Wikipedia, StG 44 (weight, rate, velocity, magazine, effective range)",
-        "lonesentry.com, New German Assault Rifle (Tactical and Technical Trends, 1945)"
+        "lonesentry.com, New German Assault Rifle (Tactical and Technical Trends, 1945)",
+        "docs/design/roster/infantry-structures.md 4.2 (melee reach and timings: rifle butt 1.0 m, wind-up 0.4-0.8 s, recovery 1 s); damage per docs/slices/S14-assault-kit.md 4.3 (a torso strike wounds, two down a man)"
       ],
       "spread_mrad": 18,
       "spread_urad": 0,
