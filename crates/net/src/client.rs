@@ -121,12 +121,24 @@ pub enum NetEvent {
         at: u64,
         close_at: u64,
     },
+    /// `hashes[i]`: slot `i`'s hash of `tick` (`None`: not reported, or
+    /// not a human slot).
     Desync {
         tick: u64,
-        hashes: [u64; 2],
+        hashes: Vec<Option<u64>>,
         at: u64,
     },
     Bye(ByeReason),
+    /// S18: the relay moved us to `slot` (an accepted `take_slot`).
+    Slot {
+        slot: u8,
+    },
+    /// S18 H5: an ally in `slot` pinged the map at `(x, y)` metres.
+    MapPing {
+        slot: u8,
+        x: i32,
+        y: i32,
+    },
 }
 
 /// The readout a HUD or a test wants.
@@ -151,7 +163,8 @@ pub struct ClientStatus {
     pub bundled: u64,
     /// Turn the match is paused before, if paused.
     pub paused_at: Option<u64>,
-    pub peers: [PeerStat; 2],
+    /// One entry per match slot (AI slots read as defaults).
+    pub peers: Vec<PeerStat>,
     /// Local µs since the relay was last heard from.
     pub silent_us: u64,
     pub schedule: Option<Schedule>,
@@ -216,6 +229,8 @@ pub struct NetClient {
     held: u64,
     buffer: BTreeMap<u64, Vec<Command>>,
     events: VecDeque<NetEvent>,
+    /// S18: revision of the last lobby state heard (`Ready` carries it).
+    lobby_rev: u32,
     out: Vec<(SocketAddr, Vec<u8>)>,
     buf: Vec<u8>,
     status: ClientStatus,
@@ -250,6 +265,7 @@ impl NetClient {
             held: 0,
             buffer: BTreeMap::new(),
             events: VecDeque::new(),
+            lobby_rev: 0,
             out: Vec::new(),
             buf: Vec::with_capacity(MAX_DATAGRAM),
             status: ClientStatus::default(),
@@ -363,8 +379,28 @@ impl NetClient {
         self.ctl_out.push(Up::LobbySet(l));
     }
 
+    /// Ready with `setup_hash`, for the last lobby state heard (S18: the
+    /// relay drops a ready for an older lobby revision).
     pub fn ready(&mut self, setup_hash: u64) {
-        self.ctl_out.push(Up::Ready { setup_hash });
+        self.ctl_out.push(Up::Ready {
+            setup_hash,
+            rev: self.lobby_rev,
+        });
+    }
+
+    /// S18: asks to move to open slot `slot` (lobby only).
+    pub fn take_slot(&mut self, slot: u8) {
+        if self.phase == ClientPhase::Lobby {
+            self.ctl_out.push(Up::TakeSlot(slot));
+        }
+    }
+
+    /// S18 H5: pings the map at `(x, y)` metres for the allies (match
+    /// only; the relay drops pings closer together than its gap).
+    pub fn map_ping(&mut self, x: i32, y: i32) {
+        if self.phase == ClientPhase::Running {
+            self.ctl_out.push(Up::MapPing { x, y });
+        }
     }
 
     pub fn request_pause(&mut self) {
@@ -457,7 +493,18 @@ impl NetClient {
 
     fn on_down(&mut self, msg: Down, now: u64) {
         match msg {
-            Down::Lobby(l) => self.events.push_back(NetEvent::Lobby(l)),
+            Down::Lobby(l) => {
+                self.lobby_rev = l.rev;
+                self.events.push_back(NetEvent::Lobby(l));
+            }
+            Down::Slot(slot) if self.phase == ClientPhase::Lobby => {
+                self.slot = Some(slot);
+                self.events.push_back(NetEvent::Slot { slot });
+            }
+            Down::Slot(_) => {}
+            Down::MapPing { slot, x, y } => {
+                self.events.push_back(NetEvent::MapPing { slot, x, y });
+            }
             Down::Start(s) if self.phase == ClientPhase::Lobby => {
                 let schedule = Schedule::new(s.start_at, s.tick_hz, s.speed_pct);
                 self.playout = playout_ticks(

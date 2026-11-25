@@ -13,15 +13,15 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Parser;
-use frontline_net::protocol::{DEFAULT_PORT, MAX_D, MIN_D};
-use frontline_net::relay::RelayConfig;
+use frontline_net::protocol::{DEFAULT_PORT, MAX_D, MAX_SLOTS, MIN_D};
+use frontline_net::relay::{DEFAULT_PING_GAP_US, RelayConfig};
 use frontline_net::server::{LogSink, RelayServer};
 
 #[derive(Parser)]
 #[command(
     name = "frontline-relay",
     version,
-    about = "Frontline match relay: closes turns and forwards orders for two players (UDP)"
+    about = "Frontline match relay: closes turns and forwards orders for two to four players (UDP)"
 )]
 struct Args {
     /// UDP port to listen on.
@@ -53,6 +53,22 @@ struct Args {
     /// Exit after one match instead of opening a new lobby.
     #[arg(long)]
     once: bool,
+    /// S18: most players a lobby may hold (2 keeps a 1v1-only relay); the
+    /// host picks how many of them the match uses.
+    #[arg(long, value_name = "N", default_value_t = MAX_SLOTS as u8,
+          value_parser = clap::value_parser!(u8).range(2..=MAX_SLOTS as i64))]
+    max_slots: u8,
+    /// S18: refuse the host's AI fill (every slot must be a person).
+    #[arg(long)]
+    no_ai: bool,
+    /// S18: in a match of three or more, hostile players must pick
+    /// different factions (a 1v1 always must).
+    #[arg(long)]
+    distinct_factions: bool,
+    /// S18: shortest gap between two forwarded map pings of one player.
+    #[arg(long, value_name = "MS", default_value_t = DEFAULT_PING_GAP_US / 1000,
+          value_parser = clap::value_parser!(u64).range(0..=60_000))]
+    ping_gap_ms: u64,
 }
 
 fn main() -> ExitCode {
@@ -72,6 +88,10 @@ fn run(args: &Args) -> io::Result<()> {
         speed_pct: args.speed,
         max_d: args.max_delay,
         allow_build_mismatch: args.allow_build_mismatch,
+        max_slots: args.max_slots,
+        allow_ai: !args.no_ai,
+        allow_same_faction: !args.distinct_factions,
+        ping_gap_us: args.ping_gap_ms * 1000,
         ..RelayConfig::default()
     };
     loop {
@@ -101,6 +121,7 @@ fn run(args: &Args) -> io::Result<()> {
             let slots: Vec<String> = s
                 .slots
                 .iter()
+                .take((s.players as usize).max(2))
                 .enumerate()
                 .map(|(i, x)| match x {
                     Some(x) => format!(
@@ -115,6 +136,7 @@ fn run(args: &Args) -> io::Result<()> {
                             String::new()
                         }
                     ),
+                    None if s.ai_slots.contains(&(i as u8)) => format!("slot {i}: AI"),
                     None => format!("slot {i}: open"),
                 })
                 .collect();
@@ -132,15 +154,18 @@ fn run(args: &Args) -> io::Result<()> {
                     .unwrap_or_default(),
             );
             // Print on change, ignoring the RTT and turn churn.
-            let key = format!("{} {:?} {:?}", s.phase, s.paused, s.desync_tick)
-                + &s.slots
-                    .iter()
-                    .map(|x| {
-                        x.as_ref()
-                            .map(|x| format!("{} {}", x.name, x.state))
-                            .unwrap_or_default()
-                    })
-                    .collect::<String>();
+            let key = format!(
+                "{} {:?} {:?} {} {:?}",
+                s.phase, s.paused, s.desync_tick, s.players, s.ai_slots
+            ) + &s
+                .slots
+                .iter()
+                .map(|x| {
+                    x.as_ref()
+                        .map(|x| format!("{} {}", x.name, x.state))
+                        .unwrap_or_default()
+                })
+                .collect::<String>();
             if key != last {
                 eprintln!("{line}");
                 last = key;

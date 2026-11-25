@@ -42,9 +42,10 @@ pub struct DumpManifest {
     pub seed: u64,
     pub d: u8,
     pub slot: u8,
-    /// Tick whose hashes differed, both clients' hashes there (slot order).
+    /// Tick whose hashes differed, and every slot's hash there (slot
+    /// order; `null` for a slot that did not report, or an AI slot).
     pub desync_tick: u64,
-    pub hashes: [String; 2],
+    pub hashes: Vec<Option<String>>,
     /// The pause turn: `paused.sav` is the world after `paused_tick` ticks.
     pub paused_tick: u64,
     pub state_hash: String,

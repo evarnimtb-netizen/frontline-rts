@@ -42,7 +42,13 @@ use serde::{Deserialize, Serialize};
 /// 17 (S16a): no new command; the setup sent in `Ready` (`setup_hash`)
 /// gains `MapSetup::roads`, `[vehicles.road]` and
 /// `MobilitySetup::road_speed_pct` (the one bump for the S16 slice).
-pub const PROTOCOL_VERSION: u16 = 17;
+/// 18 (S18): up to four slots ([`MAX_SLOTS`]): per-slot lists in the lobby,
+/// `Start`, `Desync` and the bundle's peers; teams and AI slots in the
+/// lobby (`LobbySet::{team, players, ai}`, `SlotInfo::{team, ai}`), the
+/// lobby revision in `Ready`, `Up::TakeSlot` and `Down::Slot`, and ally map
+/// pings (`Up::MapPing`, `Down::MapPing`); the setup gains `[teams]
+/// handover, handover_pop, ping_gap_s` (the one bump for the S18 slice).
+pub const PROTOCOL_VERSION: u16 = 18;
 pub const MAGIC: [u8; 4] = *b"FLNT";
 /// Magic, version (u16 LE), kind (u8), token (u64 LE).
 pub const HEADER_LEN: usize = 15;
@@ -55,8 +61,13 @@ pub const MAX_DATAGRAM: usize = 1200;
 pub const HELLO_MIN_LEN: usize = 512;
 /// Default UDP port (S2 "Transport"). 27015 is avoided: Source servers.
 pub const DEFAULT_PORT: u16 = 47015;
-/// Player slots in S2 (1v1).
-pub const SLOTS: usize = 2;
+/// Most player slots in a lobby and a match (S18: 2v2, co-op 2 vs 2 AI,
+/// 1v1). The relay's `max_slots` may open fewer.
+pub const MAX_SLOTS: usize = 4;
+/// Highest AI difficulty on the wire: 0 easy, 1 normal, 2 hard.
+pub const MAX_DIFFICULTY: u8 = 2;
+/// Map ping coordinates are whole metres in `0..=MAX_PING_M`.
+pub const MAX_PING_M: i32 = 65_535;
 
 /// Longest player name, in bytes of UTF-8.
 pub const MAX_NAME: usize = 24;
@@ -76,9 +87,9 @@ pub const MAX_PENDING: usize = 256;
 pub const MAX_INPUT_TURNS: usize = 64;
 /// Most turns in one `Bundle` datagram (an empty turn is about 4 bytes).
 pub const MAX_BUNDLE_TURNS: usize = 300;
-/// Most commands in one bundled turn: both players' turn quota plus one
+/// Most commands in one bundled turn: every player's turn quota plus one
 /// relay-injected `Surrender` each.
-pub const MAX_TURN_CMDS: usize = SLOTS * (MAX_CMDS_PER_TURN + 1);
+pub const MAX_TURN_CMDS: usize = MAX_SLOTS * (MAX_CMDS_PER_TURN + 1);
 /// Input delay limits: the lobby suggestion stays in `MIN_D..=SUGGEST_MAX_D`,
 /// slot 0 may override within `MIN_D..=MAX_D`.
 pub const MIN_D: u8 = 2;
@@ -192,7 +203,7 @@ pub enum RejectReason {
     Build { lobby: String },
     /// The other player loaded different defs.
     Content,
-    /// Both slots are taken.
+    /// Every slot the lobby opened is taken (by a player or an AI).
     Full,
     /// The match already started (no join-in-progress in S2).
     Started,
@@ -210,12 +221,16 @@ pub struct CtlUp {
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Up {
-    /// Lobby choice. Slot 0 alone may set `seed`, `map` and `d`; the relay
-    /// ignores them from slot 1. Any change clears both `Ready` flags.
+    /// Lobby choice. Slot 0 alone may set `seed`, `map`, `d`, `players`
+    /// and `ai`; the relay ignores them from other slots. Any change clears
+    /// every `Ready` flag.
     LobbySet(LobbySet),
-    /// `xxh3(postcard(MatchSetup))` of the client's own resolve.
+    /// `xxh3(postcard(MatchSetup))` of the client's own resolve, made from
+    /// lobby revision `rev` (`LobbyState::rev`); a `Ready` of an older
+    /// revision is ignored.
     Ready {
         setup_hash: u64,
+        rev: u32,
     },
     /// A published sim hash: the world's hash after `tick` ticks.
     Hash {
@@ -225,6 +240,14 @@ pub enum Up {
     PauseReq,
     ResumeReq,
     Bye(ByeReason),
+    /// S18: move to this open slot (lobby only; not to or from slot 0, the
+    /// host's). The relay answers `Down::Slot`.
+    TakeSlot(u8),
+    /// S18 H5: a map ping for the sender's allies (match only; metres).
+    MapPing {
+        x: i32,
+        y: i32,
+    },
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
@@ -234,6 +257,23 @@ pub struct LobbySet {
     pub map: Option<String>,
     /// `None`: use the relay's suggestion.
     pub d: Option<u8>,
+    /// S18: the sender's team (`None`: his slot number, everyone alone).
+    pub team: Option<u8>,
+    /// S18, host only: slots in the match (2 to the relay's `max_slots`).
+    pub players: Option<u8>,
+    /// S18, host only: the AI slots (replaces the list; a slot a player
+    /// holds is skipped).
+    pub ai: Option<Vec<AiPick>>,
+}
+
+/// S18 H2: one AI slot the host fills.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct AiPick {
+    pub slot: u8,
+    pub faction: String,
+    pub team: Option<u8>,
+    /// 0 easy, 1 normal, 2 hard.
+    pub difficulty: u8,
 }
 
 /// A reliable, ordered control message, relay → client.
@@ -263,10 +303,20 @@ pub enum Down {
     /// the match does not resume.
     Desync {
         tick: u64,
-        hashes: [u64; 2],
+        /// One per match slot, slot order: `None` for an AI slot or a
+        /// player whose hash for `tick` had not come.
+        hashes: Vec<Option<u64>>,
         at: u64,
     },
     Bye(ByeReason),
+    /// S18: the client's slot moved (an accepted `TakeSlot`).
+    Slot(u8),
+    /// S18 H5: an ally's map ping (metres).
+    MapPing {
+        slot: u8,
+        x: i32,
+        y: i32,
+    },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -293,7 +343,13 @@ pub enum ByeReason {
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct LobbyState {
-    pub slots: [Option<SlotInfo>; 2],
+    /// One per slot the relay opened (`max_slots`): a player, an AI
+    /// (`SlotInfo::ai`) or open.
+    pub slots: Vec<Option<SlotInfo>>,
+    /// S18: slots in the match (the first `players` of `slots`).
+    pub players: u8,
+    /// S18: bumped by every change that clears the Ready flags.
+    pub rev: u32,
     pub seed: u64,
     pub map: String,
     /// Slot 0's override, if any.
@@ -306,10 +362,15 @@ pub struct LobbyState {
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct SlotInfo {
+    /// Empty for an AI slot.
     pub name: String,
     pub faction: String,
     pub ready: bool,
     pub rtt_ms: u16,
+    /// S18: the team (`None`: the slot number).
+    pub team: Option<u8>,
+    /// S18: an AI slot's difficulty (`None`: a player).
+    pub ai: Option<u8>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -322,8 +383,28 @@ pub struct Start {
     pub d: u8,
     pub seed: u64,
     pub map: String,
-    pub factions: [String; 2],
-    pub names: [String; 2],
+    /// S18: one per match slot (2 to [`MAX_SLOTS`]); player `i` starts at
+    /// the map's base `i`.
+    pub players: Vec<StartPlayer>,
+}
+
+/// One match slot in `Start`.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub struct StartPlayer {
+    /// Empty for an AI slot.
+    pub name: String,
+    pub faction: String,
+    /// `None`: the slot number.
+    pub team: Option<u8>,
+    /// An AI slot's difficulty (0 easy, 1 normal, 2 hard); `None`: a player.
+    pub ai: Option<u8>,
+}
+
+impl Start {
+    /// The resolved team of slot `i` (its `team`, else `i`).
+    pub fn team_of(&self, i: usize) -> u8 {
+        self.players.get(i).and_then(|p| p.team).unwrap_or(i as u8)
+    }
 }
 
 /// Cumulative ack of the peer's control stream: every `cseq < next` was
@@ -392,7 +473,8 @@ pub struct Bundle {
     /// Highest tick whose hashes both clients sent and the relay found
     /// equal (0: none yet). Checkpoints at or below it are safe.
     pub confirmed: u64,
-    pub peers: [PeerStat; 2],
+    /// One per match slot (an AI slot reads as present and stable).
+    pub peers: Vec<PeerStat>,
     pub turns: Vec<Turn>,
 }
 
@@ -508,25 +590,43 @@ impl Packet {
             Packet::Hello(h) => {
                 h.build_id.len() <= MAX_ID && h.name.len() <= MAX_NAME && !h.name.is_empty()
             }
-            Packet::Welcome(w) => (w.slot as usize) < SLOTS,
+            Packet::Welcome(w) => (w.slot as usize) < MAX_SLOTS,
             Packet::Reject(r) => match &r.reason {
                 RejectReason::Build { lobby } => lobby.len() <= MAX_ID,
                 _ => true,
             },
             Packet::CtlUp(c) => match &c.msg {
                 Up::LobbySet(l) => {
-                    l.faction.len() <= MAX_ID && l.map.as_ref().is_none_or(|m| m.len() <= MAX_ID)
+                    l.faction.len() <= MAX_ID
+                        && l.map.as_ref().is_none_or(|m| m.len() <= MAX_ID)
+                        && team_ok(l.team)
+                        && l.players.is_none_or(|n| (2..=MAX_SLOTS as u8).contains(&n))
+                        && l.ai.as_ref().is_none_or(|a| {
+                            a.len() <= MAX_SLOTS
+                                && a.iter().all(|p| {
+                                    (p.slot as usize) < MAX_SLOTS
+                                        && p.faction.len() <= MAX_ID
+                                        && team_ok(p.team)
+                                        && p.difficulty <= MAX_DIFFICULTY
+                                })
+                        })
                 }
+                Up::TakeSlot(s) => (*s as usize) < MAX_SLOTS,
+                Up::MapPing { x, y } => ping_ok(*x, *y),
                 _ => true,
             },
             Packet::CtlDown(c) => match &c.msg {
                 Down::Lobby(l) => {
                     l.map.len() <= MAX_ID
                         && l.note.len() <= MAX_NOTE
-                        && l.slots
-                            .iter()
-                            .flatten()
-                            .all(|s| s.name.len() <= MAX_NAME && s.faction.len() <= MAX_ID)
+                        && l.slots.len() <= MAX_SLOTS
+                        && l.players as usize <= MAX_SLOTS
+                        && l.slots.iter().flatten().all(|s| {
+                            s.name.len() <= MAX_NAME
+                                && s.faction.len() <= MAX_ID
+                                && team_ok(s.team)
+                                && s.ai.is_none_or(|d| d <= MAX_DIFFICULTY)
+                        })
                 }
                 Down::Start(s) => {
                     // A sane clock (a hostile relay could otherwise make
@@ -536,9 +636,17 @@ impl Packet {
                         && (1..=MAX_SPEED_PCT).contains(&s.speed_pct)
                         && (MIN_D..=MAX_D).contains(&s.d)
                         && s.map.len() <= MAX_ID
-                        && s.factions.iter().all(|f| f.len() <= MAX_ID)
-                        && s.names.iter().all(|n| n.len() <= MAX_NAME)
+                        && (2..=MAX_SLOTS).contains(&s.players.len())
+                        && s.players.iter().all(|p| {
+                            p.faction.len() <= MAX_ID
+                                && p.name.len() <= MAX_NAME
+                                && team_ok(p.team)
+                                && p.ai.is_none_or(|d| d <= MAX_DIFFICULTY)
+                        })
                 }
+                Down::Desync { hashes, .. } => hashes.len() <= MAX_SLOTS,
+                Down::Slot(s) => (*s as usize) < MAX_SLOTS,
+                Down::MapPing { slot, x, y } => (*slot as usize) < MAX_SLOTS && ping_ok(*x, *y),
                 _ => true,
             },
             Packet::Ack(_) | Packet::Ping(_) | Packet::Pong(_) => true,
@@ -549,16 +657,28 @@ impl Packet {
                     })
             }
             Packet::Bundle(b) => {
-                b.turns.len() <= MAX_BUNDLE_TURNS
+                b.peers.len() <= MAX_SLOTS
+                    && b.turns.len() <= MAX_BUNDLE_TURNS
                     && b.turns.iter().all(|t| {
                         t.cmds.len() <= MAX_TURN_CMDS
                             && t.cmds.iter().all(|c| {
-                                (c.cmd.player.0 as usize) < SLOTS && command_in_limits(&c.cmd.kind)
+                                (c.cmd.player.0 as usize) < MAX_SLOTS
+                                    && command_in_limits(&c.cmd.kind)
                             })
                     })
             }
         }
     }
+}
+
+/// S18: a team number a slot may carry (below [`MAX_SLOTS`]).
+fn team_ok(t: Option<u8>) -> bool {
+    t.is_none_or(|t| (t as usize) < MAX_SLOTS)
+}
+
+/// S18 H5: a map ping inside `0..=MAX_PING_M` on both axes.
+fn ping_ok(x: i32, y: i32) -> bool {
+    (0..=MAX_PING_M).contains(&x) && (0..=MAX_PING_M).contains(&y)
 }
 
 /// Most points of a `SuppressUnits` line (S3b).
@@ -792,7 +912,27 @@ mod tests {
                 seed: Some(4),
                 map: None,
                 d: Some(3),
+                team: Some(1),
+                players: Some(4),
+                ai: Some(vec![AiPick {
+                    slot: 3,
+                    faction: "ww2:germany".into(),
+                    team: Some(1),
+                    difficulty: 2,
+                }]),
             }),
+        }));
+        roundtrip(Packet::CtlUp(CtlUp {
+            cseq: 4,
+            msg: Up::MapPing { x: 100, y: 1500 },
+        }));
+        roundtrip(Packet::CtlDown(CtlDown {
+            cseq: 5,
+            msg: Down::Desync {
+                tick: 30,
+                hashes: vec![Some(1), None, Some(2), None],
+                at: 33,
+            },
         }));
         roundtrip(Packet::Input(Input {
             ack: BundleAck { held: 10, mask: 5 },
@@ -821,6 +961,83 @@ mod tests {
                 }],
             }],
         }));
+    }
+
+    /// S18: the four-slot limits: a fifth slot, a team past the slots, a
+    /// difficulty past hard, a ping off the map range or a `Start` of one
+    /// or five players is refused on decode.
+    #[test]
+    fn s18_limits_hold() {
+        let ok = |p: &Packet| p.validate();
+        let up = |msg: Up| Packet::CtlUp(CtlUp { cseq: 0, msg });
+        let down = |msg: Down| Packet::CtlDown(CtlDown { cseq: 0, msg });
+        let set = |team: Option<u8>, players: Option<u8>, ai: Vec<AiPick>| {
+            up(Up::LobbySet(LobbySet {
+                faction: "ww2:usa".into(),
+                team,
+                players,
+                ai: Some(ai),
+                ..LobbySet::default()
+            }))
+        };
+        let pick = |slot: u8, difficulty: u8| AiPick {
+            slot,
+            faction: "ww2:usa".into(),
+            team: Some(1),
+            difficulty,
+        };
+        assert!(ok(&set(Some(3), Some(4), vec![pick(3, 2)])));
+        assert!(!ok(&set(Some(4), None, vec![])));
+        assert!(!ok(&set(None, Some(5), vec![])));
+        assert!(!ok(&set(None, Some(1), vec![])));
+        assert!(!ok(&set(None, None, vec![pick(4, 0)])));
+        assert!(!ok(&set(None, None, vec![pick(1, 3)])));
+        assert!(!ok(&set(None, None, vec![pick(1, 0); 5])));
+        assert!(ok(&up(Up::TakeSlot(3))));
+        assert!(!ok(&up(Up::TakeSlot(4))));
+        assert!(ok(&up(Up::MapPing {
+            x: 0,
+            y: MAX_PING_M
+        })));
+        assert!(!ok(&up(Up::MapPing { x: -1, y: 0 })));
+        assert!(!ok(&up(Up::MapPing {
+            x: 0,
+            y: MAX_PING_M + 1
+        })));
+        assert!(!ok(&down(Down::MapPing {
+            slot: 4,
+            x: 0,
+            y: 0
+        })));
+        assert!(!ok(&down(Down::Slot(4))));
+        assert!(!ok(&down(Down::Desync {
+            tick: 1,
+            hashes: vec![None; 5],
+            at: 2
+        })));
+        let player = StartPlayer {
+            name: "a".into(),
+            faction: "ww2:usa".into(),
+            team: None,
+            ai: None,
+        };
+        let start = |n: usize| {
+            down(Down::Start(Start {
+                start_at: 1,
+                tick_hz: 30,
+                speed_pct: 100,
+                d: MIN_D,
+                seed: 1,
+                map: "m".into(),
+                players: vec![player.clone(); n],
+            }))
+        };
+        assert!(ok(&start(2)) && ok(&start(4)));
+        assert!(!ok(&start(1)) && !ok(&start(5)));
+        // And on the wire: the decoder refuses what `validate` refuses.
+        let mut buf = Vec::new();
+        encode(1, &up(Up::TakeSlot(9)), &mut buf).unwrap();
+        assert_eq!(decode(&buf), Err(DecodeError::Limit));
     }
 
     #[test]

@@ -1,12 +1,12 @@
 //! Relay rules from the S2 netcode review, on a virtual clock with no sim:
-//! one relay and two clients over a zero-latency link that a test can cut
-//! one way or both. Each test is a hostile or broken case that once left
-//! a match stuck or slow.
+//! one relay and two clients (S18: up to four) over a zero-latency link
+//! that a test can cut one way or both. Each test is a hostile or broken
+//! case that once left a match stuck or slow, or an S18 lobby rule.
 
 use std::net::SocketAddr;
 
 use frontline_net::client::{ClientConfig, ClientPhase, NetClient, NetEvent};
-use frontline_net::protocol::{ByeReason, LobbySet, PauseCause};
+use frontline_net::protocol::{AiPick, ByeReason, LobbySet, PauseCause, RejectReason};
 use frontline_net::relay::{LogRecord, Phase, Relay, RelayConfig, SlotState};
 use frontline_net::rng::TokenSource;
 use frontline_sim::CommandKind;
@@ -16,17 +16,19 @@ const RELAY: &str = "10.0.0.1:47015";
 struct Net {
     relay: Relay,
     clients: Vec<NetClient>,
-    addrs: [SocketAddr; 2],
+    addrs: Vec<SocketAddr>,
     now: u64,
-    events: [Vec<NetEvent>; 2],
+    events: Vec<Vec<NetEvent>>,
     /// Cut relay → client, and client → relay.
-    down_cut: [bool; 2],
-    up_cut: [bool; 2],
+    down_cut: Vec<bool>,
+    up_cut: Vec<bool>,
+    /// Clients that do not poll yet (S18: join later).
+    asleep: Vec<bool>,
     log: Vec<LogRecord>,
 }
 
 impl Net {
-    fn new(names: [&str; 2]) -> Net {
+    fn new<const N: usize>(names: [&str; N]) -> Net {
         let relay_addr: SocketAddr = RELAY.parse().unwrap();
         let client = |i: usize| {
             NetClient::new(ClientConfig {
@@ -45,15 +47,15 @@ impl Net {
                 },
                 TokenSource::seeded(1),
             ),
-            clients: vec![client(0), client(1)],
-            addrs: [
-                "10.0.0.2:5000".parse().unwrap(),
-                "10.0.0.3:5000".parse().unwrap(),
-            ],
+            clients: (0..N).map(client).collect(),
+            addrs: (0..N)
+                .map(|i| format!("10.0.0.{}:5000", i + 2).parse().unwrap())
+                .collect(),
             now: 1_000_000,
-            events: [Vec::new(), Vec::new()],
-            down_cut: [false; 2],
-            up_cut: [false; 2],
+            events: vec![Vec::new(); N],
+            down_cut: vec![false; N],
+            up_cut: vec![false; N],
+            asleep: vec![false; N],
             log: Vec::new(),
         }
     }
@@ -74,7 +76,10 @@ impl Net {
                 }
             }
             self.log.extend(self.relay.drain_log());
-            for i in 0..2 {
+            for i in 0..self.clients.len() {
+                if self.asleep[i] {
+                    continue;
+                }
                 self.clients[i].poll(now);
                 self.events[i].extend(self.clients[i].drain_events());
                 let out: Vec<_> = self.clients[i].drain_out().collect();
@@ -96,6 +101,7 @@ impl Net {
                 seed: (i == 0).then_some(3),
                 map: None,
                 d: None,
+                ..LobbySet::default()
             });
         }
         self.run(100_000);
@@ -177,6 +183,7 @@ fn lobby_flood_does_not_jam_the_other_stream() {
         seed: Some(3),
         map: None,
         d: None,
+        ..LobbySet::default()
     });
     n.down_cut[0] = true;
     for k in 0..2000 {
@@ -185,6 +192,7 @@ fn lobby_flood_does_not_jam_the_other_stream() {
             seed: None,
             map: None,
             d: None,
+            ..LobbySet::default()
         });
         n.run(1000);
     }
@@ -194,8 +202,24 @@ fn lobby_flood_does_not_jam_the_other_stream() {
         seed: None,
         map: None,
         d: None,
+        ..LobbySet::default()
     });
+    // S18: a Ready names the lobby revision it was made for, so A readies
+    // once its control stream (resent 4 messages per 100 ms after the cut)
+    // caught up with the last change.
+    let rev = |n: &Net, i: usize| {
+        n.events[i].iter().rev().find_map(|e| match e {
+            NetEvent::Lobby(l) => Some(l.rev),
+            _ => None,
+        })
+    };
     n.run(300_000);
+    for _ in 0..100 {
+        if rev(&n, 0) == rev(&n, 1) {
+            break;
+        }
+        n.run(100_000);
+    }
     for c in &mut n.clients {
         c.ready(42);
     }
@@ -296,4 +320,181 @@ fn orders_after_a_long_blackout_are_not_far_ahead() {
         "order sent at turn {sent_at_tick} ran at {ran}"
     );
     assert!(n.log.iter().any(|l| matches!(l, LogRecord::Resumed { .. })));
+}
+
+/// The last lobby state client `i` heard.
+fn last_lobby(n: &Net, i: usize) -> frontline_net::protocol::LobbyState {
+    n.events[i]
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            NetEvent::Lobby(l) => Some(l.clone()),
+            _ => None,
+        })
+        .expect("a lobby state")
+}
+
+/// S18: a third player is refused while the lobby is a 1v1 (the default
+/// size, so a 1v1 relay behaves as before); once the host opens four
+/// slots and fills slot 3 with AI, he joins slot 2, can move to an open
+/// slot but not to the host's or the AI's.
+#[test]
+fn lobby_size_ai_fill_and_slot_moves() {
+    let mut n = Net::new(["Host", "B", "C", "D"]);
+    n.asleep[3] = true;
+    n.run(50_000);
+    assert!(
+        n.events[2]
+            .iter()
+            .any(|e| matches!(e, NetEvent::Rejected(RejectReason::Full))),
+        "{:?}",
+        n.events[2]
+    );
+    n.clients[0].set_lobby(LobbySet {
+        faction: "ger".into(),
+        players: Some(4),
+        ai: Some(vec![AiPick {
+            slot: 3,
+            faction: "usa".into(),
+            team: Some(1),
+            difficulty: 2,
+        }]),
+        ..LobbySet::default()
+    });
+    n.run(100_000);
+    n.asleep[3] = false;
+    n.run(100_000);
+    assert!(n.events[3].contains(&NetEvent::Welcome { slot: 2 }));
+    let l = last_lobby(&n, 0);
+    assert_eq!(l.players, 4);
+    assert_eq!(l.slots[3].as_ref().and_then(|s| s.ai), Some(2));
+    // To the AI's slot, or the host's: refused. Slot 1 is B's.
+    n.clients[3].take_slot(3);
+    n.clients[3].take_slot(0);
+    n.clients[3].take_slot(1);
+    n.run(100_000);
+    assert!(
+        !n.events[3]
+            .iter()
+            .any(|e| matches!(e, NetEvent::Slot { .. }))
+    );
+    // B leaves; D takes slot 1.
+    n.clients[1].bye(ByeReason::Quit);
+    n.run(100_000);
+    n.clients[3].take_slot(1);
+    n.run(100_000);
+    assert!(n.events[3].contains(&NetEvent::Slot { slot: 1 }));
+    assert_eq!(n.clients[3].slot(), Some(1));
+    let l = last_lobby(&n, 0);
+    assert_eq!(l.slots[1].as_ref().map(|s| s.name.as_str()), Some("D"));
+    assert!(l.slots[2].is_none());
+    // The host shrinks the match to two: the AI slot past it goes.
+    n.clients[0].set_lobby(LobbySet {
+        faction: "ger".into(),
+        players: Some(2),
+        ..LobbySet::default()
+    });
+    n.run(100_000);
+    let l = last_lobby(&n, 0);
+    assert_eq!(l.players, 2);
+    assert!(l.slots[3].is_none());
+}
+
+/// S18: a Ready made for an older lobby revision does not count: B's
+/// Ready is held on the way while the host changes the seed, so B is not
+/// ready and the match does not start until B readies again.
+#[test]
+fn a_ready_for_an_older_lobby_is_dropped() {
+    let mut n = Net::new(["A", "B"]);
+    n.run(50_000);
+    for (i, f) in ["ger", "usa"].iter().enumerate() {
+        n.clients[i].set_lobby(LobbySet {
+            faction: (*f).into(),
+            seed: (i == 0).then_some(3),
+            ..LobbySet::default()
+        });
+    }
+    n.run(100_000);
+    n.up_cut[1] = true;
+    n.clients[1].ready(42);
+    n.run(10_000);
+    n.clients[0].set_lobby(LobbySet {
+        faction: "ger".into(),
+        seed: Some(4),
+        ..LobbySet::default()
+    });
+    n.run(50_000);
+    n.up_cut[1] = false;
+    n.clients[0].ready(42);
+    n.run(300_000);
+    assert_eq!(n.relay.phase(), Phase::Lobby);
+    let l = last_lobby(&n, 0);
+    assert_eq!(l.seed, 4);
+    assert!(!l.slots[1].as_ref().unwrap().ready);
+    n.clients[1].ready(42);
+    n.run(300_000);
+    assert_eq!(n.relay.phase(), Phase::Running);
+}
+
+/// S18 H5: four players on teams 0 0 1 1. A map ping goes to the
+/// sender's connected allies only, at most one per `ping_gap_us`.
+#[test]
+fn map_pings_reach_allies_only_and_are_spaced() {
+    let mut n = Net::new(["A", "B", "C", "D"]);
+    n.asleep[1..].iter_mut().for_each(|a| *a = true);
+    n.run(50_000);
+    n.clients[0].set_lobby(LobbySet {
+        faction: "ger".into(),
+        team: Some(0),
+        players: Some(4),
+        ..LobbySet::default()
+    });
+    n.run(100_000);
+    n.asleep.iter_mut().for_each(|a| *a = false);
+    n.run(100_000);
+    for (i, (f, t)) in [("usa", 0), ("ger", 1), ("usa", 1)].iter().enumerate() {
+        n.clients[i + 1].set_lobby(LobbySet {
+            faction: (*f).into(),
+            team: Some(*t),
+            ..LobbySet::default()
+        });
+    }
+    n.run(300_000);
+    for c in &mut n.clients {
+        c.ready(42);
+    }
+    n.run(600_000);
+    assert_eq!(n.relay.phase(), Phase::Running);
+    let start = n.events[2]
+        .iter()
+        .find_map(|e| match e {
+            NetEvent::Start(s) => Some(s.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(start.players.len(), 4);
+    assert_eq!(
+        start.players.iter().map(|p| p.team).collect::<Vec<_>>(),
+        [Some(0), Some(0), Some(1), Some(1)]
+    );
+    n.clients[0].map_ping(10, 20);
+    n.run(10_000);
+    n.clients[0].map_ping(11, 21);
+    n.run(100_000);
+    let pings = |n: &Net, i: usize| -> Vec<(u8, i32, i32)> {
+        n.events[i]
+            .iter()
+            .filter_map(|e| match e {
+                NetEvent::MapPing { slot, x, y } => Some((*slot, *x, *y)),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(pings(&n, 1), [(0, 10, 20)]);
+    assert!(pings(&n, 0).is_empty());
+    assert!(pings(&n, 2).is_empty() && pings(&n, 3).is_empty());
+    n.run(500_000);
+    n.clients[0].map_ping(12, 22);
+    n.run(100_000);
+    assert_eq!(pings(&n, 1), [(0, 10, 20), (0, 12, 22)]);
 }

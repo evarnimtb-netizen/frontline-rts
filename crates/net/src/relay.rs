@@ -53,6 +53,12 @@ pub const PAUSE_REQ_GAP_US: u64 = 250_000;
 /// After a stop mid-match, how long the relay keeps sending the last
 /// turns (a quitter's `Surrender`) before it says `Bye(Shutdown)`.
 pub const SHUTDOWN_DRAIN_US: u64 = 250_000;
+/// S18: slots a lobby opens by default ([`RelayConfig::max_slots`]).
+pub const DEFAULT_MAX_SLOTS: u8 = MAX_SLOTS as u8;
+/// S18 H5: shortest gap between two forwarded map pings of one slot
+/// ([`RelayConfig::ping_gap_us`]); the presenter's own gate is the
+/// setup's `[teams] ping_gap_s`.
+pub const DEFAULT_PING_GAP_US: u64 = 500_000;
 
 #[derive(Clone, Debug)]
 pub struct RelayConfig {
@@ -76,6 +82,16 @@ pub struct RelayConfig {
     /// Lobby silence after which a slot is freed.
     pub lobby_drop_us: u64,
     pub default_map: String,
+    /// S18: slots a lobby may open (2..=[`MAX_SLOTS`]; 2 keeps the 1v1
+    /// relay). The host picks how many of them the match uses.
+    pub max_slots: u8,
+    /// S18 H2: the host may fill open slots with AI.
+    pub allow_ai: bool,
+    /// S18: in a match of three or more slots, hostile players may pick
+    /// the same faction (a 1v1 keeps "the two factions must differ").
+    pub allow_same_faction: bool,
+    /// S18 H5: shortest gap between two forwarded map pings of one slot.
+    pub ping_gap_us: u64,
 }
 
 impl Default for RelayConfig {
@@ -92,6 +108,10 @@ impl Default for RelayConfig {
             resume_lead_us: 300_000,
             lobby_drop_us: 10_000_000,
             default_map: "ww2:kessel_ridge".into(),
+            max_slots: DEFAULT_MAX_SLOTS,
+            allow_ai: true,
+            allow_same_faction: true,
+            ping_gap_us: DEFAULT_PING_GAP_US,
         }
     }
 }
@@ -150,6 +170,18 @@ struct Slot {
     restamps: u64,
     /// Relay time of this slot's last accepted pause request.
     pause_req_at: Option<u64>,
+    /// S18: the team picked in the lobby (`None`: the slot number).
+    team: Option<u8>,
+    /// S18 H5: relay time of this slot's last forwarded map ping.
+    ping_at: Option<u64>,
+}
+
+/// S18 H2: an AI slot the host filled.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AiSlot {
+    faction: String,
+    team: Option<u8>,
+    difficulty: u8,
 }
 
 impl Slot {
@@ -203,6 +235,15 @@ pub enum LogRecord {
         d: u8,
         seed: u64,
         map: String,
+        /// S18: slots in the match, and which of them are AI.
+        players: u8,
+        ai: Vec<u8>,
+    },
+    /// S18: a player moved to another lobby slot.
+    SlotMoved {
+        t: u64,
+        from: u8,
+        to: u8,
     },
     /// A closed turn with commands (empty turns are not logged).
     Turn {
@@ -229,7 +270,8 @@ pub enum LogRecord {
     Desync {
         t: u64,
         tick: u64,
-        hashes: [String; 2],
+        /// Slot order; empty for an AI slot or a missing hash.
+        hashes: Vec<String>,
         at: u64,
     },
     TimedOut {
@@ -260,7 +302,11 @@ pub enum LogRecord {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct RelayStatus {
     pub phase: String,
-    pub slots: [Option<SlotStatus>; 2],
+    /// One per opened slot; `None` for an open or AI slot.
+    pub slots: Vec<Option<SlotStatus>>,
+    /// S18: slots in the match, and the AI ones among them.
+    pub players: u8,
+    pub ai_slots: Vec<u8>,
     /// Next turn to close.
     pub next_turn: u64,
     pub d: u8,
@@ -291,7 +337,16 @@ pub struct Relay {
     cfg: RelayConfig,
     tokens: TokenSource,
     phase: Phase,
-    slots: [Option<Slot>; 2],
+    /// One per opened slot (`max_slots`).
+    slots: Vec<Option<Slot>>,
+    /// S18 H2: the AI slots, by slot (never where a player is).
+    ai: Vec<Option<AiSlot>>,
+    /// S18: slots in the match (the host's pick, 2..=`slots.len()`).
+    players: usize,
+    /// S18: lobby revision, bumped whenever the Ready flags are cleared.
+    rev: u32,
+    /// S18: each match slot's team, fixed at `Start`.
+    teams: Vec<u8>,
     seed: u64,
     map: String,
     d_override: Option<u8>,
@@ -309,7 +364,7 @@ pub struct Relay {
     turns: VecDeque<Vec<u8>>,
     turns_base: u64,
     pause: Option<PauseState>,
-    hashes: BTreeMap<u64, [Option<u64>; 2]>,
+    hashes: BTreeMap<u64, Vec<Option<u64>>>,
     confirmed: u64,
     desync_tick: Option<u64>,
     restamps: u64,
@@ -330,14 +385,20 @@ pub struct Relay {
 }
 
 impl Relay {
-    pub fn new(cfg: RelayConfig, tokens: TokenSource) -> Relay {
+    pub fn new(mut cfg: RelayConfig, tokens: TokenSource) -> Relay {
         let schedule = Schedule::new(0, cfg.tick_hz, cfg.speed_pct);
+        cfg.max_slots = cfg.max_slots.clamp(2, MAX_SLOTS as u8);
+        let n = cfg.max_slots as usize;
         Relay {
             map: cfg.default_map.clone(),
             cfg,
             tokens,
             phase: Phase::Lobby,
-            slots: [None, None],
+            slots: (0..n).map(|_| None).collect(),
+            ai: vec![None; n],
+            players: 2,
+            rev: 0,
+            teams: Vec::new(),
             seed: 1,
             d_override: None,
             note: String::new(),
@@ -443,10 +504,12 @@ impl Relay {
         };
         RelayStatus {
             phase: format!("{:?}", self.phase),
-            slots: [
-                self.slots[0].as_ref().map(slot),
-                self.slots[1].as_ref().map(slot),
-            ],
+            slots: self.slots.iter().map(|s| s.as_ref().map(slot)).collect(),
+            players: self.players as u8,
+            ai_slots: (0..self.ai.len())
+                .filter(|&k| self.ai[k].is_some())
+                .map(|k| k as u8)
+                .collect(),
             next_turn: self.next_turn,
             d: self.d,
             paused: self.pause.map(|p| format!("{:?} at {}", p.kind, p.at)),
@@ -618,7 +681,9 @@ impl Relay {
         } else {
             None
         };
-        let free = self.slots.iter().position(|s| s.is_none());
+        // S18: the lowest open slot of the match (not an AI's); past
+        // `players` the lobby is full (a 1v1 lobby refuses a third).
+        let free = (0..self.players).find(|&i| self.slots[i].is_none() && self.ai[i].is_none());
         let reason = match (reject, free) {
             (Some(r), _) => r,
             (None, None) => RejectReason::Full,
@@ -666,6 +731,8 @@ impl Relay {
                     burst_count: 0,
                     restamps: 0,
                     pause_req_at: None,
+                    team: None,
+                    ping_at: None,
                 });
                 self.send(
                     from,
@@ -676,6 +743,7 @@ impl Relay {
                         slot: i as u8,
                     }),
                 );
+                self.clear_ready();
                 self.lobby_changed();
                 return;
             }
@@ -729,6 +797,7 @@ impl Relay {
             Up::LobbySet(l) if self.phase == Phase::Lobby => {
                 let s = self.slots[i].as_mut().expect("slot exists");
                 s.faction = l.faction;
+                s.team = l.team;
                 if i == 0 {
                     if let Some(seed) = l.seed {
                         self.seed = seed;
@@ -737,20 +806,30 @@ impl Relay {
                         self.map = m;
                     }
                     self.d_override = l.d.map(|d| d.clamp(MIN_D, self.cfg.max_d.max(MIN_D)));
+                    if let Some(n) = l.players {
+                        self.set_players(n as usize);
+                    }
+                    if let Some(ai) = l.ai {
+                        self.set_ai(ai);
+                    }
                 }
-                for s in self.slots.iter_mut().flatten() {
-                    s.ready = None;
-                }
+                self.clear_ready();
                 self.note.clear();
                 self.lobby_changed();
             }
-            Up::Ready { setup_hash } if self.phase == Phase::Lobby => {
-                self.slots[i].as_mut().expect("slot exists").ready = Some(setup_hash);
-                self.try_start(now);
+            Up::Ready { setup_hash, rev } if self.phase == Phase::Lobby => {
+                // A Ready made from an older lobby is stale: the change
+                // that came since cleared it.
+                if rev == self.rev {
+                    self.slots[i].as_mut().expect("slot exists").ready = Some(setup_hash);
+                    self.try_start(now);
+                }
                 if self.phase == Phase::Lobby {
                     self.lobby_changed();
                 }
             }
+            Up::TakeSlot(j) if self.phase == Phase::Lobby => self.take_slot(i, j as usize, now),
+            Up::MapPing { x, y } if self.phase == Phase::Running => self.map_ping(i, x, y, now),
             Up::Hash { tick, hash } if self.phase == Phase::Running => {
                 self.on_hash(i, tick, hash, now)
             }
@@ -787,13 +866,109 @@ impl Relay {
         true
     }
 
+    /// S18: clears every Ready flag; a later `Ready` must name the new
+    /// lobby revision.
+    fn clear_ready(&mut self) {
+        for s in self.slots.iter_mut().flatten() {
+            s.ready = None;
+        }
+        self.rev = self.rev.wrapping_add(1);
+    }
+
+    /// S18: the host sets the match size: at least 2 and every player's
+    /// slot, at most the opened slots. AI slots past it are dropped.
+    fn set_players(&mut self, n: usize) {
+        let need = self
+            .slots
+            .iter()
+            .rposition(|s| s.is_some())
+            .map_or(2, |k| k + 1);
+        self.players = n.clamp(need.max(2), self.slots.len());
+        for k in self.players..self.ai.len() {
+            self.ai[k] = None;
+        }
+    }
+
+    /// S18 H2: the host's AI list replaces the AI slots (in the match, not
+    /// the host's, not where a player is; none with `allow_ai` off).
+    fn set_ai(&mut self, picks: Vec<AiPick>) {
+        self.ai.iter_mut().for_each(|a| *a = None);
+        if !self.cfg.allow_ai {
+            return;
+        }
+        for p in picks {
+            let k = p.slot as usize;
+            if k == 0 || k >= self.players || self.slots[k].is_some() {
+                continue;
+            }
+            self.ai[k] = Some(AiSlot {
+                faction: p.faction,
+                team: p.team,
+                difficulty: p.difficulty.min(MAX_DIFFICULTY),
+            });
+        }
+    }
+
+    /// S18: player `i` moves to open slot `j` of the match (never slot 0,
+    /// the host's, in either direction).
+    fn take_slot(&mut self, i: usize, j: usize, now: u64) {
+        if i == 0
+            || j == 0
+            || j == i
+            || j >= self.players
+            || self.slots[j].is_some()
+            || self.ai[j].is_some()
+        {
+            return;
+        }
+        let s = self.slots[i].take();
+        self.slots[j] = s;
+        self.log.push(LogRecord::SlotMoved {
+            t: now,
+            from: i as u8,
+            to: j as u8,
+        });
+        if let Some(s) = self.slots[j].as_mut() {
+            s.ctl_out.push(Down::Slot(j as u8));
+        }
+        self.clear_ready();
+        self.note.clear();
+        self.lobby_changed();
+    }
+
+    /// S18 H5: forwards slot `i`'s map ping to its connected allies, at
+    /// most one per `ping_gap_us`.
+    fn map_ping(&mut self, i: usize, x: i32, y: i32, now: u64) {
+        let gap = self.cfg.ping_gap_us;
+        let Some(s) = self.slots[i].as_mut() else {
+            return;
+        };
+        if !s.active() || s.ping_at.is_some_and(|t| now.saturating_sub(t) < gap) {
+            return;
+        }
+        s.ping_at = Some(now);
+        let team = self.teams.get(i).copied();
+        for (j, o) in self.slots.iter_mut().enumerate() {
+            if let Some(o) = o
+                && j != i
+                && o.active()
+                && team.is_some()
+                && self.teams.get(j).copied() == team
+            {
+                o.ctl_out.push(Down::MapPing {
+                    slot: i as u8,
+                    x,
+                    y,
+                });
+            }
+        }
+    }
+
     fn on_bye(&mut self, i: usize, reason: ByeReason, now: u64) {
         match self.phase {
             Phase::Lobby => {
                 self.slots[i] = None;
-                for s in self.slots.iter_mut().flatten() {
-                    s.ready = None;
-                }
+                self.clear_ready();
                 self.lobby_changed();
             }
             Phase::Running => {
@@ -880,27 +1055,69 @@ impl Relay {
         }
     }
 
+    /// The resolved team of match slot `k` (its pick, else `k`).
+    fn team_of(&self, k: usize) -> u8 {
+        self.slots[k]
+            .as_ref()
+            .map(|s| s.team)
+            .or(self.ai[k].as_ref().map(|a| a.team))
+            .flatten()
+            .unwrap_or(k as u8)
+    }
+
+    fn faction_of(&self, k: usize) -> &str {
+        self.slots[k]
+            .as_ref()
+            .map(|s| s.faction.as_str())
+            .or(self.ai[k].as_ref().map(|a| a.faction.as_str()))
+            .unwrap_or("")
+    }
+
+    /// S18 H3: starts once every match slot is filled (a player or an AI),
+    /// every player is Ready with the same setup hash, the factions are
+    /// picked (in a 1v1, or with `allow_same_faction` off, hostile players'
+    /// differ) and there are at least two teams.
     fn try_start(&mut self, now: u64) {
-        let (Some(a), Some(b)) = (&self.slots[0], &self.slots[1]) else {
+        let n = self.players;
+        let filled = (0..n).all(|k| self.slots[k].is_some() || self.ai[k].is_some());
+        let humans: Vec<usize> = (0..n).filter(|&k| self.slots[k].is_some()).collect();
+        if !filled
+            || humans.is_empty()
+            || humans
+                .iter()
+                .any(|&k| self.slots[k].as_ref().is_none_or(|s| s.ready.is_none()))
+        {
             return;
-        };
-        let (Some(ha), Some(hb)) = (a.ready, b.ready) else {
-            return;
-        };
-        let problem = if a.faction.is_empty() || b.faction.is_empty() {
-            Some("both players must pick a faction")
-        } else if a.faction == b.faction {
-            Some("the two factions must differ")
-        } else if ha != hb {
+        }
+        let ready = |k: usize| self.slots[k].as_ref().and_then(|s| s.ready);
+        let differ_rule = n == 2 || !self.cfg.allow_same_faction;
+        let hostile_same = (0..n).any(|a| {
+            (a + 1..n).any(|b| {
+                self.team_of(a) != self.team_of(b) && self.faction_of(a) == self.faction_of(b)
+            })
+        });
+        let problem = if (0..n).any(|k| self.faction_of(k).is_empty()) {
+            Some(if n == 2 {
+                "both players must pick a faction"
+            } else {
+                "every player must pick a faction"
+            })
+        } else if differ_rule && hostile_same {
+            Some(if n == 2 {
+                "the two factions must differ"
+            } else {
+                "hostile players must pick different factions"
+            })
+        } else if (1..n).all(|k| self.team_of(k) == self.team_of(0)) {
+            Some("the players must be on at least two teams")
+        } else if humans.iter().any(|&k| ready(k) != ready(humans[0])) {
             Some("match setups differ (different mod content or game build)")
         } else {
             None
         };
         if let Some(p) = problem {
             self.note = p.to_owned();
-            for s in self.slots.iter_mut().flatten() {
-                s.ready = None;
-            }
+            self.clear_ready();
             return;
         }
         self.d = self
@@ -910,8 +1127,26 @@ impl Relay {
         let start_at = now + self.cfg.countdown_us;
         self.schedule = Schedule::new(start_at, self.cfg.tick_hz, self.cfg.speed_pct);
         self.phase = Phase::Running;
-        let names = [a.name.clone(), b.name.clone()];
-        let factions = [a.faction.clone(), b.faction.clone()];
+        self.teams = (0..n).map(|k| self.team_of(k)).collect();
+        let players: Vec<StartPlayer> = (0..n)
+            .map(|k| match (&self.slots[k], &self.ai[k]) {
+                (Some(s), _) => StartPlayer {
+                    name: s.name.clone(),
+                    faction: s.faction.clone(),
+                    team: s.team,
+                    ai: None,
+                },
+                (None, a) => {
+                    let a = a.as_ref().expect("a filled slot");
+                    StartPlayer {
+                        name: String::new(),
+                        faction: a.faction.clone(),
+                        team: a.team,
+                        ai: Some(a.difficulty),
+                    }
+                }
+            })
+            .collect();
         let start = Start {
             start_at,
             tick_hz: self.cfg.tick_hz,
@@ -919,8 +1154,7 @@ impl Relay {
             d: self.d,
             seed: self.seed,
             map: self.map.clone(),
-            factions,
-            names,
+            players,
         };
         self.log.push(LogRecord::Started {
             t: now,
@@ -928,6 +1162,11 @@ impl Relay {
             d: self.d,
             seed: self.seed,
             map: self.map.clone(),
+            players: n as u8,
+            ai: (0..n)
+                .filter(|&k| self.ai[k].is_some())
+                .map(|k| k as u8)
+                .collect(),
         });
         for s in self.slots.iter_mut().flatten() {
             s.last_heard = now;
@@ -953,12 +1192,24 @@ impl Relay {
             faction: s.faction.clone(),
             ready: s.ready.is_some(),
             rtt_ms: (s.rtt_p99_us / 1000).min(u16::MAX as u32) as u16,
+            team: s.team,
+            ai: None,
+        };
+        let ai = |a: &AiSlot| SlotInfo {
+            faction: a.faction.clone(),
+            team: a.team,
+            ai: Some(a.difficulty),
+            ..SlotInfo::default()
         };
         LobbyState {
-            slots: [
-                self.slots[0].as_ref().map(info),
-                self.slots[1].as_ref().map(info),
-            ],
+            slots: self
+                .slots
+                .iter()
+                .zip(&self.ai)
+                .map(|(s, a)| s.as_ref().map(info).or(a.as_ref().map(ai)))
+                .collect(),
+            players: self.players as u8,
+            rev: self.rev,
             seed: self.seed,
             map: self.map.clone(),
             d: self.d_override,
@@ -1045,27 +1296,34 @@ impl Relay {
             tick,
             hash: format!("{hash:016x}"),
         });
-        let other = 1 - i;
-        if !self.slots[other].as_ref().is_some_and(|s| s.active()) {
+        // Hashes are compared between the connected players; alone, there
+        // is nobody to compare with (S18: one human with AI allies).
+        let active: Vec<usize> = (0..self.slots.len())
+            .filter(|&k| self.slots[k].as_ref().is_some_and(|s| s.active()))
+            .collect();
+        if active.len() < 2 || !active.contains(&i) {
             return;
         }
-        let e = self.hashes.entry(tick).or_insert([None, None]);
+        let n = self.slots.len();
+        let e = self.hashes.entry(tick).or_insert_with(|| vec![None; n]);
         e[i] = Some(hash);
-        if let [Some(a), Some(b)] = *e {
+        let differs = e.iter().flatten().any(|&h| h != hash);
+        let all = active.iter().all(|&k| e[k].is_some());
+        if differs {
+            let hashes: Vec<Option<u64>> = e.iter().take(self.players).copied().collect();
             self.hashes.remove(&tick);
-            if a == b {
-                self.confirmed = self.confirmed.max(tick);
-                self.hashes = self.hashes.split_off(&(self.confirmed + 1));
-            } else {
-                self.desync(tick, [a, b], now);
-            }
+            self.desync(tick, hashes, now);
+        } else if all {
+            self.hashes.remove(&tick);
+            self.confirmed = self.confirmed.max(tick);
+            self.hashes = self.hashes.split_off(&(self.confirmed + 1));
         }
         while self.hashes.len() > 512 {
             self.hashes.pop_first();
         }
     }
 
-    fn desync(&mut self, tick: u64, hashes: [u64; 2], now: u64) {
+    fn desync(&mut self, tick: u64, hashes: Vec<Option<u64>>, now: u64) {
         let at = self.next_turn;
         self.desync_tick = Some(tick);
         self.pause = Some(PauseState {
@@ -1076,7 +1334,10 @@ impl Relay {
         self.log.push(LogRecord::Desync {
             t: now,
             tick,
-            hashes: hashes.map(|h| format!("{h:016x}")),
+            hashes: hashes
+                .iter()
+                .map(|h| h.map(|h| format!("{h:016x}")).unwrap_or_default())
+                .collect(),
             at,
         });
         self.broadcast(Down::Desync { tick, hashes, at });
@@ -1154,7 +1415,7 @@ impl Relay {
     /// [`Relay::shutdown`] mid-match: send the last turns, then the byes.
     fn poll_closing(&mut self, now: u64) {
         let since = self.closing.unwrap_or(now);
-        for i in 0..SLOTS {
+        for i in 0..self.slots.len() {
             self.send_bundles(i, now);
         }
         let next = self.next_turn;
@@ -1181,9 +1442,7 @@ impl Relay {
             }
         }
         if changed {
-            for s in self.slots.iter_mut().flatten() {
-                s.ready = None;
-            }
+            self.clear_ready();
         }
         // Pings move the RTT readout and the D suggestion; refresh at most
         // once a second. Changes go out at most every 50 ms, as the latest
@@ -1208,7 +1467,7 @@ impl Relay {
             }
         }
         self.prune_turns();
-        for i in 0..SLOTS {
+        for i in 0..self.slots.len() {
             self.send_bundles(i, now);
         }
     }
@@ -1220,7 +1479,8 @@ impl Relay {
                 .filter(|s| s.active())
                 .map(|s| now.saturating_sub(s.last_heard))
         };
-        let silence = [silent(&self.slots[0]), silent(&self.slots[1])];
+        let silence: Vec<Option<u64>> = self.slots.iter().map(silent).collect();
+        let n = silence.len();
         match self.pause {
             Some(p) if p.kind == PauseKind::Desync => {}
             Some(p) => {
@@ -1239,8 +1499,7 @@ impl Relay {
                         self.time_out(w, now);
                         self.resume(now);
                     }
-                } else if let Some(w) =
-                    (0..SLOTS).find(|&k| silence[k].is_some_and(|q| q >= pause_us))
+                } else if let Some(w) = (0..n).find(|&k| silence[k].is_some_and(|q| q >= pause_us))
                 {
                     // A player pause turns into a wait for the silent slot,
                     // so the timeout still runs.
@@ -1249,14 +1508,14 @@ impl Relay {
                 }
             }
             None => {
-                if let Some(w) = (0..SLOTS).find(|&k| silence[k].is_some_and(|q| q >= pause_us)) {
+                if let Some(w) = (0..n).find(|&k| silence[k].is_some_and(|q| q >= pause_us)) {
                     self.pause_for(PauseKind::Waiting(w as u8), now);
                 }
             }
         }
         // After a resume, the other slot may itself be silent.
         if self.pause.is_none()
-            && let Some(w) = (0..SLOTS).find(|&k| {
+            && let Some(w) = (0..n).find(|&k| {
                 self.slots[k]
                     .as_ref()
                     .is_some_and(|s| s.active() && now.saturating_sub(s.last_heard) >= pause_us)
@@ -1285,13 +1544,16 @@ impl Relay {
         let tick = self.next_turn;
         let mut cmds: Vec<BundledCmd> = Vec::new();
         let mut used = 0usize;
-        let mut per = [(0usize, 0usize); SLOTS];
+        // S18: the match's slots (AI slots have no queue); a 1v1 takes
+        // turns between slots 0 and 1 exactly as before.
+        let n = self.players.clamp(1, self.slots.len());
+        let mut per = [(0usize, 0usize); MAX_SLOTS];
         loop {
             let mut took = false;
-            // Alternate who goes first, so neither player's large command
-            // waits behind the other's stream.
-            for k in 0..SLOTS {
-                let i = (k + tick as usize) % SLOTS;
+            // Rotate who goes first, so no player's large command waits
+            // behind the others' streams.
+            for k in 0..n {
+                let i = (k + tick as usize) % n;
                 let Some(s) = self.slots[i].as_mut() else {
                     continue;
                 };
@@ -1462,7 +1724,7 @@ impl Relay {
         }
     }
 
-    fn peers(&self, now: u64) -> [PeerStat; 2] {
+    fn peers(&self, now: u64) -> Vec<PeerStat> {
         let stat = |s: &Option<Slot>| match s {
             Some(s) => PeerStat {
                 rtt_ms: (s.rtt_p99_us / 1000).min(u16::MAX as u32) as u16,
@@ -1474,7 +1736,13 @@ impl Relay {
                 ..PeerStat::default()
             },
         };
-        [stat(&self.slots[0]), stat(&self.slots[1])]
+        // S18: an AI slot is always there and stable.
+        (0..self.players.min(self.slots.len()))
+            .map(|k| match (&self.slots[k], &self.ai[k]) {
+                (None, Some(_)) => PeerStat::default(),
+                (s, _) => stat(s),
+            })
+            .collect()
     }
 
     // ------------------------------------------------------------ output --
@@ -1488,7 +1756,7 @@ impl Relay {
     }
 
     fn flush_ctl(&mut self, now: u64) {
-        for i in 0..SLOTS {
+        for i in 0..self.slots.len() {
             if self.slots[i]
                 .as_ref()
                 .is_some_and(|s| s.ctl_out.overflowed())
@@ -1518,9 +1786,7 @@ impl Relay {
         match self.phase {
             Phase::Lobby => {
                 self.slots[i] = None;
-                for s in self.slots.iter_mut().flatten() {
-                    s.ready = None;
-                }
+                self.clear_ready();
                 self.lobby_changed();
             }
             Phase::Running => {

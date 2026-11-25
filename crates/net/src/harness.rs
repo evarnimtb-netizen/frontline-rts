@@ -4,9 +4,10 @@
 //!   tick's scheduled slot, never past the newest bundle, catching up at
 //!   most 3 ticks per period. It reports published hashes, keeps the
 //!   300-tick `state_hash` ring, and holds the dev desync hook.
-//! * [`run_virtual`] plays a whole two-client match on a virtual clock over
-//!   a [`SimNet`]: an in-process [`Relay`], two [`NetClient`]s with skewed
-//!   and drifting clocks, two worlds, scripted commands, and optional
+//! * [`run_virtual`] plays a whole match on a virtual clock over a
+//!   [`SimNet`]: an in-process [`Relay`], one [`NetClient`] per human slot
+//!   (two in a 1v1; S18: up to four, the rest AI fill) with skewed and
+//!   drifting clocks, one world each, scripted commands, and optional
 //!   blackouts, address changes, garbage datagrams and desync injection.
 //!
 //! **Desync hook** (S2 "Debug hook"): with `inject_desync = Some((T, slot))`,
@@ -27,7 +28,7 @@ use frontline_sim::{
 };
 
 use crate::client::{ClientConfig, ClientPhase, NetClient, NetEvent};
-use crate::protocol::{ByeReason, LobbySet, MAX_DATAGRAM};
+use crate::protocol::{AiPick, ByeReason, LobbySet, MAX_DATAGRAM};
 use crate::relay::{LogRecord, Relay, RelayConfig};
 use crate::rng::{SplitMix, TokenSource};
 use crate::transport::{LinkParams, RECV_BUF, SimNet, SimNetStats, SimSocket, Transport};
@@ -326,6 +327,41 @@ pub fn net_setup_rules(
 pub fn faction_of(setup: &MatchSetup, slot: usize) -> String {
     let f = setup.players[slot].faction as usize;
     setup.factions[f].id.clone()
+}
+
+/// S18: a team setup on `map`: slot `i` plays `factions[i]` on team
+/// `teams[i]`; the slots in `ai` are the sim's AI (normal), the rest are
+/// people. `tickets` as [`net_setup`].
+pub fn net_setup_teams(
+    defs: &ModDefs,
+    map: &str,
+    seed: u64,
+    factions: &[&str],
+    teams: &[u8],
+    ai: &[u8],
+    tickets: Option<u32>,
+) -> anyhow::Result<MatchSetup> {
+    let req = MatchRequest {
+        rules: "ww2:skirmish".into(),
+        map: map.into(),
+        seed,
+        players: factions
+            .iter()
+            .zip(teams)
+            .enumerate()
+            .map(|(i, (f, t))| PlayerRequest {
+                faction: (*f).into(),
+                ai: ai.contains(&(i as u8)),
+                difficulty: Difficulty::Normal,
+                team: Some(*t),
+            })
+            .collect(),
+    };
+    let mut setup = defs.resolve(&req).map_err(|e| anyhow::anyhow!("{e}"))?;
+    if let Some(t) = tickets {
+        setup.rules.tickets = t;
+    }
+    Ok(setup)
 }
 
 // --------------------------------------------------------------- scripts --
@@ -707,8 +743,8 @@ impl Scripter {
 
 // ----------------------------------------------------------- virtual run --
 
-/// A two-client match on a virtual clock. Times are µs; "rel" times count
-/// from the moment turn 0 opens.
+/// A match on a virtual clock (a 1v1, or with `team` an S18 team match).
+/// Times are µs; "rel" times count from the moment turn 0 opens.
 #[derive(Clone, Debug)]
 pub struct VirtualSpec {
     pub seed: u64,
@@ -744,6 +780,14 @@ pub struct VirtualSpec {
     /// Keep checkpoints, and on a desync write each client's dump to
     /// `<dir>/slot<N>/` and the relay log to `<dir>/relay.jsonl`.
     pub dump_dir: Option<PathBuf>,
+    /// S18: a team match of every slot of the setup: the host (who joins
+    /// first) sets the match size, each player's team from the setup, and
+    /// fills these slots with AI (normal); a client joins for every other
+    /// slot. `None`: the 1v1 lobby (two clients, no teams).
+    pub team: Option<Vec<u8>>,
+    /// S18 H5: `(slot, at_rel_us)`: that slot's client pings the map at
+    /// `(100 + slot, 200)` metres.
+    pub map_pings: Vec<(usize, u64)>,
 }
 
 impl Default for VirtualSpec {
@@ -769,58 +813,71 @@ impl Default for VirtualSpec {
             bye_on_end: true,
             stop_on_desync: true,
             dump_dir: None,
+            team: None,
+            map_pings: Vec::new(),
         }
     }
 }
 
+/// Per-client fields are in slot order of the clients (`slots[k]` is
+/// client `k`'s slot; in a 1v1 the same as the player); per-player fields
+/// (`executed`, `lost`, `lost_targets`, `vehicles_spawned`) are indexed by
+/// slot, AI slots left empty.
 pub struct VirtualReport {
     pub d: u8,
     /// Relay time turn 0 opened.
     pub start_at: u64,
-    pub ticks: [u64; 2],
-    /// Published hashes both worlds have, and how many differ.
+    /// S18: each client's slot.
+    pub slots: Vec<u8>,
+    pub ticks: Vec<u64>,
+    /// Published hashes two worlds both have (every pair of clients), and
+    /// how many differ.
     pub hash_checks: u64,
     pub hash_mismatches: u64,
     pub first_mismatch: Option<u64>,
-    pub stamped: [u64; 2],
-    pub queued: [u64; 2],
-    /// Commands both worlds ran, per player, and problems found with them.
-    pub executed: [Vec<Executed>; 2],
+    pub stamped: Vec<u64>,
+    pub queued: Vec<u64>,
+    /// Commands the furthest world ran, per player, and problems found
+    /// with them.
+    pub executed: Vec<Vec<Executed>>,
     /// Own seqs stamped but never run (for players still connected).
-    pub lost: [u64; 2],
+    pub lost: Vec<u64>,
     /// The target ticks those lost seqs were stamped for (`u64::MAX`: not
     /// in the client's stamp log).
-    pub lost_targets: [Vec<u64>; 2],
+    pub lost_targets: Vec<Vec<u64>>,
     /// `(player, seq)` run more than once or out of order.
     pub order_errors: u64,
-    /// The two worlds ran different command streams.
+    /// Two worlds ran different command streams.
     pub streams_differ: bool,
     pub relay_restamps: u64,
     pub relay_commands: u64,
-    pub own_restamps: [u64; 2],
-    pub stall_ticks: [u64; 2],
-    pub desync: [Option<(u64, u64)>; 2],
+    pub own_restamps: Vec<u64>,
+    pub stall_ticks: Vec<u64>,
+    pub desync: Vec<Option<(u64, u64)>>,
     pub relay_desync: Option<u64>,
-    pub byes: [Option<ByeReason>; 2],
-    pub outcomes: [Outcome; 2],
-    /// Players whose `Surrender` the relay injected and world 0 ran.
+    pub byes: Vec<Option<ByeReason>>,
+    pub outcomes: Vec<Outcome>,
+    /// Players whose `Surrender` the relay injected and the furthest world
+    /// ran.
     pub injected_surrenders: Vec<u8>,
     pub pauses: u32,
     pub resumes: u32,
-    pub rtt_p99_ms: [Option<u16>; 2],
+    pub rtt_p99_ms: Vec<Option<u16>>,
     /// Each client's playout delay in ticks.
-    pub playout: [u64; 2],
+    pub playout: Vec<u64>,
     pub net: SimNetStats,
     pub step_p99_us: u32,
     pub step_max_us: u32,
     pub relay_log: Vec<LogRecord>,
     pub worlds: Vec<World>,
-    pub rings: [VecDeque<(u64, u64)>; 2],
-    /// S3: orders each slot's script sent, by name ([`Scripter::kinds`]).
-    pub script_kinds: [BTreeMap<&'static str, u64>; 2],
-    /// S3: distinct vehicles each player had alive at some point (slot 0's
-    /// world, sampled once per period).
-    pub vehicles_spawned: [usize; 2],
+    pub rings: Vec<VecDeque<(u64, u64)>>,
+    /// S3: orders each client's script sent, by name ([`Scripter::kinds`]).
+    pub script_kinds: Vec<BTreeMap<&'static str, u64>>,
+    /// S3: distinct vehicles each player had alive at some point (the
+    /// first client's world, sampled once per period).
+    pub vehicles_spawned: Vec<usize>,
+    /// S18: map pings each client heard, `(from slot, x, y)`.
+    pub pings: Vec<Vec<(u8, i32, i32)>>,
 }
 
 impl VirtualReport {
@@ -849,7 +906,10 @@ struct Peer {
     pauses: u32,
     resumes: u32,
     /// Vehicle ids seen alive, per owner.
-    vehicles: [BTreeSet<u32>; 2],
+    vehicles: Vec<BTreeSet<u32>>,
+    /// S18: not connecting yet (a team match: until the host set it up).
+    hold: bool,
+    pings: Vec<(u8, i32, i32)>,
 }
 
 impl Peer {
@@ -887,8 +947,20 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
     let mut relay = Relay::new(spec.relay.clone(), TokenSource::seeded(spec.seed));
     let mut rng = SplitMix::new(spec.seed ^ 0xfee1);
     let hash = crate::setup_hash(setup);
-    let skews = [(7_000_000i64, 40i64), (1_500_000, -30)];
-    let mut peers: Vec<Peer> = (0..2)
+    let skews = [
+        (7_000_000i64, 40i64),
+        (1_500_000, -30),
+        (3_000_000, 15),
+        (500_000, -10),
+    ];
+    let n_players = setup.players.len();
+    let ai_slots: &[u8] = spec.team.as_deref().unwrap_or(&[]);
+    let clients = if spec.team.is_some() {
+        n_players - ai_slots.len()
+    } else {
+        2
+    };
+    let mut peers: Vec<Peer> = (0..clients)
         .map(|i| {
             let addr: SocketAddr = format!("10.0.0.{}:40000", i + 2).parse().expect("addr");
             let world = World::new_match(setup.clone(), spec.threads.max(1))
@@ -918,7 +990,9 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
                 said_bye: false,
                 pauses: 0,
                 resumes: 0,
-                vehicles: [BTreeSet::new(), BTreeSet::new()],
+                vehicles: vec![BTreeSet::new(); n_players.max(2)],
+                hold: spec.team.is_some() && i > 0,
+                pings: Vec::new(),
             }
         })
         .collect();
@@ -969,7 +1043,11 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
         }
         relay_log.extend(relay.drain_log());
         // Clients.
+        let mut host_set = false;
         for p in peers.iter_mut() {
+            if p.hold {
+                continue;
+            }
             let local = p.local(now);
             while let Ok(Some((n, from))) = p.sock.recv_from(&mut buf) {
                 p.client.on_datagram(from, &buf[..n], local);
@@ -988,13 +1066,43 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
                             p.driver.inject_desync = Some((t, *slot));
                             p.driver.inject_vehicle = spec.inject_vehicle;
                         }
+                        if p.script.slot != *slot {
+                            p.script =
+                                Scripter::new(spec.seed, *slot).vehicles(spec.vehicle_orders);
+                        }
+                        let host = s == 0 && spec.team.is_some();
                         p.client.set_lobby(LobbySet {
                             faction: faction_of(setup, s),
                             seed: (s == 0).then_some(setup.seed),
                             map: None,
                             d: if s == 0 { spec.d_override } else { None },
+                            team: spec.team.as_ref().map(|_| setup.players[s].team),
+                            players: host.then_some(n_players as u8),
+                            ai: host.then(|| {
+                                ai_slots
+                                    .iter()
+                                    .map(|&k| AiPick {
+                                        slot: k,
+                                        faction: faction_of(setup, k as usize),
+                                        team: Some(setup.players[k as usize].team),
+                                        difficulty: 1,
+                                    })
+                                    .collect()
+                            }),
                         });
                     }
+                    NetEvent::Lobby(l) => {
+                        // The host's size and AI picks arrived: the others
+                        // may join.
+                        host_set |= p.client.slot() == Some(0)
+                            && l.players as usize == n_players
+                            && ai_slots.iter().all(|&k| {
+                                l.slots
+                                    .get(k as usize)
+                                    .is_some_and(|s| s.as_ref().is_some_and(|s| s.ai.is_some()))
+                            });
+                    }
+                    NetEvent::MapPing { slot, x, y } => p.pings.push((*slot, *x, *y)),
                     NetEvent::Start(s) => {
                         start_at.get_or_insert(s.start_at);
                     }
@@ -1022,7 +1130,7 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
                 let ents = world.entities();
                 for &v in g.vehicles().keys() {
                     let o = ents.owner()[v.index()].0 as usize;
-                    if ents.kind()[v.index()] == EntityKind::Vehicle && o < 2 {
+                    if ents.kind()[v.index()] == EntityKind::Vehicle && o < p.vehicles.len() {
                         p.vehicles[o].insert(v.0);
                     }
                 }
@@ -1056,6 +1164,11 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
                 let _ = p.sock.send_to(&bytes, to);
             }
         }
+        if host_set {
+            for p in peers.iter_mut() {
+                p.hold = false;
+            }
+        }
         if both_joined.is_none() && peers.iter().all(|p| p.welcomed) {
             both_joined = Some(now);
         }
@@ -1074,7 +1187,7 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
                 peers
                     .iter()
                     .position(|p| p.client.slot() == Some(c as u8))
-                    .expect("both slots are taken once the match started")
+                    .expect("every human slot is taken once the match started")
             };
             for &(c, from, len) in &spec.blackouts {
                 if now == (s + from).div_ceil(dt) * dt {
@@ -1089,6 +1202,13 @@ pub fn run_virtual(setup: &MatchSetup, spec: &VirtualSpec) -> VirtualReport {
                 let old = p.sock.addr();
                 let new: SocketAddr = SocketAddr::new(old.ip(), old.port().wrapping_add(1000));
                 net.rebind(&p.sock, new);
+            }
+            for &(c, at) in &spec.map_pings {
+                if now == (s + at).div_ceil(dt) * dt
+                    && let Some(p) = peers.iter_mut().find(|p| p.client.slot() == Some(c as u8))
+                {
+                    p.client.map_ping(100 + c as i32, 200);
+                }
             }
         }
     }
@@ -1122,7 +1242,12 @@ fn write_dumps(dir: &Path, setup: &MatchSetup, relay: &Relay, peers: &[Peer], lo
         let hashes = log
             .iter()
             .find_map(|l| match l {
-                LogRecord::Desync { hashes, .. } => Some(hashes.clone()),
+                LogRecord::Desync { hashes, .. } => Some(
+                    hashes
+                        .iter()
+                        .map(|h| (!h.is_empty()).then(|| h.clone()))
+                        .collect(),
+                ),
                 _ => None,
             })
             .unwrap_or_default();
@@ -1147,7 +1272,7 @@ fn write_dumps(dir: &Path, setup: &MatchSetup, relay: &Relay, peers: &[Peer], lo
 }
 
 fn report(
-    _setup: &MatchSetup,
+    setup: &MatchSetup,
     _spec: &VirtualSpec,
     relay: &Relay,
     net: &SimNet,
@@ -1158,20 +1283,25 @@ fn report(
     // Index everything by slot (who joined first is up to the network).
     let mut peers = peers;
     peers.sort_by_key(|p| p.client.slot().unwrap_or(u8::MAX));
-    let h0: BTreeMap<u64, u64> = peers[0].driver.published.iter().copied().collect();
+    let n_players = setup.players.len().max(2);
     let mut checks = 0;
     let mut mismatches = 0;
-    let mut first = None;
-    for (t, h) in &peers[1].driver.published {
-        if let Some(h0) = h0.get(t) {
-            checks += 1;
-            if h0 != h {
-                mismatches += 1;
-                first.get_or_insert(*t);
+    let mut first: Option<u64> = None;
+    for (j, a) in peers.iter().enumerate() {
+        let ha: BTreeMap<u64, u64> = a.driver.published.iter().copied().collect();
+        for b in &peers[j + 1..] {
+            for (t, h) in &b.driver.published {
+                if let Some(x) = ha.get(t) {
+                    checks += 1;
+                    if x != h {
+                        mismatches += 1;
+                        first = Some(first.map_or(*t, |f| f.min(*t)));
+                    }
+                }
             }
         }
     }
-    let common = peers[0].world.tick().min(peers[1].world.tick());
+    let common = peers.iter().map(|p| p.world.tick()).min().unwrap_or(0);
     let stream = |p: &Peer| -> Vec<Executed> {
         p.driver
             .executed
@@ -1180,20 +1310,23 @@ fn report(
             .filter(|e| e.tick < common)
             .collect()
     };
-    let streams_differ = stream(&peers[0]) != stream(&peers[1]);
+    let s0 = stream(&peers[0]);
+    let streams_differ = peers[1..].iter().any(|p| stream(p) != s0);
     // Use the world that ran furthest to judge loss and order.
-    let far = if peers[0].world.tick() >= peers[1].world.tick() {
-        0
-    } else {
-        1
-    };
-    let mut lost = [0u64; 2];
-    let mut lost_targets: [Vec<u64>; 2] = [Vec::new(), Vec::new()];
+    let far = (0..peers.len())
+        .rev()
+        .max_by_key(|&k| peers[k].world.tick())
+        .unwrap_or(0);
+    let mut lost = vec![0u64; n_players];
+    let mut lost_targets: Vec<Vec<u64>> = vec![Vec::new(); n_players];
     let mut order_errors = 0u64;
-    let mut executed: [Vec<Executed>; 2] = [Vec::new(), Vec::new()];
+    let mut executed: Vec<Vec<Executed>> = vec![Vec::new(); n_players];
     let mut injected = Vec::new();
-    for pl in 0..2u8 {
-        let stamped = peers[pl as usize].client.status().stamped;
+    for pl in 0..n_players as u8 {
+        let Some(k) = peers.iter().position(|p| p.client.slot() == Some(pl)) else {
+            continue;
+        };
+        let stamped = peers[k].client.status().stamped;
         let mine: Vec<Executed> = peers[far]
             .driver
             .executed
@@ -1213,11 +1346,11 @@ fn report(
             }
         }
         let ran_own = mine.iter().filter(|e| (e.seq as u64) < stamped).count() as u64;
-        let connected = relay.slot_state(pl) == Some(crate::relay::SlotState::Connected)
-            || peers[pl as usize].said_bye;
+        let connected =
+            relay.slot_state(pl) == Some(crate::relay::SlotState::Connected) || peers[k].said_bye;
         if connected {
             lost[pl as usize] = stamped.saturating_sub(ran_own);
-            let c = &peers[pl as usize].client;
+            let c = &peers[k].client;
             lost_targets[pl as usize] = (ran_own..stamped)
                 .map(|s| c.stamp_target(s as u32).unwrap_or(u64::MAX))
                 .collect();
@@ -1236,35 +1369,42 @@ fn report(
     let max = steps.last().copied().unwrap_or(0);
     let status: Vec<_> = peers.iter().map(|p| p.client.status()).collect();
     let outcome = |p: &Peer| p.world.game().map_or(Outcome::Running, |g| g.outcome());
-    let mut rings = [VecDeque::new(), VecDeque::new()];
-    let mut worlds = Vec::new();
-    let mut byes = [None, None];
-    let mut desync = [None, None];
-    let mut ticks = [0; 2];
-    let mut stalls = [0; 2];
-    let mut queued = [0; 2];
-    let outcomes = [outcome(&peers[0]), outcome(&peers[1])];
+    let outcomes = peers.iter().map(outcome).collect();
     let (pauses, resumes) = (peers[0].pauses, peers[0].resumes);
-    let vehicles_spawned = [peers[0].vehicles[0].len(), peers[0].vehicles[1].len()];
-    let mut script_kinds = [BTreeMap::new(), BTreeMap::new()];
-    for (i, p) in peers.into_iter().enumerate() {
-        script_kinds[i] = p.script.kinds.clone();
-        rings[i] = p.driver.ring;
-        byes[i] = p.bye;
-        desync[i] = p.driver.desync;
-        ticks[i] = p.world.tick();
-        stalls[i] = p.driver.stall_ticks;
-        queued[i] = p.queued;
+    let vehicles_spawned = peers[0].vehicles.iter().map(|v| v.len()).collect();
+    let slots = peers
+        .iter()
+        .map(|p| p.client.slot().unwrap_or(u8::MAX))
+        .collect();
+    let mut rings = Vec::new();
+    let mut worlds = Vec::new();
+    let mut byes = Vec::new();
+    let mut desync = Vec::new();
+    let mut ticks = Vec::new();
+    let mut stalls = Vec::new();
+    let mut queued = Vec::new();
+    let mut script_kinds = Vec::new();
+    let mut pings = Vec::new();
+    for p in peers {
+        script_kinds.push(p.script.kinds.clone());
+        rings.push(p.driver.ring);
+        byes.push(p.bye);
+        desync.push(p.driver.desync);
+        ticks.push(p.world.tick());
+        stalls.push(p.driver.stall_ticks);
+        queued.push(p.queued);
+        pings.push(p.pings);
         worlds.push(p.world);
     }
     VirtualReport {
         d: relay.d(),
         start_at: start_at.unwrap_or(0),
+        slots,
         ticks,
         hash_checks: checks,
         hash_mismatches: mismatches,
         first_mismatch: first,
-        stamped: [status[0].stamped, status[1].stamped],
+        stamped: status.iter().map(|s| s.stamped).collect(),
         queued,
         executed,
         lost,
@@ -1273,7 +1413,7 @@ fn report(
         streams_differ,
         relay_restamps: relay.restamps(),
         relay_commands: relay.status(0).commands,
-        own_restamps: [status[0].own_restamps, status[1].own_restamps],
+        own_restamps: status.iter().map(|s| s.own_restamps).collect(),
         stall_ticks: stalls,
         desync,
         relay_desync: relay.desync_tick(),
@@ -1282,8 +1422,8 @@ fn report(
         injected_surrenders: injected,
         pauses,
         resumes,
-        rtt_p99_ms: [status[0].rtt_p99_ms, status[1].rtt_p99_ms],
-        playout: [status[0].playout, status[1].playout],
+        rtt_p99_ms: status.iter().map(|s| s.rtt_p99_ms).collect(),
+        playout: status.iter().map(|s| s.playout).collect(),
         net: net.stats(),
         step_p99_us: p99,
         step_max_us: max,
@@ -1292,6 +1432,7 @@ fn report(
         rings,
         script_kinds,
         vehicles_spawned,
+        pings,
     }
 }
 
@@ -1372,6 +1513,9 @@ pub fn run_udp(setup: &MatchSetup, spec: &VirtualSpec) -> anyhow::Result<Virtual
                             seed: (s == 0).then_some(setup.seed),
                             map: None,
                             d: if s == 0 { spec.d_override } else { None },
+                            team: None,
+                            players: None,
+                            ai: None,
                         }));
                     }
                     NetEvent::Start(_) => {
@@ -1491,38 +1635,39 @@ pub fn run_udp(setup: &MatchSetup, spec: &VirtualSpec) -> anyhow::Result<Virtual
     Ok(VirtualReport {
         d: relay.d,
         start_at: 0,
-        ticks: [worlds[order[0]].tick(), worlds[order[1]].tick()],
+        slots: vec![0, 1],
+        ticks: vec![worlds[order[0]].tick(), worlds[order[1]].tick()],
         hash_checks: checks,
         hash_mismatches: mismatches,
         first_mismatch: first,
-        stamped: [statuses[order[0]].stamped, statuses[order[1]].stamped],
-        queued: [queued[order[0]], queued[order[1]]],
-        executed,
-        lost,
-        lost_targets: [Vec::new(), Vec::new()],
+        stamped: vec![statuses[order[0]].stamped, statuses[order[1]].stamped],
+        queued: vec![queued[order[0]], queued[order[1]]],
+        executed: executed.to_vec(),
+        lost: lost.to_vec(),
+        lost_targets: vec![Vec::new(), Vec::new()],
         order_errors,
         streams_differ: false,
         relay_restamps: relay.restamps,
         relay_commands: relay.commands,
-        own_restamps: [
+        own_restamps: vec![
             statuses[order[0]].own_restamps,
             statuses[order[1]].own_restamps,
         ],
-        stall_ticks: [drivers[order[0]].stall_ticks, drivers[order[1]].stall_ticks],
-        desync: [drivers[order[0]].desync, drivers[order[1]].desync],
+        stall_ticks: vec![drivers[order[0]].stall_ticks, drivers[order[1]].stall_ticks],
+        desync: vec![drivers[order[0]].desync, drivers[order[1]].desync],
         relay_desync: relay.desync_tick,
-        byes: [byes[order[0]], byes[order[1]]],
-        outcomes: [outcome(&worlds[order[0]]), outcome(&worlds[order[1]])],
+        byes: vec![byes[order[0]], byes[order[1]]],
+        outcomes: vec![outcome(&worlds[order[0]]), outcome(&worlds[order[1]])],
         injected_surrenders: Vec::new(),
         pauses,
         resumes,
-        rtt_p99_ms: [statuses[order[0]].rtt_p99_ms, statuses[order[1]].rtt_p99_ms],
-        playout: [statuses[order[0]].playout, statuses[order[1]].playout],
+        rtt_p99_ms: vec![statuses[order[0]].rtt_p99_ms, statuses[order[1]].rtt_p99_ms],
+        playout: vec![statuses[order[0]].playout, statuses[order[1]].playout],
         net: SimNetStats::default(),
         step_p99_us: pick(99),
         step_max_us: steps.last().copied().unwrap_or(0),
         relay_log: Vec::new(),
-        rings: [
+        rings: vec![
             std::mem::take(&mut drivers[order[0]].ring),
             std::mem::take(&mut drivers[order[1]].ring),
         ],
@@ -1533,7 +1678,8 @@ pub fn run_udp(setup: &MatchSetup, spec: &VirtualSpec) -> anyhow::Result<Virtual
             }
             w
         },
-        script_kinds: [BTreeMap::new(), BTreeMap::new()],
-        vehicles_spawned: [seen[0].len(), seen[1].len()],
+        script_kinds: vec![BTreeMap::new(), BTreeMap::new()],
+        vehicles_spawned: vec![seen[0].len(), seen[1].len()],
+        pings: vec![Vec::new(), Vec::new()],
     })
 }
