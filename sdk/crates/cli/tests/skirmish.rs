@@ -201,6 +201,39 @@ fn map_flag_defaults_to_kessel_ridge_with_the_same_hashes() {
     assert!(!out.status.success());
 }
 
+/// S16b (`docs/slices/S16-second-map.md` 5, 7): Linden Brook plays to the
+/// same hash at 1 and 3 threads.
+#[test]
+fn linden_brook_plays_the_same_at_any_thread_count() {
+    let lb = |threads| {
+        run(SkirmishArgs {
+            map: "ww2:linden_brook".into(),
+            ..short(3, 2, threads)
+        })
+    };
+    let a = lb(1);
+    assert_eq!(a.map, "ww2:linden_brook");
+    assert_eq!(a.final_hash, lb(3).final_hash);
+}
+
+/// S16b (finding F1): the road observer counts vehicle km on Linden
+/// Brook's roads; Kessel Ridge (no roads) has none on road.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "long; run with --release")]
+fn the_road_observer_counts_vehicle_km_on_road() {
+    let a = run(SkirmishArgs {
+        map: "ww2:linden_brook".into(),
+        ..short(3, 9, 2)
+    });
+    let km: f64 = a.road_km.km.iter().sum();
+    let on: f64 = a.road_km.road_km.iter().sum();
+    assert!(km > 0.0, "vehicles drove");
+    assert!(on > 0.0 && on <= km, "{:?}", a.road_km);
+    let k = run(short(3, 9, 2));
+    assert!(k.road_km.km.iter().sum::<f64>() > 0.0);
+    assert_eq!(k.road_km.road_km, [0.0; 3], "no roads on Kessel Ridge");
+}
+
 /// The S1 cover bar over the default five seeds, both factions entrenched
 /// in turn, plus the S1b grenade assault and smoke screen. Slow in debug
 /// builds; `cargo test --release` runs it.

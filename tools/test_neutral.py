@@ -271,6 +271,14 @@ class Neutral(unittest.TestCase):
         lines, ok = self.run_dirs(base, new)
         self.assertFalse(ok)
         self.assertIn("s16_derived.path_search.searches", "\n".join(lines))
+        # S16b: a block inside s16_derived that BASE lacks is skipped too;
+        # a key BASE lacks inside one both have is still checked.
+        new3 = copy.deepcopy(new)
+        new3["s16_derived"]["road_km_pct"] = {"wheeled": {"pct": 0.0, "km": 120.5}}
+        self.assertTrue(self.run_dirs(new, new3)[1])
+        new4 = copy.deepcopy(new)
+        new4["s16_derived"]["path_search"]["p50"] = 7
+        self.assertFalse(self.run_dirs(new, new4)[1])
         # Control: the same block under another name fails.
         new2 = copy.deepcopy(BASE)
         new2["s17_derived"] = new["s16_derived"]

@@ -227,6 +227,9 @@ pub struct SkirmishReport {
     /// S16a: expansions per path search (every search of the match, AI
     /// searches included; a CLI observer).
     pub path_search: PathSearchStats,
+    /// S16b (F1, S16 plan 8 `road_km_pct`): vehicle metres driven, and on
+    /// road nodes, per drive type (a CLI observer).
+    pub road_km: RoadKm,
     pub players: Vec<PlayerReport>,
     /// S3c: the map's capture point names, in point order.
     pub point_names: Vec<String>,
@@ -275,6 +278,91 @@ impl PathSearchStats {
             raw.merge(&p.raw);
         }
         PathSearchStats::from_raw(raw)
+    }
+}
+
+/// S16b (F1; S16 plan 8 `road_km_pct`): metres driven by self-propelled
+/// vehicles (|speed| per tick, towed guns left out) and the part of them
+/// with the hull centre on a road node, by drive type: wheeled, half-track,
+/// tracked. A CLI observer (read-only).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct RoadKm {
+    /// Kilometres driven, by drive type.
+    pub km: [f64; 3],
+    /// Kilometres of them on road nodes.
+    pub road_km: [f64; 3],
+}
+
+impl RoadKm {
+    pub const KINDS: [&'static str; 3] = ["wheeled", "halftrack", "tracked"];
+
+    fn observe(&mut self, w: &World, hz: u64) {
+        use frontline_content::vehicle::MobilityKind;
+        let (Some(g), Some(ms)) = (w.game(), w.match_setup()) else {
+            return;
+        };
+        let t = w.terrain();
+        let tf = w.entities().transform();
+        for (id, v) in g.vehicles() {
+            let k = match ms.vehicles.get(v.type_idx as usize).map(|d| d.mobility.kind) {
+                Some(MobilityKind::Wheeled) => 0,
+                Some(MobilityKind::Halftrack) => 1,
+                Some(MobilityKind::Tracked) => 2,
+                _ => continue,
+            };
+            let m = v.speed.abs().to_f32() as f64 / hz as f64 / 1000.0;
+            self.km[k] += m;
+            if t.road_at(tf[id.index()].pos.xy()) {
+                self.road_km[k] += m;
+            }
+        }
+    }
+
+    /// Every match's kilometres together.
+    pub fn merged<'a>(all: impl Iterator<Item = &'a RoadKm>) -> RoadKm {
+        let mut r = RoadKm::default();
+        for m in all {
+            for k in 0..3 {
+                r.km[k] += m.km[k];
+                r.road_km[k] += m.road_km[k];
+            }
+        }
+        r
+    }
+
+    /// Percent on road per drive type (0 with nothing driven).
+    pub fn pct(&self) -> [f64; 3] {
+        std::array::from_fn(|k| {
+            if self.km[k] > 0.0 {
+                round3(100.0 * self.road_km[k] / self.km[k])
+            } else {
+                0.0
+            }
+        })
+    }
+
+    /// `wheeled 81.2 % of 312.0 km, ...`.
+    pub fn line(&self) -> String {
+        let p = self.pct();
+        Self::KINDS
+            .iter()
+            .enumerate()
+            .map(|(k, n)| format!("{n} {:.1} % of {:.1} km", p[k], self.km[k]))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// JSON: `{wheeled: {pct, km}, ...}`.
+    pub fn json(&self) -> serde_json::Value {
+        let p = self.pct();
+        let mut o = serde_json::Map::new();
+        for (k, n) in Self::KINDS.iter().enumerate() {
+            o.insert(
+                (*n).into(),
+                serde_json::json!({ "pct": p[k], "km": round3(self.km[k]) }),
+            );
+        }
+        serde_json::Value::Object(o)
     }
 }
 
@@ -2341,6 +2429,8 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     };
     // S16a: per-search expansions (an observer; results unchanged).
     let path_sink = world.observe_path_searches();
+    // S16b (F1): vehicle kilometres on and off roads (an observer).
+    let mut road_km = RoadKm::default();
     let hz = world.match_setup().expect("match world").tick_hz as u64;
     let limit = args.minutes as u64 * 60 * hz;
     let start_tick = world.tick();
@@ -2500,6 +2590,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
             }
         }
         tally.observe(&world);
+        road_km.observe(&world, hz);
         s3c.observe(&world);
         s10b_ordered.observe(&world);
         s10b_ai_seen.observe(&world);
@@ -3095,6 +3186,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         path_search: PathSearchStats::from_raw(
             path_sink.lock().map(|g| g.clone()).unwrap_or_default(),
         ),
+        road_km,
         players,
         point_names: s.map.points.iter().map(|p| p.name.clone()).collect(),
         totals: Totals {
@@ -3196,6 +3288,7 @@ pub fn summary_text(r: &SkirmishReport) -> String {
         "map {}; path searches {} (expansions mean {:.1}, p99 {}, max {})\n",
         r.map, ps.searches, ps.mean, ps.p99, ps.max
     );
+    out += &format!("vehicle km on road: {}\n", r.road_km.line());
     if let Some(from) = &r.loaded_from {
         out += &format!("continued from {from} at tick {}\n", r.start_tick);
     }
@@ -4443,6 +4536,8 @@ pub fn many_text(r: &ManyReport) -> String {
             "S16 path searches: {}, expansions mean {:.1}, p99 {}, max {}\n",
             ps.searches, ps.mean, ps.p99, ps.max
         );
+        let rk = RoadKm::merged(r.matches.iter().map(|m| &m.report.road_km));
+        out += &format!("S16 vehicle km on road: {}\n", rk.line());
     }
     for l in &r.overrides {
         out += &format!("{l}\n");

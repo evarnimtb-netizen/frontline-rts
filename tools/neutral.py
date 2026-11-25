@@ -28,7 +28,8 @@ Compares the CLI JSON files present in both directories:
   read with the switches off; the `s12` counters stay checked as zero).
   S16a (Build A): a key starting `s16_derived` that BASE lacks is skipped
   likewise (its per-search path expansions are read with every switch
-  off). The set header's
+  off); S16b: so is a key inside an `s16_derived` both have that BASE
+  lacks (`road_km_pct`, vehicle km on and off roads). The set header's
   `overrides` list (the `-o` files a run was given) is not part of the
   verdict: when it differs the line gets a note `(note: overrides N -> M
   items)`. S16a: the header's `map` (the map the set played) likewise gets
@@ -101,6 +102,10 @@ def diff(base, new, path, out, strict, skip=frozenset()):
                 out.append(f"{p}: only in BASE")
             elif k not in base:
                 if k.startswith(("s10c", "s11a2", "s11b", "s12_derived", "s16_derived")):
+                    continue
+                # S16b: a new block inside an `s16_derived` both have
+                # (`road_km_pct`: vehicle km, read with every switch off).
+                if path == "s16_derived":
                     continue
                 if k.startswith("s11a1"):
                     if strict and not blank_but_denoms(new[k]):

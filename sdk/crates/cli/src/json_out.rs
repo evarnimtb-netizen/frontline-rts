@@ -279,6 +279,11 @@ pub fn skirmish(r: &ManyReport) -> Value {
             "path_search": crate::skirmish::PathSearchStats::merged(
                 r.matches.iter().map(|m| &m.report.path_search)
             ),
+            // S16b (F1): vehicle km and the share on road nodes, by drive
+            // type (plan 8 `road_km_pct`).
+            "road_km_pct": crate::skirmish::RoadKm::merged(
+                r.matches.iter().map(|m| &m.report.road_km)
+            ).json(),
         },
         "tick_p99_ms": { "peak": s.peak_p99_max_ms, "all": s.all_p99_max_ms },
         "tank_losses": {
