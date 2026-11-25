@@ -1,0 +1,131 @@
+# Linden Brook (S16b, docs/slices/S16-second-map.md 5): 1 km square. A
+# shallow brook valley runs north to south through the centre, a low ridge
+# stands on each side. The bases sit west and east, not in the corners.
+# Point C, worth 2, lies in the valley, overlooked from both ridges (the
+# opposite of Kessel Ridge, where C is on the crest). Coordinates are
+# metres, x east, y north.
+#
+# Point-symmetric through the centre (512, 512): `symmetry = "point"`
+# blends each cell with its mirror, so the terrain is exactly mirrored.
+# Every hand-placed item (points, bases, woods, roads) is listed with its
+# mirror, and the terrain bands are too, so the map reads the same with
+# symmetry off (`frontline-cli validate` warns on any item without a
+# mirror within 2 m; R5).
+id = "ww2:linden_brook"
+name = "Linden Brook"
+size_m = 1024
+
+[terrain]
+# Terrain is fixed per map: this seed, not the match seed, shapes it.
+seed = 1716
+base_height_m = 20
+symmetry = "point"
+# As Kessel Ridge.
+octaves = [
+    { period_m = 128, amplitude_cm = 500 },
+    { period_m = 32, amplitude_cm = 100 },
+]
+
+# West ridge (base 0's side) and its mirror, the east ridge.
+[[terrain.ridges]]
+from = [240, 80]
+to = [320, 960]
+height_m = 10
+width_m = 260
+
+[[terrain.ridges]]
+from = [784, 944]
+to = [704, 64]
+height_m = 10
+width_m = 260
+
+# The brook: its own mirror.
+[[terrain.valleys]]
+from = [440, 0]
+to = [584, 1024]
+depth_m = 6
+width_m = 140
+
+# Woods, each followed by its mirror.
+[[woods]]
+center = [470, 300]
+radius_m = 50
+
+[[woods]]
+center = [554, 724]
+radius_m = 50
+
+[[woods]]
+center = [180, 600]
+radius_m = 45
+
+[[woods]]
+center = [844, 424]
+radius_m = 45
+
+[[woods]]
+center = [644, 144]
+radius_m = 40
+
+[[woods]]
+center = [380, 880]
+radius_m = 40
+
+[[woods]]
+center = [540, 420]
+radius_m = 30
+
+[[woods]]
+center = [484, 604]
+radius_m = 30
+
+# Points: A and E (the north and south brook crossings) mirror each other,
+# as do B (west ridge) and D (east ridge); C is its own mirror.
+[[capture_points]]
+name = "A"
+pos = [512, 860]
+
+[[capture_points]]
+name = "B"
+pos = [260, 420]
+
+[[capture_points]]
+name = "C"
+pos = [512, 512]
+value = 2
+
+[[capture_points]]
+name = "D"
+pos = [764, 604]
+
+[[capture_points]]
+name = "E"
+pos = [512, 164]
+
+[[bases]]
+pos = [72, 300]
+radius_m = 40
+
+[[bases]]
+pos = [952, 724]
+radius_m = 40
+
+# Roads (6 m country roads). R-main: base 0, B, C, D, base 1 (its own
+# mirror).
+[[roads]]
+points = [[72, 300], [260, 420], [512, 512], [764, 604], [952, 724]]
+width_m = 6
+
+# R-brook: A, down the valley through C, to E (its own mirror).
+[[roads]]
+points = [[512, 860], [470, 700], [512, 512], [554, 324], [512, 164]]
+width_m = 6
+
+# Base 0 to E, and its mirror, base 1 to A.
+[[roads]]
+points = [[72, 300], [300, 200], [512, 164]]
+width_m = 6
+
+[[roads]]
+points = [[952, 724], [724, 824], [512, 860]]
+width_m = 6
