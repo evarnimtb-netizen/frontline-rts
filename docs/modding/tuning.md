@@ -40,6 +40,7 @@ needed.
 | S3c a vehicle's crew squad and hatches (`crew_squad`; `[[hatches]]` `seats`, `frame`, `pos` cm, `exit_ms`); the crew squad defs (role `crew`, never in a roster) and their pistols (`class = "pistol"`) | `defs/vehicles/`, `defs/units/*_tank_crew.toml`, `defs/weapons/p38.toml`, `m1911a1.toml` | the def's own file |
 | Driving, yielding, ground pose | same | `[vehicles.driving]` |
 | Vehicle path costs | same | `[vehicles.path]` |
+| S16a roads (`docs/slices/S16-second-map.md` 2, 4): `enabled` (switch), forward speed on a road node in % of `speed_cm_s` by drive type (`wheeled_pct`, `halftrack_pct`, `tracked_pct`, 100..=200; a vehicle's `[mobility] road_speed_pct` overrides it; towed guns 100), `reverse_pct`, `path_cost` (1: a road node costs `100 / road pct` of a step and no woods factor), `heuristic_pct` (A* weight max(100, 130 x this / road pct) on maps with roads). Roads are a map's `[[roads]]` (`points` in m, `width_m` 4..=12); a map without roads is unchanged | same; `defs/maps/` | `[vehicles.road]` (absent: roads change nothing) |
 | Escort file behind a vehicle | same | `[vehicles.escort]` |
 | Coax cone, spall reach; S3b: HE group radius, lead estimation error, when Auto loads APCR; S8a: `face_hardened_pct`, `small_arms_ricochet_deg` | same | `[vehicles.gunnery]` |
 | AI difficulty | same | `[difficulty.*]` |
