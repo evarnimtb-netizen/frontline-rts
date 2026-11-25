@@ -3,6 +3,7 @@
 #
 #   tools/batch.sh OUT.json [-o OVERRIDE.toml]... -- SUBCOMMAND ARGS...
 #   tools/batch.sh sets OUTDIR [--map ID] [-o OVERRIDE.toml]...   # the three 160 sets
+#   tools/batch.sh teams OUTDIR [-o OVERRIDE.toml]...   # S17b: the two 2v2 40 sets
 #
 # Runs `target/release/frontline-cli SUBCOMMAND ARGS... --json OUT.json`, text
 # output to OUT.txt, and keeps both under target/batch-cache/KEY. KEY is the
@@ -11,7 +12,10 @@
 # deterministic, so a second call with the same key copies the files back
 # instead of playing the matches again. S16a: `--map ID` plays the sets on
 # that map; without it the CLI's default (Kessel Ridge) and the same cache
-# keys as before.
+# keys as before. S17b: `teams` plays the 2v2 breakage sets on Harrow Cross
+# (plan 9: seeds 1-20, both sides, 45 min), mixed teams (Germany and USA on
+# each side) in skirmish2v2_mixed and same-faction teams (Germany against
+# USA) in skirmish2v2_same; their JSON has an `s17_derived` block.
 #
 # Each call runs a snapshot of the binary and of mods/ kept under
 # target/batch-cache/world/KEY, so a rebuild or a TOML edit while a long run
@@ -135,8 +139,24 @@ case "${1:-}" in
         done
         exit $rc
         ;;
+    teams)
+        dir=${2:?usage: tools/batch.sh teams OUTDIR [-o OVERRIDE]...}
+        shift 2
+        rc=0
+        for s in "skirmish2v2_mixed ww2:germany ww2:usa ww2:germany ww2:usa" \
+            "skirmish2v2_same ww2:germany ww2:germany ww2:usa ww2:usa"; do
+            # shellcheck disable=SC2086
+            set -- $s "$@"
+            name=$1 f0=$2 f1=$3 f2=$4 f3=$5
+            shift 5
+            run_one "$dir/$name.json" "$@" -- skirmish --ai-vs-ai --teams 2v2 --map ww2:harrow_cross \
+                --faction0 "$f0" --faction1 "$f1" --faction2 "$f2" --faction3 "$f3" \
+                --seed 1 --seeds 20 --both-bases --summary --minutes 45 || rc=1
+        done
+        exit $rc
+        ;;
     "" | -h | --help)
-        sed -n 2,18p "$0"
+        sed -n 2,23p "$0"
         exit 2
         ;;
     *)

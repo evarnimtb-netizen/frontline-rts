@@ -2321,6 +2321,8 @@ impl Planner<'_> {
         let base = g.base_of(self.me);
         let depth_dm = Fx::from(g.setup.rules.dig.depth).mul_int(10).floor_int();
         let mut out = Vec::with_capacity(g.points.len());
+        // S17b: the habits A3 and A4 read allies; alone they never run.
+        let teamed = g.teams.in_team(self.me.0);
         for (i, (c, ps)) in g.points.iter().zip(&g.setup.map.points).enumerate() {
             let pos: FxVec2 = ps.pos.into();
             let rel = match c.owner {
@@ -2345,12 +2347,26 @@ impl Planner<'_> {
                 Rel::Ally => 0,
             };
             let extra = (threat / 4).min(2);
-            let demand = match rel {
+            let mut demand = match rel {
                 Rel::Own if threat == 0 && !under_capture => 1,
                 Rel::Own | Rel::Neutral => 1 + extra,
                 Rel::Enemy => 2 + extra,
                 Rel::Ally => 0,
             };
+            let tt = &g.setup.rules.ai.team;
+            // S17b A4 (`help_ally`): an ally's point with known enemies
+            // near it, or under capture by a hostile team, is defended.
+            if rel == Rel::Ally && tt.help_ally != 0 && (threat > 0 || under_capture) {
+                priority += tt.help_priority as i64;
+                demand = tt.help_demand;
+            }
+            // S17b A3 (`share_points`): ally squads already at a point I
+            // would take lower my demand there.
+            if teamed && tt.share_points != 0 && matches!(rel, Rel::Neutral | Rel::Enemy) {
+                let n = self.ally_squads_near(pos, g.setup.rules.capture_radius.into());
+                let cut = n * tt.ally_squad_pct / 100;
+                demand = demand.saturating_sub(cut);
+            }
             let trench = self.ai.trenches.iter().position(|t| t.point as usize == i);
             let trench_done = trench.is_some_and(|k| {
                 let [a, b] = self.ai.trenches[k].line;
@@ -2374,6 +2390,22 @@ impl Planner<'_> {
         out
     }
 
+    /// S17b A3: squads of my allies (not mine) whose lead stands within
+    /// `r` of `pos`. Reads positions the ally shares with his team.
+    fn ally_squads_near(&self, pos: FxVec2, r: Fx) -> u32 {
+        let g = self.g;
+        let r2 = sq_m(r);
+        g.squads
+            .values()
+            .filter(|sq| sq.owner != self.me && g.teams.allied(self.me.0, sq.owner.0))
+            .filter(|sq| !sq.members.is_empty())
+            .filter(|sq| {
+                (self.ents.transform[sq.lead(self.ents).index()].pos.xy() - pos).length_sq_raw()
+                    <= r2
+            })
+            .count() as u32
+    }
+
     /// Greedy squad → point assignment. Returns `(squad index in mine,
     /// point index)` in assignment order.
     fn assign(&mut self, mine: &[Mine], points: &mut [PointEval]) -> Vec<(usize, usize)> {
@@ -2390,8 +2422,9 @@ impl Planner<'_> {
             }
             let cur = self.ai.tasks.get(&m.id).map(|t| t.point);
             for (i, pt) in points.iter().enumerate() {
-                // S17a A2: an ally's point gets no squad.
-                if pt.rel == Rel::Ally {
+                // S17a A2: an ally's point gets no squad, unless A4 asks
+                // for help there (demand above 0).
+                if pt.rel == Rel::Ally && pt.demand == 0 {
                     continue;
                 }
                 let mut score = pt.priority - dist_m(m.lead, pt.pos) / 4;
@@ -2640,7 +2673,8 @@ impl Planner<'_> {
                 }
                 Rel::Neutral => (TaskKind::Capture, ring_slot(pt.pos, k)),
                 Rel::Enemy => (TaskKind::Attack, ring_slot(pt.pos, k)),
-                // Never assigned (A2); stand by as on an own point.
+                // A4: helpers stand round the ally's point (never
+                // assigned without `help_ally`, A2).
                 Rel::Ally => (TaskKind::Defend, ring_slot(pt.pos, k)),
             };
             let target = self.terrain.clamp(target);

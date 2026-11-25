@@ -1839,10 +1839,11 @@ start_manpower_pct = 100     # T9: start manpower of a team player (%)
 tickets_pct = 100            # T9: start tickets of a team player (%)
 
 [ai.team]
-# S17 (plan 6): an AI with an ally. A3 and A4 are S17b habits (off).
-share_points = 0             # A3: ally squads at a point lower my demand there
+# S17 (plan 6): an AI with an ally. A3 and A4 (S17b) are on; an AI alone
+# on its team never runs them (every 1v1). No value here is tuned.
+share_points = 1             # A3: ally squads at a point lower my demand there
 ally_squad_pct = 100         # A3: one ally squad's weight against demand (%)
-help_ally = 0                # A4: a threatened ally point gets a defence task
+help_ally = 1                # A4: a threatened ally point gets a defence task
 help_priority = 80           # A4: its priority (own threatened point: 80) ...
 help_demand = 1              # ... and demand (squads)
 foe_first = 0                # A1: 0 = the hostile player with the nearest base; 1 = the lowest slot

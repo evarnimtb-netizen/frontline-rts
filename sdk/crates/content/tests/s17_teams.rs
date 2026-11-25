@@ -48,12 +48,22 @@ fn a_one_team_request_is_refused() {
 }
 
 /// Plan 2: the ww2 rules set every `[teams]` and `[ai.team]` key, at the
-/// plan's values (the habit switches A3, A4 off until S17b).
+/// plan's values; S17b turns the habit switches A3 and A4 on (the Rust
+/// default, a rules def without `[ai.team]`, keeps them off).
 #[test]
 fn ww2_ships_the_s17a_team_keys() {
     let s = defs().resolve(&req([None, None])).unwrap();
     assert_eq!(s.rules.teams, TeamsTuning::default());
-    assert_eq!(s.rules.ai.team, AiTeamTuning::default());
+    assert_eq!(
+        s.rules.ai.team,
+        AiTeamTuning {
+            share_points: 1,
+            help_ally: 1,
+            ..AiTeamTuning::default()
+        }
+    );
+    assert_eq!(AiTeamTuning::default().share_points, 0);
+    assert_eq!(AiTeamTuning::default().help_ally, 0);
     assert_eq!(TeamsTuning::KEYS.len(), 7);
     assert_eq!(AiTeamTuning::KEYS.len(), 6);
     for &(k, lo, hi) in TeamsTuning::KEYS {

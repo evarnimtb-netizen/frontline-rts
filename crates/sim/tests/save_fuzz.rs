@@ -749,27 +749,24 @@ fn team_path(path: &str) -> bool {
         || (path.starts_with("state.game.ai") && path.contains(".tasks"))
 }
 
-/// S17a: the seed match with four AI players on two teams (slots 0 and 2
-/// against 1 and 3) on Kessel Ridge with two more bases (the other two
-/// corners), saved at `TEAM_TICK`.
+/// S17a, moved to Harrow Cross in S17b: the seed match with four AI
+/// players on two teams (slots 0 and 1, side 0, against 2 and 3) with the
+/// A3 and A4 habits on as shipped, saved at `TEAM_TICK`.
 fn team_world() -> World {
-    use frontline_content::setup::FixedVec2;
-    let mut s = setup(SEED);
-    let base = s.map.bases[0].clone();
-    for at in [[96, 928], [928, 96]] {
-        let mut b = base.clone();
-        b.center = FixedVec2::from_m(at);
-        s.map.bases.push(b);
-    }
-    let proto = s.players.clone();
-    s.players = (0..4)
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
+    let mut req = MatchRequest::skirmish(SEED, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    req.map = "ww2:harrow_cross".into();
+    let proto = req.players.clone();
+    req.players = (0..4)
         .map(|i| {
             let mut p = proto[i % 2].clone();
-            p.base = i as u8;
-            p.team = (i % 2) as u8;
+            p.team = Some(i as u8 / 2);
+            p.ai = true;
             p
         })
         .collect();
+    let s = defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
     let mut w = World::new_match(s, 1).unwrap();
     while w.tick() < TEAM_TICK {
         w.step(&[]);
@@ -1047,7 +1044,13 @@ fn fuzz_plan_reaches_s10b_state() {
         .into_iter()
         .map(|m| saves[TEAMS].paths[m.field.path as usize].as_str())
         .collect();
-    for want in ["setup.players", ".team", "rules.teams", "ai.team", "seen_by"] {
+    for want in [
+        "setup.players",
+        ".team",
+        "rules.teams",
+        "ai.team",
+        "seen_by",
+    ] {
         assert!(
             team.iter().any(|p| p.contains(want)),
             "no team mutation reaches {want}: {team:?}"

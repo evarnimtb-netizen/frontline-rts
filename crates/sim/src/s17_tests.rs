@@ -518,6 +518,45 @@ fn the_ai_gives_an_allys_point_no_squad() {
     assert!(seen_free, "control: the free point gets squads");
 }
 
+/// S17b A4 (`help_ally`): an ally's point with a known enemy squad beside
+/// it gets a defence task from me. Player 2 (my ally) holds point 0 with a
+/// squad on it; an enemy squad (player 1) stands 40 m off, seen by my ally
+/// (shared sight). Control: with `help_ally` 0 no task of mine names an
+/// ally's point (A2).
+#[test]
+fn the_ai_helps_an_allys_threatened_point() {
+    let helped = |help: u32| -> bool {
+        let mut w = world(&[0, 1, 0, 1], |s| {
+            s.players[0].is_ai = true;
+            s.rules.ai.team.help_ally = help;
+        });
+        let n = game(&w).points.len();
+        for k in 0..n - 1 {
+            game_mut(&mut w).points[k].owner = Some(PlayerId(2));
+        }
+        let (x, y) = point_xy(&w, 0);
+        sq(&mut w, 2, x, y);
+        sq(&mut w, 1, x + 40, y);
+        for _ in 0..4 {
+            sq(&mut w, 0, 150, 150);
+        }
+        let hz = w.match_setup().unwrap().tick_hz as u64;
+        for _ in 0..40 {
+            steps(&mut w, hz);
+            let tasks = &game(&w).ai[0].as_ref().unwrap().tasks;
+            if tasks
+                .values()
+                .any(|t| t.point == 0 && t.kind == crate::ai::TaskKind::Defend)
+            {
+                return true;
+            }
+        }
+        false
+    };
+    assert!(helped(1), "A4: a squad defends the ally's point");
+    assert!(!helped(0), "control: no help with the switch off");
+}
+
 // -------------------------------------------------- 3 and 4 players: smoke --
 
 /// Steps `w` `ticks` ticks; every 30 ticks checks that no soldier, vehicle

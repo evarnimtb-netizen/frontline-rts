@@ -1,0 +1,148 @@
+# Harrow Cross (S17b, docs/slices/S17-team-play.md 5): the four-base team
+# map, 1.5 km square. Two roads cross at the centre, where a low rise
+# carries the crossroads and point D (worth 2). Side 0 holds the west edge
+# (bases 0 and 1), side 1 the east edge (bases 2 and 3). Coordinates are
+# metres, x east, y north.
+#
+# Point-symmetric through the centre (768, 768): `symmetry = "point"`
+# blends each cell with its mirror, so the terrain is exactly mirrored.
+# Every hand-placed item (points, bases, woods, roads) is listed with its
+# mirror, as are the terrain bands. Base i's mirror is base (i + 2) % 4, so
+# player 0 and player 2 (and 1 and 3) stand in the same place on either
+# side. Points and bases move only by an owner answer (S17-7); the terrain
+# shape is Build B's and untested for fairness (owner rule 2026-11-25).
+id = "ww2:harrow_cross"
+name = "Harrow Cross"
+size_m = 1536
+
+[terrain]
+# Terrain is fixed per map: this seed, not the match seed, shapes it.
+seed = 2317
+base_height_m = 20
+symmetry = "point"
+# As Kessel Ridge.
+octaves = [
+    { period_m = 128, amplitude_cm = 500 },
+    { period_m = 32, amplitude_cm = 100 },
+]
+
+# The rise under the crossroads: its own mirror.
+[[terrain.ridges]]
+from = [688, 768]
+to = [848, 768]
+height_m = 6
+width_m = 360
+
+# A shallow valley between A and C, and its mirror between F and E.
+[[terrain.valleys]]
+from = [560, 0]
+to = [600, 520]
+depth_m = 4
+width_m = 110
+
+[[terrain.valleys]]
+from = [976, 1536]
+to = [936, 1016]
+depth_m = 4
+width_m = 110
+
+# Woods, each followed by its mirror.
+[[woods]]
+center = [240, 640]
+radius_m = 50
+
+[[woods]]
+center = [1296, 896]
+radius_m = 50
+
+[[woods]]
+center = [560, 860]
+radius_m = 45
+
+[[woods]]
+center = [976, 676]
+radius_m = 45
+
+[[woods]]
+center = [980, 300]
+radius_m = 40
+
+[[woods]]
+center = [556, 1236]
+radius_m = 40
+
+[[woods]]
+center = [240, 1300]
+radius_m = 40
+
+[[woods]]
+center = [1296, 236]
+radius_m = 40
+
+# Points. Home points A and B (side 0) mirror F and G (side 1); the flank
+# points C (south) and E (north) mirror each other; D is its own mirror.
+[[capture_points]]
+name = "A"
+pos = [360, 400]
+
+[[capture_points]]
+name = "B"
+pos = [360, 1136]
+
+[[capture_points]]
+name = "C"
+pos = [768, 240]
+
+[[capture_points]]
+name = "D"
+pos = [768, 768]
+value = 2
+
+[[capture_points]]
+name = "E"
+pos = [768, 1296]
+
+[[capture_points]]
+name = "F"
+pos = [1176, 1136]
+
+[[capture_points]]
+name = "G"
+pos = [1176, 400]
+
+# Bases: player i starts at base i. Teams of two play side 0 (slots 0, 1)
+# against side 1 (slots 2, 3).
+[[bases]]
+pos = [96, 400]
+radius_m = 40
+side = 0
+
+[[bases]]
+pos = [96, 1136]
+radius_m = 40
+side = 0
+
+[[bases]]
+pos = [1440, 1136]
+radius_m = 40
+side = 1
+
+[[bases]]
+pos = [1440, 400]
+radius_m = 40
+side = 1
+
+# Roads (6 m country roads), each its own mirror. The two crossing roads:
+# base 0, A, D, F, base 2; and base 1, B, D, G, base 3.
+[[roads]]
+points = [[96, 400], [360, 400], [768, 768], [1176, 1136], [1440, 1136]]
+width_m = 6
+
+[[roads]]
+points = [[96, 1136], [360, 1136], [768, 768], [1176, 400], [1440, 400]]
+width_m = 6
+
+# The flank road: C, D, E.
+[[roads]]
+points = [[768, 240], [768, 768], [768, 1296]]
+width_m = 6

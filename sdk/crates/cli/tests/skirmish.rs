@@ -216,6 +216,57 @@ fn linden_brook_plays_the_same_at_any_thread_count() {
     assert_eq!(a.final_hash, lb(3).final_hash);
 }
 
+/// S17b (`docs/slices/S17-team-play.md` 9): `--teams 2v2` on Harrow Cross
+/// plays four AIs, two teams, each on his base; the same hash at 1 and 3
+/// threads and through a mid-match save and load; `--swap-bases` gives each
+/// player the other side's base. A 1v1 report has no `teams` block.
+#[test]
+fn a_2v2_on_harrow_cross_plays_the_same_at_any_thread_count_and_through_a_save() {
+    use frontline_cli::skirmish::TeamsArg;
+    let hc = |threads| SkirmishArgs {
+        map: "ww2:harrow_cross".into(),
+        teams: Some(TeamsArg::TwoVTwo),
+        ..short(4, 3, threads)
+    };
+    let a = run(hc(1));
+    assert_eq!(a.players.len(), 4);
+    let t = a.teams.as_ref().expect("a team match reports its teams");
+    assert_eq!(t.team, [0, 0, 1, 1]);
+    let bases: Vec<u8> = a.players.iter().map(|p| p.base).collect();
+    assert_eq!(bases, [0, 1, 2, 3]);
+    assert_eq!(a.final_hash, run(hc(3)).final_hash);
+    let save = tmp("skirmish_2v2_mid.sav");
+    let first = run(SkirmishArgs {
+        save: Some(save.clone()),
+        save_at: Some(2 * 60 * 30 + 11),
+        ..hc(2)
+    });
+    assert_eq!(first.final_hash, a.final_hash);
+    let resumed = run(SkirmishArgs {
+        ai_vs_ai: false,
+        load: Some(save),
+        ..short(999, 3, 3)
+    });
+    assert_eq!(resumed.final_hash, a.final_hash);
+    assert_eq!(resumed.players.len(), 4);
+    let sw = run(SkirmishArgs {
+        swap_bases: true,
+        minutes: 1,
+        ..hc(2)
+    });
+    let bases: Vec<u8> = sw.players.iter().map(|p| p.base).collect();
+    assert_eq!(bases, [2, 3, 0, 1]);
+    assert!(run(short(4, 1, 2)).teams.is_none(), "no teams in a 1v1");
+    // `--teams 2v2` on a two-base map is refused.
+    assert!(
+        skirmish(&SkirmishArgs {
+            teams: Some(TeamsArg::TwoVTwo),
+            ..short(4, 1, 1)
+        })
+        .is_err()
+    );
+}
+
 /// S16b (finding F1): the road observer counts vehicle km on Linden
 /// Brook's roads; Kessel Ridge (no roads) has none on road.
 #[test]
