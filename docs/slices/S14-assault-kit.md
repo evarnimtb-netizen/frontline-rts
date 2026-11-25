@@ -10,6 +10,14 @@ Owner rules as every slice since S10: features first, no Tune; Germany pooled 48
 TOML; damage only from projectile or fragment contact (a flame particle and a strike segment are contact); every behaviour behind a
 switch; all S14 switches off = `<BASE>`, match for match.
 
+**Owner change 2026-11-25 (Eva: "chill with the balance runs, just make the architecture in a way that will allow to fix everything
+afterwards").** No balance runs in S14: the `flame_only` 480 gate, the S14-ai 480, the ablation runs, T189's pooled threshold, the
+paired-move stop and the levers of section 10 are dropped. Kept: every number in TOML behind switches (so a later balance pass can
+fix it), the neutral proof (`s14_off` 40 set = `<BASE>`), the fortify rows (they test mechanics, not balance), all named tests, and
+one default 40 set after S14-ai switches on, read only for breakage (no match without a winner, length 10-40 min, no panics); its
+Germany share is reported, not judged. `<BASE>` is `a27ce63` (main with S13 and B3 merged; SAVE 32, PROTOCOL 16), so S14a takes
+SAVE 33 / PROTOCOL 17. Ablation TOMLs are still written (the later balance pass runs them).
+
 ## 0. Summary and why this shape
 - **Size.** `workflows.md` sizes S14 at 0.8x S3. Read against the code it is nearer **1.0x**: a new projectile kind with its own list,
   a burning state and burning ground, a weapon class, fuel, a trench-walking order, a melee strike, two commands, an AI job and a
