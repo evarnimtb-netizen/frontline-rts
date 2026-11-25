@@ -946,6 +946,17 @@ impl World {
         self.threads.install(op)
     }
 
+    /// S16a: starts counting every path search this world's pool threads
+    /// run (expansions per search, AI searches included) into the returned
+    /// sink. A CLI observer: never affects sim results.
+    pub fn observe_path_searches(&self) -> crate::path::observe::Sink {
+        let sink = crate::path::observe::Sink::default();
+        let s = sink.clone();
+        self.threads
+            .broadcast(|_| crate::path::observe::set_thread_sink(Some(s.clone())));
+        sink
+    }
+
     /// Runs one tick with the commands scheduled for it. Returns the combined
     /// state hash if this tick publishes one (every `hash_interval` ticks).
     ///

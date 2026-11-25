@@ -2405,13 +2405,17 @@ impl MatchState {
                         trench_cost_pct: 100,
                         ..cost
                     };
+                    let ty = &self.setup.vehicles[vs.type_idx as usize];
                     let veh = VehiclePathCost {
-                        block: self
-                            .vderived
-                            .block_of(&self.setup.vehicles[self.vehicles[&v].type_idx as usize]),
+                        block: self.vderived.block_of(ty),
                         avoid,
                         costs: &self.setup.rules.vehicles.path,
                         mines: None,
+                        road_pct: VehiclePathCost::road_for(
+                            &self.setup.map,
+                            &self.setup.rules.vehicles.road,
+                            &ty.mobility,
+                        ),
                     };
                     let set = mines_of(sq.owner, true);
                     let cross = |a: FxVec2, b: FxVec2| set.is_some_and(|s| s.crosses(a, b));

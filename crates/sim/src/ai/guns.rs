@@ -955,6 +955,7 @@ impl super::Planner<'_> {
             avoid: None,
             costs: &s.rules.vehicles.path,
             mines: None,
+            road_pct: VehiclePathCost::road_for(&s.map, &s.rules.vehicles.road, &ty.mobility),
         };
         let r = find_vehicle_path(
             self.terrain,
