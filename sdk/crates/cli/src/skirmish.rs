@@ -1170,6 +1170,9 @@ pub struct S14Player {
     pub s: [u32; 17],
     /// [`S14_AI`] order (zero for a human).
     pub ai: [u32; 10],
+    /// S14 Fix 9 (T192): the age of the AI's oldest flame job still open
+    /// at the match's end (s; 0 with none).
+    pub oldest_job_s: f64,
 }
 
 impl S14Player {
@@ -1211,7 +1214,11 @@ impl S14Player {
                 a.clear_orders,
             ]
         });
-        S14Player { s, ai }
+        S14Player {
+            s,
+            ai,
+            oldest_job_s: 0.0,
+        }
     }
 }
 
@@ -1229,6 +1236,9 @@ pub struct S14Faction {
     /// an AI's).
     pub matches: u64,
     pub flame_matches: u64,
+    /// T192: the oldest flame job open at a match's end, over the matches
+    /// (s).
+    pub oldest_job_s: f64,
 }
 
 impl S14Faction {
@@ -1241,6 +1251,7 @@ impl S14Faction {
         };
         self.matches += 1;
         self.flame_matches += u64::from(k("flame_in_trench_hits") + k("flame_in_bunker_hits") > 0);
+        self.oldest_job_s = self.oldest_job_s.max(p.oldest_job_s);
         for (a, b) in self.s.iter_mut().zip(p.s) {
             *a += b as u64;
         }
@@ -2839,7 +2850,20 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     seconds: world.tick() as f64 / hz as f64,
                 },
                 s13: S13Player::of(s, s.players[p].faction, ai, &pl.s7),
-                s14: S14Player::of(&pl.s14, ai.map(|a| &a.counters)),
+                s14: {
+                    let mut x = S14Player::of(&pl.s14, ai.map(|a| &a.counters));
+                    x.oldest_job_s = ai.map_or(0.0, |a| {
+                        let t = world.tick();
+                        let age = a
+                            .flame
+                            .jobs
+                            .values()
+                            .map(|j| t.saturating_sub(j.since))
+                            .max();
+                        age.unwrap_or(0) as f64 / hz as f64
+                    });
+                    x
+                },
                 s11b: {
                     let bought_tagged = |tag: &str| -> u32 {
                         ai.map_or(0, |a| {

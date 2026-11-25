@@ -21,6 +21,9 @@
 #     (S14-log.md). New report rows T201 (R3), T202 (R4), T203 (R6).
 #   - S14-ai Build D: rows T189-T200 on the switches-on set (reports, but
 #     T190 no winner and length 10-40 min, T192 every flame job ends: hard).
+#   - S14 Fix: T192 reads `flame_job_oldest_s` (the oldest job open at a
+#     match's end, at most job_max_s plus one plan), not the open count
+#     (at most 4 by construction).
 #   tools/measure.sh OUTDIR docs/slices/targets/S14.toml
 # Seeds, ROW HONESTY and three_parts_from as in S11b.toml.
 name = "S14: assault kit (S13 targets plus T185-T203)"
@@ -5469,9 +5472,9 @@ control = "skirmish40_s14_off.factions.germany.s14_derived.flame_matches_pct"
 note = "report: % of matches in which its flame hit a man in a dug cell or a pit (plan T191, was >= 50); control: s14_off (0)"
 [[target]]
 id = "T192_ger"
-metric = "skirmish40.factions.germany.s14_derived.flame_jobs_open_per_match"
-max = 4
-note = "hard: flame jobs started and not ended, per match, at most the jobs still running at the match's end (MAX_FLAME_JOBS 4); every other job ended (L1 job_max_s, L2 stall_s)"
+metric = "skirmish40.factions.germany.s14_derived.flame_job_oldest_s"
+max = 185
+note = "hard (S14 Fix 9): the oldest flame job open at any match's end (s) is no older than [ai.flame] job_max_s 180 plus one plan; L1 ends every job by then"
 [[target]]
 id = "T195c_ger"
 metric = "skirmish40.factions.germany.s14_derived.flame_downs_per_match"
@@ -5564,9 +5567,9 @@ control = "skirmish40_s14_off.factions.usa.s14_derived.flame_matches_pct"
 note = "report: % of matches in which its flame hit a man in a dug cell or a pit (plan T191, was >= 50); control: s14_off (0)"
 [[target]]
 id = "T192_usa"
-metric = "skirmish40.factions.usa.s14_derived.flame_jobs_open_per_match"
-max = 4
-note = "hard: flame jobs started and not ended, per match, at most the jobs still running at the match's end (MAX_FLAME_JOBS 4); every other job ended (L1 job_max_s, L2 stall_s)"
+metric = "skirmish40.factions.usa.s14_derived.flame_job_oldest_s"
+max = 185
+note = "hard (S14 Fix 9): the oldest flame job open at any match's end (s) is no older than [ai.flame] job_max_s 180 plus one plan; L1 ends every job by then"
 [[target]]
 id = "T195c_usa"
 metric = "skirmish40.factions.usa.s14_derived.flame_downs_per_match"

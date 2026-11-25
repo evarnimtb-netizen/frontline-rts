@@ -1399,8 +1399,9 @@ pub fn s14_blocks(c: &crate::skirmish::S14Faction) -> Value {
 /// `clears_done_per_match` (T198), `refuels_per_match` (T199),
 /// `flame_capped_per_match`, `patches_dropped_per_match` (T200),
 /// `flame_jobs_per_match`, `flame_jobs_open_per_match` (started less
-/// ended: the jobs still running at the matches' ends, T192) and
-/// `flame_job_ends` (totals by end).
+/// ended: the jobs still running at the matches' ends),
+/// `flame_job_ends` (totals by end) and `flame_job_oldest_s` (S14 Fix 9,
+/// T192: the oldest job open at any match's end, s).
 /// Null where a denominator is 0.
 pub fn s14_derived(c: &crate::skirmish::S14Faction) -> Value {
     let n = c.matches.max(1) as f64;
@@ -1444,6 +1445,7 @@ pub fn s14_derived(c: &crate::skirmish::S14Faction) -> Value {
                 .sum()
         )),
         "flame_job_ends": ends,
+        "flame_job_oldest_s": round3(c.oldest_job_s),
     })
 }
 
@@ -1844,9 +1846,13 @@ mod tests {
             ..Default::default()
         };
         let mut f = S14Faction::default();
-        f.add(&S14Player::of(&hit, Some(&ai)));
+        let mut one = S14Player::of(&hit, Some(&ai));
+        one.oldest_job_s = 42.5;
+        f.add(&one);
         f.add(&S14Player::of(&Default::default(), None));
         let d = s14_derived(&f);
+        // S14 Fix 9 (T192): the oldest open job over the matches.
+        assert_eq!(d["flame_job_oldest_s"], json!(42.5));
         assert_eq!(d["flame_matches_pct"], json!(50.0));
         assert_eq!(d["flame_kills_per_match"], json!(2.0));
         assert_eq!(d["strikes_per_match"], json!(1.0));

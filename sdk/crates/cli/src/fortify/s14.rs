@@ -61,8 +61,8 @@
 //!   recovery (he neither fires nor strikes) and both are put back as
 //!   they stood at the start (standing, unhurt, unsuppressed) before each
 //!   strike. `strikes`, `ahead_hits` with the target 0.9 m ahead; the
-//!   control `aside_strikes`, `aside_hits` with him 0.9 m to the side of
-//!   the segment. Pass: every strike made, `ahead_hits` = `strikes`,
+//!   control `aside_strikes`, `aside_hits` with him 1.5 m to the side
+//!   (beyond every reach: S14 Fix 3 strikes the nearest body in reach). Pass: every strike made, `ahead_hits` = `strikes`,
 //!   `aside_hits` 0. No RNG: one run on the first seed.
 use anyhow::{Result, bail};
 use frontline_content::{MatchSetup, WeaponClass};
@@ -92,12 +92,17 @@ pub const POOL_CAP: u32 = 256;
 const POOL_ROUNDS: u32 = 40;
 /// R2: the row's length (ticks).
 const POOL_TICKS: u64 = 300;
-/// R4: the clear's length (s).
-const CLEAR_S: u64 = 120;
+/// R4: the clear's length (s). S14 Fix: 180 (was 120); with Fix 11 the
+/// entry cell is a step of its own and six steps end at about 130 s.
+const CLEAR_S: u64 = 180;
 /// R5: strikes per variant (half by each side).
 pub const MELEE_STRIKES: u32 = 100;
 /// R5: the target's distance from the striker (cm).
 const MELEE_CM: i32 = 90;
+/// R5 control: the target to the side, beyond every reach plus the
+/// capsule radius (the Garand's 100 cm bayonet; S14 Fix 3: the strike
+/// goes at the nearest body in reach, in any direction) (cm).
+const MELEE_ASIDE_CM: i32 = 150;
 /// R6: the flame man's distance from the trench (m).
 const UNDER_FIRE_M: i32 = 25;
 
@@ -936,11 +941,10 @@ fn melee_strikes(
     };
     let before = count(w);
     let c = at(TRENCH_X, LINE_Y + 40);
-    let d = Fx::from_int(MELEE_CM).div_int(100);
     let t = if aside {
-        FxVec2::new(c.x, c.y + d)
+        FxVec2::new(c.x, c.y + Fx::from_int(MELEE_ASIDE_CM).div_int(100))
     } else {
-        FxVec2::new(c.x + d, c.y)
+        FxVec2::new(c.x + Fx::from_int(MELEE_CM).div_int(100), c.y)
     };
     for _ in 0..n {
         w.place_soldier(striker, c);
@@ -998,7 +1002,7 @@ mod tests {
     use super::*;
 
     /// R5 (Build C): 100 strikes at a man 0.9 m ahead hit 100; control:
-    /// 0.9 m aside, none (`pass`).
+    /// 1.5 m aside (beyond reach), none (`pass`).
     #[test]
     fn s14_melee_row_hits_only_ahead() {
         let r = melee_row(&FortifyArgs::default(), 1..2).unwrap();
