@@ -3327,6 +3327,9 @@ tuning_table! {
         step_out: 0..=1 = "d_fl_one",
         /// ... to this far beyond its edge (m).
         step_out_m: 1..=50 = "d_fl_step_out_m",
+        /// F7: the own base refills a flamethrower's fuel one unit per
+        /// this long (ms; plan 3.2 F7, design 6.5 "one unit per 2 s").
+        base_refill_ms: 100..=60000 = "d_fl_base_refill_ms",
     }
 }
 
@@ -3378,6 +3381,9 @@ fn d_fl_patches_max() -> u32 {
 fn d_fl_step_out_m() -> u32 {
     2
 }
+fn d_fl_base_refill_ms() -> u32 {
+    2000
+}
 
 impl FlameTuning {
     fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
@@ -3403,6 +3409,7 @@ impl Default for FlameTuning {
             patches_max: 128,
             step_out: 1,
             step_out_m: 2,
+            base_refill_ms: 2000,
         }
     }
 }

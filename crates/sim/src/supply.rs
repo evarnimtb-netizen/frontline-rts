@@ -193,6 +193,11 @@ impl MatchState {
     /// A1 counters: every request of this tick by class and player.
     pub(crate) fn count_fired(&mut self, ents: &Entities, reqs: &[FireRequest]) {
         for r in reqs {
+            // S14 F1: a flame request is counted when it becomes a
+            // particle (`spawn_flame`): one dropped at the cap is not.
+            if r.flame {
+                continue;
+            }
             if let Some(c) = class_of(&self.setup, ents, r)
                 && let Some(p) = self.players.get_mut(r.player as usize)
             {
@@ -654,6 +659,17 @@ impl MatchState {
         let item_every = self.setup.rules.items.resupply_ticks.max(1);
         let bomb_every = (sp.base_bomb_s * hz).max(1);
         let bomb_wait = (sp.base_bomb_after_fire_s * hz).min(u16::MAX as u32);
+        // S14 F7: a flamethrower's fuel, one unit per `[flame]
+        // base_refill_ms` (a feed no Flame-class weapon uses: `bomb_every`).
+        let fuel_every = (self.setup.rules.flame.base_refill_ms as u64 * hz as u64)
+            .div_ceil(1000)
+            .clamp(1, u16::MAX as u64) as u32;
+        let fuel = |setup: &MatchSetup, f: Feed| {
+            setup
+                .weapons
+                .iter()
+                .any(|w| w.class == WeaponClass::Flame && w.feed == Some(f))
+        };
         for i in 0..ents.len() {
             if ents.kind[i] != EntityKind::Soldier {
                 continue;
@@ -739,7 +755,18 @@ impl MatchState {
                                 .is_some_and(|(kd, _)| kd == SupplyKind::Shells))
                     })
                     .filter(|&k| !self.bombs_wait(ents, sid, k, bomb_wait))
-                    .map(|k| (true, k, bomb_every)),
+                    .map(|k| {
+                        let f = self.setup.squad_types[ty_idx].feeds[k];
+                        (
+                            true,
+                            k,
+                            if fuel(&self.setup, f) {
+                                fuel_every
+                            } else {
+                                bomb_every
+                            },
+                        )
+                    }),
             };
             match next {
                 None => {

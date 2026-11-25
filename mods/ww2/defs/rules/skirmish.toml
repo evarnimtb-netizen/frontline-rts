@@ -1821,6 +1821,7 @@ patch_merge_cm = 50          # F5: a landing this close refreshes a patch (1..=1
 patches_max = 128            # F5: patches at most; one over is dropped and counted (1..=256)
 step_out = 1                 # switch F6: men leave burning ground (0..=1)
 step_out_m = 2               # F6: to this far beyond its edge (1..=50 m)
+base_refill_ms = 2000        # F7: the own base refills fuel one unit per this long (100..=60000 ms; design 6.5)
 
 # S14 melee M1-M5 (plan 2, 5): the default strike (entrenching spade) of a weapon with no [melee]
 # block. Switch 0 until S14-ai.

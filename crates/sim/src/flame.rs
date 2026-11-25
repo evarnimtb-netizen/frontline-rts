@@ -215,7 +215,10 @@ impl MatchState {
                 shooter: r.shooter,
                 weapon: r.weapon,
             });
-            self.players[p].s14.flame_fired += 1;
+            let pl = &mut self.players[p];
+            pl.s14.flame_fired += 1;
+            let f = &mut pl.ammo.fired[crate::supply::fired_class::FLAME];
+            *f = f.saturating_add(1);
         }
     }
 
@@ -446,7 +449,22 @@ impl MatchState {
                                 slot: u32::MAX,
                                 ..e
                             }),
-                            // S14-6 (A): vehicles, pieces, crates: no effect.
+                            // F2 end list: a landing on a static box's top
+                            // burns at the point (F5); its side, vehicles,
+                            // pieces' sides and crates' sides: no effect
+                            // (S14-6 (A)).
+                            Blow::Static(k, _) => {
+                                if let Some(b) = ctx.statics.get(k as usize) {
+                                    let mut q = before;
+                                    let next = crate::projectile::advance(&mut q);
+                                    let d = next - before.pos;
+                                    if let Some((t, crate::armour::Face::Top, _)) =
+                                        crate::armour::segment_box(&b.frame, before.pos, d)
+                                    {
+                                        landed.push((before.pos + d * t, p.player));
+                                    }
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -528,8 +546,14 @@ impl MatchState {
         self.patches.retain(|q| q.ends_at > tick);
         // F3, F5 pulses, `(tick + id) % pulse` in id order.
         let pulse = (f.pulse_ms as u64 * hz).div_ceil(1000).max(1);
-        let burn_dmg = f.burn_hp_per_s * f.pulse_ms / 1000;
-        let patch_dmg = f.patch_hp_per_s * f.pulse_ms / 1000;
+        // Checker 10: HP per pulse with no truncation loss. A pulse deals
+        // the milli-HP due by its end less those due by its start, counted
+        // from the pulse index `(tick + id) / pulse` (stateless, so nothing
+        // new is saved): 15 HP/s at 500 ms deals 7, 8, 7, 8 ...
+        let per_pulse = |hp_per_s: u32, n: u64| -> u32 {
+            let milli = hp_per_s as u64 * f.pulse_ms as u64;
+            ((milli * (n + 1)) / 1000 - (milli * n) / 1000) as u32
+        };
         let radius = Fx::from_int(f.patch_radius_cm as i32).div_int(100);
         let zmax = Fx::from_int(f.patch_z_cm as i32).div_int(100);
         let mut men: Vec<SimId> = Vec::new();
@@ -552,6 +576,7 @@ impl MatchState {
             }
             men.sort_unstable();
             men.dedup();
+            let patch_dmg = per_pulse(f.patch_hp_per_s, (tick + q.id as u64) / pulse);
             for &id in &men {
                 blows.push(burn_event(
                     q.by.0,
@@ -568,7 +593,11 @@ impl MatchState {
                 }
                 c.burn_until = c.burn_until.max(tick + burn_ticks);
                 hash.mark_entity_chunk(id.chunk());
-                self.players[q.player as usize].s14.patch_hits += 1;
+                // Burns of enemy men only (own burns have no counter of
+                // their own: none is saved).
+                if ents.owner[id.index()].0 != q.by.0 {
+                    self.players[q.player as usize].s14.patch_hits += 1;
+                }
             }
         }
         for i in 0..ents.kind.len() {
@@ -590,7 +619,7 @@ impl MatchState {
                     c.burn_by.0,
                     Blow::Burn {
                         id,
-                        dmg: burn_dmg,
+                        dmg: per_pulse(f.burn_hp_per_s, (tick + i as u64) / pulse),
                         by: c.burn_by,
                         supp: f.burn_suppression,
                     },
@@ -613,12 +642,37 @@ impl MatchState {
             .find(|q| (p.xy() - q.pos.xy()).length() <= radius && (p.z - q.pos.z).abs() <= zmax)
     }
 
+    /// F6 (checker 6): whether a man at `from` can walk to `to`: the
+    /// grade between them is within the infantry path rule's
+    /// `[movement] max_slope_pct` (the step test of `crate::path`), and no
+    /// static box (a bunker's wall or roof, a crate, an obstacle piece)
+    /// stands at `to` from the ground to 0.5 m over it.
+    pub(crate) fn walkable(&self, terrain: &Heightfield, from: FxVec3, to: FxVec3) -> bool {
+        let run = (to.xy() - from.xy()).length();
+        let rise = (to.z - terrain.height_at(from.xy())).abs();
+        if run > Fx::ZERO
+            && rise.mul_int(100).div(run)
+                > Fx::from_int(self.setup.rules.movement.max_slope_pct as i32)
+        {
+            return false;
+        }
+        let probe = |dz: Fx| FxVec3::new(to.x, to.y, to.z + dz);
+        !self.static_boxes().iter().any(|b| {
+            b.reach >= Fx::ZERO
+                && (b.frame.center.xy() - to.xy()).length() <= b.reach
+                && [Fx::from_milli(100), Fx::from_milli(500)]
+                    .into_iter()
+                    .any(|dz| crate::armour::box_dist_sq_raw(&b.frame, probe(dz)) == 0)
+        })
+    }
+
     /// S14 F6 (Status stage, ascending id): with `[flame] step_out` 1, a
     /// soldier whose feet are in a patch and who has no move order of his
     /// own (in formation, or detached and idle) takes a detached move to
     /// the first of 8 points `step_out_m` beyond that patch's edge, from
     /// the direction away from its centre in ascending 45° steps, that is
-    /// on the map and in no patch. Riders and gun crews stay. He rejoins
+    /// on the map, in no patch and walkable ([`Self::walkable`]). Riders
+    /// and gun crews stay. He rejoins
     /// at his squad's next order (the S12 detached rule).
     pub(crate) fn step_out_tick(&mut self, ctx: &mut crate::game::Ctx) {
         let f = &self.setup.rules.flame;
@@ -654,7 +708,10 @@ impl MatchState {
                 let to = centre.xy() + FxVec2::new(dir.x.mul(out), dir.y.mul(out));
                 let on = to.x >= Fx::ZERO && to.y >= Fx::ZERO && to.x <= size && to.y <= size;
                 let z = ctx.terrain.height_at(to);
-                if on && self.patch_at(FxVec3::new(to.x, to.y, z)).is_none() {
+                if on
+                    && self.patch_at(FxVec3::new(to.x, to.y, z)).is_none()
+                    && self.walkable(ctx.terrain, pos, FxVec3::new(to.x, to.y, z))
+                {
                     moves.push((SimId(i as u32), to));
                     break;
                 }

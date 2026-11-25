@@ -692,54 +692,98 @@ fn patch_burns_any_owner() {
             assert_eq!(c.hp, hp0, "control: a harmless patch");
         } else {
             assert!(c.hp < hp0, "his own patch burns him");
-            assert!(s14_of(&w, 0).patch_hits > 0);
+            assert_eq!(s14_of(&w, 0).patch_hits, 0, "own burns are not hits");
         }
     }
 }
 
-/// F9 (RE done-when 2): a pool saturated by a rifle fight; the flame man
-/// `SuppressUnits` at empty ground 20 m aside. With `[flame] enabled` 1 he
-/// fires particles, with 0 he holds; pool drops and every pool slot are
-/// equal tick for tick, and live particles stay within the cap. Control:
-/// the run with the switch on does fire particles.
+/// F9 (RE done-when 2, plan 3.2): a pool saturated by staged rifle fire
+/// (40 rounds a tick) and three mortar bombs; two flame men `SuppressUnits`
+/// at empty ground 20 m in front of them (inside the flamethrower's 30 m),
+/// 50 m from the pool fire. With `[flame] enabled` 1 they fire particles,
+/// with 0 they hold; pool drops, staged rounds refused and every pool slot
+/// (every shell among them) are equal tick for tick, and live particles
+/// stay within the cap. Control: the run with the switch on does fire.
 #[test]
 fn flame_never_takes_pool_slots() {
     let scene = |on| {
-        let (mut w, _sq, man, _) = flame_scene(on, 14, |s| {
+        let (mut w, sq, man, wi) = flame_scene(on, 0, |s| {
             s.rules.projectile_cap = 72;
             let f = s.weapons.last_mut().unwrap();
-            // No reveal: his fire must not change what the enemy sees.
+            // No reveal: their fire must not change what the enemy sees.
             (f.fire_reveal_pct, f.fire_reveal_ticks) = (100, 0);
+            let t = s.squad_type_index(RIFLES).unwrap() as usize;
+            let w = s.weapons.len() as u16 - 1;
+            s.squad_types[t].members[3].weapon = w;
         });
+        let second = members(&w, sq)[3];
+        assert_eq!(w.state.entities.kit[second.index()].weapon, wi);
         let line = vec![FxVec2::from_int(300, 320), FxVec2::from_int(304, 320)];
         super::s6_tests::run(
             &mut w,
             0,
             0,
             CommandKind::SuppressUnits {
-                units: vec![man],
+                units: vec![man, second],
                 line,
             },
         );
         w
     };
+    let setup = scene(1).match_setup().unwrap().clone();
+    let rifle = setup
+        .weapons
+        .iter()
+        .position(|x| x.id == "ww2:kar98k")
+        .unwrap() as u16;
+    let mortar = setup
+        .weapons
+        .iter()
+        .position(|x| x.id == "ww2:grw34")
+        .unwrap() as u16;
     let (mut on, mut off) = (scene(1), scene(0));
     let mut peak = 0;
-    for t in 0..300 {
-        on.step(&[]);
-        off.step(&[]);
+    let mut refused = [0u32; 2];
+    for t in 0..300u64 {
+        for (r, w) in [&mut on, &mut off].into_iter().enumerate() {
+            for k in 0..40 {
+                // Pool fire 50 m beyond the flame point (300, 320).
+                let a = FxVec2::from_int(250 + k, 370);
+                let z = w.terrain().height_at(a) + Fx::from_int(2);
+                let to = FxVec2::from_int(250 + k, 600).extend(z);
+                if !w.fire_round_now(0, rifle, a.extend(z), to) {
+                    refused[r] += 1;
+                }
+            }
+            if t % 60 == 0 && t < 180 {
+                // A full pool refuses a bomb as it refuses a round.
+                if !w.drop_shell_now(0, mortar, FxVec2::from_int(300, 420)) {
+                    refused[r] += 1000;
+                }
+            }
+            w.step(&[]);
+        }
         assert_eq!(
             on.state.stats.shots_dropped, off.state.stats.shots_dropped,
             "tick {t}: drops"
         );
+        assert_eq!(refused[0], refused[1], "tick {t}: staged rounds refused");
         assert!(
             on.state.projectiles.slots() == off.state.projectiles.slots(),
             "tick {t}: pool"
         );
         peak = peak.max(on.game().unwrap().flame().len());
     }
-    assert!(on.state.stats.shots_dropped > 0, "the pool is saturated");
-    assert!(s14_of(&on, 0).flame_fired > 0, "control: he fires");
+    assert!(refused[0] > 0, "the pool is saturated");
+    assert!(s14_of(&on, 0).flame_fired > 0, "control: they fire");
+    let fl: std::collections::BTreeSet<SimId> = on
+        .game()
+        .unwrap()
+        .flame()
+        .iter()
+        .map(|p| p.shooter)
+        .collect();
+    assert!(fl.len() <= 2);
     assert!(peak <= 64);
 }
 
@@ -1059,5 +1103,527 @@ fn snapshot_shows_flame_patches_and_burning() {
         } else {
             assert!(parts > 0 && burning > 0, "flame on: {parts} {burning}");
         }
+    }
+}
+
+// ------------------------------------------- Build B: checker fixes --
+
+/// Player 0's man `m` of `w` set burning by player 1 (FLAME) for `ticks`.
+fn set_burning(w: &mut World, m: SimId, ticks: u64) {
+    let tick = w.tick();
+    *close(&mut w.state, m) = Close {
+        burn_until: tick + ticks,
+        burn_by: (1, kill_class::FLAME),
+        ..Close::default()
+    };
+    w.hash.mark_entity_chunk(m.chunk());
+    w.refresh_hashes();
+}
+
+/// A patch of player `by` at `at`, burning `ticks`.
+fn put_patch(w: &mut World, at: FxVec3, by: u8, ticks: u64) {
+    let tick = w.tick();
+    let g = game_mut(&mut w.state);
+    let id = g.next_patch;
+    g.patches.push(Patch {
+        id,
+        pos: at,
+        ends_at: tick + ticks,
+        player: by,
+        by: (by, kill_class::FLAME),
+    });
+    g.next_patch = id + 1;
+}
+
+/// F3 (checker 2): a man downed by his burn keeps burning, and the next
+/// pulse kills him (W3), credited to FLAME as a finish. Control: before
+/// the fix `down()` reset `Close`, so he lay there unburnt.
+#[test]
+fn downed_man_keeps_burning() {
+    let (mut w, sq, ..) = flame_scene(1, 0, |s| {
+        s.rules.wounds.enabled = 1;
+        s.rules.flame.step_out = 0;
+    });
+    steps(&mut w, 2);
+    let m = members(&w, sq)[5];
+    assert!(w.edit_soldier(m, |_, c| c.hp = 10));
+    set_burning(&mut w, m, 900);
+    let mut downed_at = None;
+    for _ in 0..300 {
+        w.step(&[]);
+        let k = w.state.entities.kind[m.index()];
+        if k == crate::ecs::EntityKind::Downed && downed_at.is_none() {
+            downed_at = Some(w.tick());
+            assert!(
+                w.state.entities.combat[m.index()].close.burn_until > w.tick(),
+                "a downed man keeps burning"
+            );
+        }
+        if k == crate::ecs::EntityKind::Corpse {
+            break;
+        }
+    }
+    let at = downed_at.expect("his burn downs him");
+    assert_eq!(
+        w.state.entities.kind[m.index()],
+        crate::ecs::EntityKind::Corpse,
+        "the next pulse kills him"
+    );
+    let pulse = 500 * super::s6_tests::HZ / 1000;
+    assert!(w.tick() <= at + pulse + 1, "within a pulse");
+    let p1 = &w.game().unwrap().players[1];
+    assert_eq!(p1.s12.finished_by_class[kill_class::FLAME as usize], 1);
+    assert_eq!(p1.s14.burn_downs, 1);
+}
+
+/// F5, F8 (S14-1 (A)): an own patch that kills an own man is own fire, not
+/// a kill (no `kills_by`, no `burn_kills`, no `patch_hits`; S11a2
+/// `ff_kills`). Control: an enemy patch kills him as a FLAME kill.
+#[test]
+fn own_patch_burn_is_not_a_kill() {
+    for by in [0u8, 1] {
+        let (mut w, sq, ..) = flame_scene(1, 0, |s| {
+            s.rules.flame.step_out = 0;
+            s.rules.flame.patch_hp_per_s = 1000;
+        });
+        steps(&mut w, 2);
+        let m = members(&w, sq)[5];
+        let at = w.state.entities.transform[m.index()].pos;
+        put_patch(&mut w, at, by, 300);
+        steps(&mut w, 40);
+        assert_ne!(
+            w.state.entities.kind[m.index()],
+            crate::ecs::EntityKind::Soldier,
+            "by {by}: the patch kills him"
+        );
+        let g = w.game().unwrap();
+        let p = &g.players[by as usize];
+        if by == 0 {
+            assert_eq!(p.kills_by[kill_class::FLAME as usize], 0, "no own kill");
+            assert_eq!((p.s14.burn_kills, p.s14.patch_hits), (0, 0));
+            assert!(p.s11a2.ff_kills.iter().sum::<u32>() > 0, "own fire");
+        } else {
+            assert_eq!(p.kills_by[kill_class::FLAME as usize], 1, "control");
+            assert_eq!(p.s14.burn_kills, 1);
+            assert!(p.s14.patch_hits > 0);
+        }
+    }
+}
+
+/// F4: a particle passing 2 m beside a man (inside `near_cm` 300, outside
+/// his capsule) suppresses him. Control: `near_cm` 100 does not.
+#[test]
+fn near_miss_particle_suppresses() {
+    for near in [300u32, 100] {
+        let (mut w, sq, ..) = flame_scene(1, 0, |s| {
+            s.rules.flame.near_cm = near;
+            (s.rules.flame.patch_hp_per_s, s.rules.flame.burn_hp_per_s) = (0, 0);
+            s.rules.flame.burn_suppression = 0;
+        });
+        steps(&mut w, 2);
+        let m = members(&w, sq)[5];
+        let at = w.state.entities.transform[m.index()].pos;
+        let start = FxVec3::new(
+            at.x - Fx::from_int(6),
+            at.y + Fx::from_int(2),
+            at.z + Fx::ONE,
+        );
+        assert!(w.stage_s14(
+            vec![Flame {
+                id: 0,
+                pos: start,
+                vel: FxVec3::new(Fx::from_int(25), Fx::ZERO, Fx::ZERO),
+                ttl: 60,
+                player: 1,
+                shooter: SimId(u32::MAX - 1),
+                weapon: 0,
+            }],
+            Vec::new(),
+        ));
+        let mut peak = 0;
+        for _ in 0..30 {
+            w.step(&[]);
+            peak = peak.max(w.state.entities.combat[m.index()].suppression);
+        }
+        assert_eq!(s14_of(&w, 1).flame_hits, 0, "near {near}: no hit");
+        if near == 300 {
+            assert!(peak > 0, "the near miss suppresses");
+        } else {
+            assert_eq!(peak, 0, "control: 2 m is beyond 1 m");
+        }
+    }
+}
+
+/// F2, F5 (checker 5): a particle landing on a static box's top (the
+/// bunker's roof) burns there, on the roof. Control: one landing on open
+/// ground burns at the ground's height.
+#[test]
+fn flame_on_a_box_top_makes_a_patch() {
+    let mut w = super::s10b_tests::bunker_world(1, |_| {});
+    super::s10b_tests::bunker_at(&mut w, true);
+    let top = w
+        .game()
+        .unwrap()
+        .static_boxes()
+        .iter()
+        .max_by_key(|b| (b.frame.center.z + b.frame.half.z).raw())
+        .map(|b| (b.frame.center, b.frame.center.z + b.frame.half.z))
+        .unwrap();
+    for open in [false, true] {
+        let mut x = World::load(&w.save(), 1).unwrap();
+        let xy = if open {
+            FxVec2::from_int(530, 530)
+        } else {
+            top.0.xy()
+        };
+        let z = top.1 + Fx::from_milli(500);
+        assert!(x.stage_s14(
+            vec![Flame {
+                id: 0,
+                pos: FxVec3::new(xy.x, xy.y, z),
+                vel: FxVec3::new(Fx::ZERO, Fx::ZERO, Fx::from_int(-10)),
+                ttl: 60,
+                player: 1,
+                shooter: SimId(u32::MAX - 1),
+                weapon: 0,
+            }],
+            Vec::new(),
+        ));
+        steps(&mut x, 20);
+        let g = x.game().unwrap();
+        assert!(g.flame().is_empty(), "open {open}: it landed");
+        let ps = g.patches();
+        assert_eq!(ps.len(), 1, "open {open}: one patch");
+        let ground = x.terrain().height_at(xy);
+        if open {
+            assert!((ps[0].pos.z - ground).abs() < Fx::from_milli(100));
+        } else {
+            assert!(
+                (ps[0].pos.z - top.1).abs() < Fx::from_milli(100),
+                "on the roof ({:?} vs {:?})",
+                ps[0].pos.z,
+                top.1
+            );
+        }
+    }
+}
+
+/// F7 (checker 4): the own base refills fuel one unit per `[flame]
+/// base_refill_ms`. Control: 500 ms refills four times as many as the
+/// default 2000 ms in the same 4 s.
+#[test]
+fn flame_fuel_refills_at_base_refill_ms() {
+    let mut got = Vec::new();
+    for ms in [2000u32, 500] {
+        let (mut wi, mut k) = (0, 0);
+        let mut w = flat_world_with(1, |s| {
+            wi = make_flamer(s);
+            k = fuel_cartridge(s, wi, 200);
+            s.rules.flame.base_refill_ms = ms;
+        });
+        let b = w.game().unwrap().base_of(PlayerId(0));
+        let sq = spawn(&mut w, 0, RIFLES, b.x.floor_int(), b.y.floor_int());
+        let man = members(&w, sq)[1];
+        assert!(w.edit_soldier(man, |kit, c| {
+            kit.rounds[k] = 0;
+            c.mag = 0;
+        }));
+        let ex = frontline_content::SupplyKind::Explosives as usize;
+        let a0 = w.game().unwrap().players[0].ammo.refilled[ex];
+        let ticks = 4 * super::s6_tests::HZ;
+        steps(&mut w, ticks);
+        let units = w.game().unwrap().players[0].ammo.refilled[ex] - a0;
+        let every = ms as u64 * super::s6_tests::HZ / 1000;
+        let want = (ticks / every) as u32;
+        assert!(
+            units + 1 >= want && units <= want,
+            "{ms} ms: {units} units, about {want}"
+        );
+        got.push(units);
+    }
+    assert!(got[1] >= 3 * got[0], "control: {got:?}");
+}
+
+/// F1 (checker 7): a flame man with an empty tank and no fuel left draws
+/// his sidearm (the S5a rule) and fires no particle. Control: with fuel
+/// he fires particles and keeps the flamethrower.
+#[test]
+fn dry_flamer_draws_his_sidearm() {
+    for dry in [false, true] {
+        // His own fuel feed (no squadmate carries it to share).
+        let mut k = 0;
+        let (mut w, _sq, man, _wi) = flame_scene(1, 14, |s| {
+            let wi = s.weapons.len() as u16 - 1;
+            k = fuel_cartridge(s, wi, 200);
+        });
+        let s = w.match_setup().unwrap();
+        let t = s.squad_type_index(RIFLES).unwrap() as usize;
+        assert!(
+            s.squad_types[t].members[1].sidearm.is_some(),
+            "he carries a P 38"
+        );
+        if dry {
+            assert!(w.edit_soldier(man, |kit, c| {
+                kit.rounds[k] = 0;
+                c.mag = 0;
+            }));
+        }
+        // While he lives (the enemy 14 m off may kill him).
+        let mut on_side = false;
+        for _ in 0..90 {
+            w.step(&[]);
+            if w.state.entities.kind[man.index()] == crate::ecs::EntityKind::Soldier {
+                on_side |= w.state.entities.kit[man.index()].on_sidearm;
+            }
+        }
+        let fired = s14_of(&w, 0).flame_fired;
+        if dry {
+            assert!(on_side, "dry: the sidearm");
+            assert_eq!(fired, 0, "dry: no particle");
+        } else {
+            assert!(!on_side && fired > 0, "control: he flames");
+        }
+    }
+}
+
+/// F6 (checker 6): a step-out point must be walkable: not inside a static
+/// box (a bunker's wall). Control: open ground is.
+#[test]
+fn step_out_points_are_walkable() {
+    let mut w = super::s10b_tests::bunker_world(1, |_| {});
+    super::s10b_tests::bunker_at(&mut w, true);
+    let t = w.terrain();
+    let g = w.game().unwrap();
+    let wall = g
+        .static_boxes()
+        .iter()
+        .find(|b| {
+            let c = b.frame.center;
+            c.z - b.frame.half.z <= t.height_at(c.xy()) + Fx::from_milli(300)
+        })
+        .expect("a box standing on the ground");
+    let c = wall.frame.center.xy();
+    let from = FxVec3::new(
+        Fx::from_int(530),
+        Fx::from_int(530),
+        t.height_at(FxVec2::from_int(530, 530)),
+    );
+    assert!(
+        !g.walkable(t, from, c.extend(t.height_at(c))),
+        "inside a wall"
+    );
+    let open = FxVec2::from_int(532, 530);
+    assert!(
+        g.walkable(t, from, open.extend(t.height_at(open))),
+        "control: open ground"
+    );
+}
+
+/// F6 (checker 6): a gun crewman at his gun and a rider in his vehicle
+/// stay in burning ground. Control: men in formation step out
+/// (`men_step_out_of_burning_ground`).
+#[test]
+fn crews_and_riders_do_not_step_out() {
+    let mut w = flat_world_with(1, |s| {
+        s.rules.flame.enabled = 1;
+        (s.rules.flame.patch_hp_per_s, s.rules.flame.burn_hp_per_s) = (0, 0);
+    });
+    // A towed gun card arrives hitched with its crew aboard the tow.
+    let t = w
+        .match_setup()
+        .unwrap()
+        .squad_type_index("ww2:ger_pak40_squad")
+        .unwrap();
+    super::s6_tests::run(&mut w, 0, 0, CommandKind::CallIn { squad_type: t });
+    let tow = *w
+        .game()
+        .unwrap()
+        .vehicles
+        .iter()
+        .find(|(_, v)| v.towing.is_some())
+        .unwrap()
+        .0;
+    let rider = w.game().unwrap().riders_of(tow)[0];
+    // A gun emplaced at a site with its crew in their slots.
+    let gsq = spawn(&mut w, 0, "ww2:ger_pak40_squad", 500, 500);
+    let gun = members(&w, gsq)[0];
+    let crew = w.game().unwrap().vehicles[&gun]
+        .served
+        .as_ref()
+        .unwrap()
+        .slots
+        .iter()
+        .find_map(|s| s.man)
+        .unwrap();
+    for m in [rider, crew] {
+        let at = w.state.entities.transform[m.index()].pos;
+        put_patch(&mut w, at, 1, 900);
+    }
+    steps(&mut w, 30);
+    assert_eq!(s14_of(&w, 0).stepped_out, 0);
+    assert!(w.state.entities.unit[rider.index()].riding.is_some());
+    assert!(w.state.entities.unit[crew.index()].serving.is_some());
+}
+
+/// Checker 9: a request dropped at the cap is not counted in
+/// `fired[FLAME]` (only particles made are). Control: `flame_capped` > 0,
+/// so requests were dropped.
+#[test]
+fn capped_flame_is_not_counted_fired() {
+    let (mut w, ..) = flame_scene(1, 14, |s| s.rules.flame.particles_per_player = 4);
+    steps(&mut w, 240);
+    let p = &w.game().unwrap().players[0];
+    assert!(p.s14.flame_capped > 0, "control: requests dropped");
+    assert_eq!(
+        p.ammo.fired[crate::supply::fired_class::FLAME],
+        p.s14.flame_fired
+    );
+}
+
+/// Checker 10: burn damage per pulse loses nothing to truncation: 1 HP/s
+/// at 500 ms pulses takes 10 HP in 10 s (the old formula took 0).
+/// Control: `burn_hp_per_s` 0 takes none.
+#[test]
+fn burn_pulses_lose_no_hp() {
+    for hp in [1u32, 0] {
+        let (mut w, sq, ..) = flame_scene(1, 0, |s| {
+            s.rules.flame.burn_hp_per_s = hp;
+            s.rules.flame.burn_s = 60;
+        });
+        steps(&mut w, 2);
+        let m = members(&w, sq)[5];
+        let hp0 = w.state.entities.combat[m.index()].hp;
+        set_burning(&mut w, m, 60 * super::s6_tests::HZ);
+        steps(&mut w, 10 * super::s6_tests::HZ);
+        let lost = (hp0 - w.state.entities.combat[m.index()].hp) as u32;
+        if hp == 1 {
+            assert!((9..=11).contains(&lost), "lost {lost}");
+        } else {
+            assert_eq!(lost, 0, "control");
+        }
+    }
+}
+
+/// Checker 13: `Close::strike` (a u8 tick count) holds the longest
+/// wind-up and recovery the ranges allow at every allowed tick rate.
+/// Control: 4001 ms is out of range.
+#[test]
+fn strike_ticks_fit_a_u8() {
+    for hz in frontline_content::TICK_HZ_ALLOWED {
+        assert!(4000 * hz as u64 / 1000 <= u8::MAX as u64, "{hz} Hz");
+    }
+    let w = flat_world_with(1, |_| {});
+    let mut s = w.game().unwrap().setup.clone();
+    (s.rules.melee.windup_ms, s.rules.melee.recover_ms) = (4000, 4000);
+    assert!(s.validate().is_empty());
+    s.rules.melee.windup_ms = 4001;
+    assert!(!s.validate().is_empty(), "control");
+}
+
+/// Checker 14: `ClearTrench` and `Strike` are refused while their
+/// switches are 0. Control: the refusal is the S14 one (`NotAllowed`).
+#[test]
+fn strike_and_clear_are_refused_while_off() {
+    let mut w = flat_world_with(1, |_| {});
+    let sq = spawn(&mut w, 0, RIFLES, 300, 300);
+    w.dig_trench_now(
+        &[FxVec2::from_int(310, 290), FxVec2::from_int(310, 330)],
+        -1,
+    );
+    steps(&mut w, 2);
+    super::s6_tests::run(
+        &mut w,
+        0,
+        0,
+        CommandKind::ClearTrench {
+            squad: sq,
+            at: FxVec2::from_int(310, 300),
+        },
+    );
+    // The refusals of this tick only.
+    let r = w.fort_refusals();
+    assert_eq!(r.len(), 1, "ClearTrench refused");
+    assert_eq!(
+        r.last().unwrap().refusal,
+        crate::fort::FortRefusal::NotAllowed
+    );
+    assert!(w.game().unwrap().clears().is_empty());
+    let m = members(&w, sq)[0];
+    super::s6_tests::run(&mut w, 0, 1, CommandKind::Strike { units: vec![m] });
+    let r = w.fort_refusals();
+    assert_eq!(r.len(), 1, "Strike refused");
+    assert_eq!(
+        r.last().unwrap().refusal,
+        crate::fort::FortRefusal::NotAllowed
+    );
+}
+
+/// Spec 3.1 load checks the checker listed (checker 8), one case each on
+/// a staged save with a downed man and a tank squad added. Control: that
+/// save loads.
+#[test]
+fn load_rejects_bad_s14_state_more() {
+    let (mut w, sq, burn, strike) = staged();
+    let downed = members(&w, sq)[3];
+    assert!(w.down_soldier(downed, (1, kill_class::RIFLE)));
+    let tank = spawn(&mut w, 0, "ww2:ger_pz4_h_squad", 400, 400);
+    let bytes = w.save();
+    World::load(&bytes, 1).expect("control: the staged save loads");
+    type Edit = Box<dyn Fn(&mut SimState)>;
+    let cases: Vec<(&str, Edit)> = vec![
+        (
+            "burn end beyond the longest burn",
+            Box::new(move |s| close(s, burn).burn_until = u64::MAX / 2),
+        ),
+        (
+            "strike on a downed man",
+            Box::new(move |s| {
+                *close(s, downed) = Close {
+                    strike: 4,
+                    strike_phase: STRIKE_WINDUP,
+                    ..Close::default()
+                }
+            }),
+        ),
+        (
+            "clear step over steps_max",
+            Box::new(move |s| game_mut(s).clears.get_mut(&sq).unwrap().step = 200),
+        ),
+        (
+            "clear of a vehicle squad",
+            Box::new(move |s| {
+                let g = game_mut(s);
+                let c = g.clears[&sq];
+                g.clears.insert(tank, c);
+            }),
+        ),
+        (
+            "clear point off the map",
+            Box::new(move |s| game_mut(s).clears.get_mut(&sq).unwrap().at.x = Fx::from_int(-5)),
+        ),
+        (
+            "patches over the cap",
+            Box::new(|s| {
+                let g = game_mut(s);
+                let one = g.patches[0];
+                let n = g.s14_limits().patches as u32;
+                g.patches = (0..=n).map(|i| Patch { id: 10 + i, ..one }).collect();
+                g.next_patch = 20 + n;
+            }),
+        ),
+        (
+            "flame ttl over the longest life",
+            Box::new(|s| game_mut(s).flame[0].ttl = u16::MAX),
+        ),
+        (
+            "flame shooter out of range",
+            Box::new(|s| game_mut(s).flame[0].shooter = SimId(u32::MAX)),
+        ),
+    ];
+    let _ = strike;
+    for (name, e) in cases {
+        let mut x = World::load(&bytes, 1).unwrap();
+        e(&mut x.state);
+        assert!(World::load(&x.save(), 1).is_err(), "{name} loads");
     }
 }

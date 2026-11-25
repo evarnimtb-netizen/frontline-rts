@@ -2738,6 +2738,14 @@ impl WeaponDef {
         if let Some(l) = self.load {
             range(&mut out, "load", l, 1, 65_535);
         }
+        // S14 F1, F7 (checker 7): a flamethrower's fuel is its feed; with
+        // none it would never run dry (no resupply, no sidearm).
+        if self.class == WeaponClass::Flame && self.feed.is_none() {
+            out.push(
+                Issue::new("feed", "a flame weapon needs a feed (its fuel cartridge)")
+                    .with_hint("feed = \"ww2:fmw41_fuel\""),
+            );
+        }
         range(&mut out, "burst_rounds", self.burst_rounds, 0, 1000);
         range(&mut out, "burst_pause_ms", self.burst_pause_ms, 0, 10_000);
         if self.hold_beyond_pct != 0 {
@@ -3479,5 +3487,33 @@ impl AiDef {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod s14_tests {
+    use super::*;
+
+    /// S14 F1, F7 (checker 7): a `class = "flame"` weapon needs a feed (its
+    /// fuel). Control: the same def with a feed validates.
+    #[test]
+    fn flame_weapon_needs_a_feed() {
+        let text = |feed: &str| {
+            format!(
+                "id = \"t:flamer\"\nname = \"Flamer\"\nclass = \"flame\"\nrange_m = 30\n\
+                 damage = 20\nrounds_per_min = 720\nmagazine = 120\nreload_ms = 0\n\
+                 muzzle_velocity_m_s = 25\nsuppression = 35\n{feed}"
+            )
+        };
+        let bad: WeaponDef = toml::from_str(&text("")).unwrap();
+        assert!(
+            bad.validate()
+                .iter()
+                .any(|i| i.to_string().contains("feed")),
+            "{:?}",
+            bad.validate()
+        );
+        let good: WeaponDef = toml::from_str(&text("feed = \"t:fuel\"\n")).unwrap();
+        assert!(good.validate().is_empty(), "{:?}", good.validate());
     }
 }

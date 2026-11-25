@@ -3556,6 +3556,11 @@ impl MatchState {
                         (crate::wounds::ZONE_NONE, false),
                         ctx.wounds.as_ref(),
                     );
+                    // S14 F5 (S14-1 (A)): an own burn is own fire, not a
+                    // kill (the S11a2 own-fire list, as an own burst's).
+                    if fell && ctx.ents.owner[i].0 == by.0 {
+                        ctx.ff_dead.push(id);
+                    }
                     // S14 F8: enemy men fire downed or killed (own burns
                     // are own fire, not kills).
                     if fell && ctx.ents.owner[i].0 != by.0 {
@@ -4313,6 +4318,13 @@ impl MatchState {
             fire_height: prone,
             seen_by: c.seen_by,
             wound,
+            // S14 F3: a downed man keeps burning (the next pulse kills
+            // him, W3); a strike in progress ends.
+            close: crate::flame::Close {
+                burn_until: c.close.burn_until,
+                burn_by: c.close.burn_by,
+                ..crate::flame::Close::default()
+            },
             ..Combat::default()
         };
         ents.unit[i] = Unit::default();
