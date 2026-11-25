@@ -158,3 +158,30 @@ Distances: base to B (home point) 223 m (KR 288), to C 488 (588), to E 461, A 71
 - Real bridge (release build, headless, `--map linden_brook`): `map_info` gives 4 roads of width 6 and WorldFx builds the strip.
 - **Not done**: the mock ground does not rebuild if `MockMap.use` switches after `MockWorld` is ready (menus switch only
   before a match); no real-bridge windowed look at the roads (headless only).
+
+## Review (independent, after Build B and Presenter P; diff `a27ce63..HEAD`)
+Checked, no bug found: terrain hash covers the flag layer (`hash.rs:316`); `setup_hash` (postcard of the setup) and the save carry
+`roads`, `[vehicles.road]`, `road_speed_pct`, one SAVE 33 / PROTOCOL 17 bump for the slice; the blend is exact and integer; `mark_road`
+is exact integer; off a road the drive arithmetic is the old one; follower `top`/`yield_cap` and `drive` use the same road factor; the
+load check `speed <= 2 x top` holds because every road percent is capped at 200 (raising that cap must raise the check); `--map`
+conflicts with `--load`; batch cache keys include `--map`; `pool.py` pools per map; minimap roads use the woods' north-up transform;
+the Linden mock's points, bases, woods and roads match the TOML; the menu picker passes `_map` to `start_skirmish`.
+- **V1 (fixed, medium; F3 partial paths):** on Linden Brook every vehicle search runs at weight 100 and some hit the 8000 cap: from base 0
+  over a 14 x 14 grid (64 m) wheeled 3, half-track 9, tracked 10 of 196 got partial paths, and the AI's `gun_route` (guns, belts,
+  corridors) returns None for each. New `[vehicles.road] cap_retry_weight_pct` (130 in `skirmish.toml`, 0 off, else 100..=200): a
+  road-priced search that stops at the cap runs once more at that weight (Kessel Ridge's) and keeps the path only if it reaches the
+  goal; both runs are charged (`PathQueue` debt, observer, one search). Same grid: 0 capped for all three; mean expansions +1.4 %
+  (1545 -> 1566), +1.7 % (2239 -> 2278), +1.6 % (2668 -> 2711); worst search 10,250. A search that reaches its goal is unchanged; no
+  retry without roads (`road_pct` None), so Kessel Ridge is untouched. Test `a_capped_road_map_search_retries_at_the_kessel_weight`.
+- **V2 (fixed, low):** `tools/verify.sh` had no `--map` (plan 7 reads tick p99 on Linden Brook from it): `[--map ID]` as the third
+  argument plays the timing 40 and the 160 sets on that map.
+- **F3 mean cost (open, owner):** no behaviour-safe fix. Fewer expansions need a higher weight, which changes Linden Brook paths (F1).
+  Same grid, existing key `heuristic_pct`: 100 (shipped) mean 1545 / 2239 / 2668, road share of path 64 / 61 / 57 %; 140: 1289 / 428 /
+  238, road 61 / 41 / 38 %; 175: 244 / 149 / 140, road 38 / 38 / 27 % (wheeled / half-track / tracked). A tuning choice, not taken.
+- **Low, not changed:** (1) `on_road` in `drive` (`vehicle.rs` `on_road`) needs only `enabled` and the flag, `road_for` also needs
+  `map.roads` non-empty; equal for generated terrain, differs only for a hand-edited save whose flags disagree with its setup
+  (flags are not re-derived on load). (2) Width 4-5 m is accepted but leaves grid gaps on a diagonal (the TOML note says so); a gap
+  turns `all_road` smoothing off there. (3) The Linden mock draws base radius 60 m (map 40 m).
+- Results: sim, content, CLI, net tests pass (`ipv6_loopback_handshake` skipped); clippy `-D warnings` all targets on sim, content, cli
+  clean; `setup_bytes_baseline` and the canonical snapshot updated for the new key. Kessel Ridge 40 set (`target/s16r/kr`): **same
+  40/40** against Build B (`target/s16b/kr`) and against `a27ce63` (`target/s16a/base`).
