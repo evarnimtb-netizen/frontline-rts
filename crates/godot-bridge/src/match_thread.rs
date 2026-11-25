@@ -83,6 +83,9 @@ pub struct MatchCounters {
     /// [`crate::match_net::HASH_KEEP`]).
     pub hashes: Mutex<VecDeque<(u64, u64)>>,
     pub net: Mutex<NetDetail>,
+    /// S18 H5: allies' map pings `(slot, x, y)` (sim metres) not yet read
+    /// by the presenter, oldest first.
+    pub pings: Mutex<VecDeque<(u8, i32, i32)>>,
 }
 
 /// Where the sim thread gets its ticks (S2 "Code changes").
@@ -266,6 +269,14 @@ impl MatchHandle {
             Input::Net(tx) => {
                 let _ = tx.send(if paused { ToNet::Pause } else { ToNet::Resume });
             }
+        }
+    }
+
+    /// S18 H5: a map ping for the allies (net match only; sim metres).
+    pub fn map_ping(&self, x: i32, y: i32) -> bool {
+        match &self.input {
+            Input::Local(_) => false,
+            Input::Net(tx) => tx.send(ToNet::MapPing { x, y }).is_ok(),
         }
     }
 

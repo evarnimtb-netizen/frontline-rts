@@ -1014,7 +1014,7 @@ impl FrontlineMatch {
         &mut self,
         world: World,
         local: u8,
-        net: Option<(NetLink, NetMatchInfo, [String; 2])>,
+        net: Option<(NetLink, NetMatchInfo, Vec<String>)>,
         scene_name: Option<String>,
     ) -> Result<(), String> {
         let world3d = self
@@ -1150,7 +1150,11 @@ struct SceneInfo {
 
 /// The presenter's side of a net match.
 struct NetView {
-    names: [String; 2],
+    /// One per slot (an AI slot's is empty).
+    names: Vec<String>,
+    /// S18 H5: when this player last pinged the map (the presenter's
+    /// `[teams] ping_gap_s` gate).
+    last_ping: Option<std::time::Instant>,
     /// `(send ordinal of the intent's last command, kind, Godot position)`,
     /// oldest first: drawn until that command ran.
     pending: VecDeque<(u64, &'static str, Vector3)>,
@@ -1174,7 +1178,7 @@ impl MatchRuntime {
         world: World,
         local: u8,
         scene: Option<String>,
-        net: Option<(NetLink, NetMatchInfo, [String; 2])>,
+        net: Option<(NetLink, NetMatchInfo, Vec<String>)>,
         scenario: Rid,
         [soldier_sh, tracer_sh]: [Gd<Shader>; 2],
         terrain_sh: Option<Gd<Shader>>,
@@ -1308,6 +1312,7 @@ impl MatchRuntime {
                 MatchHandle::spawn_net(world, local, link, info)?,
                 Some(NetView {
                     names,
+                    last_ping: None,
                     pending: VecDeque::new(),
                 }),
                 0,
@@ -2033,7 +2038,7 @@ impl MatchRuntime {
             let fac = short_id(&setup.factions[ps_setup.faction as usize].id);
             let ally = p != local && teams.allied(local as u8, p as u8);
             let name = match &self.net {
-                Some(n) if !n.names[p % 2].is_empty() => n.names[p % 2].clone(),
+                Some(n) if n.names.get(p).is_some_and(|x| !x.is_empty()) => n.names[p].clone(),
                 _ if p == local => "You".to_owned(),
                 _ if !ps_setup.is_ai => "Player".to_owned(),
                 _ if ally => format!("Ally AI ({:?})", ps_setup.difficulty).to_lowercase(),
@@ -3201,6 +3206,21 @@ impl MatchRuntime {
             "desync_dump" => detail.desync_dump.clone().unwrap_or_default().as_str(),
             "disconnect_reason" => detail.disconnect.unwrap_or(""),
         };
+        // S18 H5: allies' map pings since the last state, in Godot space.
+        let mut pings = VarArray::new();
+        if let Ok(mut q) = c.pings.lock() {
+            for (slot, x, y) in q.drain(..) {
+                pings.push(
+                    &vdict! {
+                        "slot" => slot as i64,
+                        "name" => name(slot).as_str(),
+                        "pos" => self.ground([x as f32, y as f32]),
+                    }
+                    .to_variant(),
+                );
+            }
+        }
+        out.set("pings", &pings);
         if let Some(p) = detail.paused_by {
             out.set("paused_slot", p as i64);
         }
@@ -4077,6 +4097,20 @@ impl MatchRuntime {
                 }
             }
             "surrender" => out.push(CommandKind::Surrender),
+            // S18 H5: a map ping at `target` for the allies (net matches;
+            // at most one per `[teams] ping_gap_s`).
+            "map_ping" => {
+                let Some(t) = target else { return };
+                let gap = std::time::Duration::from_secs(self.setup.rules.teams.ping_gap_s as u64);
+                let p = to_sim(t, self.half);
+                if let Some(n) = self.net.as_mut()
+                    && n.last_ping.is_none_or(|l| l.elapsed() >= gap)
+                    && self.sim.map_ping(p[0].round() as i32, p[1].round() as i32)
+                {
+                    n.last_ping = Some(std::time::Instant::now());
+                }
+                return;
+            }
             "pause" => {
                 let p = data
                     .get("paused")

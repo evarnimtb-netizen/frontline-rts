@@ -5,8 +5,9 @@
 //!
 //! In a skirmish the human takes player slot 0 (base 0, south-west) with
 //! the chosen faction and the AI takes slot 1 with the other faction. A
-//! net match (S2) names both slots' factions with [`MenuChoice::slots`],
-//! and both slots are human.
+//! net match (S2) names every slot's faction with [`MenuChoice::slots`]:
+//! two human slots in a 1v1; S18: two to four slots, each with its team,
+//! some of them AI fill.
 
 use std::path::{Path, PathBuf};
 
@@ -27,14 +28,15 @@ pub struct MenuChoice {
     /// Optional overrides for short or scripted matches.
     pub tickets: Option<u32>,
     pub start_manpower: Option<u32>,
-    /// Net match (S2): each slot's faction and whether a human plays it.
-    /// Overrides `faction` and `ai_vs_ai`. Both clients resolve the same
-    /// choice into the same setup (its hash is the `Ready` check).
-    pub slots: Option<[SlotChoice; 2]>,
+    /// Net match (S2): each slot's faction, team and whether a human
+    /// plays it (2 to 4 slots, S18). Overrides `faction`, `ai_vs_ai` and
+    /// `mode`. Both clients resolve the same choice into the same setup
+    /// (its hash is the `Ready` check).
+    pub slots: Option<Vec<SlotChoice>>,
     /// S17 (Presenter P): `1v1` (default) or `2v2`: the human (slot 0)
     /// and an AI ally (slot 1, same faction) against two AIs of the other
     /// faction (slots 2 and 3) on a map with four bases (Harrow Cross).
-    /// Offline only: a `2v2` with `slots` is refused (online teams: S18).
+    /// With `slots` (a net match) the slots decide; `2v2` then needs four.
     pub mode: String,
     /// S3: play the test rules override (`mods/ww2/tests/
     /// rules_test_unlock.toml`: vehicles unlocked at once), for scripted
@@ -43,11 +45,27 @@ pub struct MenuChoice {
 }
 
 /// One player slot of a net match.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct SlotChoice {
     /// Short faction id: `germany` or `usa`.
     pub faction: String,
     pub human: bool,
+    /// S18: the slot's team (`None`: alone, as in a 1v1).
+    pub team: Option<u8>,
+    /// S18: an AI slot's difficulty (`easy`, `normal`, `hard`); `None`:
+    /// the choice's.
+    pub difficulty: Option<String>,
+}
+
+impl SlotChoice {
+    /// A human slot of `faction`, no team (the 1v1 slots).
+    pub fn human(faction: &str) -> SlotChoice {
+        SlotChoice {
+            faction: faction.into(),
+            human: true,
+            ..SlotChoice::default()
+        }
+    }
 }
 
 impl Default for MenuChoice {
@@ -144,54 +162,77 @@ pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, S
     if !MODES.contains(&choice.mode.as_str()) {
         return Err(format!("unknown mode {:?}", choice.mode));
     }
-    // S17 review (O4): net slots name two players; a networked 2v2 is
-    // S18, so a 2v2 with slots is refused rather than played as a 1v1.
-    if choice.mode == "2v2" && choice.slots.is_some() {
-        return Err("a 2v2 with net slots is not supported (S18)".into());
+    for s in choice.slots.iter().flatten() {
+        if !FACTIONS.contains(&s.faction.as_str()) {
+            return Err(format!("unknown faction {:?}", s.faction));
+        }
     }
-    let slots = match &choice.slots {
-        Some(s) => s.clone(),
+    // (slot, team, difficulty) per player.
+    let team_slots: Vec<(SlotChoice, Option<u8>, Difficulty)> = match &choice.slots {
+        // S18: net slots name every player (S17 review O4 refused a 2v2
+        // with them; now they are the match).
+        Some(slots) => {
+            if !(2..=4).contains(&slots.len()) {
+                return Err(format!("{} net slots (2 to 4)", slots.len()));
+            }
+            if choice.mode == "2v2" && slots.len() != 4 {
+                return Err("a 2v2 needs four slots".into());
+            }
+            // A 1v1 keeps "the factions must differ".
+            if slots.len() == 2
+                && slots[0].team.is_none()
+                && slots[1].team.is_none()
+                && slots[0].faction == slots[1].faction
+            {
+                return Err(format!("both slots are {:?}", slots[0].faction));
+            }
+            let mut out = Vec::new();
+            for s in slots {
+                let sd = match &s.difficulty {
+                    Some(x) if !s.human => difficulty(x)?,
+                    _ => d,
+                };
+                out.push((s.clone(), s.team, sd));
+            }
+            out
+        }
         None => {
             let other = if choice.faction == FACTIONS[0] {
                 FACTIONS[1]
             } else {
                 FACTIONS[0]
             };
-            [
-                SlotChoice {
-                    faction: choice.faction.clone(),
-                    human: !choice.ai_vs_ai,
-                },
-                SlotChoice {
-                    faction: other.into(),
+            if !FACTIONS.contains(&choice.faction.as_str()) {
+                return Err(format!("unknown faction {:?}", choice.faction));
+            }
+            let me = SlotChoice {
+                faction: choice.faction.clone(),
+                human: !choice.ai_vs_ai,
+                ..SlotChoice::default()
+            };
+            let them = SlotChoice {
+                faction: other.into(),
+                human: false,
+                ..SlotChoice::default()
+            };
+            // S17: in a 2v2 slot 0 (human, unless ai_vs_ai) and slot 1 (AI
+            // ally) play the chosen faction, slots 2 and 3 (AI) the other;
+            // teams 0 and 1.
+            if choice.mode == "2v2" {
+                let ally = SlotChoice {
                     human: false,
-                },
-            ]
+                    ..me.clone()
+                };
+                vec![
+                    (me, Some(0), d),
+                    (ally, Some(0), d),
+                    (them.clone(), Some(1), d),
+                    (them, Some(1), d),
+                ]
+            } else {
+                vec![(me, None, d), (them, None, d)]
+            }
         }
-    };
-    for s in &slots {
-        if !FACTIONS.contains(&s.faction.as_str()) {
-            return Err(format!("unknown faction {:?}", s.faction));
-        }
-    }
-    if slots[0].faction == slots[1].faction {
-        return Err(format!("both slots are {:?}", slots[0].faction));
-    }
-    // S17: in a 2v2 slot 0 (human, unless ai_vs_ai) and slot 1 (AI ally)
-    // play the chosen faction, slots 2 and 3 (AI) the other; teams 0 and 1.
-    let team_slots: Vec<(SlotChoice, Option<u8>)> = if choice.mode == "2v2" {
-        let ally = SlotChoice {
-            faction: slots[0].faction.clone(),
-            human: false,
-        };
-        vec![
-            (slots[0].clone(), Some(0)),
-            (ally, Some(0)),
-            (slots[1].clone(), Some(1)),
-            (slots[1].clone(), Some(1)),
-        ]
-    } else {
-        slots.iter().map(|s| (s.clone(), None)).collect()
     };
     let req = MatchRequest {
         rules: if choice.test_unlock {
@@ -203,10 +244,10 @@ pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, S
         seed: choice.seed,
         players: team_slots
             .iter()
-            .map(|(s, team)| PlayerRequest {
+            .map(|(s, team, d)| PlayerRequest {
                 faction: format!("{MOD_ID}:{}", s.faction),
                 ai: !s.human,
-                difficulty: d,
+                difficulty: *d,
                 team: *team,
             })
             .collect(),
@@ -280,20 +321,40 @@ mod tests {
         assert!(resolve(&m, &bad).is_err());
     }
 
+    /// S18: a 2v2 with two net slots is refused (S17 review O4 kept); with
+    /// four, the slots are the match: teams, humans and AI fill as named.
     #[test]
-    fn a_2v2_with_net_slots_is_refused() {
-        let slot = |f: &str| SlotChoice {
-            faction: f.into(),
-            human: true,
-        };
+    fn a_2v2_with_net_slots_needs_four() {
         let choice = MenuChoice {
             map: "harrow_cross".into(),
             mode: "2v2".into(),
-            slots: Some([slot("usa"), slot("germany")]),
+            slots: Some(vec![SlotChoice::human("usa"), SlotChoice::human("germany")]),
             ..MenuChoice::default()
         };
         let e = resolve(&mods(), &choice).unwrap_err();
         assert!(e.contains("2v2"), "{e}");
+        let slot = |f: &str, human: bool, team: u8| SlotChoice {
+            faction: f.into(),
+            human,
+            team: Some(team),
+            difficulty: (!human).then(|| "hard".into()),
+        };
+        let four = MenuChoice {
+            slots: Some(vec![
+                slot("usa", true, 0),
+                slot("usa", false, 0),
+                slot("germany", true, 1),
+                slot("usa", false, 1),
+            ]),
+            ..choice
+        };
+        let s = resolve(&mods(), &four).unwrap();
+        let team: Vec<u8> = s.players.iter().map(|p| p.team).collect();
+        assert_eq!(team, [0, 0, 1, 1]);
+        let ai: Vec<bool> = s.players.iter().map(|p| p.is_ai).collect();
+        assert_eq!(ai, [false, true, false, true]);
+        assert_eq!(s.players[1].difficulty, Difficulty::Hard);
+        assert_eq!(s.players[0].difficulty, Difficulty::Normal);
     }
 
     #[test]
@@ -301,16 +362,7 @@ mod tests {
         let choice = MenuChoice {
             faction: "usa".into(),
             seed: 9,
-            slots: Some([
-                SlotChoice {
-                    faction: "usa".into(),
-                    human: true,
-                },
-                SlotChoice {
-                    faction: "germany".into(),
-                    human: true,
-                },
-            ]),
+            slots: Some(vec![SlotChoice::human("usa"), SlotChoice::human("germany")]),
             ..MenuChoice::default()
         };
         let s = resolve(&mods(), &choice).unwrap();
