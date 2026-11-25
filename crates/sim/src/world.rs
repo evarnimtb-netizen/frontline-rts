@@ -1612,6 +1612,9 @@ impl World {
                 // S12 W4, W5: bandages, bleeding, bleed-outs (nothing with
                 // `[wounds] enabled` 0).
                 game.wounds_tick(&mut ctx, &mut self.state.stats, seed);
+                // S14 F6: men leave burning ground (nothing with `[flame]
+                // enabled` 0 or no patch).
+                game.step_out_tick(&mut ctx);
                 game.update_items(&mut self.state.entities, &mut self.hash);
                 // S5a: crew feed, sharing and the priced base refill.
                 let bombs_before = game.mortar_bombs_by_player(&self.state.entities);

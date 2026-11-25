@@ -667,6 +667,8 @@ fn patch_burns_any_owner() {
         let (mut w, sq, ..) = flame_scene(1, 0, |s| {
             // The patch also sets him burning: the control turns both off.
             (s.rules.flame.patch_hp_per_s, s.rules.flame.burn_hp_per_s) = (hp, hp);
+            // He stays in it (F6 is its own test).
+            s.rules.flame.step_out = 0;
         });
         steps(&mut w, 2);
         let victim = members(&w, sq)[5];
@@ -766,4 +768,165 @@ fn two_flamers_stay_in_cap() {
     }
     assert_eq!(fired, [true, true], "control: both fire");
     assert!(s14_of(&w, 0).flame_capped > 0);
+}
+
+// ------------------------------------------------------- F2 slit, F6 --
+
+/// Particles of player 1 thrown down through the bunker's slit (S10b
+/// layout: player 0's bunker at (500, 500) facing +x, five men in the pit,
+/// their heads under the slit's bottom) from 0.4 m in front of the front
+/// walls, 30-36 cm over the slit's bottom and across its width, flying at
+/// (-12, 0, -5) m/s; `[flame] enabled` 1. Returns (player 1's S14 counters, men of
+/// the five hurt). `closed`: the front walls meet (no slit).
+fn slit_flame(closed: bool) -> (crate::flame::S14Counters, usize) {
+    let mut w = super::s10b_tests::bunker_world(1, |d| {
+        if closed {
+            for k in [4, 5] {
+                d.pieces[k].half[1] = frontline_content::setup::Fixed::from_ratio(185, 200);
+                d.pieces[k].offset[1] = frontline_content::setup::Fixed::from_ratio(
+                    if k == 4 { -925 } else { 925 },
+                    1000,
+                );
+            }
+        }
+    });
+    game_mut(&mut w.state).setup.rules.flame.enabled = 1;
+    let (_, men) = super::s10b_tests::bunker_at(&mut w, true);
+    let before: Vec<u16> = men
+        .iter()
+        .map(|m| w.state.entities.combat[m.index()].hp)
+        .collect();
+    let bottom = super::s10b_tests::fs(&w)
+        .pieces
+        .values()
+        .find(|q| q.part == 4)
+        .unwrap()
+        .z;
+    let mut parts = Vec::new();
+    for (k, (dz, dy)) in [
+        (300, -250),
+        (320, 0),
+        (340, 250),
+        (360, -100),
+        (310, 100),
+        (330, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        parts.push(Flame {
+            id: k as u32,
+            pos: FxVec3::new(
+                Fx::from_int(502) + Fx::from_milli(300),
+                Fx::from_int(500) + Fx::from_milli(dy),
+                bottom + Fx::from_milli(dz),
+            ),
+            vel: FxVec3::new(Fx::from_int(-12), Fx::ZERO, Fx::from_int(-5)),
+            ttl: 60,
+            player: 1,
+            shooter: SimId(u32::MAX - 1),
+            weapon: 0,
+        });
+    }
+    assert!(w.stage_s14(parts, Vec::new()));
+    super::s10b_tests::hold(&mut w, &men, 60);
+    let hurt = men
+        .iter()
+        .zip(&before)
+        .filter(|(m, b)| {
+            w.state.entities.kind[m.index()] != crate::ecs::EntityKind::Soldier
+                || w.state.entities.combat[m.index()].hp < **b
+        })
+        .count();
+    (s14_of(&w, 1), hurt)
+}
+
+/// F2 (RE done-when 1, the bunker falls by geometry): particles through
+/// the slit gap strike the men inside (counted in `flame_in_bunker_hits`)
+/// or burn on the pit floor. Control: with the slit closed the front walls
+/// stop every particle: no hit, no man hurt.
+#[test]
+fn flame_through_the_slit_hits_men_inside() {
+    let (k, hurt) = slit_flame(false);
+    assert!(
+        k.flame_hits > 0 && hurt > 0,
+        "through the slit: {k:?}, {hurt} hurt"
+    );
+    assert_eq!(
+        k.flame_in_bunker_hits, k.flame_hits,
+        "every hit is under the roof"
+    );
+    let (k, hurt) = slit_flame(true);
+    assert_eq!((k.flame_hits, hurt), (0, 0), "control: closed slit");
+}
+
+/// F6: with `step_out` 1, men in formation whose feet are in burning
+/// ground take a detached move out of it and leave; with 0 they stay.
+/// Control: `step_out` 0.
+#[test]
+fn men_step_out_of_burning_ground() {
+    for so in [0u32, 1] {
+        let (mut w, sq, ..) = flame_scene(1, 0, |s| {
+            s.rules.flame.step_out = so;
+            (s.rules.flame.patch_hp_per_s, s.rules.flame.burn_hp_per_s) = (0, 0);
+        });
+        steps(&mut w, 2);
+        let m = members(&w, sq)[5];
+        let at = w.state.entities.transform[m.index()].pos;
+        let tick = w.tick();
+        let g = game_mut(&mut w.state);
+        g.patches = vec![Patch {
+            id: 0,
+            pos: at,
+            ends_at: tick + 900,
+            player: 1,
+            by: (1, kill_class::FLAME),
+        }];
+        g.next_patch = 1;
+        steps(&mut w, 150);
+        let now = w.state.entities.transform[m.index()].pos;
+        let away = (now.xy() - at.xy()).length();
+        let stepped = s14_of(&w, 0).stepped_out;
+        if so == 0 {
+            assert_eq!(stepped, 0, "control: no step-out");
+            assert!(away < Fx::ONE, "he stays ({away:?})");
+        } else {
+            assert!(stepped > 0 && w.state.entities.unit[m.index()].detached);
+            assert!(away > Fx::from_int(2), "he left the patch ({away:?})");
+        }
+    }
+}
+
+/// F6: a man with a move order of his own (detached, moving) and a gun
+/// crew or rider are left alone; only men in formation or idle step out.
+/// Control: the same man idle steps out (previous test).
+#[test]
+fn moving_man_does_not_step_out() {
+    let (mut w, sq, ..) = flame_scene(1, 0, |s| {
+        (s.rules.flame.patch_hp_per_s, s.rules.flame.burn_hp_per_s) = (0, 0);
+    });
+    steps(&mut w, 2);
+    let m = members(&w, sq)[5];
+    let at = w.state.entities.transform[m.index()].pos;
+    super::s6_tests::run(
+        &mut w,
+        0,
+        0,
+        CommandKind::MoveUnits {
+            units: vec![m],
+            target: FxVec2::from_int(200, 300),
+        },
+    );
+    let tick = w.tick();
+    let g = game_mut(&mut w.state);
+    g.patches = vec![Patch {
+        id: 0,
+        pos: at,
+        ends_at: tick + 900,
+        player: 1,
+        by: (1, kill_class::FLAME),
+    }];
+    g.next_patch = 1;
+    steps(&mut w, 30);
+    assert_eq!(s14_of(&w, 0).stepped_out, 0, "his own move is kept");
 }

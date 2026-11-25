@@ -18,7 +18,7 @@ fn fort(s: &frontline_content::MatchSetup, id: &str) -> u16 {
     s.forts.iter().position(|f| f.id == id).unwrap() as u16
 }
 
-fn fs(w: &World) -> &FortState {
+pub(super) fn fs(w: &World) -> &FortState {
     w.game().unwrap().fort()
 }
 
@@ -1761,7 +1761,10 @@ fn demolition_is_deterministic() {
 use super::s6_tests::{members, steps};
 
 /// A flat world (seed `seed`) with the bunker blueprint edited.
-fn bunker_world(seed: u64, edit: impl FnOnce(&mut frontline_content::setup::FortSetup)) -> World {
+pub(super) fn bunker_world(
+    seed: u64,
+    edit: impl FnOnce(&mut frontline_content::setup::FortSetup),
+) -> World {
     flat_world_with(1, |s| {
         s.seed = seed;
         // 250 kg carried by one squad (the cap is 20 kg a man).
@@ -1774,7 +1777,7 @@ fn bunker_world(seed: u64, edit: impl FnOnce(&mut frontline_content::setup::Fort
 /// A bunker of player 0 at (500, 500) facing +x: its pit dug, its pieces
 /// standing when `built`; five men of a grenadier squad in the pit along x
 /// (0.4 m apart around the centre), the rest 60 m off. (Pieces, the five.)
-fn bunker_at(w: &mut World, built: bool) -> (Vec<u32>, Vec<SimId>) {
+pub(super) fn bunker_at(w: &mut World, built: bool) -> (Vec<u32>, Vec<SimId>) {
     let s = w.match_setup().unwrap();
     let f = fort(s, "ww2:bunker");
     let half = Fx::from(s.rules.bunker_pit.pit_line).div_int(2);
@@ -1811,7 +1814,7 @@ fn piece_hp(w: &World, id: u32) -> Option<u32> {
 }
 
 /// Men of `men` dead (hp 0 or no longer a soldier).
-fn lost(w: &World, men: &[SimId]) -> usize {
+pub(super) fn lost(w: &World, men: &[SimId]) -> usize {
     men.iter()
         .filter(|m| {
             w.state.entities.kind[m.index()] != crate::ecs::EntityKind::Soldier
@@ -1821,7 +1824,7 @@ fn lost(w: &World, men: &[SimId]) -> usize {
 }
 
 /// Steps `ticks` holding `men` on their spots (they would run).
-fn hold(w: &mut World, men: &[SimId], ticks: u64) {
+pub(super) fn hold(w: &mut World, men: &[SimId], ticks: u64) {
     let spots: Vec<FxVec2> = men.iter().map(|&m| pos(w, m)).collect();
     for _ in 0..ticks {
         for (m, p) in men.iter().zip(&spots) {

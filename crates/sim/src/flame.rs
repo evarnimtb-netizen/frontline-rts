@@ -480,12 +480,23 @@ impl MatchState {
             c.close.burn_until = tick + burn_ticks;
             c.close.burn_by = (player, kill_class::FLAME);
             hash.mark_entity_chunk(id.chunk());
+            // Under cover: a static box (a roof) over his head within its
+            // footprint's reach (the bunker's men, RE done-when 1).
+            let at = ents.transform[i].pos;
+            let head = at.z + c.height;
+            let roofed = self.static_boxes().iter().any(|b| {
+                b.frame.center.z - b.frame.half.z >= head - Fx::from_milli(500)
+                    && (b.frame.center.xy() - at.xy()).length() <= b.reach
+            });
             let s14 = &mut self.players[player as usize].s14;
             s14.flame_hits += 1;
             if c.in_trench {
                 s14.flame_in_trench_hits += 1;
             }
-            landed.push((ents.transform[i].pos, player));
+            if roofed {
+                s14.flame_in_bunker_hits += 1;
+            }
+            landed.push((at, player));
         }
         // F5: landings make patches or refresh one within `patch_merge_cm`.
         let merge = Fx::from_int(f.patch_merge_cm as i32).div_int(100);
@@ -585,6 +596,78 @@ impl MatchState {
                     },
                 ));
             }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ F6 --
+
+impl MatchState {
+    /// The patch whose burning ground holds a man's feet at `p`, if any.
+    fn patch_at(&self, p: FxVec3) -> Option<&Patch> {
+        let f = &self.setup.rules.flame;
+        let radius = Fx::from_int(f.patch_radius_cm as i32).div_int(100);
+        let zmax = Fx::from_int(f.patch_z_cm as i32).div_int(100);
+        self.patches
+            .iter()
+            .find(|q| (p.xy() - q.pos.xy()).length() <= radius && (p.z - q.pos.z).abs() <= zmax)
+    }
+
+    /// S14 F6 (Status stage, ascending id): with `[flame] step_out` 1, a
+    /// soldier whose feet are in a patch and who has no move order of his
+    /// own (in formation, or detached and idle) takes a detached move to
+    /// the first of 8 points `step_out_m` beyond that patch's edge, from
+    /// the direction away from its centre in ascending 45° steps, that is
+    /// on the map and in no patch. Riders and gun crews stay. He rejoins
+    /// at his squad's next order (the S12 detached rule).
+    pub(crate) fn step_out_tick(&mut self, ctx: &mut crate::game::Ctx) {
+        let f = &self.setup.rules.flame;
+        if f.enabled == 0 || f.step_out == 0 || self.patches.is_empty() {
+            return;
+        }
+        let out =
+            Fx::from_int(f.patch_radius_cm as i32).div_int(100) + Fx::from_int(f.step_out_m as i32);
+        let size = Fx::from_int(self.setup.map.size_m);
+        let (c45, s45) = (Fx::from_milli(707), Fx::from_milli(707));
+        let mut moves: Vec<(SimId, FxVec2)> = Vec::new();
+        for i in 0..ctx.ents.kind.len() {
+            if ctx.ents.kind[i] != EntityKind::Soldier || ctx.ents.squad[i].is_none() {
+                continue;
+            }
+            let u = &ctx.ents.unit[i];
+            if u.riding.is_some()
+                || u.serving.is_some()
+                || (u.detached && u.order != crate::unit::UnitOrder::Idle)
+            {
+                continue;
+            }
+            let pos = ctx.ents.transform[i].pos;
+            let Some(q) = self.patch_at(pos) else {
+                continue;
+            };
+            let mut dir = (pos.xy() - q.pos.xy()).normalize_or_zero();
+            if dir == FxVec2::ZERO {
+                dir = FxVec2::new(Fx::ONE, Fx::ZERO);
+            }
+            let centre = q.pos;
+            for _ in 0..8 {
+                let to = centre.xy() + FxVec2::new(dir.x.mul(out), dir.y.mul(out));
+                let on = to.x >= Fx::ZERO && to.y >= Fx::ZERO && to.x <= size && to.y <= size;
+                let z = ctx.terrain.height_at(to);
+                if on && self.patch_at(FxVec3::new(to.x, to.y, z)).is_none() {
+                    moves.push((SimId(i as u32), to));
+                    break;
+                }
+                dir = FxVec2::new(
+                    dir.x.mul(c45) - dir.y.mul(s45),
+                    dir.x.mul(s45) + dir.y.mul(c45),
+                );
+            }
+        }
+        for (m, to) in moves {
+            let owner = ctx.ents.owner[m.index()].0 as usize;
+            self.players[owner].s14.stepped_out += 1;
+            self.send_man(ctx, m, to);
         }
     }
 }
