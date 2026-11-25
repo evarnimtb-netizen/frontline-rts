@@ -391,6 +391,9 @@ fn finish_unit(
             has(WeaponClass::Launcher) || single_shot,
             "a launcher or a single-shot AT item",
         ),
+        // S14 (plan 4.2): any member, either side of a `when` pair (the
+        // setup keeps it only when a kept member carries one).
+        ("flame", has(WeaponClass::Flame), "a flame weapon"),
     ];
     for (cap, yes, what) in derived {
         debug_assert!(DERIVED_CAPABILITIES.contains(&cap));
@@ -1839,7 +1842,12 @@ impl ModDefs {
         // carrier, and only when the launcher is the main weapon (the first
         // crew weapon among the members, else the leader's weapon).
         if launcher {
-            let crew = |w: &str| self.weapons.get(w).is_some_and(|d| d.is_crew_weapon());
+            // S14: a flamethrower is never the main weapon (setup.rs).
+            let crew = |w: &str| {
+                self.weapons
+                    .get(w)
+                    .is_some_and(|d| d.is_crew_weapon() && d.class != WeaponClass::Flame)
+            };
             let main = s
                 .members
                 .iter()

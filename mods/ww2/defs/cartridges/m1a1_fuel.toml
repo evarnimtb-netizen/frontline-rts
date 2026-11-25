@@ -1,0 +1,13 @@
+# Thickened fuel (napalm and petrol) for the M1A1 portable flamethrower (S14
+# plan 4.1, F7): one unit is one flame particle, about 0.165 L (17.8 L over
+# 108 particles, density about 0.78: 130 g). Resupplied at the base like
+# explosives (one unit per `[flame] base_refill_ms`), priced as explosives
+# (D1). No calibre: 1 stands for "none" (the field is for the docs and the
+# HUD).
+id = "ww2:m1a1_fuel"
+name = "Thickened fuel (M1A1)"
+caliber_mm = 1
+supply = { kind = "explosives", g = 130 }
+sources = [
+    "Wikipedia, M1 flamethrower (4.7-5 US gal, thickened fuel, about 0.5 gal/s)",
+]

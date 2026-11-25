@@ -476,6 +476,59 @@ fn flame_scene(
     (w, sq, man, wi)
 }
 
+/// A flat match resolved with `[flame] enabled` 1 (so the cards' `when`
+/// pairs give the mod's flame men: `fmw41`, `m1a1_flamethrower`), then
+/// `edit` applied to the setup.
+fn real_flame_world(edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> World {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let mut defs = frontline_content::ModDefs::load(&root).unwrap();
+    for r in defs.rules.values_mut() {
+        r.flame.get_or_insert_with(Default::default).enabled = 1;
+    }
+    let req = frontline_content::MatchRequest::skirmish(
+        1,
+        "ww2:germany",
+        "ww2:usa",
+        frontline_content::Difficulty::Normal,
+    );
+    let mut setup = defs.resolve(&req).unwrap();
+    setup.players.iter_mut().for_each(|p| p.is_ai = false);
+    setup.map.terrain.octaves.clear();
+    setup.map.terrain.bands.clear();
+    setup.map.woods.clear();
+    setup.s11b_off();
+    setup.s12_off();
+    setup.s13_off();
+    edit(&mut setup);
+    World::new_match(setup, 1).unwrap()
+}
+
+const STURM: &str = "ww2:ger_sturmpioniergruppe";
+
+/// A Sturmpioniergruppe of player `p` at (`x`, `y`): (squad, its flame man,
+/// his weapon, its fuel feed slot, the man with `crew_assistant`).
+fn sturm(w: &mut World, p: u8, x: i32, y: i32) -> (SquadId, SimId, u16, usize, SimId) {
+    let sq = spawn(w, p, STURM, x, y);
+    let s = w.match_setup().unwrap();
+    let t = s.squad_type_index(STURM).unwrap() as usize;
+    let ty = &s.squad_types[t];
+    let wi = s.weapons.iter().position(|x| x.id == "ww2:fmw41").unwrap() as u16;
+    let k = ty.feed_slot(&s.weapons[wi as usize]).expect("a fuel feed");
+    let ms = members(w, sq);
+    let man = *ms
+        .iter()
+        .find(|m| w.state.entities.kit[m.index()].weapon == wi)
+        .expect("a flame man");
+    let helper = *ms
+        .iter()
+        .find(|m| {
+            let slot = w.state.entities.kit[m.index()].slot as usize;
+            ty.members[slot].traits & frontline_content::setup::member_trait::CREW_ASSISTANT != 0
+        })
+        .expect("an assistant");
+    (sq, man, wi, k, helper)
+}
+
 fn s14_of(w: &World, p: usize) -> crate::flame::S14Counters {
     w.game().unwrap().players[p].s14.clone()
 }
@@ -584,28 +637,29 @@ fn flame_hits_burn_and_credit_flame() {
     }
 }
 
-/// Risk 7 (S4 crew-weapon pickup): the flame man falls with fuel in his
-/// tank; the crew assistant takes the flamethrower with exactly that
-/// fuel. Control: the fuel he had is not the full tank (a fresh tank would
-/// pass a weaker check).
+/// Risk 7 (S4 crew-weapon pickup), with the mod's data: the
+/// Sturmpioniergruppe's Flammenwerfer 41 operator falls with fuel in his
+/// tank; the `flammenwerfer_helfer` (`crew_assistant`) takes the
+/// flamethrower with exactly that fuel. Control: the fuel he had is not the
+/// full tank (a fresh tank would pass a weaker check).
 #[test]
 fn flame_handover_keeps_fuel() {
-    let (mut w, sq, man, wi) = flame_scene(1, 0, |_| {});
+    let mut w = real_flame_world(|_| {});
+    let (_sq, man, wi, _k, helper) = sturm(&mut w, 0, 300, 300);
     steps(&mut w, 3);
     assert!(w.edit_soldier(man, |_, c| c.mag = 23));
-    let assistant = members(&w, sq)[2];
     assert!(w.kill_soldier(man));
     let mut took = false;
     for _ in 0..600 {
         w.step(&[]);
-        if w.state.entities.kit[assistant.index()].weapon == wi {
+        if w.state.entities.kit[helper.index()].weapon == wi {
             took = true;
             break;
         }
     }
     assert!(took, "the assistant takes the flamethrower");
     assert_eq!(
-        w.state.entities.combat[assistant.index()].mag,
+        w.state.entities.combat[helper.index()].mag,
         23,
         "his fuel is the fallen man's"
     );
@@ -698,50 +752,58 @@ fn patch_burns_any_owner() {
 }
 
 /// F9 (RE done-when 2, plan 3.2): a pool saturated by staged rifle fire
-/// (40 rounds a tick) and three mortar bombs; two flame men `SuppressUnits`
-/// at empty ground 20 m in front of them (inside the flamethrower's 30 m),
+/// (40 rounds a tick) and three mortar bombs; two flame men (the mod's
+/// Flammenwerfer 41) `SuppressUnits` at empty ground 20 m in front of them
+/// (inside its 30 m),
 /// 50 m from the pool fire. With `[flame] enabled` 1 they fire particles,
 /// with 0 they hold; pool drops, staged rounds refused and every pool slot
 /// (every shell among them) are equal tick for tick, and live particles
 /// stay within the cap. Control: the run with the switch on does fire.
 #[test]
 fn flame_never_takes_pool_slots() {
-    let scene = |on| {
-        let (mut w, sq, man, wi) = flame_scene(on, 0, |s| {
+    // Two Sturmpioniergruppen resolved with flame (the mod's
+    // Flammenwerfer 41, 30 m); the switch then set to `on`.
+    let scene = |on: u32| {
+        let mut w = real_flame_world(|s| {
+            s.rules.flame.enabled = on;
             s.rules.projectile_cap = 72;
-            let f = s.weapons.last_mut().unwrap();
             // No reveal: their fire must not change what the enemy sees.
-            (f.fire_reveal_pct, f.fire_reveal_ticks) = (100, 0);
-            let t = s.squad_type_index(RIFLES).unwrap() as usize;
-            let w = s.weapons.len() as u16 - 1;
-            s.squad_types[t].members[3].weapon = w;
+            for x in s
+                .weapons
+                .iter_mut()
+                .filter(|x| x.class == frontline_content::WeaponClass::Flame)
+            {
+                (x.fire_reveal_pct, x.fire_reveal_ticks) = (100, 0);
+            }
         });
-        let second = members(&w, sq)[3];
-        assert_eq!(w.state.entities.kit[second.index()].weapon, wi);
+        let (_, a, ..) = sturm(&mut w, 0, 296, 300);
+        let (_, b, ..) = sturm(&mut w, 0, 304, 300);
+        // Each flame man walks last in his file: put them 20 m from the
+        // line (they then hold there on the order).
+        assert!(w.place_soldier(a, FxVec2::from_int(298, 300)));
+        assert!(w.place_soldier(b, FxVec2::from_int(306, 300)));
         let line = vec![FxVec2::from_int(300, 320), FxVec2::from_int(304, 320)];
         super::s6_tests::run(
             &mut w,
             0,
             0,
             CommandKind::SuppressUnits {
-                units: vec![man, second],
+                units: vec![a, b],
                 line,
             },
         );
         w
     };
-    let setup = scene(1).match_setup().unwrap().clone();
-    let rifle = setup
-        .weapons
-        .iter()
-        .position(|x| x.id == "ww2:kar98k")
-        .unwrap() as u16;
-    let mortar = setup
-        .weapons
-        .iter()
-        .position(|x| x.id == "ww2:grw34")
-        .unwrap() as u16;
     let (mut on, mut off) = (scene(1), scene(0));
+    let wpn = |id: &str| {
+        on.match_setup()
+            .unwrap()
+            .weapons
+            .iter()
+            .position(|x| x.id == id)
+            .unwrap() as u16
+    };
+    let (rifle, mortar) = (wpn("ww2:kar98k"), wpn("ww2:grw34"));
     let mut peak = 0;
     let mut refused = [0u32; 2];
     for t in 0..300u64 {
@@ -977,74 +1039,45 @@ fn moving_man_does_not_step_out() {
 
 // ------------------------------------------------------------- F7 fuel --
 
-/// A test-made fuel cartridge (supply kind explosives, `g` grams a unit)
-/// as the test flamer's feed: a new feed slot of the flamer squad type,
-/// the flame man's load one tank (`magazine`). Returns the feed slot.
-/// Build B replaces it with the mod's fuel cartridges.
-fn fuel_cartridge(s: &mut frontline_content::MatchSetup, wi: u16, g: u32) -> usize {
-    use frontline_content::setup::{CartridgeSetup, Feed};
-    s.cartridges.push(CartridgeSetup {
-        id: "test:fuel".into(),
-        name: "test fuel".into(),
-        kind: frontline_content::SupplyKind::Explosives,
-        g,
-    });
-    let feed = Feed::Cartridge((s.cartridges.len() - 1) as u16);
-    let w = &mut s.weapons[wi as usize];
-    w.feed = Some(feed);
-    let tank = w.magazine as u16;
-    let t = s.squad_type_index(RIFLES).unwrap() as usize;
-    let ty = &mut s.squad_types[t];
-    let k = ty.feeds.len();
-    assert!(k < frontline_content::setup::MAX_FEEDS, "a free feed slot");
-    ty.feeds.push(feed);
-    ty.members[1].rounds[k] = tank;
-    ty.feed_cap[k] = ty.feed_cap[k].max(tank);
-    k
-}
-
-/// F7: fuel is an explosives-kind cartridge, so the S5a base refill serves
-/// it with no flame code: a dry flame man in his own base gets fuel back,
-/// each unit paid at `explosives_mp_per_t` for its grams (`paid` and
-/// `refilled` of the explosives kind grow together). Control: the same dry
-/// man 150 m out of his base gets none and pays nothing. Seen: the base
-/// serves it at the bomb cadence `max(base_bomb_s * hz, 1)`, so with
-/// `base_bomb_s` 0 one unit a tick (a 60-unit tank in 2 s), not the
-/// plan's one unit per 2 s (S14-log, for Build B and the owner).
+/// F7, with the mod's data: `fmw41_fuel` is an explosives-kind cartridge,
+/// so the S5a base refill serves it: a dry flame man in his own base gets
+/// fuel back, each unit paid at `explosives_mp_per_t` for its 100 g
+/// (`paid` and `refilled` of the explosives kind grow together). Control:
+/// the same dry man 150 m out of his base gets none and pays nothing.
 #[test]
 fn flame_fuel_resupplies_as_explosives() {
-    let g = 200;
     for home in [false, true] {
-        let (mut wi, mut k) = (0, 0);
-        let mut w = flat_world_with(1, |s| {
-            wi = make_flamer(s);
-            k = fuel_cartridge(s, wi, g);
-        });
+        let mut w = real_flame_world(|_| {});
         let b = w.game().unwrap().base_of(PlayerId(0));
         let at = if home {
             b
         } else {
             b + FxVec2::from_int(150, 0)
         };
-        let sq = spawn(&mut w, 0, RIFLES, at.x.floor_int(), at.y.floor_int());
-        let man = members(&w, sq)[1];
-        assert_eq!(w.state.entities.kit[man.index()].weapon, wi);
+        let (_sq, man, _wi, k, _) = sturm(&mut w, 0, at.x.floor_int(), at.y.floor_int());
         assert!(w.edit_soldier(man, |kit, c| {
             kit.rounds[k] = 0;
             c.mag = 0;
         }));
         let ex = frontline_content::SupplyKind::Explosives as usize;
         let a0 = w.game().unwrap().players[0].ammo;
-        steps(&mut w, 4 * super::s6_tests::HZ);
+        steps(&mut w, 8 * super::s6_tests::HZ);
         let a1 = &w.game().unwrap().players[0].ammo;
-        let fuel = w.state.entities.kit[man.index()].rounds[k] as u32
-            + w.state.entities.combat[man.index()].mag as u32;
+        // Fuel in the tank counts only while he holds it (dry, he draws his
+        // P 38: its magazine is not fuel).
+        let kit = &w.state.entities.kit[man.index()];
+        let fuel = kit.rounds[k] as u32
+            + if kit.on_sidearm {
+                0
+            } else {
+                w.state.entities.combat[man.index()].mag as u32
+            };
         let units = a1.refilled[ex] - a0.refilled[ex];
         let paid = a1.paid[ex] - a0.paid[ex];
         let price = crate::supply::micro_price(
             w.match_setup().unwrap(),
             frontline_content::SupplyKind::Explosives,
-            g,
+            100,
         );
         if home {
             assert!(
@@ -1308,22 +1341,16 @@ fn flame_on_a_box_top_makes_a_patch() {
     }
 }
 
-/// F7 (checker 4): the own base refills fuel one unit per `[flame]
-/// base_refill_ms`. Control: 500 ms refills four times as many as the
-/// default 2000 ms in the same 4 s.
+/// F7 (checker 4), with the mod's data: the own base refills a dry
+/// Flammenwerfer 41 one unit per `[flame] base_refill_ms`. Control: 500 ms
+/// refills four times as many as the default 2000 ms in the same 4 s.
 #[test]
 fn flame_fuel_refills_at_base_refill_ms() {
     let mut got = Vec::new();
     for ms in [2000u32, 500] {
-        let (mut wi, mut k) = (0, 0);
-        let mut w = flat_world_with(1, |s| {
-            wi = make_flamer(s);
-            k = fuel_cartridge(s, wi, 200);
-            s.rules.flame.base_refill_ms = ms;
-        });
+        let mut w = real_flame_world(|s| s.rules.flame.base_refill_ms = ms);
         let b = w.game().unwrap().base_of(PlayerId(0));
-        let sq = spawn(&mut w, 0, RIFLES, b.x.floor_int(), b.y.floor_int());
-        let man = members(&w, sq)[1];
+        let (_sq, man, _wi, k, _) = sturm(&mut w, 0, b.x.floor_int(), b.y.floor_int());
         assert!(w.edit_soldier(man, |kit, c| {
             kit.rounds[k] = 0;
             c.mag = 0;
@@ -1344,22 +1371,21 @@ fn flame_fuel_refills_at_base_refill_ms() {
     assert!(got[1] >= 3 * got[0], "control: {got:?}");
 }
 
-/// F1 (checker 7): a flame man with an empty tank and no fuel left draws
-/// his sidearm (the S5a rule) and fires no particle. Control: with fuel
-/// he fires particles and keeps the flamethrower.
+/// F1 (checker 7), with the mod's data: the Flammenwerfer 41 operator with
+/// an empty tank and no fuel left draws his P 38 (the S5a rule) and fires
+/// no particle. Control: with fuel he fires particles and keeps the
+/// flamethrower.
 #[test]
 fn dry_flamer_draws_his_sidearm() {
     for dry in [false, true] {
-        // His own fuel feed (no squadmate carries it to share).
-        let mut k = 0;
-        let (mut w, _sq, man, _wi) = flame_scene(1, 14, |s| {
-            let wi = s.weapons.len() as u16 - 1;
-            k = fuel_cartridge(s, wi, 200);
-        });
+        let mut w = real_flame_world(|_| {});
+        let (_sq, man, _wi, k, _) = sturm(&mut w, 0, 300, 300);
+        spawn(&mut w, 1, US_RIFLES, 314, 300);
         let s = w.match_setup().unwrap();
-        let t = s.squad_type_index(RIFLES).unwrap() as usize;
+        let t = s.squad_type_index(STURM).unwrap() as usize;
+        let slot = w.state.entities.kit[man.index()].slot as usize;
         assert!(
-            s.squad_types[t].members[1].sidearm.is_some(),
+            s.squad_types[t].members[slot].sidearm.is_some(),
             "he carries a P 38"
         );
         if dry {

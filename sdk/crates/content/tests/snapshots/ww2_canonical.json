@@ -4710,7 +4710,8 @@
         "clear_wire",
         "breach",
         "clear_mines",
-        "demolish"
+        "demolish",
+        "flame"
       ],
       "cooldown_s": 60,
       "cost": 264,
@@ -4747,8 +4748,21 @@
           "items": {
             "ww2:stielhandgranate": 2
           },
-          "slot": "sturmpionier_stg",
-          "weapon": "ww2:stg44"
+          "slot": "flammenwerfer_helfer",
+          "weapon": "ww2:stg44",
+          "when": "flame_off"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:stielhandgranate": 2
+          },
+          "slot": "flammenwerfer_helfer",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:stg44",
+          "when": "flame_on"
         },
         {
           "count": 1,
@@ -4773,8 +4787,22 @@
           "items": {
             "ww2:stielhandgranate": 2
           },
-          "slot": "sturmpionier_smg",
-          "weapon": "ww2:mp40"
+          "slot": "flammenwerfer",
+          "weapon": "ww2:mp40",
+          "when": "flame_off"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:stielhandgranate": 2
+          },
+          "sidearm": "ww2:p38",
+          "slot": "flammenwerfer",
+          "traits": [
+            "crew_gunner"
+          ],
+          "weapon": "ww2:fmw41",
+          "when": "flame_on"
         }
       ],
       "men": 0,
@@ -5543,7 +5571,8 @@
         "at_hunt",
         "clear_wire",
         "breach",
-        "clear_mines"
+        "clear_mines",
+        "flame"
       ],
       "cooldown_s": 60,
       "cost": 380,
@@ -5566,7 +5595,7 @@
           "weapon": "ww2:m1_garand"
         },
         {
-          "count": 2,
+          "count": 1,
           "items": {
             "ww2:m15_smoke": 1,
             "ww2:mk2_grenade": 1
@@ -5575,12 +5604,57 @@
           "weapon": "ww2:m1_garand"
         },
         {
-          "count": 3,
+          "count": 1,
+          "items": {
+            "ww2:m15_smoke": 1,
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "rifleman_smoke_flame",
+          "weapon": "ww2:m1_garand",
+          "when": "flame_off"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:m15_smoke": 1,
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "rifleman_smoke_flame",
+          "traits": [
+            "crew_assistant"
+          ],
+          "weapon": "ww2:m1_garand",
+          "when": "flame_on"
+        },
+        {
+          "count": 2,
           "items": {
             "ww2:mk2_grenade": 1
           },
           "slot": "rifleman",
           "weapon": "ww2:m1_garand"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "slot": "rifleman_flame",
+          "weapon": "ww2:m1_garand",
+          "when": "flame_off"
+        },
+        {
+          "count": 1,
+          "items": {
+            "ww2:mk2_grenade": 1
+          },
+          "sidearm": "ww2:m1911a1",
+          "slot": "rifleman_flame",
+          "traits": [
+            "crew_gunner"
+          ],
+          "weapon": "ww2:m1a1_flamethrower",
+          "when": "flame_on"
         },
         {
           "count": 1,
@@ -17975,6 +18049,38 @@
       "spread_urad": 0,
       "suppression": 10
     },
+    "ww2:fmw41": {
+      "burst_pause_ms": 1000,
+      "burst_rounds": 12,
+      "class": "flame",
+      "crew_weapon": true,
+      "damage": 20,
+      "feed": "ww2:fmw41_fuel",
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 5000,
+      "hold_beyond_pct": 100,
+      "id": "ww2:fmw41",
+      "load": 120,
+      "magazine": 120,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 25,
+      "name": "Flammenwerfer 41",
+      "range_m": 30,
+      "reload_ms": 0,
+      "rounds_carried": 0,
+      "rounds_per_min": 720,
+      "setup_ms": 0,
+      "short_name": "FmW 41",
+      "sources": [
+        "Wikipedia, Flammenwerfer 41 (11.8 L, 32 m, 28.7 kg loaded, cartridge igniter)",
+        "dday-overlord.com, Flammenwerfer 41 (about 10 s of fire, 32 m)",
+        "US Intelligence Bulletin, April 1944, Portable Flame Throwers (German) (lonesentry.com): 25 yd, pillbox use"
+      ],
+      "spread_mrad": 60,
+      "spread_urad": 0,
+      "suppression": 35
+    },
     "ww2:grw34": {
       "class": "mortar",
       "damage": 150,
@@ -18596,6 +18702,69 @@
       "spread_mrad": 0,
       "spread_urad": 2500,
       "suppression": 30
+    },
+    "ww2:m1a1_flamethrower": {
+      "burst_pause_ms": 1000,
+      "burst_rounds": 12,
+      "class": "flame",
+      "crew_weapon": true,
+      "damage": 20,
+      "feed": "ww2:m1a1_fuel",
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 5000,
+      "hold_beyond_pct": 100,
+      "id": "ww2:m1a1_flamethrower",
+      "load": 108,
+      "magazine": 108,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 27,
+      "name": "M1A1 flamethrower",
+      "range_m": 35,
+      "reload_ms": 0,
+      "rounds_carried": 0,
+      "rounds_per_min": 720,
+      "setup_ms": 0,
+      "short_name": "M1A1 flamer",
+      "sources": [
+        "Wikipedia, M1 flamethrower (4.7-5 US gal thickened, about 0.5 gal/s, 20 m effective, 43-45 m max)",
+        "Wikipedia, M1 flamethrower (about 150 landed on D-Day)"
+      ],
+      "spread_mrad": 60,
+      "spread_urad": 0,
+      "suppression": 35
+    },
+    "ww2:m2_2_flamethrower": {
+      "burst_pause_ms": 1000,
+      "burst_rounds": 17,
+      "class": "flame",
+      "crew_weapon": true,
+      "damage": 20,
+      "feed": "ww2:m1a1_fuel",
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 5000,
+      "hold_beyond_pct": 100,
+      "id": "ww2:m2_2_flamethrower",
+      "load": 84,
+      "magazine": 84,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 27,
+      "name": "M2-2 flamethrower",
+      "range_m": 40,
+      "reload_ms": 0,
+      "rounds_carried": 0,
+      "rounds_per_min": 720,
+      "setup_ms": 0,
+      "short_name": "M2-2 flamer",
+      "sources": [
+        "Wikipedia, M2 flamethrower (4 US gal in two tanks, 0.5 gal/s, 20 m effective, 40 m max)",
+        "dday-overlord.com, M2 flamethrower",
+        "TM 3-376A, Portable Flame Thrower M2-2 (5 igniter cartridges a load; verify)"
+      ],
+      "spread_mrad": 60,
+      "spread_urad": 0,
+      "suppression": 35
     },
     "ww2:m2_60mm": {
       "class": "mortar",

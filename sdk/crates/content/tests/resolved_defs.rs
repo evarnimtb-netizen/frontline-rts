@@ -527,3 +527,89 @@ fn legacy_cards_expand_to_todays_men() {
     assert!(d.training["ww2:training_regular"].is_regular());
     assert!(!d.training["ww2:training_conscript"].is_regular());
 }
+
+/// One man a member slot of a card, slot names cleared (`count` 1 each).
+fn man_for_man(s: &mut MatchSetup) {
+    for t in &mut s.squad_types {
+        let mut men = Vec::new();
+        for m in &t.members {
+            for _ in 0..m.count {
+                let mut one = m.clone();
+                one.slot.clear();
+                one.count = 1;
+                men.push(one);
+            }
+        }
+        t.members = men;
+    }
+}
+
+/// S14 plan 4.2: with `[flame] enabled` 0 the Sturmpioniergruppe and the
+/// Assault Section spawn exactly the men of `<BASE>` (a27ce63), man for
+/// man (weapon, sidearm, items, traits, rounds), and the whole setup is
+/// otherwise equal: the reference is the live mod with those two cards'
+/// members put back from `fixtures/s14_base/`. With 1 each card has a flame
+/// man and the derived `flame` capability. Control: the flame-on setup
+/// differs from the reference.
+#[test]
+fn flame_off_cards_spawn_todays_men() {
+    use frontline_content::MemberDef;
+    use frontline_content::setup::Capability;
+    let cards = [
+        ("ww2:ger_sturmpioniergruppe", "ger_sturmpioniergruppe.toml"),
+        ("ww2:usa_assault_section", "usa_assault_section.toml"),
+    ];
+    let live = live();
+    let mut base = live.clone();
+    for (id, file) in cards {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/s14_base")
+            .join(file);
+        let raw: toml::Value = toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let members: Vec<MemberDef> = raw["members"].clone().try_into().unwrap();
+        let d = base.squads.get_mut(id).unwrap();
+        d.members = members;
+        d.capabilities.retain(|c| c != "flame");
+    }
+    let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let mut got = live.resolve(&req).unwrap();
+    let mut want = base.resolve(&req).unwrap();
+    assert_eq!(got.rules.flame.enabled, 0, "the shipped switch is off");
+    for (id, _) in cards {
+        let t = got.squad_type_index(id).unwrap() as usize;
+        assert!(!got.squad_types[t].has(Capability::Flame), "{id}: no flame");
+    }
+    man_for_man(&mut got);
+    man_for_man(&mut want);
+    for (id, _) in cards {
+        let t = got.squad_type_index(id).unwrap() as usize;
+        assert_eq!(got.squad_types[t], want.squad_types[t], "{id} man for man");
+    }
+    assert!(got == want, "the setups differ outside the two cards");
+    // Flame on: a flame man, his assistant, the capability.
+    let mut on = live.clone();
+    on.rules
+        .values_mut()
+        .for_each(|r| r.flame.get_or_insert_with(Default::default).enabled = 1);
+    let mut lit = on.resolve(&req).unwrap();
+    for (id, _) in cards {
+        let t = lit.squad_type_index(id).unwrap() as usize;
+        let ty = &lit.squad_types[t];
+        assert!(ty.has(Capability::Flame), "{id}: flame");
+        let flame = ty
+            .members
+            .iter()
+            .filter(|m| {
+                lit.weapons[m.weapon as usize].class == frontline_content::WeaponClass::Flame
+            })
+            .count();
+        assert_eq!(flame, 1, "{id}: one flame man");
+        assert_eq!(
+            ty.men,
+            if id.contains("sturm") { 8 } else { 12 },
+            "{id}: size kept"
+        );
+    }
+    man_for_man(&mut lit);
+    assert!(lit != want, "control: flame on differs");
+}

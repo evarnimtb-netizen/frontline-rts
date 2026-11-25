@@ -110,7 +110,7 @@ pub const TRAITS: [&str; 7] = [
 pub const RESERVED_TRAITS: [&str; 2] = ["officer", "sniper"];
 
 /// Capabilities in S4, in canonical order.
-pub const CAPABILITIES: [&str; 15] = [
+pub const CAPABILITIES: [&str; 16] = [
     "dig_basic",
     "dig_full",
     "fire_mission",
@@ -126,12 +126,15 @@ pub const CAPABILITIES: [&str; 15] = [
     "place_mines",
     "clear_mines",
     "demolish",
+    // S14 (plan 4.2): a member carries a flame weapon (derived from the
+    // members left after the `when` filter).
+    "flame",
 ];
 /// Capabilities the content crate derives from the members' weapons
 /// (setting them is allowed only when the weapons give them).
-pub const DERIVED_CAPABILITIES: [&str; 2] = ["fire_mission", "at_hunt"];
+pub const DERIVED_CAPABILITIES: [&str; 3] = ["fire_mission", "at_hunt", "flame"];
 /// Capabilities reserved for later slices.
-pub const RESERVED_CAPABILITIES: [&str; 5] = ["observe", "radio", "medic", "issue_crates", "flame"];
+pub const RESERVED_CAPABILITIES: [&str; 4] = ["observe", "radio", "medic", "issue_crates"];
 
 /// Tags with an engine meaning: `vehicle` (must equal "has a vehicle"),
 /// `crew` (never in a roster or start squads), `at` (AI gate after the

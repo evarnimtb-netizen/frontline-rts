@@ -1,0 +1,45 @@
+# Flammenwerfer 41 (S14 plan 4.1): the German pioneers' portable
+# flamethrower. It fires flame particles (`class = "flame"`, F1: never pool
+# rounds) like an MG fires bursts; its tank is its magazine (no reload) and
+# its feed the fuel. With `[flame] enabled` 0 no card spawns it (the `when`
+# pairs of the Sturmpioniergruppe) and it would not fire.
+# Game reading (S14-research-history.md 1): 11.8 L over about 10 s at 12
+# particles a second = 120 particles; 32 m effective (25 yd by the US
+# bulletin): 30 m; about 10 ignitions a load: bursts of 12 (1 s), 1 s apart.
+# Every number is a lever for a later balance pass (owner 2026-11-25).
+id = "ww2:fmw41"
+name = "Flammenwerfer 41"
+short_name = "FmW 41"
+class = "flame"
+feed = "ww2:fmw41_fuel"
+# One full tank (units), all of it in the weapon.
+load = 120
+sources = [
+    "Wikipedia, Flammenwerfer 41 (11.8 L, 32 m, 28.7 kg loaded, cartridge igniter)",
+    "dday-overlord.com, Flammenwerfer 41 (about 10 s of fire, 32 m)",
+    "US Intelligence Bulletin, April 1944, Portable Flame Throwers (German) (lonesentry.com): 25 yd, pillbox use",
+]
+range_m = 30
+# A particle's damage on contact (F3 then burns him).
+damage = 20
+# 12 particles a second.
+rounds_per_min = 720
+# The tank: no reload in the field (refilled at the base, F7).
+magazine = 120
+reload_ms = 0
+spread_mrad = 60
+# Particle speed (m/s): 30 m in about 1.2 s.
+muzzle_velocity_m_s = 25
+# Two near misses pin (F4).
+suppression = 35
+# Fire reveals the operator widely for 5 s.
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+# A crew weapon: the assistant takes it up (F1, risk 7).
+crew_weapon = true
+handover_ms = 5000
+# One ignition a second: bursts of 12 particles, 1 s apart.
+burst_rounds = 12
+burst_pause_ms = 1000
+# Opens fire at any range up to `range_m`.
+hold_beyond_pct = 100

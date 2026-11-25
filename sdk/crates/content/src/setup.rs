@@ -1189,10 +1189,13 @@ pub enum Capability {
     ClearMines = 13,
     /// S10b: demolish obstacles and pieces with a satchel.
     Demolish = 14,
+    /// S14 (plan 4.2): a member carries a flame weapon (derived from the
+    /// members the `when` filter keeps: never with `[flame] enabled` 0).
+    Flame = 15,
 }
 
 impl Capability {
-    pub const ALL: [Capability; 15] = [
+    pub const ALL: [Capability; 16] = [
         Capability::DigBasic,
         Capability::DigFull,
         Capability::FireMission,
@@ -1208,6 +1211,7 @@ impl Capability {
         Capability::PlaceMines,
         Capability::ClearMines,
         Capability::Demolish,
+        Capability::Flame,
     ];
 
     #[inline]
@@ -1221,7 +1225,7 @@ impl Capability {
     }
 
     /// Every capability bit.
-    pub const MASK: u32 = (1 << 15) - 1;
+    pub const MASK: u32 = (1 << 16) - 1;
 }
 
 /// S4: one `[[members]]` slot, lowered.
@@ -1312,7 +1316,8 @@ pub struct SquadTypeSetup {
     pub men: u8,
     /// The squad's main weapon (index into [`MatchSetup::weapons`]): a
     /// vehicle's main gun; else the first crew weapon among the members
-    /// (launcher, mortar, MG), else the leader's weapon.
+    /// (launcher, mortar, MG; S14: never a flamethrower), else the leader's
+    /// weapon.
     pub weapon: u16,
     /// S4: the focus weapon (squad focus range): the longest-reaching
     /// non-crew weapon among the members (ties: the earlier slot), else
@@ -1784,6 +1789,15 @@ impl ModDefs {
                 let s = if s0.members.iter().any(|m| m.when.is_some()) {
                     let mut c = s0.clone();
                     c.members.retain(|m| m.active(flame_on));
+                    // The derived `flame` from the members kept only.
+                    c.capabilities.retain(|x| x != "flame");
+                    if c.members.iter().any(|m| {
+                        self.weapons
+                            .get(&m.weapon)
+                            .is_some_and(|w| w.class == crate::WeaponClass::Flame)
+                    }) {
+                        c.capabilities.push("flame".into());
+                    }
                     filtered = c;
                     &filtered
                 } else {
@@ -1893,10 +1907,18 @@ impl ModDefs {
                     self.lower_member_rounds(s, &weapons, &cartridge_ids, members);
                 let men: u32 = members.iter().map(|m| m.count as u32).sum();
                 let crew_w = |w: u16| weapons.get(w as usize).is_some_and(|w| w.crew);
+                // S14 (plan 4.2): a flamethrower is never the squad's main
+                // weapon (an assault squad's launcher keeps firing).
+                let main_w = |w: u16| {
+                    crew_w(w)
+                        && weapons
+                            .get(w as usize)
+                            .is_some_and(|w| w.class != crate::WeaponClass::Flame)
+                };
                 let main = members
                     .iter()
                     .map(|m| m.weapon)
-                    .find(|&w| crew_w(w))
+                    .find(|&w| main_w(w))
                     .or_else(|| members.first().map(|m| m.weapon))
                     .unwrap_or(0);
                 // The focus weapon: the longest-reaching non-crew weapon
