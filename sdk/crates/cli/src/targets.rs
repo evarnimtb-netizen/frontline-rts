@@ -118,6 +118,14 @@ pub struct RunSpec {
     /// `--rules-override` files, relative to the working folder.
     #[serde(default)]
     pub rules_override: Vec<PathBuf>,
+    /// S16a, skirmish only: the map (default: Kessel Ridge) and the two
+    /// factions (default: Germany, USA; mirror runs name one twice).
+    #[serde(default)]
+    pub map: Option<String>,
+    #[serde(default)]
+    pub faction0: Option<String>,
+    #[serde(default)]
+    pub faction1: Option<String>,
     #[serde(default)]
     pub note: Option<String>,
 }
@@ -406,6 +414,12 @@ fn play(name: &str, r: &RunSpec, args: &TargetsArgs) -> Result<Value> {
                 mods: args.mods.clone(),
                 rules_override: r.rules_override.clone(),
                 summary: true,
+                map: r
+                    .map
+                    .clone()
+                    .unwrap_or_else(|| crate::skirmish::DEFAULT_MAP.into()),
+                faction0: r.faction0.clone().unwrap_or_else(|| "ww2:germany".into()),
+                faction1: r.faction1.clone().unwrap_or_else(|| "ww2:usa".into()),
                 ..SkirmishArgs::default()
             };
             json_out::skirmish(&crate::skirmish::skirmish_many(&a)?)

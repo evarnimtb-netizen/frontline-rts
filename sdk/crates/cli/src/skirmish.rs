@@ -24,6 +24,9 @@ use serde::Serialize;
 use crate::report::{Summary, hex, ns, round3};
 use crate::s3c_tally::{S3cPlayer, S3cSummary, S3cTally};
 
+/// S16a: the map `skirmish` plays without `--map`.
+pub const DEFAULT_MAP: &str = "ww2:kessel_ridge";
+
 /// Ticks with at least this share of the peak soldier count are "peak".
 pub const PEAK_SHARE_PCT: usize = 90;
 
@@ -72,6 +75,10 @@ pub struct SkirmishArgs {
     /// Overrides --difficulty for player 1.
     #[arg(long, value_enum, value_name = "DIFFICULTY")]
     pub difficulty1: Option<DifficultyArg>,
+    /// S16a: the map (a map def id). The default and an explicit
+    /// `--map ww2:kessel_ridge` play the same matches (same hashes).
+    #[arg(long, value_name = "ID", default_value = DEFAULT_MAP, conflicts_with = "load")]
+    pub map: String,
     /// Faction of player 0 (base 0).
     #[arg(long, value_name = "ID", default_value = "ww2:germany")]
     pub faction0: String,
@@ -170,6 +177,7 @@ impl Default for SkirmishArgs {
             seed: 1,
             difficulty: DifficultyArg::Normal,
             difficulty1: None,
+            map: DEFAULT_MAP.into(),
             faction0: "ww2:germany".into(),
             faction1: "ww2:usa".into(),
             minutes: 30,
@@ -214,6 +222,11 @@ pub struct SkirmishReport {
     pub game_seconds: f64,
     pub limit_minutes: u32,
     pub final_hash: String,
+    /// S16a: the map's def id.
+    pub map: String,
+    /// S16a: expansions per path search (every search of the match, AI
+    /// searches included; a CLI observer).
+    pub path_search: PathSearchStats,
     pub players: Vec<PlayerReport>,
     /// S3c: the map's capture point names, in point order.
     pub point_names: Vec<String>,
@@ -226,6 +239,43 @@ pub struct SkirmishReport {
     pub s3_failures: Vec<String>,
     pub timing: SkirmishTiming,
     pub wall_ms: f64,
+}
+
+/// S16a (S16 plan 7): per-search path expansions of a match or a set.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct PathSearchStats {
+    pub searches: u64,
+    pub mean: f64,
+    pub p99: u32,
+    pub max: u32,
+    /// The raw counts (merged over a set; not printed).
+    #[serde(skip)]
+    pub raw: frontline_sim::path::observe::SearchStats,
+}
+
+impl PathSearchStats {
+    pub fn from_raw(raw: frontline_sim::path::observe::SearchStats) -> PathSearchStats {
+        PathSearchStats {
+            searches: raw.searches,
+            mean: round3(if raw.searches == 0 {
+                0.0
+            } else {
+                raw.expansions as f64 / raw.searches as f64
+            }),
+            p99: raw.percentile(99),
+            max: raw.max,
+            raw,
+        }
+    }
+
+    /// Every match's searches together.
+    pub fn merged<'a>(all: impl Iterator<Item = &'a PathSearchStats>) -> PathSearchStats {
+        let mut raw = frontline_sim::path::observe::SearchStats::default();
+        for p in all {
+            raw.merge(&p.raw);
+        }
+        PathSearchStats::from_raw(raw)
+    }
 }
 
 /// S3 match totals for the skirmish report.
@@ -2241,7 +2291,7 @@ pub fn match_setup(args: &SkirmishArgs) -> Result<MatchSetup> {
     let d1: Difficulty = args.difficulty1.unwrap_or(args.difficulty).into();
     let req = MatchRequest {
         rules: "ww2:skirmish".into(),
-        map: "ww2:kessel_ridge".into(),
+        map: args.map.clone(),
         seed: args.seed,
         players: vec![
             PlayerRequest {
@@ -2289,6 +2339,8 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         }
         None => World::new_match(match_setup(args)?, threads)?,
     };
+    // S16a: per-search expansions (an observer; results unchanged).
+    let path_sink = world.observe_path_searches();
     let hz = world.match_setup().expect("match world").tick_hz as u64;
     let limit = args.minutes as u64 * 60 * hz;
     let start_tick = world.tick();
@@ -3039,6 +3091,10 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         game_seconds: round3(world.tick() as f64 / hz as f64),
         limit_minutes: args.minutes,
         final_hash: hex(world.state_hash()),
+        map: s.map.id.clone(),
+        path_search: PathSearchStats::from_raw(
+            path_sink.lock().map(|g| g.clone()).unwrap_or_default(),
+        ),
         players,
         point_names: s.map.points.iter().map(|p| p.name.clone()).collect(),
         totals: Totals {
@@ -3134,6 +3190,11 @@ pub fn summary_text(r: &SkirmishReport) -> String {
         mmss(r.game_seconds),
         r.ticks,
         r.final_hash
+    );
+    let ps = &r.path_search;
+    out += &format!(
+        "map {}; path searches {} (expansions mean {:.1}, p99 {}, max {})\n",
+        r.map, ps.searches, ps.mean, ps.p99, ps.max
     );
     if let Some(from) = &r.loaded_from {
         out += &format!("continued from {from} at tick {}\n", r.start_tick);
@@ -3982,6 +4043,8 @@ pub struct ManySummary {
 /// The result of `skirmish --seeds`.
 #[derive(Clone, Debug, Serialize)]
 pub struct ManyReport {
+    /// S16a: the map's def id.
+    pub map: String,
     pub matches: Vec<ManyMatch>,
     pub summary: ManySummary,
     /// `--rules-override` log lines (what each file changed).
@@ -4059,6 +4122,9 @@ pub fn skirmish_many(args: &SkirmishArgs) -> Result<ManyReport> {
     }
     let summary = summarise(&matches, jobs);
     Ok(ManyReport {
+        map: matches
+            .first()
+            .map_or_else(|| args.map.clone(), |m| m.report.map.clone()),
         matches,
         summary,
         overrides,
@@ -4368,9 +4434,16 @@ pub fn many_text(r: &ManyReport) -> String {
     let s = &r.summary;
     let swapped = r.matches.iter().filter(|m| m.swapped).count();
     let mut out = format!(
-        "skirmish summary: {} matches ({} with swapped bases), {} at once\n",
-        s.matches, swapped, s.jobs
+        "skirmish summary: {} matches ({} with swapped bases), {} at once, map {}\n",
+        s.matches, swapped, s.jobs, r.map
     );
+    {
+        let ps = PathSearchStats::merged(r.matches.iter().map(|m| &m.report.path_search));
+        out += &format!(
+            "S16 path searches: {}, expansions mean {:.1}, p99 {}, max {}\n",
+            ps.searches, ps.mean, ps.p99, ps.max
+        );
+    }
     for l in &r.overrides {
         out += &format!("{l}\n");
     }

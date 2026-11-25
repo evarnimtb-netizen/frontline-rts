@@ -142,6 +142,65 @@ fn binary_runs_a_skirmish_and_prints_json() {
     assert!(!out.status.success());
 }
 
+/// S16a (`docs/slices/S16-second-map.md` 9): `--map ww2:kessel_ridge` and
+/// no `--map` play the same match (same hashes); the reports and the
+/// `--json` set name the map and count path searches; an unknown map is
+/// refused.
+#[test]
+fn map_flag_defaults_to_kessel_ridge_with_the_same_hashes() {
+    let exe = env!("CARGO_BIN_EXE_frontline-cli");
+    let a = run(short(6, 2, 2));
+    let b = run(SkirmishArgs {
+        map: "ww2:kessel_ridge".into(),
+        ..short(6, 2, 2)
+    });
+    assert_eq!(a.final_hash, b.final_hash);
+    assert_eq!(a.map, "ww2:kessel_ridge");
+    assert!(a.path_search.searches > 0, "path searches are counted");
+    assert!(a.path_search.max >= a.path_search.p99);
+    let json = tmp("s16_map.json");
+    let out = Command::new(exe)
+        .args([
+            "skirmish",
+            "--ai-vs-ai",
+            "--seed",
+            "6",
+            "--seeds",
+            "1",
+            "--summary",
+        ])
+        .args(["--minutes", "1", "--map", "ww2:kessel_ridge", "--json"])
+        .arg(&json)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&json).unwrap()).unwrap();
+    assert_eq!(v["map"], "ww2:kessel_ridge");
+    assert!(
+        v["s16_derived"]["path_search"]["searches"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("map ww2:kessel_ridge"));
+    let out = Command::new(exe)
+        .args([
+            "skirmish",
+            "--ai-vs-ai",
+            "--minutes",
+            "1",
+            "--map",
+            "ww2:nowhere",
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+}
+
 /// The S1 cover bar over the default five seeds, both factions entrenched
 /// in turn, plus the S1b grenade assault and smoke screen. Slow in debug
 /// builds; `cargo test --release` runs it.

@@ -253,6 +253,8 @@ pub fn skirmish(r: &ManyReport) -> Value {
     json!({
         "schema": 1,
         "kind": "skirmish",
+        // S16a: the map the set played.
+        "map": r.map,
         "matches": s.matches,
         "swapped_matches": r.matches.iter().filter(|m| m.swapped).count(),
         "jobs": s.jobs,
@@ -270,6 +272,13 @@ pub fn skirmish(r: &ManyReport) -> Value {
         // S12 Build C (S12-15): T8 over kills plus downs.
         "s12_derived": {
             "he_share_casualties_pct": { "mean": s.he_cas_mean_pct, "max": s.he_cas_max_pct },
+        },
+        // S16a (S16 plan 7): expansions per path search over every match
+        // (AI searches included; an observer, not saved sim state).
+        "s16_derived": {
+            "path_search": crate::skirmish::PathSearchStats::merged(
+                r.matches.iter().map(|m| &m.report.path_search)
+            ),
         },
         "tick_p99_ms": { "peak": s.peak_p99_max_ms, "all": s.all_p99_max_ms },
         "tank_losses": {
@@ -720,6 +729,7 @@ pub fn skirmish_one(m: ManyMatch, overrides: Vec<String>) -> Value {
     let matches = vec![m];
     let summary: ManySummary = summarise(&matches, 1);
     skirmish(&ManyReport {
+        map: matches[0].report.map.clone(),
         matches,
         summary,
         overrides,

@@ -292,6 +292,10 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                             println!("{}: {}: {}{fix}", r.file, p.path, p.message);
                         }
                     }
+                    // S16a (R5): warnings never fail the file.
+                    for p in &r.warnings {
+                        println!("{}: warning: {}: {}", r.file, p.path, p.message);
+                    }
                 }
             }
             Ok(if results.iter().all(|r| r.ok) {
