@@ -346,7 +346,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 32,
+        version: 33,
         state: w.state(),
     });
     assert!(

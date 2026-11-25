@@ -722,6 +722,12 @@ pub(crate) fn aim_and_fire(
         if w.class == WeaponClass::Launcher {
             continue;
         }
+        // S14 F1: a flamethrower fires only with `[flame] enabled` (0: he
+        // holds it, as before S14 no def carried one).
+        if w.class == WeaponClass::Flame && setup.rules.flame.enabled == 0 {
+            c.target = None;
+            continue;
+        }
         // S5a: counted rounds. A dry weapon reloads from his pouches once
         // it may, else he draws his sidearm, else he holds fire.
         let feed = ty.feed_slot(w);
@@ -820,7 +826,8 @@ pub(crate) fn aim_and_fire(
         }
         if c.target.is_none() || c.retarget == 0 {
             let before = c.target;
-            let man = if w.class == WeaponClass::Mg {
+            // S14 F1: a flamethrower searches like an MG.
+            let man = if matches!(w.class, WeaponClass::Mg | WeaponClass::Flame) {
                 let roll =
                     RngStream::new(ctx.seed, ctx.tick, SimId(i as u32), Purpose::SWEEP).next_u64();
                 search(ctx, i, from, r, None, SWEEP_POOL, (roll >> 32) as usize)
@@ -973,6 +980,8 @@ fn fire_round(
         he: false,
         ammo: crate::projectile::NO_AMMO,
         mission: 0,
+        // S14 F1: a particle, routed to `MatchState::flame`.
+        flame: w.class == WeaponClass::Flame,
     });
     ws.shots = ws.shots.wrapping_add(1);
     c.since_shot = 0;
@@ -1208,6 +1217,7 @@ impl MatchState {
             he: true,
             ammo: crate::projectile::NO_AMMO,
             mission: m.id,
+            flame: false,
         });
         let w = &self.setup.weapons[wi as usize];
         let ws = &mut ents.weapon[i];
@@ -1465,6 +1475,7 @@ impl MatchState {
                                 he: true,
                                 ammo,
                                 mission: 0,
+                                flame: false,
                             });
                             ents.kit[i].items[k] -= 1;
                             ents.combat[i].since_shot = 0;
@@ -1662,6 +1673,7 @@ impl MatchState {
                             he: true,
                             ammo,
                             mission: 0,
+                            flame: false,
                         });
                         *rockets += 1;
                         ents.kit[i].items[k] -= 1;
@@ -1993,6 +2005,7 @@ impl MatchState {
                 he: true,
                 ammo,
                 mission: 0,
+                flame: false,
             });
             l.rounds -= 1;
             *rockets += 1;
@@ -2018,7 +2031,9 @@ pub(crate) fn spawn_rounds(
 ) -> (u64, u64) {
     let (mut fired, mut dropped) = (0u64, 0u64);
     for he in [true, false] {
-        for r in reqs.iter().filter(|r| r.he == he) {
+        // S14 F1: flame particles never enter the pool
+        // (`MatchState::spawn_flame`).
+        for r in reqs.iter().filter(|r| r.he == he && !r.flame) {
             fired += 1;
             if !he && pool.free_count() <= crate::projectile::SHELL_RESERVE {
                 dropped += 1;
@@ -2077,6 +2092,15 @@ pub(crate) enum Blow {
     /// arms) or `shell_box_damage` (a main-gun round). S10a: the second
     /// field is the range from the muzzle (a piece's armour gate).
     Static(u32, Fx),
+    /// S14 F3, F5: a burn pulse on soldier or downed man `id` (a burning
+    /// man, or one in burning ground): `dmg` HP with no zone, credited to
+    /// `by` (player, kill class), and `supp` suppression points.
+    Burn {
+        id: SimId,
+        dmg: u32,
+        by: (u8, u16),
+        supp: u32,
+    },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -3512,6 +3536,36 @@ impl MatchState {
                             as u32;
                     }
                     add_suppression(c, add);
+                    ctx.hash.mark_entity_chunk(id.chunk());
+                    None
+                }
+                Blow::Burn { id, dmg, by, supp } => {
+                    let i = id.index();
+                    let kind = ctx.ents.kind[i];
+                    if kind != EntityKind::Soldier && kind != EntityKind::Downed {
+                        continue;
+                    }
+                    add_suppression(&mut ctx.ents.combat[i], supp * 1000);
+                    let fell = hurt(
+                        ctx.ents,
+                        ctx.hash,
+                        &mut dead,
+                        id,
+                        dmg,
+                        by,
+                        (crate::wounds::ZONE_NONE, false),
+                        ctx.wounds.as_ref(),
+                    );
+                    // S14 F8: enemy men fire downed or killed (own burns
+                    // are own fire, not kills).
+                    if fell && ctx.ents.owner[i].0 != by.0 {
+                        let s14 = &mut self.players[by.0 as usize].s14;
+                        if kind == EntityKind::Soldier && ctx.wounds.is_some() {
+                            s14.burn_downs += 1;
+                        } else {
+                            s14.burn_kills += 1;
+                        }
+                    }
                     ctx.hash.mark_entity_chunk(id.chunk());
                     None
                 }

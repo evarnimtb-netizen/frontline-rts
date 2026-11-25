@@ -1352,6 +1352,8 @@ impl World {
             // the pool drops below included).
             game.count_fired(entities, fire_merged);
             let (fired, dropped) = combat::spawn_rounds(fire_merged, projectiles, hash);
+            // S14 F1: flame requests go to their own list, capped per player.
+            game.spawn_flame(fire_merged);
             stats.shots_fired += fired;
             stats.shots_dropped += dropped;
             shots.clone_from(fire_merged);
@@ -1457,6 +1459,29 @@ impl World {
                     }
                 }
             }
+        }
+        // S14 F2-F5 (serial, after the pool and `fly_thrown`): particles,
+        // burns and patches; their blows join this tick's for the Damage
+        // stage. Nothing runs with `[flame] enabled` 0 and no particle or
+        // patch left.
+        if self.state.game.as_ref().is_some_and(|g| g.s14_live()) {
+            let World {
+                state,
+                hash,
+                spatial,
+                downed,
+                blows,
+                ..
+            } = self;
+            let SimState {
+                entities,
+                terrain,
+                game,
+                ..
+            } = state;
+            game.as_mut().expect("match world").flame_stage(
+                entities, hash, spatial, downed, terrain, substeps, tick, blows,
+            );
         }
         let t5 = Instant::now();
 

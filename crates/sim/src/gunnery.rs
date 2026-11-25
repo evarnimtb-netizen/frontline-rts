@@ -707,6 +707,7 @@ impl MatchState {
                         he: true,
                         ammo,
                         mission: 0,
+                        flame: false,
                     });
                     vs.loaded = None;
                     vs.reload = reload_ticks;
@@ -1110,6 +1111,7 @@ impl MatchState {
                 } else {
                     0
                 },
+            flame: false,
         });
         let reload_ticks = reload_of(&self.vehicles[&id], v, setup);
         let vs = self.vehicles.get_mut(&id).expect("listed");
@@ -1615,6 +1617,7 @@ fn mg_fire(
         he: false,
         ammo: NO_AMMO,
         mission: 0,
+        flame: false,
     });
     st.shots = st.shots.wrapping_add(1);
     if m.rounds.is_some() {

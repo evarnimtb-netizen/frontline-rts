@@ -185,6 +185,40 @@ impl MatchState {
         &self.clears
     }
 
+    /// S14 F1: flame requests (ascending request order) become particles
+    /// in `MatchState::flame`, never pool rounds; one over the player's
+    /// cap is dropped and counted in `flame_capped` (not `shots_dropped`).
+    pub(crate) fn spawn_flame(&mut self, reqs: &[crate::systems::FireRequest]) {
+        if !reqs.iter().any(|r| r.flame) {
+            return;
+        }
+        let lim = self.s14_limits();
+        let mut live = vec![0usize; self.players.len()];
+        for f in &self.flame {
+            live[f.player as usize] += 1;
+        }
+        for r in reqs.iter().filter(|r| r.flame) {
+            let p = r.player as usize;
+            if live[p] >= lim.particles {
+                self.players[p].s14.flame_capped += 1;
+                continue;
+            }
+            live[p] += 1;
+            let id = self.next_flame;
+            self.next_flame += 1;
+            self.flame.push(Flame {
+                id,
+                pos: r.pos,
+                vel: r.vel,
+                ttl: lim.ttl_ticks as u16,
+                player: r.player,
+                shooter: r.shooter,
+                weapon: r.weapon,
+            });
+            self.players[p].s14.flame_fired += 1;
+        }
+    }
+
     /// The S14 bounds of this match's rules.
     pub(crate) fn s14_limits(&self) -> S14Limits {
         let hz = self.setup.tick_hz as u64;
@@ -306,3 +340,251 @@ impl MatchState {
 /// S14 saved match state, kept together so `MatchState` gains one field
 /// per list (spec 3.1).
 pub type Clears = BTreeMap<SquadId, Clear>;
+
+// ------------------------------------------------------------- F2-F5 --
+
+use crate::combat::{BallisticEvent, Blow, FlightCtx};
+use crate::hash::HashCache;
+use crate::projectile::{NO_AMMO, Projectile};
+use crate::spatial::SpatialHash;
+use crate::terrain::Heightfield;
+
+/// A burn pulse event (F3, F5): no weapon, no pool slot.
+fn burn_event(player: u8, blow: Blow) -> BallisticEvent {
+    BallisticEvent {
+        weapon: 0,
+        player,
+        ammo: NO_AMMO,
+        slot: u32::MAX,
+        shooter: SimId(u32::MAX),
+        blow,
+        mission: 0,
+    }
+}
+
+impl MatchState {
+    /// Whether the S14 flame stage has anything to do: the switch on, or
+    /// a particle or patch left (a staged save).
+    pub(crate) fn s14_live(&self) -> bool {
+        self.setup.rules.flame.enabled != 0 || !self.flame.is_empty() || !self.patches.is_empty()
+    }
+
+    /// S14 F2-F5, serial, in the Ballistics stage after `fly_thrown`:
+    /// particles fly (ascending id) through the projectile integrator
+    /// `combat::fly` (terrain, enemy static boxes, vehicles, enemy capsules
+    /// and downed men; near misses at `[flame] near_cm`); hits and near
+    /// misses join `blows` for the Damage stage (the weapon's damage and
+    /// suppression, class FLAME); a struck man burns; a landing (on the
+    /// ground, or at a struck man's feet) makes or refreshes a patch; then
+    /// the burn and patch pulses add `Blow::Burn` events, and burns and
+    /// patches that ran out end.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn flame_stage(
+        &mut self,
+        ents: &mut Entities,
+        hash: &mut HashCache,
+        spatial: &SpatialHash,
+        downed: &SpatialHash,
+        terrain: &Heightfield,
+        substeps: u32,
+        tick: u64,
+        blows: &mut Vec<BallisticEvent>,
+    ) {
+        let hz = self.setup.tick_hz as u64;
+        let f = self.setup.rules.flame.clone();
+        let lim = self.s14_limits();
+        // F2: flight.
+        let mut parts = std::mem::take(&mut self.flame);
+        let mut landed: Vec<(FxVec3, u8)> = Vec::new();
+        let mut struck: Vec<(SimId, u8)> = Vec::new();
+        {
+            let s = &self.setup;
+            let ctx = FlightCtx {
+                ents: &*ents,
+                spatial,
+                terrain,
+                weapons: &s.weapons,
+                near_miss: Fx::from_int(f.near_cm as i32).div_int(100),
+                body: &s.rules.combat.body,
+                vehicles: (!self.vehicles.is_empty()).then_some(&self.vderived),
+                armour: self.armour(),
+                ammo: &s.ammo,
+                statics: self.static_boxes(),
+                downed: (!self.casualties.is_empty()).then_some(downed),
+                wounds: (s.rules.wounds.enabled != 0).then_some(&s.rules.wounds),
+            };
+            let (mut ended, mut ev, mut tests) = (Vec::new(), Vec::new(), 0u64);
+            let dt = Fx::ONE.div_int(60);
+            parts.retain_mut(|p| {
+                let mut slot = [Some(Projectile {
+                    pos: p.pos,
+                    vel: p.vel,
+                    owner: p.shooter,
+                    drag: Fx::ZERO,
+                    ttl: u16::MAX,
+                    weapon: p.weapon,
+                    player: p.player,
+                    ammo: NO_AMMO,
+                    origin: p.pos,
+                    mission: 0,
+                })];
+                for _ in 0..substeps {
+                    let before = slot[0].expect("in flight");
+                    ended.clear();
+                    ev.clear();
+                    crate::combat::fly(0, &mut slot, &ctx, 1, &mut ended, &mut ev, &mut tests);
+                    for e in ev.drain(..) {
+                        match e.blow {
+                            Blow::Hit(id, _) => {
+                                struck.push((id, p.player));
+                                blows.push(BallisticEvent {
+                                    slot: u32::MAX,
+                                    ..e
+                                });
+                            }
+                            Blow::NearMiss(_) => blows.push(BallisticEvent {
+                                slot: u32::MAX,
+                                ..e
+                            }),
+                            // S14-6 (A): vehicles, pieces, crates: no effect.
+                            _ => {}
+                        }
+                    }
+                    if slot[0].is_none() {
+                        // A ground landing burns at the middle of the last
+                        // substep, on the surface.
+                        if ended
+                            .first()
+                            .is_some_and(|e| e.1 == crate::projectile::ProjectileEnd::GroundHit)
+                        {
+                            let mid = before.pos + (before.vel * dt).div_int(2);
+                            let z = terrain.height_at(mid.xy());
+                            landed.push((FxVec3::new(mid.x, mid.y, z), p.player));
+                        }
+                        return false;
+                    }
+                }
+                let q = slot[0].expect("in flight");
+                (p.pos, p.vel) = (q.pos, q.vel);
+                p.ttl -= 1;
+                p.ttl > 0
+            });
+        }
+        self.flame = parts;
+        // F3: a struck man burns (refreshed by each hit), and the stream
+        // lands at his feet.
+        let burn_ticks = lim.burn_ticks;
+        for &(id, player) in &struck {
+            let i = id.index();
+            let c = &mut ents.combat[i];
+            c.close.burn_until = tick + burn_ticks;
+            c.close.burn_by = (player, kill_class::FLAME);
+            hash.mark_entity_chunk(id.chunk());
+            let s14 = &mut self.players[player as usize].s14;
+            s14.flame_hits += 1;
+            if c.in_trench {
+                s14.flame_in_trench_hits += 1;
+            }
+            landed.push((ents.transform[i].pos, player));
+        }
+        // F5: landings make patches or refresh one within `patch_merge_cm`.
+        let merge = Fx::from_int(f.patch_merge_cm as i32).div_int(100);
+        let ends = tick + lim.patch_ticks;
+        for (pt, player) in landed {
+            if let Some(k) = self
+                .patches
+                .iter()
+                .position(|q| (q.pos.xy() - pt.xy()).length() <= merge)
+            {
+                self.patches[k].ends_at = ends;
+                continue;
+            }
+            if self.patches.len() >= lim.patches {
+                self.players[player as usize].s14.patches_dropped += 1;
+                continue;
+            }
+            let id = self.next_patch;
+            self.next_patch += 1;
+            self.patches.push(Patch {
+                id,
+                pos: pt,
+                ends_at: ends,
+                player,
+                by: (player, kill_class::FLAME),
+            });
+            self.players[player as usize].s14.patches_made += 1;
+        }
+        self.patches.retain(|q| q.ends_at > tick);
+        // F3, F5 pulses, `(tick + id) % pulse` in id order.
+        let pulse = (f.pulse_ms as u64 * hz).div_ceil(1000).max(1);
+        let burn_dmg = f.burn_hp_per_s * f.pulse_ms / 1000;
+        let patch_dmg = f.patch_hp_per_s * f.pulse_ms / 1000;
+        let radius = Fx::from_int(f.patch_radius_cm as i32).div_int(100);
+        let zmax = Fx::from_int(f.patch_z_cm as i32).div_int(100);
+        let mut men: Vec<SimId> = Vec::new();
+        for k in 0..self.patches.len() {
+            let q = self.patches[k];
+            if !(tick + q.id as u64).is_multiple_of(pulse) {
+                continue;
+            }
+            men.clear();
+            let mut take = |id: SimId| {
+                let t = &ents.transform[id.index()];
+                if (t.pos.xy() - q.pos.xy()).length() <= radius && (t.pos.z - q.pos.z).abs() <= zmax
+                {
+                    men.push(id);
+                }
+            };
+            spatial.for_each_near(q.pos.xy(), radius, &mut take);
+            if !self.casualties.is_empty() {
+                downed.for_each_near(q.pos.xy(), radius, &mut take);
+            }
+            men.sort_unstable();
+            men.dedup();
+            for &id in &men {
+                blows.push(burn_event(
+                    q.by.0,
+                    Blow::Burn {
+                        id,
+                        dmg: patch_dmg,
+                        by: q.by,
+                        supp: 0,
+                    },
+                ));
+                let c = &mut ents.combat[id.index()].close;
+                if c.burn_until == 0 {
+                    c.burn_by = q.by;
+                }
+                c.burn_until = c.burn_until.max(tick + burn_ticks);
+                hash.mark_entity_chunk(id.chunk());
+                self.players[q.player as usize].s14.patch_hits += 1;
+            }
+        }
+        for i in 0..ents.kind.len() {
+            let c = &mut ents.combat[i].close;
+            if c.burn_until == 0 {
+                continue;
+            }
+            let id = SimId(i as u32);
+            if c.burn_until <= tick
+                || !matches!(ents.kind[i], EntityKind::Soldier | EntityKind::Downed)
+            {
+                c.burn_until = 0;
+                c.burn_by = (0, 0);
+                hash.mark_entity_chunk(id.chunk());
+                continue;
+            }
+            if (tick + i as u64).is_multiple_of(pulse) {
+                blows.push(burn_event(
+                    c.burn_by.0,
+                    Blow::Burn {
+                        id,
+                        dmg: burn_dmg,
+                        by: c.burn_by,
+                        supp: f.burn_suppression,
+                    },
+                ));
+            }
+        }
+    }
+}
