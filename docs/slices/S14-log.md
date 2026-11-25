@@ -5,8 +5,8 @@ Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never
 Owner rule 2026-11-25: no balance runs, no tuning; every number a TOML key with a range, behind switches that stay off.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S14a Build A done except the two 40 sets** (T185 unproven; the owner was asked about them). SAVE 33 / PROTOCOL 17.
-**Not done:** T185: run `target/s14-base40` on a27ce63's binary and `target/s14-A-40` on the head, then `python3 -I tools/neutral.py
+**State: S14a Build A done.** SAVE 33 / PROTOCOL 17. **T185 passes:** `target/s14-base40` (copied from `target/b3-final/skirmish40.json`,
+made on f4e610b whose sim, sdk and mods equal a27ce63) vs `target/s14-A-40` at 768b51a: `neutral.py` "same 40/40". (Old note:
 target/s14-base40 target/s14-A-40` (neutral.py now accepts `s5a.fired` 11 -> 12 and `kills_by` 12 -> 14 with zero tails; the new
 `s14` blocks and FLAME/MELEE keys of `downed_by`/`finished_by` are new zero keys). Not run: the session's classifier refused batch.sh.
 **Code map.** `crates/sim/src/flame.rs`: layout, load checks (`validate_s14`, `close_ok`, `validate_s14_terrain` after the dug
