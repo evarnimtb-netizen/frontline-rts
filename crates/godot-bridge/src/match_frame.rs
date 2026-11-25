@@ -230,6 +230,25 @@ pub struct ThrownView {
     pub visible: bool,
 }
 
+/// S14: a flame particle in flight.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlameView {
+    pub id: u32,
+    pub pos: [f32; 3],
+    pub player: u8,
+    pub visible: bool,
+}
+
+/// S14: a burning patch of ground.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PatchView {
+    pub id: u32,
+    pub pos: [f32; 3],
+    pub player: u8,
+    pub ticks_left: u32,
+    pub visible: bool,
+}
+
 /// A smoke cloud (a cylinder standing at `pos`, as tall as it is wide).
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct SmokeView {
@@ -323,6 +342,14 @@ pub struct MatchFrame {
     pub casualties: Vec<CasualtySnapshot>,
     /// S12: per soldier, `frontline_sim::wound_bits`.
     pub wound: Vec<u8>,
+    /// S14: per soldier, he burns.
+    pub burning: Vec<bool>,
+    /// S14: per soldier, his strike phase (0 none, 1 wind-up, 2 recovery).
+    pub strike: Vec<u8>,
+    /// S14: flame particles and burning ground, ascending id, with
+    /// whether the local player sees them.
+    pub flame: Vec<FlameView>,
+    pub patches: Vec<PatchView>,
     /// Per corpse: the local player sees the body (own: always).
     pub corpse_visible: Vec<bool>,
     /// Small-arms rounds and mortar shells (main-gun shells and rockets
@@ -397,6 +424,10 @@ impl MatchFrame {
             corpses: Vec::new(),
             casualties: Vec::new(),
             wound: Vec::new(),
+            burning: Vec::new(),
+            strike: Vec::new(),
+            flame: Vec::new(),
+            patches: Vec::new(),
             corpse_visible: Vec::new(),
             rounds: Vec::new(),
             vehicles: Vec::new(),
@@ -467,6 +498,8 @@ impl MatchFrame {
         self.sidearm.clone_from(&snap.soldier_sidearm);
         self.fire.clone_from(&snap.soldier_fire);
         self.wound.clone_from(&snap.soldier_wound);
+        self.burning.clone_from(&snap.soldier_burning);
+        self.strike.clone_from(&snap.soldier_strike);
         self.throwing.clone_from(&snap.soldier_throwing);
         self.units.clear();
         self.units.extend(
@@ -611,6 +644,26 @@ impl MatchFrame {
                 radius: c.radius,
                 density: c.density,
                 visible: near(c.pos, ctx.sight_m + c.radius),
+            });
+        }
+
+        self.flame.clear();
+        for c in &snap.flame {
+            self.flame.push(FlameView {
+                id: c.id,
+                pos: c.pos,
+                player: c.player,
+                visible: c.player == local || near(c.pos, ctx.sight_m),
+            });
+        }
+        self.patches.clear();
+        for c in &snap.patches {
+            self.patches.push(PatchView {
+                id: c.id,
+                pos: c.pos,
+                player: c.player,
+                ticks_left: c.ticks_left,
+                visible: c.player == local || near(c.pos, ctx.sight_m + 6.0),
             });
         }
 
@@ -1439,6 +1492,25 @@ mod tests {
         );
         assert_eq!(f.extra[0].squads_called, 1);
         assert_eq!(f.extra[1].squads_called, f.extra[1].squads_called);
+    }
+
+    /// S14: the frame copies the flame fields one to one; with every
+    /// switch off (the shipped rules) there is no particle or patch, and
+    /// burning and strike hold one quiet entry per soldier.
+    #[test]
+    fn frame_carries_the_s14_fields_quiet_when_off() {
+        let mut w = test_world(false);
+        let setup = w.match_setup().unwrap().clone();
+        let mut ctx = FrameCtx::new(&setup, 0);
+        let mut f = MatchFrame::empty();
+        for _ in 0..30 {
+            w.step(&[]);
+        }
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        assert!(f.flame.is_empty() && f.patches.is_empty());
+        assert_eq!(f.burning.len(), f.ids.len());
+        assert_eq!(f.strike.len(), f.ids.len());
+        assert!(f.burning.iter().all(|b| !b) && f.strike.iter().all(|s| *s == 0));
     }
 
     /// S10b review R14: the frame keeps the mines the local player knows

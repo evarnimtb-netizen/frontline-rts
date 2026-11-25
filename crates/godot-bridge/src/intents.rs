@@ -265,6 +265,26 @@ pub fn cut_wire_command(
     })
 }
 
+/// S14 `clear_trench`: the first of `squads` (`(id, type_idx)`) that is
+/// infantry clears the trench cell nearest `at` (the sim refuses a squad
+/// with no frag, or `[clear]` off, with `fort_refused`).
+pub fn clear_trench_command(
+    setup: &MatchSetup,
+    squads: &[(u32, u16)],
+    at: [f32; 2],
+) -> Option<CommandKind> {
+    let &(squad, _) = squads.iter().find(|s| {
+        setup
+            .squad_types
+            .get(s.1 as usize)
+            .is_some_and(|ty| ty.vehicle.is_none())
+    })?;
+    Some(CommandKind::ClearTrench {
+        squad: SquadId(squad),
+        at: sim_to_fx(at),
+    })
+}
+
 /// S10a `bangalore`: the men of the first of `squads` (`(id, type_idx)`)
 /// with `breach` whose men (`men_of`) carry a Bangalore; the sim sends the
 /// nearest carrier.
@@ -1063,6 +1083,16 @@ mod tests {
             })
         );
         assert!(cut_wire_command(&setup, &[(1, rifles)], [5.0, 6.0]).is_none());
+        // S14 clearing: the first infantry squad, at the point; none from
+        // an empty selection.
+        assert_eq!(
+            clear_trench_command(&setup, &[(1, rifles), (4, sturm)], [5.0, 6.0]),
+            Some(CommandKind::ClearTrench {
+                squad: SquadId(1),
+                at: sim_to_fx([5.0, 6.0])
+            })
+        );
+        assert!(clear_trench_command(&setup, &[], [5.0, 6.0]).is_none());
         // Bangalore: the breach squad's men, sorted, if one carries a charge.
         let men = |id: u32| match id {
             4 => vec![(41, 0), (40, 1), (42, 0)],

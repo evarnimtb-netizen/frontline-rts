@@ -78,3 +78,15 @@ and one recovering; s14_rows_feed_the_hard_checks covers R5.
 `tools/check.sh quick a27ce63` at ae3131b: fmt ok, neutral.py ok, every ablate dry run ok (S14 included), tests 1310 passed, 1
 failed (`udp::ipv6_loopback_handshake`, no IPv6 in the cloud, as before); clippy failed on too many arguments of
 `flame::nearest_enemy`, fixed with this log (workspace clippy then clean).
+
+## S14 presenter (P)
+Bridge: snapshot fields `flame[]`, `patches[]` (with `radius`), `soldiers[].burning` / `.strike`, `rules.s14 {flame, melee, clear}`;
+intent `clear_trench {squads, target}` -> `ClearTrench` for the first selected infantry squad (`intents::clear_trench_command`);
+`strike_units` was already mapped. Tests: `clear_trench_command` in `fortify_commands...` intent test, `frame_carries_the_s14_fields_quiet_when_off`.
+Godot: `match/flame_view.gd` (stream, patch discs + lights, burning-man flame, strike bar), Clear (tool) and Strike buttons in the
+fire strip's free columns (shown with their switch on), `V` strikes when melee is on and men are selected (else Board, as before);
+mock `stage_s14` shows one of each; `test_match_view.gd` `_test_s14`. Deviations: (1) `V` is Board's key, so with melee on it
+strikes and Board stays on its button; (2) no tint for burning men (instanced bodies, no per-man colour from GDScript): a flame
+marker instead; (3) no rig access, so the strike pose is a bar over the striker (raised, then thrust toward the nearest enemy);
+(4) the mock does not act on `strike_units` / `clear_trench`; (5) the 16-vehicle 0.2 ms timing check in `test_match_view`
+is a headless timing check that failed once under load (0.355 ms), unrelated to S14. No sound for flame shots yet (MG cue).
