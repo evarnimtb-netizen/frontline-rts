@@ -44,9 +44,10 @@ in the AI, HE for the 57 mm.
 
 ## Versions
 
-`SAVE_VERSION` **31** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **32** and **16** on the branch
-`claude/project-thread-aj1tww` (B3 code: `[ai.arty] direct_in_budget`, `AiCounters::arty_direct_holds`; no new command). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
-S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16 (branch). A save, hash or command change
+`SAVE_VERSION` **32** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **33** and **17** on the branch
+`claude/project-thread-aj1tww` (S14a Build A layout: flame particles, patches, clears, `Combat::close`, `ClearTrench` and
+`Strike` refused until Builds B and C). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
+S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16; S14 33/17 (branch). A save, hash or command change
 bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
 BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 

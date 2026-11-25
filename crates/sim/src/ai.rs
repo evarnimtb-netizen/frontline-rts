@@ -767,7 +767,18 @@ pub struct AiCounters {
     pub heavy_buys: u32,
     pub heavy_drops: u32,
     pub push_turnbacks: u32,
+    /// S14-ai A1-A4: flame jobs started and ended by reason
+    /// (`FLAME_END_NAMES`: done, spent, dead, weak, deadline, stall), flame
+    /// cards bought, refuel tasks, clear orders.
+    pub flame_jobs: u32,
+    pub flame_job_ends: [u32; 6],
+    pub flame_buys: u32,
+    pub refuels: u32,
+    pub clear_orders: u32,
 }
+
+/// S14-ai: `AiCounters::flame_job_ends` names, by index.
+pub const FLAME_END_NAMES: [&str; 6] = ["done", "spent", "dead", "weak", "deadline", "stall"];
 
 impl AiState {
     /// A fresh AI state whose first plan runs at `first_plan` (the

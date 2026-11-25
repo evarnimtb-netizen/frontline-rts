@@ -48,6 +48,7 @@ mod demolish;
 pub mod dig;
 pub mod ecs;
 pub mod fire_mission;
+pub mod flame;
 pub mod fort;
 pub mod fx;
 pub mod game;

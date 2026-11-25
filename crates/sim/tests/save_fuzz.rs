@@ -740,6 +740,11 @@ fn s10b_path(path: &str) -> bool {
         // S12 Build B: aid-post beds.
         || path.contains(".beds")
         || path.contains(".s12.")
+        // S14: particles, patches, burning men, the counters.
+        || path.starts_with("state.game.flame")
+        || path.starts_with("state.game.patches")
+        || path.contains(".close")
+        || path.contains(".s14.")
         || path.contains("Order.ClearMines")
         || path.contains("Order.Demolish")
         // Fuzz stage `staged_s10b_ai`.
@@ -1242,6 +1247,36 @@ fn staged_s12(w: &mut World) {
         p.s12.downed = 1;
         p.s12.bandaged = 2;
         p.s12.torso_hits = [3, 4];
+    }));
+    // S14a Build A: two flame particles in flight, a burning patch, a
+    // burning man (a man mid-strike and a squad mid-clear come with Builds
+    // C and B).
+    use frontline_sim::fx::FxVec3;
+    let p3 = |x: i32, y: i32, z: i32| FxVec3::new(Fx::from_int(x), Fx::from_int(y), Fx::from_int(z));
+    let flame = |id, x| frontline_sim::flame::Flame {
+        id,
+        pos: p3(x, 705, 1),
+        vel: p3(-25, 0, 1),
+        ttl: 60,
+        player: 1,
+        shooter: frontline_sim::SimId(0),
+        weapon: 0,
+    };
+    let patch = frontline_sim::flame::Patch {
+        id: 0,
+        pos: p3(210, 705, 0),
+        ends_at: tick + 600,
+        player: 1,
+        by: (1, frontline_sim::kill_class::FLAME),
+    };
+    assert!(w.stage_s14(vec![flame(0, 220), flame(2, 222)], vec![patch]));
+    assert!(w.edit_soldier(ms[7], |_, c| {
+        c.close.burn_until = tick + 120;
+        c.close.burn_by = (1, frontline_sim::kill_class::FLAME);
+    }));
+    assert!(w.edit_player(PlayerId(1), |p| {
+        p.s14.flame_fired = 2;
+        p.s14.patches_made = 1;
     }));
 }
 
@@ -1893,6 +1928,9 @@ fn staged_s10b_save_holds_its_state() {
         .position(|f| f.id == "ww2:ap_minefield")
         .unwrap() as u16;
     assert!(ai.forts.values().any(|j| j.fort == ap_fort));
+    // S14a Build A: particles in flight, a patch, a burning man.
+    assert_eq!((g.flame().len(), g.patches().len()), (2, 1));
+    assert!(w.entities().combat().iter().any(|c| c.close.burn_until > 0));
     let h = holds(&w);
     let miss: Vec<_> = STAGED_MUST_HOLD.iter().filter(|m| !h.contains(m)).collect();
     assert!(miss.is_empty(), "the staged save lacks {miss:?}");

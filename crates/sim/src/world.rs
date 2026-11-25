@@ -483,7 +483,13 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// the whole slice.
 /// 32: B3 code (`AiCounters::arty_direct_holds`; in the setup `[ai.arty]
 /// direct_in_budget`).
-const SAVE_VERSION: u32 = 32;
+/// 33: S14 (`MatchState::{flame, next_flame, patches, next_patch,
+/// clears}`, `Combat::close`, `kill_class` FLAME and MELEE (`COUNT` 14),
+/// `fired_class` FLAME (`COUNT` 12), `PlayerState::s14`, six
+/// `AiCounters`; in the setup `[flame]`, `[melee]`, `[clear]`,
+/// `[ai.flame]`, `WeaponClass::Flame` and a member's `when`). One bump for
+/// the whole slice.
+const SAVE_VERSION: u32 = 33;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -927,6 +933,11 @@ impl World {
             }
         }
         s.state.terrain.rebuild_derived();
+        if let Some(g) = &s.state.game {
+            // S14: clear cells read the dug layer, derived just above.
+            g.validate_s14_terrain(&s.state.terrain)
+                .map_err(|e| SimError::Save(e.to_string()))?;
+        }
         if let Some(g) = &mut s.state.game {
             g.rebuild_derived();
         }
@@ -2619,6 +2630,27 @@ impl World {
         true
     }
 
+    /// S14 staged saves and tests: replaces the flame particles and the
+    /// burning-ground patches (each list in ascending id; the id counters
+    /// move past the highest id). The caller keeps them valid (caps, ticks,
+    /// players). False outside a match.
+    pub fn stage_s14(
+        &mut self,
+        flame: Vec<crate::flame::Flame>,
+        patches: Vec<crate::flame::Patch>,
+    ) -> bool {
+        let Some(g) = self.state.game.as_mut() else {
+            return false;
+        };
+        g.next_flame = g.next_flame.max(flame.last().map_or(0, |f| f.id + 1));
+        g.next_patch = g.next_patch.max(patches.last().map_or(0, |p| p.id + 1));
+        g.flame = flame;
+        g.patches = patches;
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
     /// Starts a field repair of vehicle `id` (staged tests; `RepairUnits`
     /// and the AI call `MatchState::start_repair` the same way). False if
     /// nothing is repairable.
@@ -3061,6 +3093,9 @@ mod s12b_tests;
 #[cfg(test)]
 #[path = "s13_tests.rs"]
 mod s13_tests;
+#[cfg(test)]
+#[path = "s14_tests.rs"]
+mod s14_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;

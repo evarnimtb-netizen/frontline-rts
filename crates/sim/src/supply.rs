@@ -48,7 +48,9 @@ pub mod fired_class {
     pub const TANK_RARE: usize = 9;
     /// Coax and hull MGs.
     pub const VEHICLE_MG: usize = 10;
-    pub const COUNT: usize = 11;
+    /// S14 F1: flame particles.
+    pub const FLAME: usize = 11;
+    pub const COUNT: usize = 12;
     /// Report names, by class.
     pub const NAMES: [&str; COUNT] = [
         "rifle",
@@ -62,6 +64,7 @@ pub mod fired_class {
         "tank_he",
         "tank_rare",
         "vehicle_mg",
+        "flame",
     ];
 }
 
