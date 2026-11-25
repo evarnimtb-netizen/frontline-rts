@@ -1107,7 +1107,7 @@ mod tests {
     /// list is out of limits.
     #[test]
     fn net_s12_commands_in_limits() {
-        assert!(PROTOCOL_VERSION >= 16);
+        // The version is pinned by `net_s14_commands_in_limits`.
         let input = |k: CommandKind| {
             Packet::Input(Input {
                 ack: BundleAck::default(),
