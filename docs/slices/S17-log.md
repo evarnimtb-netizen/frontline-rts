@@ -148,3 +148,45 @@ tests and smoke, content, save fuzz), tools and site table, then docs.
 - **F5** `winner` (and so `winner_faction` and the faction win table) is the lowest standing slot of the winning
   team; in the default layout that is the German player of either team. Read team wins from `s17_derived`.
 
+
+## Review (independent, after Presenter P)
+Diff `2b19f1c..49226e5` read for team-awareness gaps, capture/tickets/victory with teams and wiped players, AI A1-A5,
+save/load and hash, setup hash and protocol, CLI `--teams`, Harrow Cross, presenter fog and colours, the Godot mode pick.
+
+### Fixed
+- **V1 (T8, medium)** `structures.rs` `PickUpCrate` let any player take a set-down unclaimed crate that was not his,
+  so an ally (a human; the AI only takes its own) could take and keep his ally's crate. Now own, or unclaimed and
+  hostile (`Teams::hostile_id`); in a 1v1 the same test as before. Test `an_allys_crate_cannot_be_taken` (control: a
+  hostile player may; fails without the fix). Site row updated (`owner_sites.sh --check` 0 unclassified).
+- **V2 (test)** `handoff::sim_thread_publishes_frames` counted frames in a fixed 400 ms window: a timing-only test
+  (the assertions are on frame contents and stamp order). It now waits until five frames came, deadline 20 s, same
+  asserts; nothing skipped.
+
+### Checked, no change
+- **F3 path cap**: Harrow Cross has roads, and every capped search in 12 matches (seeds 1-6, both sides, instrumented
+  build) was a road-priced vehicle search (no infantry), so S16's review fix V1 (`b0256d0`,
+  `[vehicles.road] cap_retry_weight_pct = 130`) applies: with it cherry-picked, 415 of 34,619 searches capped and the
+  retry reached the goal in 387 (93 %). `b0256d0` landed after `2b19f1c`, so `s17-build` does not have it yet; it comes
+  with the merge into `claude/project-thread-1d8xx3` (conflict: `skirmish.toml` key goes in `[vehicles.road]` above
+  `[teams]`; `resolved_defs.rs` and the canonical snapshot re-blessed). No S17 change.
+- Capture T4, drain T6, victory T7, load outcome check, `Teams` (mask, `ix` fold, unused slots), A1 `main_foe`, A2
+  (ally points out of both assignment passes), A3 (no deadlock: demand 0 still takes leftover squads in the second
+  pass), A4, A5 (`known_*` read `enemy_seen`), sweep and mine `known_mask`, save 34 (team in the setup, table derived),
+  PROTOCOL 17 (setup hash covers `team`), CLI `team_setup` (overrides, swap n/2), Harrow Cross (`validate` ok, sides
+  2/2, mirrors), presenter `FrameCtx::ally`/`sight_bits`, menu 2v2 resolve. No float or HashMap added to the sim.
+
+### Results
+- Kessel Ridge 40 set after V1: **same 40/40** against `target/s17b/kr` (`target/s17r/kr`).
+- Tests (release): sim and godot-bridge 1094 passed, 0 failed, 15 ignored. Clippy `-D warnings` all targets (sim,
+  godot-bridge) clean; fmt clean; `owner_sites.sh --check` 0 unclassified.
+
+### Open (not fixed)
+- **O1 (low)** A defeated player's men (surrendered, or ticket-out with `team_tickets = 0`) still capture: a point can
+  go to the defeated member with the most men and counts in his team's value (T4 "points stay owned by a player").
+- **O2 (low)** An AI's vehicle-blocking pieces can block an ally's vehicles; the "own blocked" demolition
+  (`ai/fort.rs` 3892) clears own pieces only, so an ally's route through them stays failed until repathed.
+- **O3 (merge)** The menu disables the map pick (the map follows the mode, first map per mode); after the merge with
+  S16 Presenter P (Linden Brook in `Session.MAPS`) 1v1 would always get Kessel Ridge: the pick must stay enabled for
+  1v1 maps.
+- **O4 (low)** `MenuChoice.mode = "2v2"` with `slots` set falls back to a 1v1 without an error; `--difficulty1` in a
+  CLI 2v2 sets player 1, the ally of player 0.
