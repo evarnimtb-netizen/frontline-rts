@@ -50,15 +50,21 @@ fn linden_brook_mirrors_every_item_through_the_centre() {
     };
     for r in &m.terrain.ridges {
         assert!(
-            m.terrain.ridges.iter().any(|q| ends(r.from, r.to, q.from, q.to)
-                && (q.height_m, q.width_m) == (r.height_m, r.width_m)),
+            m.terrain
+                .ridges
+                .iter()
+                .any(|q| ends(r.from, r.to, q.from, q.to)
+                    && (q.height_m, q.width_m) == (r.height_m, r.width_m)),
             "ridge {r:?} has no mirror"
         );
     }
     for v in &m.terrain.valleys {
         assert!(
-            m.terrain.valleys.iter().any(|q| ends(v.from, v.to, q.from, q.to)
-                && (q.depth_m, q.width_m) == (v.depth_m, v.width_m)),
+            m.terrain
+                .valleys
+                .iter()
+                .any(|q| ends(v.from, v.to, q.from, q.to)
+                    && (q.depth_m, q.width_m) == (v.depth_m, v.width_m)),
             "valley {v:?} has no mirror"
         );
     }
@@ -216,9 +222,18 @@ fn drive_truck(s: &MatchSetup, goal: [i32; 2]) -> (f64, u32) {
     let (mut on, mut all) = (Fx::ZERO, Fx::ZERO);
     for _ in 0..30 * 240 {
         w.step(&[]);
-        let m = w.game().unwrap().vehicle(v).unwrap().speed.abs().div_int(30);
+        let m = w
+            .game()
+            .unwrap()
+            .vehicle(v)
+            .unwrap()
+            .speed
+            .abs()
+            .div_int(30);
         all += m;
-        if w.terrain().road_at(w.entities().transform()[v.index()].pos.xy()) {
+        if w.terrain()
+            .road_at(w.entities().transform()[v.index()].pos.xy())
+        {
             on += m;
         }
     }
@@ -235,6 +250,22 @@ fn a_truck_drives_the_roads_from_its_base_to_the_points() {
     // this test was written; C over B, D over B and C, E over (300, 200)).
     let mut s = setup("ww2:germany", "ww2:usa");
     s.players.iter_mut().for_each(|p| p.is_ai = false);
+    // The planned path (no AI, no structures) from base 0 to C: on road.
+    let t = Heightfield::generate_map(&s.map);
+    let truck = s.vehicles.iter().find(|v| v.id == "ww2:ger_opel_blitz");
+    let from = at(s.map.bases[0].center);
+    let (ok, _, way) = path(
+        &s,
+        &t,
+        &truck.unwrap().mobility,
+        from,
+        FxVec2::from_int(512, 512),
+    );
+    assert!(
+        ok && road_share(&t, &way) >= 90,
+        "{} %",
+        road_share(&t, &way)
+    );
     for goal in [[512, 512], [764, 604], [512, 164]] {
         let (m, pct) = drive_truck(&s, goal);
         assert!(m > 400.0, "{goal:?}: drove {m} m");

@@ -432,7 +432,8 @@ fn a_pushed_gun_on_a_road_in_woods_keeps_its_push_speed() {
             }
         });
         let g = gun(&mut w, 0, 500, 500);
-        let ty = &w.match_setup().unwrap().vehicles[w.game().unwrap().vehicles[&g].type_idx as usize];
+        let ty =
+            &w.match_setup().unwrap().vehicles[w.game().unwrap().vehicles[&g].type_idx as usize];
         assert_eq!(ty.mobility.woods_speed_pct, 50, "the default for a gun");
         assert_eq!(w.terrain().road_at(FxVec2::from_int(520, 500)), road);
         assert!(w.terrain().woods_at(FxVec2::from_int(520, 500)));

@@ -304,7 +304,11 @@ impl RoadKm {
         let t = w.terrain();
         let tf = w.entities().transform();
         for (id, v) in g.vehicles() {
-            let k = match ms.vehicles.get(v.type_idx as usize).map(|d| d.mobility.kind) {
+            let k = match ms
+                .vehicles
+                .get(v.type_idx as usize)
+                .map(|d| d.mobility.kind)
+            {
                 Some(MobilityKind::Wheeled) => 0,
                 Some(MobilityKind::Halftrack) => 1,
                 Some(MobilityKind::Tracked) => 2,
