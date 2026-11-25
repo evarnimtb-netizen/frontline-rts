@@ -4063,6 +4063,8 @@ impl MatchState {
         if sq.members.is_empty() {
             self.lose_squad_kg(sid);
             self.squads.remove(&sid);
+            // S14 C5: its clear ends with it (a save this tick must load).
+            self.clears.remove(&sid);
             for q in &mut self.path_queue.queues {
                 q.retain(|r| *r != PathReq::Squad(sid));
             }

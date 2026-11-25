@@ -1615,6 +1615,8 @@ impl World {
                 // S14 F6: men leave burning ground (nothing with `[flame]
                 // enabled` 0 or no patch).
                 game.step_out_tick(&mut ctx);
+                // S14 C2-C5: trench clears (nothing without a clear).
+                game.clear_tick(&mut ctx);
                 game.update_items(&mut self.state.entities, &mut self.hash);
                 // S5a: crew feed, sharing and the priced base refill.
                 let bombs_before = game.mortar_bombs_by_player(&self.state.entities);
@@ -2674,6 +2676,21 @@ impl World {
         g.next_patch = g.next_patch.max(patches.last().map_or(0, |p| p.id + 1));
         g.flame = flame;
         g.patches = patches;
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// Puts squad `sq` mid-clear (staged tests; `ClearTrench` inserts a
+    /// clear the same way). False with no match or no such squad.
+    pub fn stage_clear(&mut self, sq: SquadId, clear: crate::flame::Clear) -> bool {
+        let Some(g) = self.state.game.as_mut() else {
+            return false;
+        };
+        if !g.squads.contains_key(&sq) {
+            return false;
+        }
+        g.clears.insert(sq, clear);
         self.refresh_hashes();
         self.fill_snapshot();
         true

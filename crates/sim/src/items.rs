@@ -285,7 +285,7 @@ impl MatchState {
     }
 
     /// Detaches `m` where he stands and starts his wind-up.
-    fn start_throw(&mut self, ctx: &mut Ctx, m: SimId, kind: ItemKind, target: FxVec2) {
+    pub(crate) fn start_throw(&mut self, ctx: &mut Ctx, m: SimId, kind: ItemKind, target: FxVec2) {
         let i = m.index();
         let t = ctx.ents.transform[i];
         let mut facing = (target - t.pos.xy()).normalize_or_zero();

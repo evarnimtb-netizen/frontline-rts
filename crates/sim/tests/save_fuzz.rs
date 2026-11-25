@@ -743,6 +743,7 @@ fn s10b_path(path: &str) -> bool {
         // S14: particles, patches, burning men, the counters.
         || path.starts_with("state.game.flame")
         || path.starts_with("state.game.patches")
+        || path.starts_with("state.game.clears")
         || path.contains(".close")
         || path.contains(".s14.")
         || path.contains("Order.ClearMines")
@@ -1249,8 +1250,7 @@ fn staged_s12(w: &mut World) {
         p.s12.torso_hits = [3, 4];
     }));
     // S14a Build A: two flame particles in flight, a burning patch, a
-    // burning man (a man mid-strike and a squad mid-clear come with Builds
-    // C and B).
+    // burning man (a man mid-strike comes with Build C).
     use frontline_sim::fx::FxVec3;
     let p3 =
         |x: i32, y: i32, z: i32| FxVec3::new(Fx::from_int(x), Fx::from_int(y), Fx::from_int(z));
@@ -1278,6 +1278,27 @@ fn staged_s12(w: &mut World) {
     assert!(w.edit_player(PlayerId(1), |p| {
         p.s14.flame_fired = 2;
         p.s14.patches_made = 1;
+    }));
+    // S14a Build B: a squad mid-clear (phase 1, its second step) in a
+    // short trench north of the S12 men.
+    assert!(w.dig_trench_now(&[FxVec2::from_int(300, 740), FxVec2::from_int(300, 780)], 1));
+    let cq = w
+        .spawn_squad_at(PlayerId(0), t, FxVec2::from_int(300, 744), east)
+        .unwrap();
+    assert!(w.stage_clear(
+        cq,
+        frontline_sim::flame::Clear {
+            at: FxVec2::from_int(300, 741),
+            cell: (75, 189),
+            from: (75, 185),
+            step: 1,
+            phase: 1,
+            phase_at: tick,
+        }
+    ));
+    assert!(w.edit_player(PlayerId(0), |p| {
+        p.s14.clears = 1;
+        p.s14.clear_steps = 1;
     }));
 }
 
@@ -1932,6 +1953,8 @@ fn staged_s10b_save_holds_its_state() {
     // S14a Build A: particles in flight, a patch, a burning man.
     assert_eq!((g.flame().len(), g.patches().len()), (2, 1));
     assert!(w.entities().combat().iter().any(|c| c.close.burn_until > 0));
+    // S14a Build B: a squad mid-clear.
+    assert!(g.clears().values().any(|c| c.phase == 1 && c.step == 1));
     let h = holds(&w);
     let miss: Vec<_> = STAGED_MUST_HOLD.iter().filter(|m| !h.contains(m)).collect();
     assert!(miss.is_empty(), "the staged save lacks {miss:?}");

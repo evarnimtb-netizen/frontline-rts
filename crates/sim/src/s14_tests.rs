@@ -1653,3 +1653,213 @@ fn load_rejects_bad_s14_state_more() {
         assert!(World::load(&x.save(), 1).is_err(), "{name} loads");
     }
 }
+
+// --------------------------------------------------------- C1-C5 clear --
+
+/// A flat match with `[clear] enabled` 1 (and `edit`), an L-shaped trench
+/// (north from (310, 290) to (310, 330), then east to (350, 330)) and a
+/// Sturmpioniergruppe of player 0 at (290, 290). Returns (world, squad).
+fn clear_scene(edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> (World, SquadId) {
+    let mut w = flat_world_with(1, |s| {
+        s.rules.clear.enabled = 1;
+        edit(s);
+    });
+    assert!(w.dig_trench_now(
+        &[
+            FxVec2::from_int(310, 290),
+            FxVec2::from_int(310, 330),
+            FxVec2::from_int(350, 330),
+        ],
+        -1,
+    ));
+    let sq = spawn(&mut w, 0, STURM, 290, 290);
+    steps(&mut w, 2);
+    (w, sq)
+}
+
+fn order_clear(w: &mut World, sq: SquadId, at: FxVec2) {
+    super::s6_tests::run(w, 0, 0, CommandKind::ClearTrench { squad: sq, at });
+}
+
+/// The clear of `sq`, if any.
+fn clear_of(w: &World, sq: SquadId) -> Option<Clear> {
+    w.game().unwrap().clears().get(&sq).copied()
+}
+
+/// C1-C4 (plan 6): a squad ordered to clear the L-shaped trench at its
+/// south end walks it step by step: the step cells follow the trench (each
+/// one dug), north first, then round the bend to the east. Control: the
+/// steps are counted and the clear ends done.
+#[test]
+fn clear_trench_walks_the_trench() {
+    // Steps enough for the 80 m of trench (6 x 8 m reach the bend only).
+    let (mut w, sq) = clear_scene(|s| s.rules.clear.steps_max = 12);
+    order_clear(&mut w, sq, FxVec2::from_int(310, 290));
+    assert!(clear_of(&w, sq).is_some(), "accepted");
+    let mut cells = Vec::new();
+    for _ in 0..240 * super::s6_tests::HZ {
+        w.step(&[]);
+        match clear_of(&w, sq) {
+            Some(c) if cells.last() != Some(&c.cell) => cells.push(c.cell),
+            Some(_) => {}
+            None => break,
+        }
+    }
+    assert!(clear_of(&w, sq).is_none(), "the clear ends: {cells:?}");
+    let t = w.terrain();
+    for c in &cells {
+        assert!(
+            t.dug_dm(c.0 as u32, c.1 as u32) >= crate::terrain::TRENCH_NAV_DM,
+            "a step off the trench: {cells:?}"
+        );
+    }
+    let k = s14_of(&w, 0);
+    assert_eq!(k.clears, 1);
+    assert_eq!(k.clears_done, 1);
+    assert!(k.clear_steps >= 4, "{k:?} {cells:?}");
+    // North along the first leg, then east past the bend (x 310 = cell 77;
+    // the squad's frags run out before the trench's end, which ends the clear).
+    let ys: Vec<u16> = cells.iter().map(|c| c.1).collect();
+    assert!(
+        ys.windows(2).all(|p| p[1] >= p[0]),
+        "north first: {cells:?}"
+    );
+    assert!(cells.iter().any(|c| c.0 > 78), "round the bend: {cells:?}");
+}
+
+/// C1: a point farther than 8 m from any dug cell is refused (`BadSpot`),
+/// and a squad with no frag is refused. Control: the same squad at the
+/// trench is accepted.
+#[test]
+fn clear_refused_off_trench() {
+    let (mut w, sq) = clear_scene(|_| {});
+    order_clear(&mut w, sq, FxVec2::from_int(280, 330));
+    assert!(clear_of(&w, sq).is_none());
+    assert_eq!(
+        w.fort_refusals().last().map(|e| e.refusal),
+        Some(crate::fort::FortRefusal::BadSpot)
+    );
+    for m in members(&w, sq) {
+        assert!(w.edit_soldier(m, |k, _| k.items
+            [frontline_content::ItemKind::Frag.index()] =
+            0));
+    }
+    order_clear(&mut w, sq, FxVec2::from_int(310, 292));
+    assert!(clear_of(&w, sq).is_none(), "no frag");
+    let (mut w, sq) = clear_scene(|_| {});
+    order_clear(&mut w, sq, FxVec2::from_int(310, 292));
+    assert!(clear_of(&w, sq).is_some(), "control: at the trench");
+}
+
+/// C1: any later order to the squad ends the clear (not counted done).
+/// Control: without it the clear goes on over the same ticks.
+#[test]
+fn clear_ends_on_new_order() {
+    for move_it in [false, true] {
+        let (mut w, sq) = clear_scene(|_| {});
+        order_clear(&mut w, sq, FxVec2::from_int(310, 290));
+        steps(&mut w, 60);
+        if move_it {
+            super::s6_tests::run(
+                &mut w,
+                0,
+                1,
+                CommandKind::Move {
+                    squad: sq,
+                    target: FxVec2::from_int(250, 250),
+                },
+            );
+        }
+        steps(&mut w, 30);
+        let k = s14_of(&w, 0);
+        if move_it {
+            assert!(clear_of(&w, sq).is_none(), "the move ends it");
+            assert_eq!(k.clears_done, 0);
+        } else {
+            assert!(clear_of(&w, sq).is_some(), "control");
+        }
+    }
+}
+
+/// C3 (S14-7 (A)): with `[flame]` on, the squad's flame man fires at the
+/// step point and the squad waits until no own patch burns within 2 m of
+/// it, longer than the fuse and `settle_s`. Control: with the switch off
+/// (no flame man, no patch) the wait is the fuse and `settle_s`.
+#[test]
+fn clear_waits_for_own_fire() {
+    let mut waits = Vec::new();
+    for on in [0u32, 1] {
+        let mut w = real_flame_world(|s| {
+            s.rules.clear.enabled = 1;
+            s.rules.flame.enabled = on;
+        });
+        assert!(w.dig_trench_now(
+            &[FxVec2::from_int(310, 290), FxVec2::from_int(310, 340)],
+            -1
+        ));
+        let sq = spawn(&mut w, 0, STURM, 300, 280);
+        steps(&mut w, 2);
+        order_clear(&mut w, sq, FxVec2::from_int(310, 290));
+        let mut start = None;
+        let mut wait = None;
+        for _ in 0..120 * super::s6_tests::HZ {
+            w.step(&[]);
+            let Some(c) = clear_of(&w, sq) else { break };
+            if c.phase == 1 && start.is_none() {
+                start = Some(c.phase_at);
+            }
+            if let (2, Some(s0)) = (c.phase, start) {
+                wait = Some(c.phase_at - s0);
+                break;
+            }
+        }
+        let wait = wait.unwrap_or_else(|| panic!("on {on}: a step waited and advanced"));
+        if on == 1 {
+            assert!(s14_of(&w, 0).flame_fired > 0, "he fired at the point");
+        }
+        waits.push(wait);
+    }
+    assert!(waits[1] > waits[0], "own fire holds the squad: {waits:?}");
+}
+
+/// C1: with `[clear] enabled` 0 the order is refused and nothing starts.
+/// Control: with 1 the same order is accepted.
+#[test]
+fn clear_off_is_refused() {
+    for on in [0u32, 1] {
+        let (mut w, sq) = clear_scene(|s| s.rules.clear.enabled = on);
+        order_clear(&mut w, sq, FxVec2::from_int(310, 292));
+        if on == 0 {
+            assert!(clear_of(&w, sq).is_none());
+            assert_eq!(
+                w.fort_refusals().last().map(|e| e.refusal),
+                Some(crate::fort::FortRefusal::NotAllowed)
+            );
+        } else {
+            assert!(clear_of(&w, sq).is_some(), "control");
+        }
+    }
+}
+
+/// Spec 8: a save taken mid-step (phase 1, frags in the air) loads and
+/// plays on to the same hashes as the world it came from. Control: the
+/// clear is in the save.
+#[test]
+fn clear_saves_and_loads_mid_step() {
+    let (mut w, sq) = clear_scene(|_| {});
+    order_clear(&mut w, sq, FxVec2::from_int(310, 290));
+    for _ in 0..120 * super::s6_tests::HZ {
+        w.step(&[]);
+        if clear_of(&w, sq).is_some_and(|c| c.phase == 1) {
+            break;
+        }
+    }
+    assert_eq!(clear_of(&w, sq).map(|c| c.phase), Some(1), "mid-step");
+    let mut back = World::load(&w.save(), 2).expect("loads");
+    assert_eq!(clear_of(&back, sq), clear_of(&w, sq), "control: saved");
+    for t in 0..300 {
+        w.step(&[]);
+        back.step(&[]);
+        assert_eq!(w.full_state_hash(), back.full_state_hash(), "tick {t}");
+    }
+}

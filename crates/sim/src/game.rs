@@ -1212,7 +1212,7 @@ impl MatchState {
         }
         // S9: an order that sends men away takes them off their guns first.
         self.crew_ordered_off(ctx, p, &c.kind);
-        match &c.kind {
+        let ok = match &c.kind {
             CommandKind::MoveSoldier { .. }
             | CommandKind::Spawn { .. }
             | CommandKind::Despawn { .. } => false,
@@ -1316,10 +1316,9 @@ impl MatchState {
             }
             CommandKind::Evacuate { units } => self.order_evacuate(ctx, p, units),
             &CommandKind::Reinforce { squad } => self.order_reinforce(ctx, p, squad),
-            // S14: declared, not built yet (Builds B and C).
-            &CommandKind::ClearTrench { squad, .. } => {
-                self.refuse_fort(p, Some(squad), crate::fort::FortRefusal::NotAllowed)
-            }
+            // S14 C1 (`crate::flame`; refused with `[clear] enabled` 0).
+            &CommandKind::ClearTrench { squad, at } => self.order_clear(ctx, p, squad, at),
+            // S14: declared, not built yet (Build C).
             CommandKind::Strike { .. } => {
                 self.refuse_fort(p, None, crate::fort::FortRefusal::NotAllowed)
             }
@@ -1337,7 +1336,12 @@ impl MatchState {
             CommandKind::Hitch { guns, tow } => self.order_hitch(ctx, p, guns, *tow),
             CommandKind::Unhitch { guns } => self.order_unhitch(ctx, p, guns),
             CommandKind::SetAmbush { guns, range_m } => self.order_ambush(ctx, p, guns, *range_m),
+        };
+        // S14 C1: any later order to a clearing squad ends its clear.
+        if ok && !self.clears.is_empty() {
+            self.clear_ended_by(ctx.ents, &c.kind);
         }
+        ok
     }
 
     /// Whether `vehicle` is a live vehicle of `player` (an escort's).
@@ -3135,7 +3139,7 @@ fn dig_consistent(
 
 /// Stops `sq` where its men stand, facing `facing` (kept if zero).
 /// S8a: the infantry squad a squad-level command addresses, if any.
-fn command_squad(kind: &CommandKind) -> Option<SquadId> {
+pub(crate) fn command_squad(kind: &CommandKind) -> Option<SquadId> {
     match kind {
         CommandKind::Move { squad, .. }
         | CommandKind::AttackMove { squad, .. }
