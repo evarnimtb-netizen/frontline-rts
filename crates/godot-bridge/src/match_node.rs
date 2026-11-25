@@ -2020,6 +2020,12 @@ impl MatchRuntime {
                 "enabled" => rules.wounds.enabled != 0,
                 "reinforce" => rules.wounds.reinforce != 0,
             },
+            // S14: the assault kit's switches (`MatchView.s14_on`).
+            "s14" => &vdict! {
+                "flame" => rules.flame.enabled != 0,
+                "melee" => rules.melee.enabled != 0,
+                "clear" => rules.clear.enabled != 0,
+            },
         };
 
         let mut players = VarArray::new();
@@ -2254,6 +2260,14 @@ impl MatchRuntime {
                     },
                 );
             }
+            // S14: he burns / his strike phase (1 wind-up, 2 recovery).
+            if f.burning.get(i).copied().unwrap_or(false) {
+                d.set("burning", true);
+            }
+            let st = f.strike.get(i).copied().unwrap_or(0);
+            if st != 0 {
+                d.set("strike", st as i64);
+            }
             // S6: the crate he carries (kind and kg), if any.
             if let Some(c) = f.crates.iter().find(|c| c.carrier == id) {
                 d.set(
@@ -2349,6 +2363,32 @@ impl MatchRuntime {
                     "pos" => self.godot(c.pos),
                     "radius" => c.radius,
                     "density" => c.density,
+                }
+                .to_variant(),
+            );
+        }
+        // S14: flame particles and burning ground the local player sees
+        // (own always; else within sight of an own man).
+        let mut flame = VarArray::new();
+        for c in f.flame.iter().filter(|c| c.visible) {
+            flame.push(
+                &vdict! {
+                    "id" => c.id as i64,
+                    "pos" => self.godot(c.pos),
+                    "player" => c.player as i64,
+                }
+                .to_variant(),
+            );
+        }
+        let mut patches = VarArray::new();
+        for c in f.patches.iter().filter(|c| c.visible) {
+            patches.push(
+                &vdict! {
+                    "id" => c.id as i64,
+                    "pos" => self.godot(c.pos),
+                    "player" => c.player as i64,
+                    "seconds_left" => c.ticks_left as f32 / hz,
+                    "radius" => self.setup.rules.flame.patch_radius_cm as f32 / 100.0,
                 }
                 .to_variant(),
             );
@@ -2620,6 +2660,8 @@ impl MatchRuntime {
             "squads" => &squads,
             "soldiers" => &soldiers,
             "smokes" => &smokes,
+            "flame" => &flame,
+            "patches" => &patches,
             "thrown" => &thrown,
             "callin" => &vdict! {
                 "catalog" => &catalog,
@@ -3713,6 +3755,17 @@ impl MatchRuntime {
                     &self.setup,
                     &squads,
                     kg,
+                ));
+            }
+            // S14: the first selected infantry squad clears the trench
+            // nearest `target` (grenades, then the entrance).
+            "clear_trench" => {
+                let Some(t) = target else { return };
+                let squads: Vec<(u32, u16)> = own.iter().map(|s| (s.id, s.type_idx)).collect();
+                out.extend(crate::intents::clear_trench_command(
+                    &self.setup,
+                    &squads,
+                    to_sim(t, self.half),
                 ));
             }
             // S10a: the first selected `clear_wire` squad cuts the wire

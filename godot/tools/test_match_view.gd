@@ -101,6 +101,7 @@ func _run() -> void:
 	await _test_s10a()
 	await _test_s10b()
 	await _test_s12()
+	await _test_s14()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1151,6 +1152,66 @@ func _reasons(ci: Control) -> Array:
 	for i in _view.state.callin.catalog.size():
 		out.append(ci.reason_text(i))
 	return out
+
+
+## S14 presenter (flame view, strike pose, Clear trench, V): everything
+## hidden while the rules and the state carry none of it; staged, one of
+## each is drawn; the buttons, the tool click and the key send the intents.
+func _test_s14() -> void:
+	var grid: Control = _view.orders
+	var fv: Node3D = _match.flame_view
+	var sq := -1
+	for t in ["rifle", "engineer", "mg"]:
+		for sid in _source.squad_ids(0, t):
+			if sq == -1 and _source.unit_ids(sid).size() >= 3:
+				sq = sid
+	_check(sq != -1, "S14: a squad to stage with")
+	if sq == -1:
+		return
+	_sel.select_squads(PackedInt32Array([sq]))
+	_view.update_state(_source.get_state())
+	await _frames(2)
+	grid.update_state(_view.state)
+	_check(not _view.s14_on("melee") and not _view.s14_on("clear") and grid.label_of(&"strike") == "" and grid.label_of(&"clear_trench") == "", "S14: no Clear or Strike button while the switches are off")
+	_check(fv.drawn() == 0, "S14: nothing drawn while off")
+	_key(KEY_V)
+	_check(_last(&"strike_units") == null, "S14: V does not strike while melee is off")
+	var men: PackedInt32Array = _source.unit_ids(sq)
+	var at: Vector3 = _source.squad_pos(sq)
+	_source.stage_s14(men[0], men[1], men[2], at + Vector3(6, 0, -4), 1)
+	_view.update_state(_source.get_state())
+	await _frames(3)
+	_view.update_state(_source.get_state())
+	grid.update_state(_view.state)
+	_check(fv.particles == 6 and fv.patches == 1 and fv.burning == 1 and fv.strikes == 1, "S14: one of each drawn (%d, %d, %d, %d)" % [fv.particles, fv.patches, fv.burning, fv.strikes])
+	_check(int(fv.strike_phase.get(men[2], 0)) == 1, "S14: the wind-up pose")
+	_source.stage_s14(men[0], men[1], men[2], at + Vector3(6, 0, -4), 2)
+	_view.update_state(_source.get_state())
+	await _frames(2)
+	_check(int(fv.strike_phase.get(men[2], 0)) == 2, "S14: the recovery pose")
+	_check(grid.label_of(&"strike") == "Strike" and grid.label_of(&"clear_trench") == "Clear", "S14: Clear and Strike buttons with the switches on")
+	_check(grid.enabled(&"strike"), "S14: Strike is live for men")
+	_intents.clear()
+	grid.press(&"strike")
+	var st: Variant = _last(&"strike_units")
+	_check(st != null and not (st.units as PackedInt32Array).is_empty(), "S14: Strike sends strike_units")
+	_intents.clear()
+	_key(KEY_V)
+	_check(_last(&"strike_units") != null, "S14: V sends strike_units")
+	if grid.enabled(&"clear_trench"):
+		grid.press(&"clear_trench")
+		_check(_sel.tool == &"clear_trench", "S14: Clear arms a tool")
+		_click(_ground_screen(at + Vector3(10, 0, -6)))
+		var ct: Variant = _last(&"clear_trench")
+		_check(ct != null and (ct.squads as PackedInt32Array) == PackedInt32Array([sq]) and ct.target is Vector3, "S14: a click sends clear_trench (%s)" % [ct])
+	else:
+		_check(true, "S14: (the squad holds no frag grenade: Clear grey)")
+	# The fields go quiet when the state empties them.
+	_source.s14_flame.clear()
+	_source.s14_patches.clear()
+	_view.update_state(_source.get_state())
+	await _frames(2)
+	_check(fv.particles == 0 and fv.patches == 0, "S14: emptied fields hide the stream and the ground")
 
 
 func _test_end() -> void:

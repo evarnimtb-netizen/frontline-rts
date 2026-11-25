@@ -1643,50 +1643,54 @@ The bridge does not yet send `rules.wounds {enabled, reinforce}`; until it
 does the medic card stays hidden and the Aid button appears once the first
 wound, casualty or medic squad is in the state.
 
-## S14: flamethrowers, burning ground (mechanics half, Build A)
+## S14: flamethrowers, burning ground, strikes (mechanics A-C, presenter P)
 
-Design: `docs/slices/S14-assault-kit.md` 3 (F1-F9). Everything is off
-unless the rules' `[flame] enabled` is 1 (0 in S14a; step-out also needs
-`step_out`). Build A has no flame def in the mod (Build B adds the
-flamethrowers and fuel), so no match shows any of this yet. The sim fills
-the snapshot fields below; the bridge does not send them yet (the
-presenter stage maps them to state keys, as named here), and the mock
-shows none of it.
+Design: `docs/slices/S14-assault-kit.md` 3, 5, 6. Everything is off unless
+the rules switch it on (`[flame] enabled`, `[melee] enabled`, `[clear]
+enabled`; all 0 in the shipped rules), and every field below is empty or
+absent while it is off. The bridge sends them; the mock shows one of each
+once `stage_s14` is called (`rules.s14` on).
 
-### Snapshot fields (sim, `RenderSnapshot`)
+### State keys
 
-- `flame[]: FlameSnapshot {id, pos: [x, y, z], player}` — flame particles
-  in flight, ascending id. They live in their own list, never in
-  `projectiles` (the pool).
-- `patches[]: PatchSnapshot {id, pos: [x, y, z], player, ticks_left}` —
-  burning ground, ascending id; it burns within `[flame]
-  patch_radius_cm` of `pos` until `ticks_left` runs out.
-- `soldier_burning[]: bool` — per entry of `soldiers` (match mode): he
-  burns (a flame hit or burning ground, `[flame] burn_s`).
-- `soldier_strike[]: u8` — per entry of `soldiers` (match mode, S14a
-  Build C): his strike phase, 0 none, 1 wind-up (`[melee]` or the
-  weapon's `windup_ms`), 2 recovery (the strike landed or missed as the
-  recovery began). The strike pose reads it.
+- `rules.s14: {flame, melee, clear}: bool` -- the three switches
+  (`MatchView.s14_on(key)`; the Clear trench and Strike buttons show with
+  their switch on).
+- `flame[]: {id, pos: Vector3, player}` -- flame particles in flight,
+  ascending id (own always; the enemy's within sight of an own man). They
+  live in their own list, never in `projectiles`.
+- `patches[]: {id, pos: Vector3, player, seconds_left, radius}` -- burning
+  ground (same sight rule, plus 6 m); it burns within `radius` m of `pos`
+  (`[flame] patch_radius_cm`) until `seconds_left` runs out.
+- `soldiers[].burning: bool` -- only when true (a flame hit or burning
+  ground).
+- `soldiers[].strike: int` -- only when not 0: 1 wind-up, 2 recovery (the
+  strike pose).
 - Weapons: `WeaponClass::Flame` (`class` "flame" in defs); the bridge's
-  sound cue for its shots is the MG's (`"mg"`) until the presenter adds
-  one.
-
-### State keys (planned, presenter stage)
-
-- `flame[]: {id, pos: Vector3, player}`, `patches[]: {id, pos: Vector3,
-  player, seconds_left}`, `soldiers[].burning: bool` (only when true).
+  sound cue for its shots is the MG's (`"mg"`).
 
 ### Intents
 
-- `strike_units {units}` (S14a Build C; direct control `V`) — each of
-  the own `units` with no strike running starts one at the nearest enemy
-  within reach (weapon `[melee]` `reach_cm`, else the rules') plus
-  `[melee] start_pad_cm`. Refused (`fort_refused`, `not_allowed`) with
-  `[melee] enabled` 0 or when nobody is in reach. The bridge maps it to
-  `Strike`; the mock does not handle it yet.
-- The sim's `ClearTrench {squad, at}` (Build B) has no bridge intent yet
-  (presenter stage).
+- `strike_units {units}` (direct control `V` while `rules.s14.melee` is
+  on; the Strike button) -- each of the own `units` with no strike running
+  starts one at the nearest enemy within reach. Refused (`fort_refused`,
+  `not_allowed`) with `[melee] enabled` 0 or when nobody is in reach. The
+  bridge maps it to `Strike`; the mock does not handle it.
+- `clear_trench {squads, target}` (the Clear button arms a click tool) --
+  the first selected infantry squad clears the trench cell nearest
+  `target` (`ClearTrench {squad, at}`): grenades, then the entrance.
+  Refused (`fort_refused`) `not_allowed` (switch off, vehicle or gun squad,
+  no frag grenade) or `bad_spot` (no trench near). The mock does not handle
+  it.
 
-### Presenter
+### Presenter (`match/flame_view.gd`)
 
-Not built (no flame in a match before Build B).
+One MultiMesh of short bright boxes for the stream (at most 256), a
+flickering disc for each patch with a light under the first 3, a small
+flame over each burning man, and the strike pose as a pale bar over the
+striker (raised in the wind-up, thrust toward the nearest enemy in the
+recovery; the soldiers are instanced meshes without a rig, so there is no
+arm to move). Nothing is drawn while the fields are empty. Burning men are
+not tinted (the instanced bodies take no per-man tint from GDScript); the
+flame marker stands for it. `V` is also Board's key: with `rules.s14.melee`
+on and men selected `V` strikes and Board stays on its button.

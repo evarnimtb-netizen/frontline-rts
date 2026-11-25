@@ -393,6 +393,13 @@ func s12_on() -> bool:
 	return _s12_seen
 
 
+## S14: whether the rules switch `key` ("flame", "melee", "clear") on. The
+## bridge sends `rules.s14`; the mock sends it once S14 is staged.
+func s14_on(key: String) -> bool:
+	var w: Variant = rules().get("s14")
+	return w is Dictionary and bool((w as Dictionary).get(key, false))
+
+
 ## S12: a wounded man's wound Dictionary ({} when fit).
 func soldier_wound(so: Dictionary) -> Dictionary:
 	var w: Variant = so.get("wound")

@@ -213,6 +213,9 @@ func start(s: Dictionary) -> void:
 	veh.reset()
 	s12_enabled = false
 	s12_casualties.clear()
+	s14_enabled = false
+	s14_flame.clear()
+	s14_patches.clear()
 	_push_event(0, "info", "Skirmish on Kessel Ridge. Hold the points.", null)
 
 
@@ -1591,6 +1594,8 @@ func _build_state() -> Dictionary:
 	rules.merge(veh.rules())
 	if s12_enabled:
 		rules.wounds = {"enabled": true, "reinforce": true}
+	if s14_enabled:
+		rules.s14 = {"flame": true, "melee": true, "clear": true}
 	var vs := veh.export_state(eyes)
 	var smokes: Array = []
 	for c in _smokes:
@@ -1617,6 +1622,8 @@ func _build_state() -> Dictionary:
 		"casualties": s12_casualties.duplicate(true),
 		"fort": s10_fort.duplicate(true),
 		"crates": _s6_crates_out(),
+		"flame": s14_flame.duplicate(true),
+		"patches": s14_patches.duplicate(true),
 		"shells": vs.shells,
 		"armour_events": vs.armour_events,
 		"events": _events,
@@ -1823,6 +1830,11 @@ func _soldier_state(sq: Dictionary, man: Dictionary, own: bool) -> Dictionary:
 		"pinned": man.supp > PINNED,
 		"suppression": man.supp,
 	}
+	# S14 (mock): burning and the strike phase a test staged.
+	if man.get("burning", false):
+		out.burning = true
+	if int(man.get("strike", 0)) != 0:
+		out.strike = int(man.strike)
 	# S12 (mock): a wound a test staged ({bandaged, legs, treated, bandaging}).
 	if man.has("wound"):
 		out.wound = man.wound.duplicate()
@@ -1936,6 +1948,34 @@ func at_volley() -> void:
 		if sq.type == "at":
 			sq.rocket_t = 0.0
 			_at_fire(sq, 0.0)
+
+
+# --- S14 (mock) ----------------------------------------------------------------
+
+## The assault kit is staged (rules.s14 on, flame and patches in the state).
+var s14_enabled := false
+var s14_flame: Array = []
+var s14_patches: Array = []
+
+
+## S14 staging: one of each. A short flame stream from man `flamer` toward
+## `at`, a burning patch at `at`, man `burner` burning, man `striker` in
+## the wind-up (`phase` 1) or recovery (2) of a strike.
+func stage_s14(flamer: int, burner: int, striker: int, at: Vector3, phase := 1) -> void:
+	s14_enabled = true
+	var f := _man(flamer)
+	if not f.is_empty():
+		var from := _v3(f.pos) + Vector3(0, 1.2, 0)
+		s14_flame.clear()
+		for i in 6:
+			s14_flame.append({"id": i, "pos": from.lerp(at + Vector3(0, 0.5, 0), float(i + 1) / 7.0), "player": local_player})
+	s14_patches = [{"id": 0, "pos": at, "player": local_player, "seconds_left": 12.0, "radius": 2.0}]
+	var b := _man(burner)
+	if not b.is_empty():
+		b.burning = true
+	var s := _man(striker)
+	if not s.is_empty():
+		s.strike = phase
 
 
 # --- S12 (mock) -----------------------------------------------------------------
