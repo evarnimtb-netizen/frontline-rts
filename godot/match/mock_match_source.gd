@@ -172,6 +172,7 @@ func _ready() -> void:
 ## Resets the mock to a fresh match for `s` (Session.setup shape).
 func start(s: Dictionary) -> void:
 	setup = s.duplicate()
+	MockMap.use(String(setup.get("map", "kessel_ridge")))
 	rng.seed = int(setup.get("seed", 1)) * 7919 + 17
 	var mine: String = setup.get("faction", "germany")
 	var theirs := "usa" if mine == "germany" else "germany"
@@ -186,17 +187,17 @@ func start(s: Dictionary) -> void:
 	for p in MockMap.POINTS:
 		var pos: Vector2 = p.pos
 		points.append({"id": p.id, "pos": _v3(pos), "radius": RULES.capture_radius_m, "owner": -1, "capturing": -1, "progress": 0.0, "contested": false})
-	points[0].owner = 0
-	points[4].owner = 1
+	points[MockMap.OWNED[0]].owner = 0
+	points[MockMap.OWNED[1]].owner = 1
 	squads.clear()
 	man_squad.clear()
 	_next_id = 1
 	_next_man = 1001
 	# Opening positions: both sides already pushing towards the middle.
-	var own := [["rifle", Vector2(-250, 170)], ["rifle", Vector2(-215, -150)], ["mg", Vector2(-120, 80)],
-		["engineer", Vector2(-285, 228)], ["mortar", Vector2(-330, 310)], ["rifle", Vector2(-60, 40)]]
-	var foe := [["rifle", Vector2(230, -170)], ["rifle", Vector2(200, 150)], ["mg", Vector2(60, -40)],
-		["engineer", Vector2(280, -230)], ["mortar", Vector2(340, -320)], ["rifle", Vector2(40, 30)]]
+	var own: Array = MockMap.OPENING
+	var foe: Array = []
+	for e in own:
+		foe.append([e[0], -e[1]])
 	for e in own:
 		_spawn(0, e[0], e[1])
 	for e in foe:
@@ -213,7 +214,7 @@ func start(s: Dictionary) -> void:
 	veh.reset()
 	s12_enabled = false
 	s12_casualties.clear()
-	_push_event(0, "info", "Skirmish on Kessel Ridge. Hold the points.", null)
+	_push_event(0, "info", "Skirmish on %s. Hold the points." % MockMap.map_name(), null)
 
 
 func height_at(x: float, z: float) -> float:
@@ -1603,7 +1604,7 @@ func _build_state() -> Dictionary:
 		"time_s": time_s,
 		"paused": paused,
 		"local_player": local_player,
-		"map": {"id": setup.get("map", "kessel_ridge"), "name": "Kessel Ridge", "size_m": MockMap.SIZE_M, "minimap": _minimap},
+		"map": {"id": setup.get("map", "kessel_ridge"), "name": MockMap.map_name(), "size_m": MockMap.SIZE_M, "minimap": _minimap},
 		"rules": rules,
 		"players": out_players,
 		"points": out_points,

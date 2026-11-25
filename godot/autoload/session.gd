@@ -62,7 +62,7 @@ const MAPS := {
 		"size_m": 1024,
 		"points": 5,
 		"blurb": "Rolling farmland split by a wooded ridge. Five points, the middle one on the crest.",
-		"mode": "1v1",
+		"bases": 2,
 	},
 	# S17: the four-base team map (2v2 only: player i takes base i).
 	"harrow_cross": {
@@ -70,7 +70,14 @@ const MAPS := {
 		"size_m": 1536,
 		"points": 7,
 		"blurb": "Two roads cross on a low rise. Two bases on each edge; you and an AI ally hold the west.",
-		"mode": "2v2",
+		"bases": 4,
+	},
+	"linden_brook": {
+		"name": "Linden Brook",
+		"size_m": 1024,
+		"points": 5,
+		"blurb": "A brook valley between two low ridges, bases west and east. The middle point lies in the valley, and country roads run between the points: wheels and tracks are faster on them.",
+		"bases": 2,
 	},
 }
 ## S17: the skirmish modes (1v1, 2v2: you and an AI ally against two AIs).
@@ -163,14 +170,19 @@ func _ready() -> void:
 				if v in DIFFICULTIES:
 					setup.difficulty = v
 				i += 1
+			"--map":
+				if v in MAPS:
+					setup.map = v
+				i += 1
 			"--seed":
 				setup.seed = v.to_int()
 				i += 1
 			"--mode":
-				# S17: 2v2 plays Harrow Cross.
+				# S17: 2v2 plays a four-base map (Harrow Cross).
 				if v in MODES:
 					setup.mode = v
-					setup.map = map_for_mode(v)
+					if not setup.map in maps_for_mode(v):
+						setup.map = map_for_mode(v)
 				i += 1
 			"--autoplay":
 				autoplay_minutes = maxf(v.to_float(), 0.5) if v.is_valid_float() else 5.0
@@ -398,12 +410,24 @@ func map_info(id: String) -> Dictionary:
 	return MAPS.get(id, {})
 
 
+## S17: the bases a mode needs (one per player).
+func bases_for_mode(mode: String) -> int:
+	return 4 if mode == "2v2" else 2
+
+
+## S17: the maps that play `mode` (as many bases as players), in MAPS order.
+func maps_for_mode(mode: String) -> Array:
+	var out: Array = []
+	for id in MAPS:
+		if MAPS[id].get("bases", 2) == bases_for_mode(mode):
+			out.append(id)
+	return out
+
+
 ## S17: the first map that plays `mode`.
 func map_for_mode(mode: String) -> String:
-	for id in MAPS:
-		if MAPS[id].get("mode", "1v1") == mode:
-			return id
-	return "kessel_ridge"
+	var ids := maps_for_mode(mode)
+	return ids[0] if not ids.is_empty() else "kessel_ridge"
 
 
 func _run_autoplay_menu() -> void:

@@ -3453,6 +3453,15 @@ impl MatchRuntime {
                     .to_variant(),
             );
         }
+        // S16: road polylines (ground-level points) and full width in metres.
+        let mut roads = VarArray::new();
+        for r in &m.roads {
+            let mut line = PackedVector3Array::new();
+            for p in &r.points {
+                line.push(self.ground(frontline_sim::FxVec2::from(*p).to_f32()));
+            }
+            roads.push(&vdict! {"points" => &line, "width" => 2.0 * fx(r.half_width)}.to_variant());
+        }
         let mut bases = VarArray::new();
         for b in &m.bases {
             let c = frontline_sim::FxVec2::from(b.center).to_f32();
@@ -3485,6 +3494,7 @@ impl MatchRuntime {
             "size_m" => m.size_m as f32,
             "half" => self.half,
             "woods" => &woods,
+            "roads" => &roads,
             "points" => &points,
             "bases" => &bases,
             "own_base" => own_base as i64,
@@ -4121,8 +4131,23 @@ fn items_dict(n: [u16; frontline_sim::ITEM_KINDS]) -> VarDictionary {
     d
 }
 
-/// Shaded top-down map image (north up), woods and contour lines, for the
-/// minimap and menu preview.
+/// Minimap road colour (S16; the Godot scenery colour is in `road_style.gd`).
+const MINIMAP_ROAD_COLOR: [f32; 3] = [0.62, 0.55, 0.40];
+
+/// Distance from `p` to the segment `a`-`b`.
+fn dist_to_segment(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> f32 {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 <= 0.0 {
+        0.0
+    } else {
+        (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2).clamp(0.0, 1.0)
+    };
+    ((p[0] - a[0] - t * dx).powi(2) + (p[1] - a[1] - t * dy).powi(2)).sqrt()
+}
+
+/// Shaded top-down map image (north up), woods, roads and contour lines,
+/// for the minimap and menu preview.
 fn minimap_texture(t: &TerrainStore, setup: &MatchSetup, px: usize) -> Option<Gd<ImageTexture>> {
     let size = t.size_m();
     let step = size / px as f32;
@@ -4138,6 +4163,19 @@ fn minimap_texture(t: &TerrainStore, setup: &MatchSetup, px: usize) -> Option<Gd
             )
         })
         .collect();
+    // Roads: segments and half width; drawn at least one pixel wide.
+    let mut road_segs: Vec<([f32; 2], [f32; 2], f32)> = Vec::new();
+    for r in &setup.map.roads {
+        let half = Fx::from(r.half_width).to_f32().max(step * 0.7);
+        let pts: Vec<[f32; 2]> = r
+            .points
+            .iter()
+            .map(|p| frontline_sim::FxVec2::from(*p).to_f32())
+            .collect();
+        for w in pts.windows(2) {
+            road_segs.push((w[0], w[1], half));
+        }
+    }
     let mut bytes = Vec::with_capacity(px * px * 3);
     for j in 0..px {
         for i in 0..px {
@@ -4157,7 +4195,12 @@ fn minimap_texture(t: &TerrainStore, setup: &MatchSetup, px: usize) -> Option<Gd
             {
                 c = [0.20, 0.27, 0.17];
             }
-            if h.rem_euclid(4.0) < 0.3 {
+            if road_segs
+                .iter()
+                .any(|(a, b, half)| dist_to_segment([x, y], *a, *b) <= *half)
+            {
+                c = MINIMAP_ROAD_COLOR;
+            } else if h.rem_euclid(4.0) < 0.3 {
                 c = [c[0] * 0.82, c[1] * 0.82, c[2] * 0.82];
             }
             for v in c {
@@ -4207,4 +4250,19 @@ fn phase_word(p: u8) -> &'static str {
         .get(p as usize)
         .copied()
         .unwrap_or("effect")
+}
+
+#[cfg(test)]
+mod minimap_road_tests {
+    use super::dist_to_segment;
+
+    #[test]
+    fn distance_to_segment_clamps_to_the_ends() {
+        let (a, b) = ([0.0, 0.0], [10.0, 0.0]);
+        assert_eq!(dist_to_segment([5.0, 3.0], a, b), 3.0);
+        assert_eq!(dist_to_segment([-4.0, 3.0], a, b), 5.0);
+        assert_eq!(dist_to_segment([13.0, 4.0], a, b), 5.0);
+        // A zero-length segment is a point.
+        assert_eq!(dist_to_segment([3.0, 4.0], a, a), 5.0);
+    }
 }

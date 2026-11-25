@@ -3958,6 +3958,7 @@
           "untrained_traverse_pct": 75
         },
         "road": {
+          "cap_retry_weight_pct": 130,
           "enabled": 1,
           "halftrack_pct": 150,
           "heuristic_pct": 100,
