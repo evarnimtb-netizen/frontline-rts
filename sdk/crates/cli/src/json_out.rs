@@ -1837,10 +1837,12 @@ mod tests {
             strikes: 2,
             ..Default::default()
         };
-        let mut ai = frontline_sim::ai::AiCounters::default();
-        ai.flame_jobs = 2;
-        ai.flame_job_ends[5] = 1;
-        ai.refuels = 1;
+        let ai = frontline_sim::ai::AiCounters {
+            flame_jobs: 2,
+            flame_job_ends: [0, 0, 0, 0, 0, 1],
+            refuels: 1,
+            ..Default::default()
+        };
         let mut f = S14Faction::default();
         f.add(&S14Player::of(&hit, Some(&ai)));
         f.add(&S14Player::of(&Default::default(), None));

@@ -318,7 +318,10 @@ fn holds(w: &World) -> Vec<&'static str> {
     let ai = |p: u8| g.ai(PlayerId(p)).unwrap();
     put((0..2).any(|p| !ai(p).forts.is_empty()), "ai_forts");
     put((0..2).any(|p| !ai(p).breaches.is_empty()), "ai_breaches");
-    put((0..2).any(|p| !ai(p).flame.jobs.is_empty()), "ai_flame_jobs");
+    put(
+        (0..2).any(|p| !ai(p).flame.jobs.is_empty()),
+        "ai_flame_jobs",
+    );
     put(
         (0..2).any(|p| ai(p).material_run.is_some()),
         "ai_material_run",
@@ -1988,7 +1991,13 @@ fn staged_s10b_save_holds_its_state() {
     assert_eq!(ai.refused.len(), frontline_sim::ai::MAX_REFUSED);
     // S14-ai: a flame job in each phase across the two AIs.
     let mut phases: Vec<u8> = (0..2)
-        .flat_map(|p| g.ai(frontline_sim::PlayerId(p)).unwrap().flame.jobs.values())
+        .flat_map(|p| {
+            g.ai(frontline_sim::PlayerId(p))
+                .unwrap()
+                .flame
+                .jobs
+                .values()
+        })
         .map(|j| j.phase as u8)
         .collect();
     phases.sort_unstable();
