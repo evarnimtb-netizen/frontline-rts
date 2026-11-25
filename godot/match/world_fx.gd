@@ -38,6 +38,7 @@ var _smoke_n := 0
 func setup(info: Dictionary, height_fn: Callable) -> void:
 	_local = int(info.get("local_player", 0))
 	_build_trees(info.get("woods", []), height_fn)
+	_build_roads(info.get("roads", []), height_fn)
 	for p in info.get("points", []):
 		_flags.append(_make_flag(p.pos))
 	for i in POOL:
@@ -402,6 +403,20 @@ func _update_flag(f: Dictionary, p: Dictionary, dt: float) -> void:
 	var sway := sin(_t * 2.1 + float(f.phase)) * 0.18
 	cloth.position = Vector3(1.15, h, 0)
 	cloth.rotation = Vector3(0, sway, 0)
+
+
+# --- roads (S16) ---------------------------------------------------------------
+
+func _build_roads(roads: Array, height_fn: Callable) -> void:
+	var rs: Array = []
+	for r in roads:
+		var pts: Array = []
+		for p in r.points:
+			pts.append(Vector2(p.x, p.z))
+		rs.append({"pts": pts, "w": float(r.width)})
+	var inst := RoadStyle.build(rs, height_fn)
+	if inst != null:
+		add_child(inst)
 
 
 # --- woods ----------------------------------------------------------------------

@@ -33,6 +33,8 @@ var _faction_btns := {}
 var _diff_btns := {}
 var _diff_note: Label
 var _preview: TextureRect
+var _map_stats: Label
+var _map_blurb: Label
 
 
 func _ready() -> void:
@@ -185,6 +187,7 @@ func _build_skirmish() -> Control:
 	var map_row := HBoxContainer.new()
 	map_row.add_theme_constant_override("separation", 16)
 	_preview = TextureRect.new()
+	MockMap.use(_map)
 	_preview.texture = ImageTexture.create_from_image(MockMap.make_image(160))
 	_preview.custom_minimum_size = Vector2(160, 160)
 	_preview.stretch_mode = TextureRect.STRETCH_SCALE
@@ -196,19 +199,22 @@ func _build_skirmish() -> Control:
 	var map_pick := OptionButton.new()
 	for id in Session.MAPS:
 		map_pick.add_item(Session.MAPS[id].name)
+	map_pick.select(Session.MAPS.keys().find(_map))
+	map_pick.item_selected.connect(func(i: int) -> void: _pick_map(Session.MAPS.keys()[i]))
 	map_pick.custom_minimum_size.x = 220
 	map_pick.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	map_info.add_child(map_pick)
 	var info: Dictionary = Session.map_info(_map)
-	var stats := _dim("%d × %d m · %d capture points · 2 players" % [info.size_m, info.size_m, info.points])
-	map_info.add_child(stats)
+	_map_stats = _dim("")
+	map_info.add_child(_map_stats)
 	var blurb := Label.new()
-	blurb.text = info.blurb
+	_map_blurb = blurb
 	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	blurb.custom_minimum_size.x = 300
 	map_info.add_child(blurb)
 	map_row.add_child(map_info)
 	box.add_child(map_row)
+	_show_map_text(info)
 
 	var spacer := Control.new()
 	spacer.custom_minimum_size.y = 6
@@ -221,6 +227,19 @@ func _build_skirmish() -> Control:
 	start.pressed.connect(_on_start)
 	box.add_child(start)
 	return box
+
+
+func _show_map_text(info: Dictionary) -> void:
+	_map_stats.text = "%d × %d m · %d capture points · 2 players" % [info.size_m, info.size_m, info.points]
+	_map_blurb.text = info.blurb
+
+
+func _pick_map(id: String) -> void:
+	_map = id
+	MockMap.use(id)
+	_preview.texture = ImageTexture.create_from_image(MockMap.make_image(160))
+	_preview.queue_redraw()
+	_show_map_text(Session.map_info(id))
 
 
 func _draw_preview_marks() -> void:

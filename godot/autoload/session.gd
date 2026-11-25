@@ -63,6 +63,12 @@ const MAPS := {
 		"points": 5,
 		"blurb": "Rolling farmland split by a wooded ridge. Five points, the middle one on the crest.",
 	},
+	"linden_brook": {
+		"name": "Linden Brook",
+		"size_m": 1024,
+		"points": 5,
+		"blurb": "A brook valley between two low ridges, bases west and east. The middle point lies in the valley, and country roads run between the points: wheels and tracks are faster on them.",
+	},
 }
 
 var setup := {
@@ -150,6 +156,10 @@ func _ready() -> void:
 			"--difficulty":
 				if v in DIFFICULTIES:
 					setup.difficulty = v
+				i += 1
+			"--map":
+				if v in MAPS:
+					setup.map = v
 				i += 1
 			"--seed":
 				setup.seed = v.to_int()

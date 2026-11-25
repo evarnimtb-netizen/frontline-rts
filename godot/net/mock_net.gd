@@ -31,7 +31,7 @@ const DEFAULT_NAME := "Player"
 ## Mirrors Session.FACTIONS / MAPS (no autoload reference: tests load this
 ## class before the autoloads exist).
 const FACTIONS := ["germany", "usa"]
-const MAPS := ["kessel_ridge"]
+const MAPS := ["kessel_ridge", "linden_brook"]
 
 ## Scripted opponent on/off (off: only stage() and explicit calls move it).
 var auto := true

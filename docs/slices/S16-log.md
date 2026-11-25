@@ -136,3 +136,25 @@ Distances: base to B (home point) 223 m (KR 288), to C 488 (588), to E 461, A 71
 - **`[ai.armour] push_without_supply_m` 300, `[ai.supply] tank_crate_far_m` 300:** base covers B only (KR the same); C needs an HQ.
 - **`[ai.transport] min_ride_m` 200:** base to B 223 m, just a ride (KR 288). `pick_m` 400 fits.
 - **`[ai.truck] follow_m` 150, `flee_m` 120:** the off-road destination behind F1's 22 %. Report.
+
+## Presenter P (roads and Linden Brook in the presenter)
+- **Bridge** (`match_node.rs`): `map_info` gains `roads`, an array of `{points: PackedVector3Array (ground height), width}`
+  (full width, metres). `minimap_texture` paints road pixels (distance to a segment within the half width, at least 0.7 px;
+  `MINIMAP_ROAD_COLOR`; no contour line on a road). Unit test for the segment distance.
+- **Scenery**: `godot/match/road_style.gd` (`RoadStyle`) holds every tunable (`COLOR`, `WIDTH_SCALE`, `LIFT_M`, `STEP_M`,
+  `MAP_COLOR`) and `RoadStyle.build()`, one flat strip mesh that follows the ground at 4 m steps; `WorldFx` (real match) and
+  `MockWorld` (mock) both call it.
+- **Menus and sessions**: `Session.MAPS` has `linden_brook` (name, blurb); `mock_net.gd` `MAPS` the same. The skirmish menu
+  looped `MAPS` but ignored the choice: the picker now sets `_map`, the preview image and the stats and blurb lines follow it.
+  New `--map ID` flag in `session.gd`. Defaults stay Kessel Ridge.
+- **Mock**: `MockMap` holds the current map (`use(id)`; `POINTS`, `BASES`, `WOODS`, `ROADS`, `OPENING`, `OWNED` are static
+  vars; Kessel data is the old consts), `mock_map_linden.gd` is the Linden Brook stand-in (point-symmetric analytic height,
+  points, bases, woods and roads copied from the map file). `MockMatchSource.start` calls `MockMap.use`; the name, the opening
+  squads (player 1 mirrors player 0) and the owned points follow the map. The hard-coded Kessel name is gone.
+- **Tests**: `cargo test -p godot-bridge` all pass; clippy `-D warnings --all-targets` clean; fmt clean.
+  Godot 4.7.2 headless (downloaded to `target/godot/dl/`): new `godot/tools/test_mock_maps.gd` (in `tools/check.sh`) runs the
+  mock match on both maps: 19/19 (name, ids, points owned, road mesh and road pixels only on Linden Brook, ticks advance);
+  `check_project` OK; `test_net_ui` 143/143; `test_match_view` 439/440 (the known 16-vehicle perf check, 0.4 ms headless debug).
+- Real bridge (release build, headless, `--map linden_brook`): `map_info` gives 4 roads of width 6 and WorldFx builds the strip.
+- **Not done**: the mock ground does not rebuild if `MockMap.use` switches after `MockWorld` is ready (menus switch only
+  before a match); no real-bridge windowed look at the roads (headless only).

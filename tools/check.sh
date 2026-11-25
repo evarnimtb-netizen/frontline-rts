@@ -218,6 +218,7 @@ full() {
     godot_test check_project check_project
     godot_test test_match_view test_match_view
     godot_test test_net_ui test_net_ui
+    godot_test test_mock_maps test_mock_maps
     godot_test test_data_reload test_data_reload
     if [ -f "$SETTINGS_BAK" ] && cmp -s "$SETTINGS_BAK" "$SETTINGS_CFG"; then
         ok settings.cfg
