@@ -22,7 +22,16 @@ pub(super) fn flat_world_with(
     edit: impl FnOnce(&mut frontline_content::MatchSetup),
 ) -> World {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
-    let defs = frontline_content::ModDefs::load(&root).unwrap();
+    let mut defs = frontline_content::ModDefs::load(&root).unwrap();
+    // S14-ai Build D: the S14 switches are on in the mod; these tests were
+    // written with them off (flame members resolve by `[flame] enabled`,
+    // so it is turned off before the resolve). The S14 tests turn on what
+    // they test.
+    for r in defs.rules.values_mut() {
+        if let Some(f) = r.flame.as_mut() {
+            f.enabled = 0;
+        }
+    }
     let req = frontline_content::MatchRequest::skirmish(
         1,
         "ww2:germany",
@@ -40,6 +49,7 @@ pub(super) fn flat_world_with(
     setup.s11b_off();
     setup.s12_off();
     setup.s13_off();
+    setup.s14_off();
     edit(&mut setup);
     World::new_match(setup, threads).unwrap()
 }

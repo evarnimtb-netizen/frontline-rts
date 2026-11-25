@@ -564,7 +564,14 @@ fn flame_off_cards_spawn_todays_men() {
         ("ww2:ger_sturmpioniergruppe", "ger_sturmpioniergruppe.toml"),
         ("ww2:usa_assault_section", "usa_assault_section.toml"),
     ];
-    let live = live();
+    let mut live = live();
+    // S14-ai Build D: the shipped switch is on; the flame-off resolve is
+    // the one compared with the old cards.
+    for r in live.rules.values_mut() {
+        if let Some(f) = r.flame.as_mut() {
+            f.enabled = 0;
+        }
+    }
     let mut base = live.clone();
     for (id, file) in cards {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -579,7 +586,7 @@ fn flame_off_cards_spawn_todays_men() {
     let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
     let mut got = live.resolve(&req).unwrap();
     let mut want = base.resolve(&req).unwrap();
-    assert_eq!(got.rules.flame.enabled, 0, "the shipped switch is off");
+    assert_eq!(got.rules.flame.enabled, 0, "the switch is off here");
     for (id, _) in cards {
         let t = got.squad_type_index(id).unwrap() as usize;
         assert!(!got.squad_types[t].has(Capability::Flame), "{id}: no flame");

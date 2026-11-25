@@ -500,6 +500,10 @@ fn real_flame_world(edit: impl FnOnce(&mut frontline_content::MatchSetup)) -> Wo
     setup.s11b_off();
     setup.s12_off();
     setup.s13_off();
+    // S14-ai Build D: the other S14 switches are on in the mod; these tests
+    // turn on what they test.
+    setup.s14_off();
+    setup.rules.flame.enabled = 1;
     edit(&mut setup);
     World::new_match(setup, 1).unwrap()
 }
