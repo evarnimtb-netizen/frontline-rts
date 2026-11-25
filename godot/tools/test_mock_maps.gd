@@ -63,5 +63,25 @@ func _run() -> void:
 		m.queue_free()
 		await process_frame
 	_check(images.kessel_ridge.get_data() != images.linden_brook.get_data(), "map images differ")
+	# S17 (merge with S16): the menu's map pick lists the maps of the mode
+	# (1v1: the two-base maps, 2v2: the four-base ones) and stays enabled.
+	_check(session.maps_for_mode("1v1") == ["kessel_ridge", "linden_brook"], "1v1 maps")
+	_check(session.maps_for_mode("2v2") == ["harrow_cross"], "2v2 maps")
+	session.setup.map = "kessel_ridge"
+	session.setup.mode = "1v1"
+	var menu: Node = load("res://ui/menu/main_menu.tscn").instantiate()
+	root.add_child(menu)
+	await process_frame
+	var pick: OptionButton = menu._map_pick
+	_check(not pick.disabled and pick.item_count == 2, "menu 1v1: two maps, pick enabled")
+	pick.select(1)
+	pick.item_selected.emit(1)
+	_check(menu._map == "linden_brook", "menu 1v1: Linden Brook picked")
+	menu._set_mode("2v2")
+	_check(menu._map == "harrow_cross" and pick.item_count == 1, "menu 2v2: Harrow Cross only")
+	menu._set_mode("1v1")
+	_check(menu._map == "kessel_ridge" and pick.item_count == 2, "menu back to 1v1: Kessel Ridge")
+	menu.queue_free()
+	await process_frame
 	print("test_mock_maps: %d/%d checks passed" % [_checks - _fails, _checks])
 	quit(0 if _fails == 0 else 1)

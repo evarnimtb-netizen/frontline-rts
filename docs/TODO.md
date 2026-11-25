@@ -562,6 +562,10 @@ Plan `docs/slices/B3-balance.md` 9; stage contract `B3-run-1.md`; levers `docs/s
 - S17-7 The team map. (A) Harrow Cross, 1536 m, four bases on two edges, seven points, two crossing roads. (B) Four bases on a 1024 m map. (C) Two more bases on Linden Brook. **(A) assumed.**
 - S17-8 Who may team up. (A) Any mix (the CLI offers any; the menu's 2v2 puts your faction with your ally). (B) Historical sides only. **(A) assumed.**
 - S17-9 What S18 is. (A) Online teams and co-op (four-slot relay, team lobby, AI fill). (B) The late-1944 US wave. (C) Buildings and a village. **(A) assumed.**
+- Open S17 O2 (Review, not fixed): an AI's vehicle-blocking pieces (tank obstacles, hedgehogs) can block an ally's vehicles.
+  The AI demolishes enemy pieces only (`ai/demolish.rs`) and counts its own blocks (`ai/fort.rs` `count_own_blocked`, a
+  counter, no demolition), so an ally's route through them stays failed until repathed. Not a few-line fix: it needs an
+  ally-piece case in the demolish job (target choice, L3/L4, the Demolish order on an allied piece). For S18 or later.
 
 ## S12 open items (2026-11-21; branch `claude/project-thread-aj1tww`, log `docs/slices/S12-log.md`)
 
