@@ -688,6 +688,7 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
     // AI's flame counters by name (T195-T200 read
     // `factions.<f>.s14.<counter>`).
     o.insert("s14".into(), s14_blocks(&f.s14));
+    o.insert("s14_derived".into(), s14_derived(&f.s14));
     o.insert(
         "s6_derived".into(),
         json!({
@@ -1388,6 +1389,64 @@ pub fn s14_blocks(c: &crate::skirmish::S14Faction) -> Value {
     Value::Object(raw)
 }
 
+/// S14-ai Build D (docs/slices/S14-assault-kit.md 10, T191-T200 as
+/// reports): a faction's `s14_derived`. `flame_matches_pct` (matches in
+/// which its flame hit a man in a dug cell or a pit, T191); per match:
+/// `flame_downs_per_match`, `flame_kills_per_match` (F3, F5: enemy men
+/// downed and killed by fire, T195), `strikes_per_match`,
+/// `strike_hits_per_match`, `strike_kills_per_match` (T197),
+/// `clear_orders_per_match` (the AI's), `clear_steps_per_match`,
+/// `clears_done_per_match` (T198), `refuels_per_match` (T199),
+/// `flame_capped_per_match`, `patches_dropped_per_match` (T200),
+/// `flame_jobs_per_match`, `flame_jobs_open_per_match` (started less
+/// ended: the jobs still running at the matches' ends, T192) and
+/// `flame_job_ends` (totals by end).
+/// Null where a denominator is 0.
+pub fn s14_derived(c: &crate::skirmish::S14Faction) -> Value {
+    let n = c.matches.max(1) as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let s = |name: &str| {
+        crate::skirmish::S14_COUNTERS
+            .iter()
+            .position(|x| *x == name)
+            .map_or(0, |i| c.s[i])
+    };
+    let a = |name: &str| {
+        crate::skirmish::S14_AI
+            .iter()
+            .position(|x| *x == name)
+            .map_or(0, |i| c.ai[i])
+    };
+    let ends: Map<String, Value> = frontline_sim::ai::FLAME_END_NAMES
+        .iter()
+        .map(|e| ((*e).to_string(), json!(a(&format!("flame_end_{e}")))))
+        .collect();
+    // No `matches` key: every value is 0 with the S14 switches off, so
+    // `tools/neutral.py` reads the new block as zero counters.
+    json!({
+        "flame_matches_pct": pct_or_null(c.flame_matches as f64, c.matches as f64),
+        "flame_downs_per_match": per(s("burn_downs")),
+        "flame_kills_per_match": per(s("burn_kills")),
+        "strikes_per_match": per(s("strikes")),
+        "strike_hits_per_match": per(s("strike_hits")),
+        "strike_kills_per_match": per(s("strike_kills")),
+        "clear_orders_per_match": per(a("clear_orders")),
+        "clear_steps_per_match": per(s("clear_steps")),
+        "clears_done_per_match": per(s("clears_done")),
+        "refuels_per_match": per(a("refuels")),
+        "flame_capped_per_match": per(s("flame_capped")),
+        "patches_dropped_per_match": per(s("patches_dropped")),
+        "flame_jobs_per_match": per(a("flame_jobs")),
+        "flame_jobs_open_per_match": per(a("flame_jobs").saturating_sub(
+            frontline_sim::ai::FLAME_END_NAMES
+                .iter()
+                .map(|e| a(&format!("flame_end_{e}")))
+                .sum()
+        )),
+        "flame_job_ends": ends,
+    })
+}
+
 /// The `s12` block of one faction (or one side of one match): the
 /// `S12Counters` and the AI's medic counters by name. Every value is 0
 /// with the S12 switches off (`tools/neutral.py` reads a new block so).
@@ -1753,5 +1812,44 @@ mod tests {
             .filter(|v| *v != &json!(0))
             .count();
         assert_eq!(nonzero, 2);
+    }
+
+    /// S14-ai: `s14_derived` is all zero for matches with the switches off
+    /// (neutral.py reads it as new zero counters) and per match otherwise;
+    /// `flame_matches_pct` counts matches with a hit in a trench or pit.
+    #[test]
+    fn s14_derived_reads_per_match() {
+        use crate::skirmish::{S14Faction, S14Player};
+        let mut off = S14Faction::default();
+        off.add(&S14Player::of(&Default::default(), None));
+        let d = s14_derived(&off);
+        fn zero(v: &Value) -> bool {
+            match v {
+                Value::Object(m) => m.values().all(zero),
+                Value::Number(n) => n.as_f64() == Some(0.0),
+                _ => false,
+            }
+        }
+        assert!(zero(&d), "{d}");
+        let hit = frontline_sim::flame::S14Counters {
+            flame_in_bunker_hits: 1,
+            burn_kills: 4,
+            strikes: 2,
+            ..Default::default()
+        };
+        let mut ai = frontline_sim::ai::AiCounters::default();
+        ai.flame_jobs = 2;
+        ai.flame_job_ends[5] = 1;
+        ai.refuels = 1;
+        let mut f = S14Faction::default();
+        f.add(&S14Player::of(&hit, Some(&ai)));
+        f.add(&S14Player::of(&Default::default(), None));
+        let d = s14_derived(&f);
+        assert_eq!(d["flame_matches_pct"], json!(50.0));
+        assert_eq!(d["flame_kills_per_match"], json!(2.0));
+        assert_eq!(d["strikes_per_match"], json!(1.0));
+        assert_eq!(d["refuels_per_match"], json!(0.5));
+        assert_eq!(d["flame_jobs_per_match"], json!(1.0));
+        assert_eq!(d["flame_job_ends"]["stall"], json!(1));
     }
 }

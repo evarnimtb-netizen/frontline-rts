@@ -19,6 +19,8 @@
 #     lip falls away (S10b geometry; the closed control reads above 10 %);
 #     the owner's no-tuning rule leaves both to the later balance pass
 #     (S14-log.md). New report rows T201 (R3), T202 (R4), T203 (R6).
+#   - S14-ai Build D: rows T189-T200 on the switches-on set (reports, but
+#     T190 no winner and length 10-40 min, T192 every flame job ends: hard).
 #   tools/measure.sh OUTDIR docs/slices/targets/S14.toml
 # Seeds, ROW HONESTY and three_parts_from as in S11b.toml.
 name = "S14: assault kit (S13 targets plus T185-T203)"
@@ -5428,5 +5430,222 @@ exposure = "skirmish40.wins.matches"
 exposure_min = 40
 control = "skirmish40_s14_off.factions.usa.s14.patches_dropped"
 note = "report: patches dropped at patches_max (F5), 40 matches; control: s14_off (0)"
-# T196 (HE share beside the flame share) reads s12_derived and the s14 block together: the
-# Measure stage after S14-ai adds it. T199 (refuels) is an AiCounters field (S14-ai).
+# --- S14-ai Build D: T189-T200 (owner change 2026-11-25: reports, except T190 and
+# T192 hard; no balance threshold). T193 (tick p99) is read from tools/verify.sh,
+# not from this file. T194 is not used by the plan.
+[[target]]
+id = "T189"
+metric = "skirmish40.wins.germany_pct"
+min = 0
+max = 100
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.wins.germany_pct"
+note = "report: Germany's share with the S14 switches on (no pooled threshold in S14); control: s14_off"
+[[target]]
+id = "T190a"
+metric = "skirmish40.wins.no_winner"
+max = 0
+note = "hard: every match has a winner with the S14 switches on"
+[[target]]
+id = "T190b"
+metric = "skirmish40.length_min.min"
+min = 10
+note = "hard: no match under 10 min"
+[[target]]
+id = "T190c"
+metric = "skirmish40.length_min.max"
+max = 40
+note = "hard: no match over 40 min"
+[[target]]
+id = "T191_ger"
+metric = "skirmish40.factions.germany.s14_derived.flame_matches_pct"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.germany.s14_derived.flame_matches_pct"
+note = "report: % of matches in which its flame hit a man in a dug cell or a pit (plan T191, was >= 50); control: s14_off (0)"
+[[target]]
+id = "T192_ger"
+metric = "skirmish40.factions.germany.s14_derived.flame_jobs_open_per_match"
+max = 4
+note = "hard: flame jobs started and not ended, per match, at most the jobs still running at the match's end (MAX_FLAME_JOBS 4); every other job ended (L1 job_max_s, L2 stall_s)"
+[[target]]
+id = "T195c_ger"
+metric = "skirmish40.factions.germany.s14_derived.flame_downs_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.germany.s14_derived.flame_downs_per_match"
+note = "report: enemy men downed by fire per match (F3, F5); control: s14_off (0)"
+[[target]]
+id = "T195d_ger"
+metric = "skirmish40.factions.germany.s14_derived.flame_kills_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.germany.s14_derived.flame_kills_per_match"
+note = "report: enemy men killed by fire per match (F3, F5); control: s14_off (0)"
+[[target]]
+id = "T196_ger"
+metric = "skirmish40.factions.germany.s12_derived.he_share_casualties_pct"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.germany.s12_derived.he_share_casualties_pct"
+note = "report: HE share of the casualties it inflicted (T8) beside the flame share (T195); control: s14_off"
+[[target]]
+id = "T197c_ger"
+metric = "skirmish40.factions.germany.s14_derived.strikes_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.germany.s14_derived.strikes_per_match"
+note = "report: strikes per match (M3); control: s14_off (0)"
+[[target]]
+id = "T197d_ger"
+metric = "skirmish40.factions.germany.s14_derived.strike_kills_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.germany.s14_derived.strike_kills_per_match"
+note = "report: strike downs and kills per match (M4); control: s14_off (0)"
+[[target]]
+id = "T198c_ger"
+metric = "skirmish40.factions.germany.s14_derived.clear_orders_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.germany.s14_derived.clear_orders_per_match"
+note = "report: the AI's ClearTrench orders per match (A1 Clear, A4); control: s14_off (0)"
+[[target]]
+id = "T198d_ger"
+metric = "skirmish40.factions.germany.s14_derived.clear_steps_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.germany.s14_derived.clear_steps_per_match"
+note = "report: clear steps per match (C3); control: s14_off (0)"
+[[target]]
+id = "T199_ger"
+metric = "skirmish40.factions.germany.s14_derived.refuels_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.germany.s14_derived.refuels_per_match"
+note = "report: refuel trips per match (A2); control: s14_off (0)"
+[[target]]
+id = "T200c_ger"
+metric = "skirmish40.factions.germany.s14_derived.flame_jobs_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.germany.s14_derived.flame_jobs_per_match"
+note = "report: flame jobs started per match (A1); control: s14_off (0)"
+[[target]]
+id = "T191_usa"
+metric = "skirmish40.factions.usa.s14_derived.flame_matches_pct"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.usa.s14_derived.flame_matches_pct"
+note = "report: % of matches in which its flame hit a man in a dug cell or a pit (plan T191, was >= 50); control: s14_off (0)"
+[[target]]
+id = "T192_usa"
+metric = "skirmish40.factions.usa.s14_derived.flame_jobs_open_per_match"
+max = 4
+note = "hard: flame jobs started and not ended, per match, at most the jobs still running at the match's end (MAX_FLAME_JOBS 4); every other job ended (L1 job_max_s, L2 stall_s)"
+[[target]]
+id = "T195c_usa"
+metric = "skirmish40.factions.usa.s14_derived.flame_downs_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.usa.s14_derived.flame_downs_per_match"
+note = "report: enemy men downed by fire per match (F3, F5); control: s14_off (0)"
+[[target]]
+id = "T195d_usa"
+metric = "skirmish40.factions.usa.s14_derived.flame_kills_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.usa.s14_derived.flame_kills_per_match"
+note = "report: enemy men killed by fire per match (F3, F5); control: s14_off (0)"
+[[target]]
+id = "T196_usa"
+metric = "skirmish40.factions.usa.s12_derived.he_share_casualties_pct"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.usa.s12_derived.he_share_casualties_pct"
+note = "report: HE share of the casualties it inflicted (T8) beside the flame share (T195); control: s14_off"
+[[target]]
+id = "T197c_usa"
+metric = "skirmish40.factions.usa.s14_derived.strikes_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.usa.s14_derived.strikes_per_match"
+note = "report: strikes per match (M3); control: s14_off (0)"
+[[target]]
+id = "T197d_usa"
+metric = "skirmish40.factions.usa.s14_derived.strike_kills_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.usa.s14_derived.strike_kills_per_match"
+note = "report: strike downs and kills per match (M4); control: s14_off (0)"
+[[target]]
+id = "T198c_usa"
+metric = "skirmish40.factions.usa.s14_derived.clear_orders_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.usa.s14_derived.clear_orders_per_match"
+note = "report: the AI's ClearTrench orders per match (A1 Clear, A4); control: s14_off (0)"
+[[target]]
+id = "T198d_usa"
+metric = "skirmish40.factions.usa.s14_derived.clear_steps_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.usa.s14_derived.clear_steps_per_match"
+note = "report: clear steps per match (C3); control: s14_off (0)"
+[[target]]
+id = "T199_usa"
+metric = "skirmish40.factions.usa.s14_derived.refuels_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.usa.s14_derived.refuels_per_match"
+note = "report: refuel trips per match (A2); control: s14_off (0)"
+[[target]]
+id = "T200c_usa"
+metric = "skirmish40.factions.usa.s14_derived.flame_jobs_per_match"
+min = 0
+kind = "report"
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.usa.s14_derived.flame_jobs_per_match"
+note = "report: flame jobs started per match (A1); control: s14_off (0)"
+

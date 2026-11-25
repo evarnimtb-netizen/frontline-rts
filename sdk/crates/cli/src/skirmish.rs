@@ -1223,10 +1223,24 @@ pub struct S14Faction {
     pub s: [u64; 17],
     /// [`S14_AI`] order.
     pub ai: [u64; 10],
+    /// S14-ai (`s14_derived`): matches, and matches in which the faction's
+    /// flame hit a man in a dug cell or a pit (`flame_in_trench_hits` or
+    /// `flame_in_bunker_hits` over 0; in an AI skirmish every flame man is
+    /// an AI's).
+    pub matches: u64,
+    pub flame_matches: u64,
 }
 
 impl S14Faction {
     pub fn add(&mut self, p: &S14Player) {
+        let k = |name: &str| {
+            S14_COUNTERS
+                .iter()
+                .position(|x| *x == name)
+                .map_or(0, |i| p.s[i])
+        };
+        self.matches += 1;
+        self.flame_matches += u64::from(k("flame_in_trench_hits") + k("flame_in_bunker_hits") > 0);
         for (a, b) in self.s.iter_mut().zip(p.s) {
             *a += b as u64;
         }
