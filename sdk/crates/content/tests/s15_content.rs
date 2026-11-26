@@ -17,7 +17,8 @@ fn root() -> PathBuf {
 const RULES: &str = "ww2:skirmish";
 
 /// The ww2 defs plus a stand-in `ww2:ussr`, the rules' `[matchups]` set
-/// by `edit`.
+/// to the S15a table (Germany and the USA only; S15-ai ships the USSR
+/// enabled) and then by `edit`.
 fn defs_with(edit: impl FnOnce(&mut MatchupsDef)) -> ModDefs {
     let mut defs = ModDefs::load(&root().join("mods/ww2")).unwrap_or_else(|e| panic!("{e}"));
     let mut ussr = defs.factions["ww2:germany"].clone();
@@ -31,6 +32,8 @@ fn defs_with(edit: impl FnOnce(&mut MatchupsDef)) -> ModDefs {
         .matchups
         .as_mut()
         .expect("the ww2 rules have [matchups]");
+    m.factions = vec!["ww2:germany".into(), "ww2:usa".into()];
+    m.pairs = vec![["ww2:germany".into(), "ww2:usa".into()]];
     edit(m);
     defs
 }
@@ -105,19 +108,26 @@ fn default_opponent_is_first_pair() {
 
 /// The shipped table changes nothing: Germany-USA and the mirror (the
 /// CLI's mirror runs) resolve as before; the shipped rules name only
-/// existing factions. Control: an unknown faction in the list is a
-/// load issue.
+/// existing factions. S15-ai: the shipped table also enables the USSR
+/// against Germany (Germany's default opponent stays the USA) and still
+/// refuses the USSR against the USA. Control: an unknown faction in the
+/// list is a load issue.
 #[test]
 fn shipped_matchups_keep_the_default_pair() {
     let defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
     defs.resolve(&req("ww2:germany", "ww2:usa")).unwrap();
     defs.resolve(&req("ww2:usa", "ww2:germany")).unwrap();
     defs.resolve(&req("ww2:usa", "ww2:usa")).unwrap();
+    defs.resolve(&req("ww2:germany", "ww2:ussr")).unwrap();
+    assert!(defs.resolve(&req("ww2:usa", "ww2:ussr")).is_err());
+    let m = defs.rules[RULES].matchups.as_ref().unwrap();
+    assert_eq!(m.default_opponent("ww2:germany"), Some("ww2:usa"));
+    assert_eq!(m.default_opponent("ww2:ussr"), Some("ww2:germany"));
     let dir = std::env::temp_dir().join(format!("frontline-s15-m-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let text = |f: &str| {
         format!(
-            "id = \"ww2:s15_m\"\nname = \"S15 M\"\nbase = \"ww2:skirmish\"\n[matchups]\nfactions = [\"ww2:germany\", \"{f}\"]\n"
+            "id = \"ww2:s15_m\"\nname = \"S15 M\"\nbase = \"ww2:skirmish\"\n[matchups]\nfactions = [\"ww2:germany\", \"{f}\"]\npairs = [[\"ww2:germany\", \"{f}\"]]\n"
         )
     };
     let good = dir.join("good.toml");
@@ -162,7 +172,9 @@ fn pz4_riders(defs: &mut ModDefs) {
 /// gives the tank its (exposed) slots.
 #[test]
 fn s15_off_setup_has_no_s15_field() {
-    let base_defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    let mut base_defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    // S15-ai ships the switches on: the test turns them off first.
+    s15_switches(&mut base_defs, 0);
     let r = req("ww2:germany", "ww2:usa");
     let base = base_defs.resolve(&r).unwrap();
     let mut defs = base_defs.clone();

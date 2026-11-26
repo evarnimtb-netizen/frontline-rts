@@ -258,32 +258,22 @@ mod s15_tests {
     use super::*;
 
     /// S15 M (plan 4 tools): `validate` resolves every allowed pair, not
-    /// "the first two factions". Stand-in `ww2:ussr` (Germany's roster).
-    /// Control: the shipped table gives the one default pair.
+    /// "the first two factions". S15-ai: the shipped table holds
+    /// Germany-USA and Germany-USSR (the real USSR defs), and both resolve.
+    /// Control: `free` 1 adds the USA-USSR pair.
     #[test]
     fn validate_resolves_every_pair() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../mods/ww2");
         let mut defs = ModDefs::load(&root).unwrap();
         let r = &defs.rules["ww2:skirmish"];
+        let pair = |a: &str, b: &str| [a.to_string(), b.to_string()];
         assert_eq!(
             allowed_pairs(&defs, r),
-            [["ww2:germany".to_string(), "ww2:usa".to_string()]],
-            "control"
+            [
+                pair("ww2:germany", "ww2:usa"),
+                pair("ww2:germany", "ww2:ussr")
+            ]
         );
-        let mut ussr = defs.factions["ww2:germany"].clone();
-        ussr.id = "ww2:ussr".into();
-        defs.factions.insert(ussr.id.clone(), ussr);
-        let m = defs
-            .rules
-            .get_mut("ww2:skirmish")
-            .unwrap()
-            .matchups
-            .as_mut()
-            .unwrap();
-        m.factions.push("ww2:ussr".into());
-        m.pairs.push(["ww2:germany".into(), "ww2:ussr".into()]);
-        let pairs = allowed_pairs(&defs, &defs.rules["ww2:skirmish"]);
-        assert_eq!(pairs.len(), 2);
         let mut problems = Vec::new();
         resolve_all(&defs, &mut problems);
         assert!(problems.is_empty(), "{problems:?}");

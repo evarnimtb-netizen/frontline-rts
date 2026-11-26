@@ -695,6 +695,7 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
     // S15 (docs/slices/S15-ussr.md 3): the S15 counters and the AI's rider
     // counters by name (all 0 with the S15 switches off).
     o.insert("s15".into(), s15_blocks(&f.s15));
+    o.insert("s15_derived".into(), s15_derived(&f.s15));
     o.insert(
         "s6_derived".into(),
         json!({
@@ -1441,6 +1442,52 @@ pub fn s15_blocks(c: &crate::skirmish::S15Faction) -> Value {
     Value::Object(raw)
 }
 
+/// S15-ai Build D (docs/slices/S15-ussr.md 11, T213 and T218 as reads):
+/// a faction's `s15_derived`. `rider_matches_pct` (matches in which its
+/// men rode a deck); per match: `rider_boards_per_match`,
+/// `rider_exits_per_match` (all reasons), `rider_casualties_per_match`
+/// (T218), `plate_stops_per_match`, `bayonet_strikes_per_match`,
+/// `foreign_fired_per_match`, `rider_jobs_per_match`,
+/// `rider_jobs_open_per_match` (started less ended); `rider_job_ends`
+/// (totals by `RIDER_END_NAMES`) and `rider_job_oldest_s` (T213f: the
+/// oldest job open at any match's end, s). No `matches` key: every value
+/// is 0 (or null) with the S15 switches off.
+pub fn s15_derived(c: &crate::skirmish::S15Faction) -> Value {
+    let n = c.matches.max(1) as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let s = |name: &str| {
+        crate::skirmish::S15_COUNTERS
+            .iter()
+            .position(|x| *x == name)
+            .map_or(0, |i| c.s[i])
+    };
+    let exits: u64 = crate::skirmish::S15_COUNTERS
+        .iter()
+        .zip(c.s)
+        .filter(|(k, _)| k.starts_with("rider_exit_"))
+        .map(|(_, v)| v)
+        .sum();
+    let ends: Map<String, Value> = frontline_sim::s15::RIDER_END_NAMES
+        .iter()
+        .zip(&c.ai[1..])
+        .map(|(e, v)| ((*e).to_string(), json!(v)))
+        .collect();
+    let ended: u64 = c.ai[1..].iter().sum();
+    json!({
+        "rider_matches_pct": pct_or_null(c.rider_matches as f64, c.matches as f64),
+        "rider_boards_per_match": per(s("rider_boards")),
+        "rider_exits_per_match": per(exits),
+        "rider_casualties_per_match": per(s("rider_casualties")),
+        "plate_stops_per_match": per(s("plate_stops")),
+        "bayonet_strikes_per_match": per(s("bayonet_strikes")),
+        "foreign_fired_per_match": per(s("foreign_fired")),
+        "rider_jobs_per_match": per(c.ai[0]),
+        "rider_jobs_open_per_match": per(c.ai[0].saturating_sub(ended)),
+        "rider_job_ends": ends,
+        "rider_job_oldest_s": round3(c.oldest_job_s),
+    })
+}
+
 /// The `s14` block of one faction (or one side of one match): every
 /// `S14Counters` field and the AI's flame counters by name. Every value is
 /// 0 with the S14 switches off (`tools/neutral.py` reads a new block so).
@@ -1891,6 +1938,44 @@ mod tests {
         assert_eq!(on["rider_exit_vehicle_hit"], json!(7));
         let set = on.as_object().unwrap().values().filter(|v| *v != &json!(0));
         assert_eq!(set.count(), 3, "control: only the set counters: {on}");
+    }
+
+    /// S15-ai: `s15_derived` reads per match and the rider job ends by
+    /// name, the oldest open job over the matches, and all 0 (or null)
+    /// with the switches off. Control: a second, empty match halves the
+    /// per-match values.
+    #[test]
+    fn s15_derived_reads_per_match_and_job_ends() {
+        use crate::skirmish::{S15Faction, S15Player};
+        let off = s15_derived(&S15Faction::default());
+        assert_eq!(off["rider_matches_pct"], Value::Null, "{off}");
+        assert_eq!(off["rider_jobs_per_match"], json!(0.0));
+        let c = frontline_sim::s15::S15Counters {
+            rider_boards: 8,
+            plate_stops: 4,
+            ..Default::default()
+        };
+        let ai = frontline_sim::ai::AiCounters {
+            rider_jobs: 3,
+            rider_job_ends: [1, 0, 1, 0, 0],
+            ..Default::default()
+        };
+        let mut one = S15Player::of(&c, Some(&ai));
+        one.oldest_job_s = 12.5;
+        let mut f = S15Faction::default();
+        f.add(&one);
+        let d = s15_derived(&f);
+        assert_eq!(d["rider_boards_per_match"], json!(8.0));
+        assert_eq!(d["rider_jobs_open_per_match"], json!(1.0));
+        assert_eq!(d["rider_job_ends"]["dropped"], json!(1));
+        assert_eq!(d["rider_job_ends"]["tank_lost"], json!(1));
+        assert_eq!(d["rider_job_oldest_s"], json!(12.5));
+        assert_eq!(d["rider_matches_pct"], json!(100.0));
+        f.add(&S15Player::of(&Default::default(), None));
+        let d = s15_derived(&f);
+        assert_eq!(d["rider_boards_per_match"], json!(4.0));
+        assert_eq!(d["plate_stops_per_match"], json!(2.0));
+        assert_eq!(d["rider_matches_pct"], json!(50.0));
     }
 
     /// S14 step 8: the `s14` block names every `S14Counters` field and AI

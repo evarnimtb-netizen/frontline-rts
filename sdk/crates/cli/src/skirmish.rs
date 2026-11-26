@@ -1264,6 +1264,10 @@ pub struct S15Player {
     pub s: [u32; 15],
     /// [`S15_AI`] order (zero for a human).
     pub ai: [u32; 6],
+    /// S15-ai (T213f): the age of the AI's oldest rider job still open at
+    /// the match's end (s; a boarding or riding job from its start, a
+    /// dropping one from the drop order; 0 with none).
+    pub oldest_job_s: f64,
 }
 
 impl S15Player {
@@ -1293,7 +1297,11 @@ impl S15Player {
             let e = a.rider_job_ends;
             [a.rider_jobs, e[0], e[1], e[2], e[3], e[4]]
         });
-        S15Player { s, ai }
+        S15Player {
+            s,
+            ai,
+            oldest_job_s: 0.0,
+        }
     }
 }
 
@@ -1306,11 +1314,18 @@ pub struct S15Faction {
     pub s: [u64; 15],
     /// [`S15_AI`] order.
     pub ai: [u64; 6],
+    /// S15-ai (`s15_derived`): matches in which the faction's men rode a
+    /// deck (`rider_boards` over 0), and the oldest rider job open at any
+    /// match's end (s, T213f).
+    pub rider_matches: u64,
+    pub oldest_job_s: f64,
 }
 
 impl S15Faction {
     pub fn add(&mut self, p: &S15Player) {
         self.matches += 1;
+        self.rider_matches += u64::from(p.s[4] > 0);
+        self.oldest_job_s = self.oldest_job_s.max(p.oldest_job_s);
         for (a, b) in self.s.iter_mut().zip(p.s) {
             *a += b as u64;
         }
@@ -2962,7 +2977,20 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     });
                     x
                 },
-                s15: S15Player::of(&pl.s15, ai.map(|a| &a.counters)),
+                s15: {
+                    let mut x = S15Player::of(&pl.s15, ai.map(|a| &a.counters));
+                    x.oldest_job_s = ai.map_or(0.0, |a| {
+                        let t = world.tick();
+                        let age = a
+                            .riders
+                            .jobs
+                            .iter()
+                            .map(|j| t.saturating_sub(j.phase_at))
+                            .max();
+                        age.unwrap_or(0) as f64 / hz as f64
+                    });
+                    x
+                },
                 s11b: {
                     let bought_tagged = |tag: &str| -> u32 {
                         ai.map_or(0, |a| {

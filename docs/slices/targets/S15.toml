@@ -168,6 +168,23 @@ both_bases = true
 minutes = 45
 rules_override = ["docs/slices/targets/S15-ablations/s15_off.toml"]
 
+[runs.pair_germany_ussr40]   # T212-T218 (S15-ai): Germany (player 0) against the USSR; `tools/batch.sh pair DIR ww2:germany ww2:ussr`
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+faction0 = "ww2:germany"
+faction1 = "ww2:ussr"
+
+[runs.pair_usa_ussr40]   # T215 (report, not run by S15-ai): the free pair; `tools/batch.sh pair DIR ww2:usa ww2:ussr -o .../free.toml`
+kind = "skirmish"
+seeds = 20
+both_bases = true
+minutes = 45
+faction0 = "ww2:usa"
+faction1 = "ww2:ussr"
+rules_override = ["docs/slices/targets/S15-ablations/free.toml"]
+
 [runs.armour5]
 kind = "armour-test"
 seeds = 5
@@ -5444,16 +5461,25 @@ note = "report: Germany's share with the S14 switches on (no pooled threshold in
 id = "T190a"
 metric = "skirmish40.wins.no_winner"
 max = 0
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.wins.no_winner"
 note = "hard: every match has a winner with the S14 switches on"
 [[target]]
 id = "T190b"
 metric = "skirmish40.length_min.min"
 min = 10
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.length_min.min"
 note = "hard: no match under 10 min"
 [[target]]
 id = "T190c"
 metric = "skirmish40.length_min.max"
 max = 40
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.length_min.max"
 note = "hard: no match over 40 min"
 [[target]]
 id = "T191_ger"
@@ -5468,6 +5494,9 @@ note = "report: % of matches in which its flame hit a man in a dug cell or a pit
 id = "T192_ger"
 metric = "skirmish40.factions.germany.s14_derived.flame_job_oldest_s"
 max = 185
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.germany.s14_derived.flame_job_oldest_s"
 note = "hard (S14 Fix 9): the oldest flame job open at any match's end (s) is no older than [ai.flame] job_max_s 180 plus one plan; L1 ends every job by then"
 [[target]]
 id = "T195c_ger"
@@ -5563,6 +5592,9 @@ note = "report: % of matches in which its flame hit a man in a dug cell or a pit
 id = "T192_usa"
 metric = "skirmish40.factions.usa.s14_derived.flame_job_oldest_s"
 max = 185
+exposure = "skirmish40.wins.matches"
+exposure_min = 40
+control = "skirmish40_s14_off.factions.usa.s14_derived.flame_job_oldest_s"
 note = "hard (S14 Fix 9): the oldest flame job open at any match's end (s) is no older than [ai.flame] job_max_s 180 plus one plan; L1 ends every job by then"
 [[target]]
 id = "T195c_usa"
@@ -5786,8 +5818,336 @@ exposure_min = 100
 control = "fortify10.s15.bayonet.hits_150"
 note = "W4 control: with [melee] bayonets 0 the 1.5 m strike misses (the butt's reach)"
 
-# --- T212-T218 (plan 11): the Germany-USSR pair. The pair 40 is
-# `tools/batch.sh pair DIR ww2:germany ww2:ussr` (no USSR def before Build B);
-# the proof stage reads T212 (40 of 40 with a winner, no panic, 10-40 min,
-# hashes equal at 1 and 4 threads), T213a-f (each new rule fires),
-# T214-T218 (reports) from that set. No row here until the run exists.
+# --- T212-T218 (plan 11; S15-ai Build D): the Germany-USSR pair 40,
+# `tools/batch.sh pair DIR ww2:germany ww2:ussr` (seeds 1-20, both bases,
+# 45 min) into pair_germany_ussr40.json. Hard: T212 (40 winners, 10-40 min),
+# T213a-f (each rule fires); reports: T213e per card, T214-T218. Owner rule
+# 2026-11-25: no gate on a win rate.
+[[target]]
+id = "T212a"
+metric = "pair_germany_ussr40.wins.no_winner"
+max = 0
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.wins.germany"
+note = "T212: 40 of 40 with a winner (no panic: the set ran to its end)"
+[[target]]
+id = "T212b"
+metric = "pair_germany_ussr40.length_min.min"
+min = 10
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "skirmish40.length_min.min"
+note = "T212: no match under 10 min"
+[[target]]
+id = "T212c"
+metric = "pair_germany_ussr40.length_min.max"
+max = 40
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "skirmish40.length_min.max"
+note = "T212: no match over 40 min (hashes at 1 and 4 threads: checked by the stage on seeds 1 and 2, the log)"
+[[target]]
+id = "T213a"
+metric = "pair_germany_ussr40.factions.ussr.s15.plate_stops"
+min = 1
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s15.plate_stops"
+note = "T213a: a plate stopped a round"
+[[target]]
+id = "T213b"
+metric = "pair_germany_ussr40.factions.ussr.s15.rider_boards"
+min = 1
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s15.rider_boards"
+note = "T213b: men boarded a deck"
+[[target]]
+id = "T213b2"
+metric = "pair_germany_ussr40.factions.ussr.s15_derived.rider_exits_per_match"
+min = 0.001
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s15_derived.rider_exits_per_match"
+note = "T213b: and got off it (any reason)"
+[[target]]
+id = "T213c"
+metric = "pair_germany_ussr40.factions.ussr.s14.flame_hits"
+min = 1
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s14.flame_hits"
+note = "T213c: a ROKS-3 hit"
+[[target]]
+id = "T213d"
+metric = "pair_germany_ussr40.factions.ussr.s15.bayonet_strikes"
+min = 1
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s15.bayonet_strikes"
+note = "T213d: a bayonet strike"
+[[target]]
+id = "T213e"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_t34_85_squad"
+min = 1
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e: the T-34-85 bought (hard)"
+[[target]]
+id = "T213e2"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_45mm_m42_squad"
+min = 1
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e: one gun bought (hard; the AT gun habit's card)"
+[[target]]
+id = "T213e_57mm_zis2"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_57mm_zis2_squad"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the ZiS-2 bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_76mm_zis3"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_76mm_zis3_squad"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the ZiS-3 bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_76mm_m1943"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_76mm_m1943_squad"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the M1943 bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_122mm_m30"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_122mm_m30_squad"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the M-30 bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_su85"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_su85_squad"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the SU-85 bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_su76m"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_su76m_squad"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the SU-76M bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_m3a1_scout"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_m3a1_scout_squad"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the M3A1 Scout Car bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_ba64b"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_ba64b_squad"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the BA-64B bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_is2"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_is2_squad"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the IS-2 bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_us6"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_us6_squad"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the US6 bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_shturmovaya_gruppa"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_shturmovaya_gruppa"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the assault group bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_raschyot_ptr"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_raschyot_ptr"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the PTRD team bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_sanitary"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_sanitary"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the medics bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_podnoschiki"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_podnoschiki"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the bearers bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213e_upravlenie_vzvoda"
+metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_upravlenie_vzvoda"
+min = 1
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
+note = "T213e report: the HQ bought over the 40 (a key-missing line: never bought)"
+[[target]]
+id = "T213f"
+metric = "pair_germany_ussr40.factions.ussr.s15.rider_jobs"
+min = 1
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s15.rider_jobs"
+note = "T213f: the AI started rider jobs"
+[[target]]
+id = "T213f2"
+metric = "pair_germany_ussr40.factions.ussr.s15_derived.rider_job_oldest_s"
+max = 245
+kind = "hard"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s15_derived.rider_job_oldest_s"
+note = "T213f: no rider job older than job_max_s + 5 s at a match's end (boarding and riding from the start, dropping from the drop order)"
+[[target]]
+id = "T213x"
+metric = "pair_germany_ussr40.factions.ussr.s15.foreign_fired"
+min = 0
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s15.foreign_fired"
+note = "report: captured bombs fired (the AI does not seek crates; row W3 is the proof)"
+[[target]]
+id = "T214a"
+metric = "pair_germany_ussr40.wins.ussr"
+min = 0
+max = 40
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.wins.germany"
+note = "T214: the USSR's wins of the 40 (no judgement)"
+[[target]]
+id = "T214b"
+metric = "pair_germany_ussr40.wins.germany"
+min = 0
+max = 40
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.wins.ussr"
+note = "T214: Germany's wins"
+[[target]]
+id = "T214c"
+metric = "pair_germany_ussr40.wins.base0"
+min = 0
+max = 40
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.wins.germany"
+note = "T214: wins from base 0 (by faction and base: factions.<f>.wins_by_base)"
+[[target]]
+id = "T215"
+metric = "pair_usa_ussr40.wins.ussr"
+min = 0
+max = 40
+kind = "report"
+exposure = "pair_usa_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_usa_ussr40.wins.usa"
+note = "T215: the free pair (not run by S15-ai; three 40 sets only)"
+[[target]]
+id = "T216a"
+metric = "pair_germany_ussr40.length_min.median"
+min = 0
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "skirmish40.length_min.median"
+note = "T216: length median (min and max in T212; no quartiles in the JSON)"
+[[target]]
+id = "T217a"
+metric = "pair_germany_ussr40.factions.ussr.kills_by_source_pct.tank_he"
+min = 0
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.kills_by_source_pct.tank_he"
+note = "T217: USSR kills by tank HE (share of its kills; the other classes in kills_by_source_pct)"
+[[target]]
+id = "T217b"
+metric = "pair_germany_ussr40.he_share_pct.mean"
+min = 0
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "skirmish40.he_share_pct.mean"
+note = "T217: HE share of kills, both sides"
+[[target]]
+id = "T218"
+metric = "pair_germany_ussr40.factions.ussr.s15.rider_casualties"
+min = 0
+kind = "report"
+exposure = "pair_germany_ussr40.wins.matches"
+exposure_min = 40
+control = "pair_germany_ussr40.factions.germany.s15.rider_casualties"
+note = "T218: riders hit while riding"
