@@ -5,26 +5,33 @@ Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never
 `godot/match/*.gd.uid`. Do not push. Owner rule: no balance runs, no tuning; every number a TOML key with a range, switches off.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S15b Build C done (USSR guns, vehicles, rounds); the USSR data is complete; presenter and S15-ai next.** SAVE 34 /
-PROTOCOL 17 (no layout change in C). Every S15 switch is 0 in `mods/ww2/defs/rules/skirmish.toml`; `ww2:ussr` is not in
-`[matchups] factions`: it plays only through `docs/slices/targets/S15-smoke.toml` (USSR against Germany, switches on).
-**T210** (`target/s15-C-off40`) and **T211** (`target/s15-C-40`): `neutral.py` "same 40/40" against `target/s14-F-40`.
-**Smoke** (seeds 1-4 both bases, 8 matches): no panic, 10-26 min, Germany won 6 (no tuning).
-**For the presenter.** New vehicle ids (all `ww2:ussr_*`): `t34_85`, `is2` (tanks), `su85` (tank destroyer, casemate), `su76m`
-(assault gun, casemate `open = ["top","rear"]`), `ba64b` (recon car, no main gun: its DT is a pintle on the commander seat;
-a `cupola` open hull-frame box), `m3a1_scout` (transport, 6 slots, M2HB and M1919 pintles), `us6` (truck, the guns' tow); guns
-`45mm_m42`, `57mm_zis2`, `76mm_zis3`, `76mm_m1943`, `122mm_m30`. Zone names as S13 (`hull_*`, `superstructure_*`, `turret_*`,
-`casemate_*`). Rider decks (`[[rider_slots]]`, exposed): T-34-85 8, IS-2 8, SU-85 6; no other vehicle has slots. The vehicle
-count is 37 (`kills_by_vehicle` is 38 long).
-**For S15-ai.** The USSR AI bought (8 matches): M-42 23, BA-64B 20, M1943 7, M-30 3, T-34-85 2, IS-2 1 and the infantry cards;
-never the ZiS-2, ZiS-3, SU-85, SU-76M or M3A1 Scout Car (card weights as the plan: T-34-85 100, SU-85 100, SU-76M 50, M3A1 100,
-BA-64B 5, IS-2 0 with `heavy_wave`/`ai_heavy`); the AI rides no riders yet (`AiRiders` jobs, switch off). Every gun card is towed
-by `ussr_us6_squad`. "second_bases" 72 for the USSR (Germany 1) in the smoke: worth a look. Its mortar fire and buys otherwise
-look like the German AI's.
-**Found, not fixed (sim, not this stage's files):** `spotting.rs` vehicle observers compute `Fx::from(v.sight).mul_int(pct)
-.div_int(100)`: `sight · pct` saturates Q16.16 above 327 m, so a vehicle sees at most about 327 m times the target's
-`spot_size_pct`. Every shipped sight is 150-220 m, so nothing shipped is affected; W5's 800 m cases stage around it.
-T212-T218 stay comments in `targets/S15.toml`. Details in "S15b C".
+**State: S15-ai Build D done; Review next** (sim, save layout untouched: SAVE 34 / PROTOCOL 17). Shipped: `ww2:ussr` in
+`[matchups]` (pairs Germany-USA, the default, and Germany-USSR), `[riders]`, `[body_armour]`, `[supply] foreign_ammo`,
+`[melee] bayonets`, `[ai.riders] jobs` all 1. **Code map:** `crates/sim/src/ai/riders.rs` (A1: `riders_continue` after the
+transport jobs, `riders_start` after the demolition jobs, both in `ai.rs` `plan`); `ai/transport.rs` `carrier` (a rider deck is
+not a half-track); `s15.rs` `AiRiders::valid` (a tank removed over the wreck cap loads); `spotting.rs` `pct_of`; tests
+`crates/sim/src/s15_ai_tests.rs`; JSON `s15_derived` (`json_out.rs`); targets runs `pair_germany_ussr40`, `pair_usa_ussr40`
+(`faction0/1` in the run spec), rows T212-T218; `tools/batch.sh pair OUTDIR F0 F1`.
+**Numbers (D, three 40 sets).** T210 `target/s15-D-off40`, T211 `target/s15-D-40`: neutral.py "same 40/40" against
+`target/s14-F-40`. T212 `target/s15-D-pair40`: 40 winners, no panic, 10.4 / 18.3 / 41.5 min (min / median / max: **one match
+over 40, T212c misses**), hashes equal at 1 and 4 threads on seeds 1 and 2 (and equal to the set's). Germany 26, USSR 14 (base 0
+18, base 1 22; USSR 6 / 8 by base). T213a plate_stops 8 (48 plate hits); b rider_boards 11, exits 11 (all R3c gun fired);
+**c ROKS-3 hits 0 (46 fuel units fired; Germany 3 of 147)**; **d bayonet strikes 0** (Germany made 1 strike in 40); e T-34-85 16,
+M-42 116; f rider_jobs 2 (ends: forced off 1, stall 1), none open at an end. `targets S15.toml --from-json target/s15-D-proof`:
+hard misses T212c, T213c, T213d and T8c (inherited, the default set's value).
+**Open owner questions.** (1) T212c: one Germany-USSR match ran 41.5 min (levers: USSR `ai_weight`, S15-5; no tuning here).
+(2) T213c/d: no AI habit closes to melee reach (strikes are M2's automatic ones; 1 in 40 for Germany), and the ROKS-3 fires but
+did not hit in 40: accept as reports, or add habits? (3) The SMG section (`vehicle_riders`) and the 9-man rifle section do not
+fit the 8-slot T-34-85 / IS-2 decks at full strength: only the 6-man card and weakened squads ride (2 jobs in 40); R3c then
+empties the deck at the first shot. (4) Cards never bought: ZiS-2, ZiS-3 (the AT-gun habit takes the first `at_gun` card of the
+roster, the M-42, as Germany always takes the PaK 40), SU-76M (weight 50 in a slot with about one vehicle buy per match), medics,
+bearers, HQ (as for Germany and the USA in the default pair). (5) `second_bases` USSR 439 vs Germany 16: a matter of numbers (the
+rule compares a base's fire weight with the enemy's best MG team weapon: MG 42 1200 rpm x 15 = 18000 against a Maxim team
+about 8800; the USA in the default pair has 237 against Germany 16).
+**check.sh quick 96d4b4b** (at 2fcd35d): fmt, clippy, neutral.py, every ablate dry run ok; tests 1356 passed, **2 failed**, both
+in `crates/godot-bridge/src/match_setup.rs` (`menu_choice_without_opponent_is_base`, `rejects_bad_choices`): they assert the
+shipped menu has no USSR. The bridge is the presenter stage's (not touched here): it updates them to the shipped table.
+**Deviations:** see "S15-ai D".
 
 ## S15a A (Build A)
 Commits: ae409fd layout (SAVE 34); 1e1f16f keys, `[matchups]`, ablations, targets; 6545360 matchups M1-M4; 896a91e riders
@@ -120,3 +127,24 @@ classed. (2) Every gun card is towed by the US6, the M1943 and M-30 included. (3
 over tracked / wheeled defs), SU-85 pivot and muzzle shortened (reach 510 under the Panther's 570). (7) W5 800 m cases raise
 `spot_size_pct` to 300 and the cannon range to 1 km (the saturation above). (8) W5's hit log holds shell hits only: PTRD holes
 show in "disabled in".
+
+## S15-ai D (Build D)
+Commits: 80b94fa rider job, card table, spotting fix; cf0807f switches on, JSON `s15_derived`, targets, `batch.sh pair`; 6c2fbed
+T212/T213 controls; 2fcd35d test worlds with the switches off; then this log. Tests added: sim `rider_job_drops_short`, `rider_job_ends_when_tank_dies`,
+`rider_job_with_a_removed_wreck_loads`, `rider_job_ends_on_deadline`, `rider_job_ends_on_stall` (L2 and L3),
+`rider_job_is_deterministic_across_threads_and_save_load` (1 vs 4 threads; save and load in each phase),
+`ai_habits_find_ussr_cards` (A2), `vehicle_sight_over_327_m_reaches_its_range`; cli `s15_derived_reads_per_match_and_job_ends`;
+the save fuzz's staged rider jobs now run (`[riders] enabled`, `[ai.riders] jobs` 1).
+**Found and fixed (bugs).** (1) The S8a transport habit took every vehicle with passenger slots, so with riders on a T-34-85 /
+IS-2 / SU-85 became a half-track taxi; it now skips exposed (rider) slots. (2) `AiRiders::valid` refused a save whose job named
+a tank the wreck cap had removed between two plans. (3) Vehicle sight x percent saturated Q16.16 above about 327 m
+(`spotting::pct_of`; shipped sights 150-220 m and the recon optics 220 x 140 % stay below it: T211 same 40/40).
+**Deviations.** (1) No layout change, so `RiderJob::phase_at` is the job's start in Board and Ride (L1) and the drop order's
+tick in Drop; L2 in Ride reads the tank's `still_ticks` (still `stall_s` after it moved during the job); Board stalls when nobody
+is aboard and the squad no longer boards, or after `stall_s`; a drop must empty within every slot's exit time + 5 s. (2) Ends
+"tank lost" include a tank sent back to retreat or rearm (the deck is told off); "forced off" includes the squad gone. (3) A
+job also starts on a tank leaving the base (not retreating; it gets `Stop`), not only an idle one, and with no escort check.
+(4) Edits outside the owned files: `world.rs` (test module line), `content/tests/s15_content.rs`, `cli/src/validate.rs`
+(tests read the shipped table), `cli/src/targets.rs` (`faction0/1`), the content snapshot (switch values), `s6_tests.rs`
+`s15_defs_off` (test worlds resolve with the S15 switches off, the S14-ai pattern). (5) S15.toml's copied S14 rows T190a-c,
+T192 lacked exposure and control (the file did not parse; S14.toml too, untouched). (6) Only the three approved 40 sets ran.
