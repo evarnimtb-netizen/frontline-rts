@@ -344,3 +344,39 @@ impl MatchState {
         (dmg as u64 * pct as u64 / 100).min(u32::MAX as u64) as u32
     }
 }
+
+impl MatchState {
+    /// S15 R3a: burst `b` at `pos` suppresses the enemy riders on the
+    /// decks of vehicles within `supp_r` (the vehicle's position for each
+    /// rider, no cover; the burst's suppression falling linearly to 0 at
+    /// `supp_r`), vehicles in ascending id.
+    pub(crate) fn burst_riders(
+        &self,
+        ctx: &mut crate::combat::DamageCtx,
+        b: &crate::combat::Burst,
+        pos: crate::fx::FxVec3,
+        supp_r: crate::fx::Fx,
+    ) {
+        for (&id, vs) in &self.vehicles {
+            if vs.riders.iter().all(|m| m.is_none()) || !self.rider_slots_of(id) {
+                continue;
+            }
+            let at = ctx.ents.transform[id.index()].pos;
+            let dist = (at - pos).length();
+            if dist > supp_r {
+                continue;
+            }
+            for m in vs.riders.iter().flatten() {
+                let i = m.index();
+                let own = ctx.ents.owner[i].0 == b.player;
+                if ctx.ents.kind[i] != EntityKind::Soldier || (own && !b.ff) {
+                    continue;
+                }
+                let add = (b.suppression as i64 * 1000 * (supp_r - dist).raw() as i64
+                    / supp_r.raw().max(1) as i64) as u32;
+                crate::combat::add_suppression(&mut ctx.ents.combat[i], add);
+                ctx.hash.mark_entity_chunk(m.chunk());
+            }
+        }
+    }
+}

@@ -1562,7 +1562,11 @@ impl MatchState {
             let m = melee_of(&self.setup, wi);
             // S15 B1: a bayonet strike (counted as such).
             let bayonet = self.setup.rules.melee.bayonets == 1
-                && self.setup.weapons.get(wi as usize).is_some_and(|w| w.bayonet.is_some());
+                && self
+                    .setup
+                    .weapons
+                    .get(wi as usize)
+                    .is_some_and(|w| w.bayonet.is_some());
             let owner = ents.owner[i].0;
             let c = &ents.combat[i];
             let pos = ents.transform[i].pos;

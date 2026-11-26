@@ -183,6 +183,9 @@ pub fn add_sides(doc: &mut Value, r: &ManyReport) {
                     let mut s14 = crate::skirmish::S14Faction::default();
                     s14.add(&p.s14);
                     o.insert("s14".into(), s14_blocks(&s14));
+                    let mut s15 = crate::skirmish::S15Faction::default();
+                    s15.add(&p.s15);
+                    o.insert("s15".into(), s15_blocks(&s15));
                 }
                 side
             })
@@ -689,6 +692,9 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
     // `factions.<f>.s14.<counter>`).
     o.insert("s14".into(), s14_blocks(&f.s14));
     o.insert("s14_derived".into(), s14_derived(&f.s14));
+    // S15 (docs/slices/S15-ussr.md 3): the S15 counters and the AI's rider
+    // counters by name (all 0 with the S15 switches off).
+    o.insert("s15".into(), s15_blocks(&f.s15));
     o.insert(
         "s6_derived".into(),
         json!({
@@ -848,6 +854,48 @@ fn s14_checks(s14: &crate::fortify::s14::S14Report) -> Vec<Value> {
     checks
 }
 
+/// The S15 hard checks (W1-W4): a failing one raises the document's
+/// `hard_failed`. A row not run (no verdict) is no check.
+fn s15_checks(s15: &crate::fortify::s15::S15Report) -> Vec<Value> {
+    let mut checks = Vec::new();
+    let rows = [
+        (
+            "s15_plate",
+            "S15 W1: a torso plate stops MP 40 rounds from the front only",
+            s15.plate.survive_ratio_pct,
+            "stops > 0, control 0; ratio >= 200 %; rifle and back diff 0",
+            s15.plate.pass,
+        ),
+        (
+            "s15_riders",
+            "S15 W2: riders get off a deck under a burst and a knock-out",
+            s15.riders.off_ms,
+            "off <= 3000 ms; 0 on the deck after the KO; switch 0 refused",
+            s15.riders.pass,
+        ),
+        (
+            "s15_foreign",
+            "S15 W3: a mortar fires captured bombs, wider",
+            s15.foreign.fired,
+            "fired >= 20, wider 1; the German crew draws 0",
+            s15.foreign.pass,
+        ),
+        (
+            "s15_bayonet",
+            "S15 W4: a bayonet reaches 1.5 m, not 1.9 m",
+            s15.bayonet.hits_150,
+            "100 of 100 at 1.5 m; 0 at 1.9 m; switch 0: 0",
+            s15.bayonet.pass,
+        ),
+    ];
+    for (id, name, value, limit, pass) in rows {
+        if let Some(pass) = pass {
+            checks.push(check(id, name, value, limit.into(), pass));
+        }
+    }
+    checks
+}
+
 /// The fortify-test document: hard checks (rifles, mortar, smoke) and the
 /// report rows (ranged mortar, grenades, MG suppression).
 pub fn fortify(r: &FortifyReport) -> Value {
@@ -875,6 +923,7 @@ pub fn fortify(r: &FortifyReport) -> Value {
         ),
     ];
     checks.extend(s14_checks(&r.s14));
+    checks.extend(s15_checks(&r.s15));
     let slit = &r.s14.slit;
     let exp = |e: &crate::fortify::Experiment| {
         json!({
@@ -1010,6 +1059,8 @@ pub fn fortify(r: &FortifyReport) -> Value {
         // S14 Builds A, B (R1-R4, R6):
         // `fortify10.s14.{slit,pool,trench,clear,under_fire}.*`.
         "s14": serde_json::to_value(&r.s14).unwrap_or_default(),
+        // S15a Build A (W1-W4): `fortify10.s15.{plate,riders,foreign,bayonet}.*`.
+        "s15": serde_json::to_value(&r.s15).unwrap_or_default(),
         "hard_failed": checks.iter().filter(|c| c["pass"] == json!(false)).count(),
         "checks": checks,
         "rows": rows,
@@ -1375,6 +1426,21 @@ pub fn s13_blocks(c: &crate::skirmish::S13Faction) -> Value {
     Value::Object(raw)
 }
 
+/// The `s15` block of one faction (or one side of one match): every
+/// `S15Counters` field and the AI's rider counters by name. Every value
+/// is 0 with the S15 switches off (`tools/neutral.py` reads a new block
+/// so).
+pub fn s15_blocks(c: &crate::skirmish::S15Faction) -> Value {
+    let mut raw = Map::new();
+    for (k, v) in crate::skirmish::S15_COUNTERS.iter().zip(c.s) {
+        raw.insert((*k).into(), json!(v));
+    }
+    for (k, v) in crate::skirmish::S15_AI.iter().zip(c.ai) {
+        raw.insert((*k).into(), json!(v));
+    }
+    Value::Object(raw)
+}
+
 /// The `s14` block of one faction (or one side of one match): every
 /// `S14Counters` field and the AI's flame counters by name. Every value is
 /// 0 with the S14 switches off (`tools/neutral.py` reads a new block so).
@@ -1721,6 +1787,23 @@ mod tests {
         );
     }
 
+    /// S15a Build A: W1-W4 are hard checks; rows not run add none.
+    #[test]
+    fn s15_rows_feed_the_hard_checks() {
+        use crate::fortify::s15::S15Report;
+        assert!(s15_checks(&S15Report::default()).is_empty());
+        let mut r = S15Report::default();
+        r.riders.pass = Some(false);
+        r.bayonet.pass = Some(true);
+        let c = s15_checks(&r);
+        assert_eq!(c.len(), 2);
+        assert_eq!(
+            (c[0]["id"].as_str(), &c[0]["pass"]),
+            (Some("s15_riders"), &json!(false))
+        );
+        assert_eq!(c[1]["id"], json!("s15_bayonet"));
+    }
+
     use super::*;
 
     /// Review finding 8 (T113): `matches_with_bunker_pct` is over all the
@@ -1782,6 +1865,32 @@ mod tests {
     fn median_of_even_and_odd() {
         assert_eq!(median(&mut [3.0, 1.0, 2.0]), 2.0);
         assert_eq!(median(&mut [4.0, 1.0, 2.0, 3.0]), 2.5);
+    }
+
+    /// S15: the `s15` block names every `S15Counters` field and AI rider
+    /// counter, each with its own value, and reads all 0 with the
+    /// switches off. Control: only the set counters are non-zero.
+    #[test]
+    fn s15_block_names_every_counter() {
+        use crate::skirmish::{S15_AI, S15_COUNTERS, S15Faction, S15Player};
+        let off = s15_blocks(&S15Faction::default());
+        let m = off.as_object().unwrap();
+        assert_eq!(m.len(), S15_COUNTERS.len() + S15_AI.len());
+        assert!(m.values().all(|v| v == &json!(0)), "{off}");
+        let mut c = frontline_sim::s15::S15Counters {
+            plate_stops: 3,
+            bayonet_hits: 5,
+            ..Default::default()
+        };
+        c.rider_exits[frontline_sim::s15::rider_exit::HIT as usize] = 7;
+        let mut f = S15Faction::default();
+        f.add(&S15Player::of(&c, None));
+        let on = s15_blocks(&f);
+        assert_eq!(on["plate_stops"], json!(3));
+        assert_eq!(on["bayonet_hits"], json!(5));
+        assert_eq!(on["rider_exit_vehicle_hit"], json!(7));
+        let set = on.as_object().unwrap().values().filter(|v| *v != &json!(0));
+        assert_eq!(set.count(), 3, "control: only the set counters: {on}");
     }
 
     /// S14 step 8: the `s14` block names every `S14Counters` field and AI

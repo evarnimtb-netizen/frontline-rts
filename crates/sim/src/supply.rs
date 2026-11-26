@@ -489,6 +489,17 @@ pub(crate) fn mortar_bombs(
     )
 }
 
+/// S15 rows (tools): [`mortar_bombs`] of squad `q` (own and foreign; 0
+/// for no such squad).
+pub fn mortar_bombs_of(
+    g: &crate::game::MatchState,
+    ents: &Entities,
+    q: crate::game::SquadId,
+) -> u32 {
+    g.squad(q)
+        .map_or(0, |sq| mortar_bombs(g.setup(), ents, sq).0)
+}
+
 /// Whether `p` stands inside player `owner`'s base.
 pub(crate) fn in_own_base(setup: &MatchSetup, owner: PlayerId, p: FxVec2) -> bool {
     let base = &setup.map.bases[setup.players[owner.0 as usize].base as usize];

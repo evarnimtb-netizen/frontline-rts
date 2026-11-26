@@ -427,6 +427,8 @@ pub struct PlayerReport {
     pub s13: S13Player,
     /// S14: the player's `S14Counters` and the AI's flame counters.
     pub s14: S14Player,
+    /// S15: the player's `S15Counters` and the AI's rider counters.
+    pub s15: S15Player,
     /// B1-5 `--side-detail`: at [`SQUAD_MINUTES`], own foot squads with a
     /// man alive (no vehicle, not a crew) and own squads on a running
     /// (not parked) AI fort job (`None`: over sooner, or no side detail).
@@ -1218,6 +1220,102 @@ impl S14Player {
             s,
             ai,
             oldest_job_s: 0.0,
+        }
+    }
+}
+
+/// S15: `S15Counters` in report order (names of [`S15Player::s`]; the
+/// rider exits as `rider_exit_<reason>`).
+pub const S15_COUNTERS: [&str; 15] = [
+    "plate_hits",
+    "plate_stops",
+    "plate_stops_frag",
+    "plate_stops_melee",
+    "rider_boards",
+    "rider_exit_ordered",
+    "rider_exit_suppressed",
+    "rider_exit_vehicle_hit",
+    "rider_exit_gun_fired",
+    "rider_exit_knocked_out",
+    "rider_casualties",
+    "foreign_drawn",
+    "foreign_fired",
+    "bayonet_strikes",
+    "bayonet_hits",
+];
+
+/// S15: the AI's rider counters (names of [`S15Player::ai`]; the job ends
+/// as `rider_job_end_<n>`).
+pub const S15_AI: [&str; 6] = [
+    "rider_jobs",
+    "rider_job_end_0",
+    "rider_job_end_1",
+    "rider_job_end_2",
+    "rider_job_end_3",
+    "rider_job_end_4",
+];
+
+/// S15 numbers of one player in one match (docs/slices/S15-ussr.md 3):
+/// every `S15Counters` field and the AI's rider counters. All 0 with the
+/// S15 switches off.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S15Player {
+    /// [`S15_COUNTERS`] order.
+    pub s: [u32; 15],
+    /// [`S15_AI`] order (zero for a human).
+    pub ai: [u32; 6],
+}
+
+impl S15Player {
+    pub fn of(
+        c: &frontline_sim::s15::S15Counters,
+        ai: Option<&frontline_sim::ai::AiCounters>,
+    ) -> S15Player {
+        let x = c.rider_exits;
+        let s = [
+            c.plate_hits,
+            c.plate_stops,
+            c.plate_stops_frag,
+            c.plate_stops_melee,
+            c.rider_boards,
+            x[0],
+            x[1],
+            x[2],
+            x[3],
+            x[4],
+            c.rider_casualties,
+            c.foreign_drawn,
+            c.foreign_fired,
+            c.bayonet_strikes,
+            c.bayonet_hits,
+        ];
+        let ai = ai.map_or([0; 6], |a| {
+            let e = a.rider_job_ends;
+            [a.rider_jobs, e[0], e[1], e[2], e[3], e[4]]
+        });
+        S15Player { s, ai }
+    }
+}
+
+/// S15 sums of one faction over a `--seeds` run (the JSON block `s15`,
+/// [`crate::json_out::s15_blocks`]).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S15Faction {
+    pub matches: u64,
+    /// [`S15_COUNTERS`] order.
+    pub s: [u64; 15],
+    /// [`S15_AI`] order.
+    pub ai: [u64; 6],
+}
+
+impl S15Faction {
+    pub fn add(&mut self, p: &S15Player) {
+        self.matches += 1;
+        for (a, b) in self.s.iter_mut().zip(p.s) {
+            *a += b as u64;
+        }
+        for (a, b) in self.ai.iter_mut().zip(p.ai) {
+            *a += b as u64;
         }
     }
 }
@@ -2864,6 +2962,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     });
                     x
                 },
+                s15: S15Player::of(&pl.s15, ai.map(|a| &a.counters)),
                 s11b: {
                     let bought_tagged = |tag: &str| -> u32 {
                         ai.map_or(0, |a| {
@@ -3537,6 +3636,8 @@ pub struct FactionSummary {
     pub s13: S13Faction,
     /// S14 sums (the JSON block `s14`).
     pub s14: S14Faction,
+    /// S15 sums (the JSON block `s15`).
+    pub s15: S15Faction,
 }
 
 /// S10b: the twelve `FortAccount` counters in report order.
@@ -4434,6 +4535,7 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             f.s12.add(&p.s12);
             f.s13.add(&p.s13);
             f.s14.add(&p.s14);
+            f.s15.add(&p.s15);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;

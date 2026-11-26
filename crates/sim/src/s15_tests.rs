@@ -680,6 +680,38 @@ fn riders_off_when_suppressed() {
     }
 }
 
+/// R3a (S15a Build A, W2): an enemy mortar burst 10 m off the tank
+/// suppresses its riders (they are in no spatial hash; no fragment
+/// reaches them at 10 m). Control: `[riders] enabled` 0: the same burst
+/// leaves them unsuppressed and all on the deck. (The exit past the
+/// threshold is `riders_off_when_suppressed`.)
+#[test]
+fn riders_suppressed_by_a_burst() {
+    for on in [1, 0] {
+        let mut w = rider_world(on, |_| {});
+        let (tank, inf) = ride(&mut w);
+        let n = members(&w, inf).len();
+        let p = w.state.entities.transform[tank.index()].pos.xy();
+        let grw = weapon(&w, "ww2:grw34");
+        assert!(w.drop_shell_now(1, grw, p + FxVec2::new(Fx::ZERO, Fx::from_int(10))));
+        // The shell falls 20 m (about 10 ticks): the most any man has.
+        let mut supp = 0;
+        for _ in 0..30 {
+            steps(&mut w, 1);
+            for m in members(&w, inf) {
+                supp = supp.max(w.state.entities.combat[m.index()].suppression);
+            }
+        }
+        if on == 1 {
+            assert!(supp > 0, "the burst suppresses the riders");
+        } else {
+            assert_eq!(supp, 0, "control: switch off, no rider suppressed");
+            let left = w.game().unwrap().riders_of(tank).len();
+            assert_eq!(left, n, "control: they stay");
+        }
+    }
+}
+
 /// R3b: an AT rocket striking the tank gets its riders off. Control:
 /// `off_on_hit` 0 (R3a off in both runs: the strike's suppression alone
 /// does not count here).

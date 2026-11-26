@@ -2786,6 +2786,12 @@ impl MatchState {
                 hurt_by(ctx, dead, b, id, b.damage, None);
             }
         }
+        // S15 R3a: riders on a deck (not in the soldier hash) are
+        // suppressed as men in the open at their vehicle's position (no
+        // cover). Nothing while `[riders] enabled` is 0.
+        if self.setup.rules.riders.enabled == 1 {
+            self.burst_riders(ctx, b, pos, supp_r);
+        }
         // S10b R20: a demolition charge's piece takes its tamped damage
         // (whatever its owner, no line check) instead of the overpressure.
         let tamped = b.piece.and_then(|pid| {
