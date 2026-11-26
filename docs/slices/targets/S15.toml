@@ -5839,8 +5839,8 @@ min = 10
 kind = "hard"
 exposure = "pair_germany_ussr40.wins.matches"
 exposure_min = 40
-control = "skirmish40.length_min.min"
-note = "T212: no match under 10 min"
+control = "pair_usa_ussr40.length_min.min"
+note = "T212: no match under 10 min; control: the free pair (T215) when run"
 [[target]]
 id = "T212c"
 metric = "pair_germany_ussr40.length_min.max"
@@ -5848,8 +5848,8 @@ max = 40
 kind = "hard"
 exposure = "pair_germany_ussr40.wins.matches"
 exposure_min = 40
-control = "skirmish40.length_min.max"
-note = "T212: no match over 40 min (hashes at 1 and 4 threads: checked by the stage on seeds 1 and 2, the log)"
+control = "pair_usa_ussr40.length_min.max"
+note = "T212: no match over 40 min (hashes at 1 and 4 threads: checked by the stage on seeds 1 and 2, the log); control: the free pair (T215) when run"
 [[target]]
 id = "T213a"
 metric = "pair_germany_ussr40.factions.ussr.s15.plate_stops"
@@ -5902,8 +5902,8 @@ min = 1
 kind = "hard"
 exposure = "pair_germany_ussr40.wins.matches"
 exposure_min = 40
-control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
-note = "T213e: the T-34-85 bought (hard)"
+control = "pair_germany_ussr40.factions.germany.s15.rider_jobs"
+note = "T213e: the T-34-85 bought (hard); control: Germany, with no USSR card and no rider job (0)"
 [[target]]
 id = "T213e2"
 metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_45mm_m42_squad"
@@ -5911,8 +5911,8 @@ min = 1
 kind = "hard"
 exposure = "pair_germany_ussr40.wins.matches"
 exposure_min = 40
-control = "pair_germany_ussr40.factions.germany.s4.bought.ger_pz4_h_squad"
-note = "T213e: one gun bought (hard; the AT gun habit's card)"
+control = "pair_germany_ussr40.factions.germany.s15.rider_jobs"
+note = "T213e: one gun bought (hard; the AT gun habit's card); control: Germany, with no USSR card and no rider job (0)"
 [[target]]
 id = "T213e_57mm_zis2"
 metric = "pair_germany_ussr40.factions.ussr.s4.bought.ussr_57mm_zis2_squad"
@@ -6064,8 +6064,8 @@ max = 245
 kind = "hard"
 exposure = "pair_germany_ussr40.wins.matches"
 exposure_min = 40
-control = "pair_germany_ussr40.factions.germany.s15_derived.rider_job_oldest_s"
-note = "T213f: no rider job older than job_max_s + 5 s at a match's end (boarding and riding from the start, dropping from the drop order)"
+control = "pair_usa_ussr40.factions.ussr.s15_derived.rider_job_oldest_s"
+note = "T213f: no rider job older than job_max_s + 5 s at a match's end (boarding and riding from the start, dropping from the drop order); control: the free pair (T215) when run"
 [[target]]
 id = "T213x"
 metric = "pair_germany_ussr40.factions.ussr.s15.foreign_fired"
