@@ -875,7 +875,9 @@ impl MatchState {
                 let gained = a - b;
                 let explained = self.bombs_explained.get(p).copied().unwrap_or(0);
                 if gained > explained {
-                    self.supply6.accounts[p].unsourced_bombs += (gained - explained) as u32;
+                    self.supply6.accounts[p].unsourced_bombs = self.supply6.accounts[p]
+                        .unsourced_bombs
+                        .saturating_add((gained - explained) as u32);
                 }
             }
         }
@@ -1062,7 +1064,9 @@ impl MatchState {
             if c.g == 0 {
                 self.supply6.crates.remove(&id);
             }
-            self.supply6.accounts[owner].stock_in_g += n as u64;
+            self.supply6.accounts[owner].stock_in_g = self.supply6.accounts[owner]
+                .stock_in_g
+                .saturating_add(n as u64);
         }
     }
 
@@ -1172,11 +1176,15 @@ impl MatchState {
                 let s = self.supply6.structures.get_mut(&id).expect("source");
                 s.stock_g[kind.index()] -= g;
                 let o = s.owner.0 as usize;
-                self.supply6.accounts[o].stock_out_g += g as u64;
+                self.supply6.accounts[o].stock_out_g = self.supply6.accounts[o]
+                    .stock_out_g
+                    .saturating_add(g as u64);
             }
             Source::Truck(id, o) => {
                 self.vehicles.get_mut(&id).expect("source").cargo_g[kind.index()] -= g;
-                self.supply6.accounts[o as usize].truck_out_g += g as u64;
+                self.supply6.accounts[o as usize].truck_out_g = self.supply6.accounts[o as usize]
+                    .truck_out_g
+                    .saturating_add(g as u64);
             }
             Source::Crate(id) => {
                 let c = self.supply6.crates.get_mut(&id).expect("source");
@@ -1464,7 +1472,10 @@ impl MatchState {
                         if g > 0 && have >= g {
                             self.draw(src, kind, g);
                             ents.kit[i].items[j] += 1;
-                            self.supply6.accounts[owner.0 as usize].fwd_items += 1;
+                            self.supply6.accounts[owner.0 as usize].fwd_items =
+                                self.supply6.accounts[owner.0 as usize]
+                                    .fwd_items
+                                    .saturating_add(1);
                             any = true;
                         }
                     }
@@ -1626,7 +1637,10 @@ impl MatchState {
             }
             self.draw(src, kd, n * g);
             self.vehicles.get_mut(&id).expect("listed").mgs[k].spent -= n;
-            self.supply6.accounts[owner.0 as usize].fwd_belt_rounds += n;
+            self.supply6.accounts[owner.0 as usize].fwd_belt_rounds = self.supply6.accounts
+                [owner.0 as usize]
+                .fwd_belt_rounds
+                .saturating_add(n);
             budget -= n;
         }
     }
@@ -2031,7 +2045,10 @@ impl MatchState {
                     return;
                 }
                 let c = self.supply6.crates.remove(&id).expect("listed");
-                self.supply6.accounts[c.owner.0 as usize].crates_lost += 1;
+                self.supply6.accounts[c.owner.0 as usize].crates_lost = self.supply6.accounts
+                    [c.owner.0 as usize]
+                    .crates_lost
+                    .saturating_add(1);
                 let kind = self.setup.stocks[c.def as usize].supply;
                 let kg = if matches!(kind, Some(SupplyKind::Shells | SupplyKind::Explosives)) {
                     c.g / 1000
@@ -2133,7 +2150,8 @@ impl MatchState {
             next_tick: tick + 1,
             every,
         });
-        self.supply6.accounts[owner].cookoffs += 1;
+        self.supply6.accounts[owner].cookoffs =
+            self.supply6.accounts[owner].cookoffs.saturating_add(1);
     }
 
     /// Cook-off bursts due at `tick`: `(id, pos, player, class, ammo)`, in
