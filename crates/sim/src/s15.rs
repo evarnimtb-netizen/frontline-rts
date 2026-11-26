@@ -139,7 +139,8 @@ impl MatchState {
             if k.foreign == 0 {
                 continue;
             }
-            if !matches!(ents.kind[i], EntityKind::Soldier | EntityKind::Downed) || k.foreign > cap {
+            if !matches!(ents.kind[i], EntityKind::Soldier | EntityKind::Downed) || k.foreign > cap
+            {
                 return Err("foreign rounds without a foreign feed");
             }
         }

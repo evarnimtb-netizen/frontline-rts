@@ -432,6 +432,7 @@ impl MatchSetup {
         }
         for w in &mut self.weapons {
             w.foreign_feed = None;
+            w.bayonet = None;
         }
     }
 
@@ -1001,6 +1002,10 @@ pub struct WeaponSetup {
     /// S14 M1: the weapon's own strike (`[melee]` block, def units: cm,
     /// HP, ms); `None`: the rules' `[melee]` strike.
     pub melee: Option<crate::defs::MeleeDef>,
+    /// S15 B1: the weapon's bayonet strike (`[melee.bayonet]`), used
+    /// instead of `melee`; `None` without one or while `[melee] bayonets`
+    /// is 0 (N2).
+    pub bayonet: Option<crate::defs::MeleeDef>,
     /// S15 X1-X3: the foreign round this mortar also fires; `None`
     /// without one or while `[supply] foreign_ammo` is 0 (N2).
     pub foreign_feed: Option<ForeignFeedSetup>,
@@ -1700,7 +1705,12 @@ impl ModDefs {
                     length: Fixed::from_cm(c.length_cm),
                     max_boxes: c.max_boxes as u8,
                 }),
-                melee: w.melee,
+                melee: w.melee.map(|m| m.strike()),
+                // S15 N2: no bayonet while the switch is 0.
+                bayonet: w
+                    .melee
+                    .and_then(|m| m.bayonet)
+                    .filter(|_| rules.melee.as_ref().is_some_and(|m| m.bayonets == 1)),
                 // S15 N2: no foreign feed while the switch is 0.
                 foreign_feed: w
                     .foreign_feed
@@ -3445,7 +3455,7 @@ impl MatchSetup {
             );
             // S14 M1: a weapon's strike in the rules' `[melee]` ranges.
             check(
-                w.melee.is_none_or(|m| {
+                w.melee.iter().chain(w.bayonet.iter()).all(|m| {
                     let mut v = Vec::new();
                     m.check("", &mut v);
                     v.is_empty()

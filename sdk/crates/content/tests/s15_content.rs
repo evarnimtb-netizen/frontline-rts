@@ -169,6 +169,7 @@ fn s15_off_setup_has_no_s15_field() {
     pz4_riders(&mut defs);
     plate_grenadiers(&mut defs);
     foreign_m1(&mut defs);
+    bayonet_kar(&mut defs);
     for (id, v) in &defs.vehicles {
         assert!(v.validate().is_empty(), "{id}: {:?}", v.validate());
     }
@@ -209,7 +210,10 @@ fn s15_off_setup_has_no_s15_field() {
     assert!(gren(&on), "control: plates with `[body_armour] enabled` 1");
     assert!(on.validate().is_empty(), "{:?}", on.validate());
     let feeds = |s: &frontline_content::MatchSetup| {
-        s.weapons.iter().filter(|w| w.foreign_feed.is_some()).count()
+        s.weapons
+            .iter()
+            .filter(|w| w.foreign_feed.is_some())
+            .count()
     };
     assert_eq!(feeds(&on), 0, "foreign feed still off");
     defs.rules
@@ -222,10 +226,64 @@ fn s15_off_setup_has_no_s15_field() {
     let on = defs.resolve(&r).unwrap();
     assert_eq!(feeds(&on), 1, "control: the feed with `foreign_ammo` 1");
     assert!(on.validate().is_empty(), "{:?}", on.validate());
+    let bayonets = |s: &frontline_content::MatchSetup| {
+        s.weapons.iter().filter(|w| w.bayonet.is_some()).count()
+    };
+    assert_eq!(bayonets(&on), 0, "bayonets still off");
+    defs.rules
+        .get_mut(RULES)
+        .unwrap()
+        .melee
+        .as_mut()
+        .unwrap()
+        .bayonets = 1;
+    let on = defs.resolve(&r).unwrap();
+    assert_eq!(bayonets(&on), 1, "control: with `bayonets` 1");
+    assert!(on.validate().is_empty(), "{:?}", on.validate());
     let mut off = on.clone();
     off.s15_off();
     assert!(!gren(&off), "s15_off drops the plates");
     assert_eq!(feeds(&off), 0, "s15_off drops the feed");
+    assert_eq!(bayonets(&off), 0, "s15_off drops the bayonet");
+}
+
+/// The stand-in Mosin's bayonet (plan B1) on the Kar 98k: reach 140 cm.
+fn bayonet_kar(defs: &mut ModDefs) {
+    let m = defs
+        .weapons
+        .get_mut("ww2:kar98k")
+        .unwrap()
+        .melee
+        .as_mut()
+        .unwrap();
+    let mut b = m.strike();
+    b.reach_cm = 140;
+    m.bayonet = Some(b);
+}
+
+/// B1 def checks: the bayonet block in the `[melee]` ranges. Control:
+/// the stand-in is valid and `[melee.bayonet]` parses.
+#[test]
+fn bayonet_block_is_checked() {
+    let mut defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    bayonet_kar(&mut defs);
+    let ok = defs.weapons["ww2:kar98k"].clone();
+    assert!(ok.validate().is_empty(), "control: {:?}", ok.validate());
+    let mut far = ok.clone();
+    far.melee
+        .as_mut()
+        .unwrap()
+        .bayonet
+        .as_mut()
+        .unwrap()
+        .reach_cm = 1001;
+    assert!(!far.validate().is_empty(), "reach 1001");
+    let m: frontline_content::defs::WeaponMeleeDef = toml::from_str(
+        "reach_cm = 100\ndamage = 50\nwindup_ms = 600\nrecover_ms = 1000\n\
+         [bayonet]\nreach_cm = 140\ndamage = 50\nwindup_ms = 600\nrecover_ms = 1000\n",
+    )
+    .unwrap();
+    assert_eq!(m.bayonet.map(|b| b.reach_cm), Some(140));
 }
 
 /// The stand-in Soviet mortar's feed (plan X3) on the US 81 mm mortar.
@@ -255,12 +313,22 @@ fn foreign_feed_is_checked() {
     let issues = |d: &ModDefs| d.cross_check();
     assert!(issues(&defs).is_empty(), "control: {:?}", issues(&defs));
     let mut bad = defs.clone();
-    bad.weapons.get_mut("ww2:m1_mortar").unwrap().foreign_feed.as_mut().unwrap().cartridge =
-        "ww2:8cm_wgr99".into();
+    bad.weapons
+        .get_mut("ww2:m1_mortar")
+        .unwrap()
+        .foreign_feed
+        .as_mut()
+        .unwrap()
+        .cartridge = "ww2:8cm_wgr99".into();
     assert!(!issues(&bad).is_empty(), "unknown cartridge");
     let mut bad = defs.clone();
-    bad.weapons.get_mut("ww2:m1_mortar").unwrap().foreign_feed.as_mut().unwrap().faction =
-        "ww2:prussia".into();
+    bad.weapons
+        .get_mut("ww2:m1_mortar")
+        .unwrap()
+        .foreign_feed
+        .as_mut()
+        .unwrap()
+        .faction = "ww2:prussia".into();
     assert!(!issues(&bad).is_empty(), "unknown faction");
 }
 

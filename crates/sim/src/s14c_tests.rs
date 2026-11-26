@@ -78,7 +78,12 @@ fn passive(w: &mut World, m: SimId) {
 
 /// One tick with `a` at `pa` and `b` at `pb` (held on their spots) and
 /// `b` passive.
-pub(super) fn tick_held(w: &mut World, (a, pa): (SimId, FxVec2), (b, pb): (SimId, FxVec2), b_passive: bool) {
+pub(super) fn tick_held(
+    w: &mut World,
+    (a, pa): (SimId, FxVec2),
+    (b, pb): (SimId, FxVec2),
+    b_passive: bool,
+) {
     w.place_soldier(a, pa);
     w.place_soldier(b, pb);
     if b_passive {

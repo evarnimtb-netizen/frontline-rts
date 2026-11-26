@@ -958,16 +958,11 @@ fn plate_stops_a_light_fragment_only() {
 #[test]
 fn plate_stops_a_strike() {
     for stops in [1, 0] {
-        let (mut w, a, b) = super::s14c_tests::duel(
-            1,
-            "ww2:kar98k",
-            "ww2:m1_garand",
-            (80, 0),
-            |s| {
+        let (mut w, a, b) =
+            super::s14c_tests::duel(1, "ww2:kar98k", "ww2:m1_garand", (80, 0), |s| {
                 plate_all(s, 1, 360);
                 s.rules.body_armour.stops_melee = stops;
-            },
-        );
+            });
         use super::s14c_tests::{hp, off, tick_held, wind_up};
         let full = hp(&w, b);
         wind_up(&mut w, a, off(200, 0));
@@ -1041,8 +1036,16 @@ fn foreign_setup(s: &mut MatchSetup, feed: bool, spread: u16) {
     }
     let grw = s.weapons.iter().position(|w| w.id == "ww2:grw34").unwrap();
     let bomb = s.weapons[grw].feed.unwrap();
-    let ger = s.factions.iter().position(|f| f.id == "ww2:germany").unwrap() as u16;
-    let m1 = s.weapons.iter().position(|w| w.id == "ww2:m1_mortar").unwrap();
+    let ger = s
+        .factions
+        .iter()
+        .position(|f| f.id == "ww2:germany")
+        .unwrap() as u16;
+    let m1 = s
+        .weapons
+        .iter()
+        .position(|w| w.id == "ww2:m1_mortar")
+        .unwrap();
     s.weapons[m1].foreign_feed = Some(frontline_content::setup::ForeignFeedSetup {
         feed: bomb,
         faction: ger,
@@ -1104,7 +1107,11 @@ fn draw_at_crate(
     dry(&mut w, q);
     let at = w.state.entities.transform[tube(&w, q).index()].pos.xy();
     let s = w.match_setup().unwrap();
-    let f = s.factions.iter().position(|x| x.id == crate_faction).unwrap() as u16;
+    let f = s
+        .factions
+        .iter()
+        .position(|x| x.id == crate_faction)
+        .unwrap() as u16;
     let d = s
         .stock_of(
             f,
@@ -1248,7 +1255,14 @@ fn foreign_off_is_base() {
             steps(&mut w, 30);
             hs.push(crate::hash::full_hash(&w.state, &w.config_bytes, &[]));
         }
-        (hs, w.match_setup().unwrap().weapons.iter().any(|x| x.foreign_feed.is_some()))
+        (
+            hs,
+            w.match_setup()
+                .unwrap()
+                .weapons
+                .iter()
+                .any(|x| x.foreign_feed.is_some()),
+        )
     };
     let (base, _) = run(false, false);
     let (off, any) = run(true, true);
@@ -1257,4 +1271,66 @@ fn foreign_off_is_base() {
     let (on, any) = run(true, false);
     assert!(any);
     assert_ne!(on, base, "control: the feed on draws");
+}
+
+// --------------------------------------------------------------- B1 --
+
+/// The stand-in Mosin (plan B1): the Kar 98k with a bayonet block (reach
+/// 140 cm), `[melee] bayonets` = `on`.
+fn bayonet_setup(s: &mut MatchSetup, on: u32) {
+    s.rules.melee.bayonets = on;
+    let k = s.weapons.iter().position(|w| w.id == "ww2:kar98k").unwrap();
+    let butt = s.weapons[k].melee.unwrap();
+    s.weapons[k].bayonet = Some(frontline_content::defs::MeleeDef {
+        reach_cm: 140,
+        ..butt
+    });
+}
+
+/// One strike by the German Kar 98k man at a passive US man `dx` cm east
+/// (`bayonets` = `on`): whether it hit.
+fn bayonet_strike(on: u32, dx: i32) -> bool {
+    use super::s14c_tests::{duel, off, tick_held, wind_up};
+    let (mut w, a, b) = duel(1, "ww2:kar98k", "ww2:m1_garand", (dx, 0), |s| {
+        bayonet_setup(s, on)
+    });
+    wind_up(&mut w, a, off(300, 0));
+    tick_held(&mut w, (a, off(0, 0)), (b, off(dx, 0)), true);
+    let k = &w.game().unwrap().players[0].s14;
+    assert_eq!(k.strikes, 1, "one strike");
+    let b = s15(&w, 0);
+    assert_eq!(b.bayonet_strikes, on, "a bayonet strike counted");
+    assert_eq!(b.bayonet_hits, on * k.strike_hits);
+    k.strike_hits == 1
+}
+
+/// B1: the bayonet reaches a man 1.5 m ahead. Control: the butt (no
+/// bayonet block on the weapon's strike) reaches 1.0 m only, so at
+/// 1.5 m it misses (`bayonets_off_uses_the_butt`).
+#[test]
+fn bayonet_reaches_150_cm() {
+    assert!(bayonet_strike(1, 150));
+    assert!(bayonet_strike(1, 100), "and nearer");
+}
+
+/// B1: 1.9 m is beyond the bayonet. Control: 1.5 m is hit (above).
+#[test]
+fn bayonet_misses_at_190_cm() {
+    assert!(!bayonet_strike(1, 190));
+    assert!(bayonet_strike(1, 150), "control");
+}
+
+/// N2 for bayonets: with `bayonets` 0 the weapon strikes with its butt
+/// (1.5 m: a miss) and the setup build drops the block. Control: at 1.0 m
+/// the butt hits.
+#[test]
+fn bayonets_off_uses_the_butt() {
+    assert!(!bayonet_strike(0, 150));
+    assert!(bayonet_strike(0, 90), "control: the butt's reach");
+    let mut s = flat_world_with(1, |s| bayonet_setup(s, 1))
+        .match_setup()
+        .unwrap()
+        .clone();
+    s.s15_off();
+    assert!(s.weapons.iter().all(|w| w.bayonet.is_none()));
 }

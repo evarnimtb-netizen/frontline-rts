@@ -1078,9 +1078,9 @@ pub(crate) fn own_bomb_left(
         return true;
     }
     let reach = setup.rules.combat.share.crew_feed_m;
-    members
-        .iter()
-        .any(|&g| g != gunner && ents.kit[g.index()].rounds[k] > 0 && within(ents, g, gunner, reach))
+    members.iter().any(|&g| {
+        g != gunner && ents.kit[g.index()].rounds[k] > 0 && within(ents, g, gunner, reach)
+    })
 }
 
 /// S15 X2: takes one foreign bomb, the gunner's first, then the crew's
@@ -1094,7 +1094,9 @@ pub(crate) fn take_foreign(
     let reach = setup.rules.combat.share.crew_feed_m;
     let giver = std::iter::once(gunner)
         .chain(members.iter().copied().filter(|&g| g != gunner))
-        .find(|&g| ents.kit[g.index()].foreign > 0 && (g == gunner || within(ents, g, gunner, reach)));
+        .find(|&g| {
+            ents.kit[g.index()].foreign > 0 && (g == gunner || within(ents, g, gunner, reach))
+        });
     match giver {
         Some(g) => {
             ents.kit[g.index()].foreign -= 1;

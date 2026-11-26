@@ -1261,11 +1261,15 @@ pub(crate) struct Melee {
 /// M1: the strike of weapon `wi` (see [`Melee`]).
 pub(crate) fn melee_of(setup: &MatchSetup, wi: u16) -> Melee {
     let r = &setup.rules.melee;
-    let (reach_cm, damage, windup_ms, recover_ms) =
-        match setup.weapons.get(wi as usize).and_then(|w| w.melee) {
-            Some(m) => (m.reach_cm, m.damage, m.windup_ms, m.recover_ms),
-            None => (r.reach_cm, r.damage, r.windup_ms, r.recover_ms),
-        };
+    // S15 B1: a bayonet (only with `[melee] bayonets` 1) strikes instead.
+    let w = setup.weapons.get(wi as usize);
+    let own = w
+        .and_then(|w| w.bayonet.filter(|_| r.bayonets == 1))
+        .or_else(|| w.and_then(|w| w.melee));
+    let (reach_cm, damage, windup_ms, recover_ms) = match own {
+        Some(m) => (m.reach_cm, m.damage, m.windup_ms, m.recover_ms),
+        None => (r.reach_cm, r.damage, r.windup_ms, r.recover_ms),
+    };
     let hz = setup.tick_hz as u64;
     let ticks = |ms: u32| (ms as u64 * hz).div_ceil(1000).clamp(1, u8::MAX as u64) as u8;
     Melee {
@@ -1556,6 +1560,9 @@ impl MatchState {
             };
             let wi = crate::supply::active_weapon(ty, &ents.kit[i]);
             let m = melee_of(&self.setup, wi);
+            // S15 B1: a bayonet strike (counted as such).
+            let bayonet = self.setup.rules.melee.bayonets == 1
+                && self.setup.weapons.get(wi as usize).is_some_and(|w| w.bayonet.is_some());
             let owner = ents.owner[i].0;
             let c = &ents.combat[i];
             let pos = ents.transform[i].pos;
@@ -1563,6 +1570,10 @@ impl MatchState {
             let from = FxVec3::new(pos.x, pos.y, pos.z + chest);
             let s14 = &mut self.players[owner as usize].s14;
             s14.strikes = s14.strikes.saturating_add(1);
+            if bayonet {
+                let s15 = &mut self.players[owner as usize].s15;
+                s15.bayonet_strikes = s15.bayonet_strikes.saturating_add(1);
+            }
             // S14 Fix 3: the strike goes at the body of the enemy nearest
             // `strike_at` as he stands now (any stance or height inside
             // the window), whose capsule axis is within reach plus its
@@ -1627,6 +1638,10 @@ impl MatchState {
             s14.strike_hits = s14.strike_hits.saturating_add(1);
             if fell {
                 s14.strike_kills = s14.strike_kills.saturating_add(1);
+            }
+            if bayonet {
+                let s15 = &mut self.players[owner as usize].s15;
+                s15.bayonet_hits = s15.bayonet_hits.saturating_add(1);
             }
         }
     }

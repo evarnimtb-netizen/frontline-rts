@@ -1152,8 +1152,16 @@ fn foreign_mortar(s: &mut MatchSetup) {
     }
     let grw = s.weapons.iter().position(|w| w.id == "ww2:grw34").unwrap();
     let bomb = s.weapons[grw].feed.unwrap();
-    let ger = s.factions.iter().position(|f| f.id == "ww2:germany").unwrap() as u16;
-    let m1 = s.weapons.iter().position(|w| w.id == "ww2:m1_mortar").unwrap();
+    let ger = s
+        .factions
+        .iter()
+        .position(|f| f.id == "ww2:germany")
+        .unwrap() as u16;
+    let m1 = s
+        .weapons
+        .iter()
+        .position(|w| w.id == "ww2:m1_mortar")
+        .unwrap();
     s.weapons[m1].foreign_feed = Some(frontline_content::setup::ForeignFeedSetup {
         feed: bomb,
         faction: ger,

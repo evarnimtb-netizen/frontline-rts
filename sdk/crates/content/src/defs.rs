@@ -717,7 +717,7 @@ pub struct WeaponDef {
     /// strike with this weapon in his hands (a butt stroke). Absent: the
     /// rules' `[melee]` strike (the entrenching spade).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub melee: Option<MeleeDef>,
+    pub melee: Option<WeaponMeleeDef>,
     /// S15 X1-X3 (docs/slices/S15-ussr.md 5.3): a mortar that also fires
     /// another faction's bombs drawn at a crate its player holds. Dropped
     /// at setup while `[supply] foreign_ammo` is 0.
@@ -751,6 +751,43 @@ pub struct MeleeDef {
     pub windup_ms: u32,
     /// Recovery after it (ms; no fire).
     pub recover_ms: u32,
+}
+
+/// A weapon's `[melee]` block: its own strike (S14 M1) and (S15 B1) an
+/// optional `[melee.bayonet]` strike, used instead with the rules'
+/// `[melee] bayonets` 1. Same keys and ranges as [`MeleeDef`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WeaponMeleeDef {
+    pub reach_cm: u32,
+    pub damage: u32,
+    pub windup_ms: u32,
+    pub recover_ms: u32,
+    /// S15 B1: the bayonet strike (a longer reach); dropped at setup while
+    /// `[melee] bayonets` is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bayonet: Option<MeleeDef>,
+}
+
+impl WeaponMeleeDef {
+    /// The weapon's own strike (the butt).
+    pub fn strike(&self) -> MeleeDef {
+        MeleeDef {
+            reach_cm: self.reach_cm,
+            damage: self.damage,
+            windup_ms: self.windup_ms,
+            recover_ms: self.recover_ms,
+        }
+    }
+
+    /// Range issues under `at` (e.g. `melee.`), the bayonet's under
+    /// `{at}bayonet.`.
+    pub fn check(&self, at: &str, out: &mut Vec<Issue>) {
+        self.strike().check(at, out);
+        if let Some(b) = &self.bayonet {
+            b.check(&format!("{at}bayonet."), out);
+        }
+    }
 }
 
 impl MeleeDef {
