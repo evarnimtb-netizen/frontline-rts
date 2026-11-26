@@ -5,24 +5,26 @@ Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never
 `godot/match/*.gd.uid`. Do not push. Owner rule: no balance runs, no tuning; every number a TOML key with a range, switches off.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S15a Build B done (USSR infantry data); Build C (guns, vehicles) next.** SAVE 34 / PROTOCOL 17. Every S15 switch is 0 in
-`mods/ww2/defs/rules/skirmish.toml`; `ww2:ussr` is a faction file but not in `[matchups] factions`, so it is played only through an
-override (`docs/slices/targets/S15-smoke.toml`: the USSR enabled against Germany, switches on).
-**T210** (`s15_off`, `target/s15-B-off40`) and **T211** (shipped defaults, `target/s15-B-40`): `neutral.py` "same 40/40" against
-`target/s14-F-40`, both at the Build B data commits. **Smoke** (4 seeds Germany-USSR, S15-smoke.toml): no panic, 16-26 min, USSR won 3.
-**What Build B made** (all `ww2:ussr_*`, all sorting after every older id; test `s15_defs_sort_last` compares the Germany-USA setup
-with and without the USSR defs, switches off and on): faction file, 13 roster cards + 6 crews (tank crew 5; gun crews 45 / 57 / 76 /
-76 M1943 / 122 mm), weapons `mosin_9130` (butt + bayonet), `ppsh41`, `pps43`, `dp27`, `maxim_1910`, `sg43` (no card), `tt33`, `ptrd41`,
-`roks3`, `82mm_bm37` (foreign feed, German 8 cm bombs 130 %), cartridges, items (F-1, RG-42, RDG, satchel, UZ), 7 supply defs.
-**Build C needs:** the five gun cards (`ussr_gun_crew_*` exist, `crew_squad` of the vehicle defs points at them), seven vehicles and
-their rounds; the T-34-85 / SU-85 / IS-2 `[[rider_slots]]` and `[riders]` blocks (nothing carries them yet; the tag
-`vehicle_riders` is on `ussr_otdelenie_avtomatchikov`); the supply defs' cook-off round is the German 7.5 cm HE until a Soviet HE
-round exists (`ussr_*` supply, six files: change `cookoff`); the roster gets the gun and vehicle cards appended. T212-T218 still
-comments in `targets/S15.toml`. The AI bought: 82 mm mortar, PTR team, MG section, rifle section (9 and 6), SMG section, sappers,
-assault group; no vehicles (none exist), no medics, observers, HQ or bearers (as the German AI's smoke buys).
-**Deviations** (details in "S15a B"): the plan's tag `riders` is `vehicle_riders` (a new tag shifts every later tag index: the tag list
-is sorted); the AT-team check accepts a crew AT rifle with a `penetration` table (content `modset.rs`); the Soviet assault group
-is an S10a-style card for the AI's fort habits (test list in `ai/fort.rs` updated); see below for the verify marks.
+**State: S15b Build C done (USSR guns, vehicles, rounds); the USSR data is complete; presenter and S15-ai next.** SAVE 34 /
+PROTOCOL 17 (no layout change in C). Every S15 switch is 0 in `mods/ww2/defs/rules/skirmish.toml`; `ww2:ussr` is not in
+`[matchups] factions`: it plays only through `docs/slices/targets/S15-smoke.toml` (USSR against Germany, switches on).
+**T210** (`target/s15-C-off40`) and **T211** (`target/s15-C-40`): `neutral.py` "same 40/40" against `target/s14-F-40`.
+**Smoke** (seeds 1-4 both bases, 8 matches): no panic, 10-26 min, Germany won 6 (no tuning).
+**For the presenter.** New vehicle ids (all `ww2:ussr_*`): `t34_85`, `is2` (tanks), `su85` (tank destroyer, casemate), `su76m`
+(assault gun, casemate `open = ["top","rear"]`), `ba64b` (recon car, no main gun: its DT is a pintle on the commander seat;
+a `cupola` open hull-frame box), `m3a1_scout` (transport, 6 slots, M2HB and M1919 pintles), `us6` (truck, the guns' tow); guns
+`45mm_m42`, `57mm_zis2`, `76mm_zis3`, `76mm_m1943`, `122mm_m30`. Zone names as S13 (`hull_*`, `superstructure_*`, `turret_*`,
+`casemate_*`). Rider decks (`[[rider_slots]]`, exposed): T-34-85 8, IS-2 8, SU-85 6; no other vehicle has slots. The vehicle
+count is 37 (`kills_by_vehicle` is 38 long).
+**For S15-ai.** The USSR AI bought (8 matches): M-42 23, BA-64B 20, M1943 7, M-30 3, T-34-85 2, IS-2 1 and the infantry cards;
+never the ZiS-2, ZiS-3, SU-85, SU-76M or M3A1 Scout Car (card weights as the plan: T-34-85 100, SU-85 100, SU-76M 50, M3A1 100,
+BA-64B 5, IS-2 0 with `heavy_wave`/`ai_heavy`); the AI rides no riders yet (`AiRiders` jobs, switch off). Every gun card is towed
+by `ussr_us6_squad`. "second_bases" 72 for the USSR (Germany 1) in the smoke: worth a look. Its mortar fire and buys otherwise
+look like the German AI's.
+**Found, not fixed (sim, not this stage's files):** `spotting.rs` vehicle observers compute `Fx::from(v.sight).mul_int(pct)
+.div_int(100)`: `sight · pct` saturates Q16.16 above 327 m, so a vehicle sees at most about 327 m times the target's
+`spot_size_pct`. Every shipped sight is 150-220 m, so nothing shipped is affected; W5's 800 m cases stage around it.
+T212-T218 stay comments in `targets/S15.toml`. Details in "S15b C".
 
 ## S15a A (Build A)
 Commits: ae409fd layout (SAVE 34); 1e1f16f keys, `[matchups]`, ablations, targets; 6545360 matchups M1-M4; 896a91e riders
@@ -85,3 +87,36 @@ lowest charge 70 m/s (the check wants a shortest range under `min_range_m` 90). 
 (read 40 at 100 m and 30 at 500 m; the 0 and 300 m rows interpolate). (6) PPSh rate 600 (cyclic 1,250 read; the MP 40 is 400 for
 about 500). (7) The sanitary and razvedchik cards copy the US aid and observer cards (pistol with 0 rounds; radio operator). (8)
 The skirmish JSON has no `s15` block, so the smoke reads buys and rounds only. (9) 40 sets: two, as approved.
+
+## S15b C (Build C)
+Commits: bc1e96e 16 rounds, 9 weapons, 5 guns, US6, gun cards, cook-off round; cce0ee0 six vehicles (S13 boxes, `hull_body_boxes`,
+racks, rare caps, rider slots), cards, recon validation; f4f7f5c W5 cases 47-56, rider boarding test; then this log.
+Tests added: content `s15c_rounds_cards_and_tows`; sim `riders_board_each_soviet_tank_with_slots` (decks is2 8, su85 6, t34_85 8;
+Pz IV and Sherman 0; riders off 0). Changed for the data: `s15_defs_sort_last` (every list has USSR entries), s13 V1/V5/V6,
+hull-body, presenter-glacis and spot-point tests (`S15_TANKS`, `three_box`), `t151h` (9 classed rounds), `s11a1` counts (37),
+`multi_box_components_list_every_box`; the s13 slope and heavy lists skip `ussr_`.
+**Penetration convention.** The mod's tables are 0 degrees from the normal, 50 % criterion. Soviet tables (75 %, or 80 % for
+"CP") give a "meet angle 90" column: it is taken as the 0-degree row, mm unchanged (no criterion factor was read, so these rows
+sit a little low). The 85 mm rows are the D-5T page's calculated 0-degree, 50 % table (no conversion). Missing ranges are spaced
+as the nearest read table and marked unverified.
+**Verified (read 2026-11-26; each def's `sources`):** Wikipedia ZiS-2, M-42, ZiS-3, 52-K / D-5T, IS-2, T-34-85, SU-85, SU-76,
+BA-64, M3 Scout Car, M-30, M1943 regimental gun, Studebaker US6 (calibres, masses, velocities, rates, crews, main armour);
+losthistory.net BR-471 (CP 152/142/133/122 mm at 500-2000 m, 780 m/s) and the F-34 table for BR-350P; armytanks.org BR-240P
+(1,070 m/s, 81 mm at 500 m). **Unverified (marked in the defs):** the M-42 BR-240 table (71/61/51/42), OF-462 mass and velocity,
+every cartridge and complete-round weight, lower charges of the M1943 and M-30, rear and deck plates, the BA-64B nose angle,
+DT stowage, US6 tow mass, rack splits, all prices, cooldowns and `ai_weight` (S15 starting values, no tuning).
+**W5 (armour-test 47-56, 5 seeds both ways, report only; disabled / rounds / pens taken):** 47 Pz IV 10 of 10 by the T-34-85,
+T-34 0; 48 T-34-85 10 of 10 by the Panther, Panther 0; 49 Panther flank 9 of 10, T-34 1; 50 IS-2 800 m: IS-2 10 of 10
+(superstructure front 12 hits, 0 pens; hull front 10/10), Panther 0 (2 turret pens); 51 IS-2 7 of 10, Tiger 3 of 10; 52 Tiger 8
+of 10 by the SU-85, SU-85 2; 53 Panther flank 10 of 10 by the ZiS-2; 54 M-42 out in 9 of 10, Pz IV 0 (hull front 94 hits, 8 pens);
+55 Sd.Kfz. 251 6 of 10 by the PTRD, team lost 10 men; 56 PTRD on the Pz IV flank (skirts) 0 of 10, team lost 20.
+**Smoke** (`S15-smoke.toml`, seeds 1-4 both bases): exit 0, no panic, every match ended (10.4-25.8 min), Germany 6, USSR 2;
+buys above. **T210 / T211:** same 40/40 each. **check.sh quick 96d4b4b:** all ok (fmt, clippy after a collapsible-if fix in `s15_content.rs`, neutral.py, every ablate dry run; tests 1349 passed, 0 failed; `frontline_godot` failed under load, passed alone).
+**Deviations.** (1) Nine classed AP / APCR rounds (`slope_class`), the plan says seven: every Soviet AP and APCR round is
+classed. (2) Every gun card is towed by the US6, the M1943 and M-30 included. (3) The BA-64B has no main gun (content
+`vehicle.rs`: a recon car may have 0 or 1; the setup check lets recon go without one). (4) The IS-2 carries the coax DT only.
+(5) Edits outside the stage's files, all made for the data: sim tests `damage.rs`, `s13_tests.rs`, `s11a1_tests.rs`, content
+`vehicle.rs`, `armour_test.rs` registration. (6) Global aggregates kept: SU-76M `ditch_block_dm` 19 and BA-64B 10 (the minimum
+over tracked / wheeled defs), SU-85 pivot and muzzle shortened (reach 510 under the Panther's 570). (7) W5 800 m cases raise
+`spot_size_pct` to 300 and the cannon range to 1 km (the saturation above). (8) W5's hit log holds shell hits only: PTRD holes
+show in "disabled in".

@@ -645,10 +645,10 @@ fn s15c_rounds_cards_and_tows() {
         .collect();
     assert_eq!(heavy, ["ww2:ussr_is2_squad"]);
     for (id, d) in &defs.supply {
-        if id.starts_with("ww2:ussr_") {
-            if let Some(c) = &d.cookoff {
-                assert_eq!(c, "ww2:ussr_76mm_of350", "{id}");
-            }
+        if id.starts_with("ww2:ussr_")
+            && let Some(c) = &d.cookoff
+        {
+            assert_eq!(c, "ww2:ussr_76mm_of350", "{id}");
         }
     }
     for (id, v) in &defs.vehicles {
