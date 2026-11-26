@@ -2137,6 +2137,10 @@ pub(crate) struct BallisticEvent {
     pub blow: Blow,
     /// S5b: the round's fire mission (0: none).
     pub mission: u32,
+    /// S15 P1-P2: where the round was fired from (its flown range and
+    /// direction at a plate); `None` for events with no round (burns,
+    /// tests).
+    pub origin: Option<FxVec3>,
 }
 
 /// Hit capsule `(a, b, radius)` of a soldier: a vertical segment standing or
@@ -2333,8 +2337,8 @@ pub(crate) fn fly(
                 .weapons
                 .get(p.weapon as usize)
                 .is_some_and(|w| !w.pen.is_empty());
-        let (weapon, player, shooter, ammo, mission) =
-            (p.weapon, p.player, p.owner, p.ammo, p.mission);
+        let (weapon, player, shooter, ammo, mission, origin) =
+            (p.weapon, p.player, p.owner, p.ammo, p.mission, p.origin);
         let ev = |blow| BallisticEvent {
             weapon,
             player,
@@ -2343,6 +2347,7 @@ pub(crate) fn fly(
             shooter,
             blow,
             mission,
+            origin: Some(origin),
         };
         for _ in 0..substeps {
             let from = p.pos;
@@ -3288,6 +3293,18 @@ impl MatchState {
                     let i = id.index();
                     crate::wounds::zone_at(&ctx.ents.transform[i], &ctx.ents.combat[i], z, w)
                 });
+                // S15 P1-P3: the fragment's pen falls as its damage does.
+                let pen = Fx::from_raw(
+                    ((he.frag_pen_mm as i64 * pct.raw() as i64) / 100).min(i32::MAX as i64) as i32,
+                );
+                let dmg = self.plate_damage(
+                    ctx.ents,
+                    id,
+                    o.xy(),
+                    zone,
+                    crate::s15::PlateBlow::Fragment(pen),
+                    dmg,
+                );
                 hurt_by(ctx, dead, b, id, dmg, Some(zone));
                 ctx.stats.frag_hits += 1;
             }
@@ -3521,12 +3538,29 @@ impl MatchState {
                         rules.hit_suppression * 1000,
                     );
                     let class = self.round_class(ctx.ents, e.weapon, e.ammo, e.shooter);
+                    // S15 P1-P3, P5: a bullet (not a flame particle) at a
+                    // plated man's front.
+                    let mut dmg = w.damage;
+                    if let Some(o) = e.origin
+                        && w.class != frontline_content::WeaponClass::Flame
+                    {
+                        let at = ctx.ents.transform[id.index()].pos.xy();
+                        let flown = (at - o.xy()).length();
+                        dmg = self.plate_damage(
+                            ctx.ents,
+                            id,
+                            o.xy(),
+                            zone,
+                            crate::s15::PlateBlow::Bullet(e.weapon, flown),
+                            dmg,
+                        );
+                    }
                     hurt(
                         ctx.ents,
                         ctx.hash,
                         &mut dead,
                         id,
-                        w.damage,
+                        dmg,
                         (e.player, class),
                         (zone, false),
                         ctx.wounds.as_ref(),
@@ -4834,6 +4868,7 @@ mod tests {
                 shooter: SimId(0),
                 blow: Blow::Burst(pos),
                 mission: 0,
+                origin: None,
             }];
             self.game.apply_blows(
                 &mut ctx,
@@ -5026,6 +5061,7 @@ mod tests {
             shooter: SimId(0),
             blow: Blow::NearMiss(man),
             mission: 0,
+            origin: None,
         };
         r.game.apply_blows(
             &mut ctx,

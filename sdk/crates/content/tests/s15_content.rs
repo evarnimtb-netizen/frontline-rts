@@ -5,6 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
+use frontline_content::variant::BodyArmourDef;
+use frontline_content::vehicle::TenthsMm;
 use frontline_content::{Difficulty, MatchRequest, MatchupsDef, ModDefs};
 
 fn root() -> PathBuf {
@@ -164,6 +166,7 @@ fn s15_off_setup_has_no_s15_field() {
     let base = base_defs.resolve(&r).unwrap();
     let mut defs = base_defs.clone();
     pz4_riders(&mut defs);
+    plate_grenadiers(&mut defs);
     for (id, v) in &defs.vehicles {
         assert!(v.validate().is_empty(), "{id}: {:?}", v.validate());
     }
@@ -188,6 +191,57 @@ fn s15_off_setup_has_no_s15_field() {
         .expect("control: rider slots with the switch on");
     assert!(t.exposed && t.slots.len() == 10);
     assert!(on.validate().is_empty(), "{:?}", on.validate());
+    let gren = |s: &frontline_content::MatchSetup| {
+        let k = s.squad_type_index(GREN).unwrap() as usize;
+        s.squad_types[k].members.iter().any(|m| m.plate.is_some())
+    };
+    assert!(!gren(&on), "plates still off");
+    defs.rules
+        .get_mut(RULES)
+        .unwrap()
+        .body_armour
+        .as_mut()
+        .unwrap()
+        .enabled = 1;
+    let on = defs.resolve(&r).unwrap();
+    assert!(gren(&on), "control: plates with `[body_armour] enabled` 1");
+    assert!(on.validate().is_empty(), "{:?}", on.validate());
+    let mut off = on.clone();
+    off.s15_off();
+    assert!(!gren(&off), "s15_off drops the plates");
+}
+
+const GREN: &str = "ww2:ger_grenadiergruppe";
+
+/// A stand-in 2.0 mm torso plate (120 deg) on every Grenadiergruppe man.
+fn plate_grenadiers(defs: &mut ModDefs) {
+    for m in &mut defs.squads.get_mut(GREN).unwrap().members {
+        m.armour = Some(BodyArmourDef {
+            mm: TenthsMm(20),
+            zone: "torso".into(),
+            arc_deg: 120,
+        });
+    }
+}
+
+/// P1 def checks: thickness 0.5..=10 mm, the torso only, arc 1..=360.
+/// Control: the stand-in plate is valid.
+#[test]
+fn member_plates_are_checked() {
+    let mut defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    plate_grenadiers(&mut defs);
+    let ok = defs.squads[GREN].clone();
+    assert!(ok.validate().is_empty(), "control: {:?}", ok.validate());
+    let bad = |edit: &dyn Fn(&mut BodyArmourDef)| {
+        let mut s = ok.clone();
+        edit(s.members[0].armour.as_mut().unwrap());
+        !s.validate().is_empty()
+    };
+    assert!(bad(&|a| a.mm = TenthsMm(4)), "0.4 mm");
+    assert!(bad(&|a| a.mm = TenthsMm(101)), "10.1 mm");
+    assert!(bad(&|a| a.zone = "head".into()), "head");
+    assert!(bad(&|a| a.arc_deg = 0), "arc 0");
+    assert!(bad(&|a| a.arc_deg = 361), "arc 361");
 }
 
 /// R1 def checks: `[riders]` only on a tank, assault gun or TD, one box

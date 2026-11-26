@@ -243,3 +243,91 @@ pub(crate) fn riders_suppressed(
         .flatten()
         .any(|m| ents.combat[m.index()].suppression as u64 >= at)
 }
+
+/// S15 P2: what meets a man's plate.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum PlateBlow {
+    /// A bullet of weapon `0` that flew `1` m (its `penetration` table at
+    /// that range, else `[body_armour] soft_pen_tenths_mm`).
+    Bullet(u16, crate::fx::Fx),
+    /// A fragment with this penetration (mm, after the S3b falloff).
+    Fragment(crate::fx::Fx),
+    /// A butt or bayonet strike (P4).
+    Strike,
+}
+
+impl MatchState {
+    /// S15 P1-P4: the damage soldier `id` takes from `blow` of `dmg` in
+    /// `zone`, coming from `from`: `dmg` unless he wears a plate (the
+    /// switch on) covering `zone` and `from` lies within its front arc
+    /// (prone: only with `[body_armour] prone` 1) and the blow's strength
+    /// is below the plate, then `dmg` x `stopped_damage_pct`. Counts the
+    /// meeting and the stop on his player. No draw (P2 is a threshold).
+    pub(crate) fn plate_damage(
+        &mut self,
+        ents: &Entities,
+        id: SimId,
+        from: crate::fx::FxVec2,
+        zone: u8,
+        blow: PlateBlow,
+        dmg: u32,
+    ) -> u32 {
+        use crate::fx::{Fx, FxVec2};
+        let b = &self.setup.rules.body_armour;
+        let i = id.index();
+        if b.enabled == 0 || ents.kind.get(i) != Some(&EntityKind::Soldier) {
+            return dmg;
+        }
+        let Some(plate) = ents.squad[i]
+            .and_then(|q| self.squads.get(&q))
+            .and_then(|sq| self.setup.squad_types.get(sq.type_idx as usize))
+            .and_then(|ty| ty.members.get(ents.kit[i].slot as usize))
+            .and_then(|m| m.plate)
+        else {
+            return dmg;
+        };
+        if plate.zone != zone
+            || (ents.combat[i].stance == crate::ecs::Stance::Prone && b.prone == 0)
+        {
+            return dmg;
+        }
+        // P1: the reversed direction of the blow against his facing.
+        let t = &ents.transform[i];
+        let to = (from - t.pos.xy()).normalize_or_zero();
+        if to != FxVec2::default() && plate.arc_deg < 360 {
+            let (s, c) = t.yaw.sin_cos();
+            let half = crate::armour::deg(plate.arc_deg as i32).div_int(2);
+            if to.dot(FxVec2::new(c, s)) < half.cos() {
+                return dmg;
+            }
+        }
+        let thick = Fx::from_ratio(plate.tenths_mm as i64, 10);
+        let stopped = match blow {
+            PlateBlow::Bullet(w, range) => {
+                let pen = match self.armour.small.get(w as usize) {
+                    Some(t) if !t.rows.is_empty() => t.pen0(range),
+                    _ => Fx::from_ratio(b.soft_pen_tenths_mm as i64, 10),
+                };
+                pen < thick
+            }
+            PlateBlow::Fragment(pen) => pen < thick,
+            PlateBlow::Strike => b.stops_melee == 1,
+        };
+        let pct = b.stopped_damage_pct;
+        let Some(p) = self.players.get_mut(ents.owner[i].0 as usize) else {
+            return dmg;
+        };
+        let c = &mut p.s15;
+        c.plate_hits = c.plate_hits.saturating_add(1);
+        if !stopped {
+            return dmg;
+        }
+        c.plate_stops = c.plate_stops.saturating_add(1);
+        match blow {
+            PlateBlow::Fragment(_) => c.plate_stops_frag = c.plate_stops_frag.saturating_add(1),
+            PlateBlow::Strike => c.plate_stops_melee = c.plate_stops_melee.saturating_add(1),
+            PlateBlow::Bullet(..) => {}
+        }
+        (dmg as u64 * pct as u64 / 100).min(u32::MAX as u64) as u32
+    }
+}

@@ -339,6 +339,7 @@ pub(super) fn burst_now(
         shooter: SimId(u32::MAX),
         blow: Blow::Burst(pos),
         mission,
+        origin: None,
     }];
     game.as_mut().unwrap().apply_blows(
         &mut ctx,

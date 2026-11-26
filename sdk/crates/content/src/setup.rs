@@ -425,6 +425,11 @@ impl MatchSetup {
                 v.transport = None;
             }
         }
+        for t in &mut self.squad_types {
+            for m in &mut t.members {
+                m.plate = None;
+            }
+        }
     }
 
     /// S11b G1: `[items] rifle_grenades` 0 on a resolved setup (the kind
@@ -1277,6 +1282,20 @@ pub struct MemberSetup {
     /// in his weapon, by the squad type's feed slot
     /// ([`SquadTypeSetup::feeds`]).
     pub rounds: [u16; MAX_FEEDS],
+    /// S15 P1-P5: the plate each man of the slot wears; `None` without
+    /// one or while `[body_armour] enabled` is 0 (N2).
+    pub plate: Option<PlateSetup>,
+}
+
+/// S15 P1: a member's plate, lowered.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlateSetup {
+    /// Thickness, tenths of a mm (5..=100).
+    pub tenths_mm: u16,
+    /// The wound zone it covers (0: torso, `sim::wounds::ZONE_TORSO`).
+    pub zone: u8,
+    /// The front arc it covers (deg, 1..=360).
+    pub arc_deg: u16,
 }
 
 /// S4: a training profile, percent multipliers (100 = regular; see
@@ -1972,6 +1991,18 @@ impl ModDefs {
                             items,
                             traits,
                             rounds: [0; MAX_FEEDS],
+                            // S15 N2: no plate while the switch is 0.
+                            plate: m
+                                .armour
+                                .as_ref()
+                                .filter(|_| {
+                                    rules.body_armour.as_ref().is_some_and(|b| b.enabled == 1)
+                                })
+                                .map(|a| PlateSetup {
+                                    tenths_mm: a.mm.0.min(u16::MAX as u32) as u16,
+                                    zone: 0,
+                                    arc_deg: a.arc_deg.min(360) as u16,
+                                }),
                         }
                     })
                     .collect();
@@ -3531,9 +3562,14 @@ impl MatchSetup {
                             && m.items
                                 .iter()
                                 .zip(&s.items)
-                                .all(|(&n, it)| n == 0 || it.is_some()),
+                                .all(|(&n, it)| n == 0 || it.is_some())
+                            && m.plate.is_none_or(|p| {
+                                (5..=100).contains(&p.tenths_mm)
+                                    && p.zone == 0
+                                    && (1..=360).contains(&p.arc_deg)
+                            }),
                         "squad_types.members",
-                        "a member's count, weapon, traits or items are out of range",
+                        "a member's count, weapon, traits, items or plate are out of range",
                     );
                 }
                 let nf = s.feeds.len();

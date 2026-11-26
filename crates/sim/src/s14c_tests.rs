@@ -11,7 +11,7 @@ use crate::game::kill_class;
 const GER: &str = "ww2:ger_grenadiergruppe";
 const USA: &str = "ww2:usa_rifle_squad";
 /// Where the German man stands (m).
-const AT: i32 = 300;
+pub(super) const AT: i32 = 300;
 
 fn s14_of(w: &World, p: usize) -> S14Counters {
     w.game().unwrap().players[p].s14.clone()
@@ -27,7 +27,7 @@ fn man_with(w: &World, sq: SquadId, weapon: &str) -> SimId {
 }
 
 /// A point `dx`, `dy` cm from (`AT`, `AT`).
-fn off(dx: i32, dy: i32) -> FxVec2 {
+pub(super) fn off(dx: i32, dy: i32) -> FxVec2 {
     FxVec2::new(
         Fx::from_int(AT) + Fx::from_ratio(dx as i64, 100),
         Fx::from_int(AT) + Fx::from_ratio(dy as i64, 100),
@@ -38,7 +38,7 @@ fn off(dx: i32, dy: i32) -> FxVec2 {
 /// man with `us_w` `dx`, `dy` cm from him; every other man of both squads
 /// is dead. `edit` runs on the setup after `[melee] enabled` is set to
 /// `on`. Returns `(world, German man, US man)`.
-fn duel(
+pub(super) fn duel(
     on: u32,
     ger_w: &str,
     us_w: &str,
@@ -78,7 +78,7 @@ fn passive(w: &mut World, m: SimId) {
 
 /// One tick with `a` at `pa` and `b` at `pb` (held on their spots) and
 /// `b` passive.
-fn tick_held(w: &mut World, (a, pa): (SimId, FxVec2), (b, pb): (SimId, FxVec2), b_passive: bool) {
+pub(super) fn tick_held(w: &mut World, (a, pa): (SimId, FxVec2), (b, pb): (SimId, FxVec2), b_passive: bool) {
     w.place_soldier(a, pa);
     w.place_soldier(b, pb);
     if b_passive {
@@ -96,7 +96,7 @@ fn empty(k: &mut crate::items::Kit, c: &mut crate::ecs::Combat) {
 }
 
 /// Stages `m` one tick from the end of his wind-up, striking toward `at`.
-fn wind_up(w: &mut World, m: SimId, at: FxVec2) {
+pub(super) fn wind_up(w: &mut World, m: SimId, at: FxVec2) {
     assert!(w.edit_soldier(m, |_, c| {
         c.close.strike_phase = STRIKE_WINDUP;
         c.close.strike = 1;
@@ -104,7 +104,7 @@ fn wind_up(w: &mut World, m: SimId, at: FxVec2) {
     }));
 }
 
-fn hp(w: &World, m: SimId) -> u16 {
+pub(super) fn hp(w: &World, m: SimId) -> u16 {
     w.state.entities.combat[m.index()].hp
 }
 

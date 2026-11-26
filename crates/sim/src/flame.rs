@@ -441,6 +441,7 @@ fn burn_event(player: u8, blow: Blow) -> BallisticEvent {
         shooter: SimId(u32::MAX),
         blow,
         mission: 0,
+        origin: None,
     }
 }
 
@@ -1603,12 +1604,21 @@ impl MatchState {
                 crate::wounds::zone_at(&ctx.ents.transform[j], &ctx.ents.combat[j], z, w)
             });
             crate::combat::add_suppression(&mut ctx.ents.combat[j], hit_supp * 1000);
+            // S15 P4: a plate in the strike's way.
+            let dmg = self.plate_damage(
+                ctx.ents,
+                id,
+                pos.xy(),
+                zone,
+                crate::s15::PlateBlow::Strike,
+                m.damage,
+            );
             let fell = crate::combat::hurt(
                 ctx.ents,
                 ctx.hash,
                 dead,
                 id,
-                m.damage,
+                dmg,
                 (owner, kill_class::MELEE),
                 (zone, false),
                 ctx.wounds.as_ref(),

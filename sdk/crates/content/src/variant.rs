@@ -67,6 +67,29 @@ pub struct MemberDef {
     /// comes as a pair, `flame_off` then `flame_on`, under one slot name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<MemberWhen>,
+    /// S15 P1-P5 (docs/slices/S15-ussr.md 5.2): a plate each man of the
+    /// slot wears, e.g. `armour = { mm = 2.0, zone = "torso", arc_deg =
+    /// 120 }`. Dropped at setup while `[body_armour] enabled` is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub armour: Option<BodyArmourDef>,
+}
+
+/// S15 P1: a member's plate (`MemberDef::armour`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BodyArmourDef {
+    /// Plate thickness (mm, one decimal), 0.5..=10.
+    #[schemars(with = "f64")]
+    pub mm: crate::vehicle::TenthsMm,
+    /// The hit zone it covers: `torso` (the only one in S15a).
+    #[serde(default = "torso")]
+    pub zone: String,
+    /// The front arc it covers (deg, centred on his facing), 1..=360.
+    pub arc_deg: u32,
+}
+
+fn torso() -> String {
+    "torso".into()
 }
 
 /// S14: when a member slot exists (`MemberDef::when`).
@@ -250,6 +273,7 @@ pub fn expand_legacy(s: &SquadDef, launcher: bool) -> Vec<MemberDef> {
         items: items(leader),
         traits: Vec::new(),
         when: None,
+        armour: None,
     };
     let lead_weapon = if k >= 1 {
         s.weapon.clone()
@@ -423,6 +447,30 @@ pub(crate) fn check_members(out: &mut Vec<Issue>, members: &[MemberDef]) {
                     m.slot
                 ),
             ));
+        }
+        // S15 P1: the plate's ranges.
+        if let Some(a) = &m.armour {
+            if !(5..=100).contains(&a.mm.0) {
+                out.push(Issue::new(
+                    format!("{p}.armour.mm"),
+                    format!("must be in 0.5..=10, got {}", a.mm),
+                ));
+            }
+            if a.zone != "torso" {
+                out.push(
+                    Issue::new(
+                        format!("{p}.armour.zone"),
+                        format!("`{}`: a plate covers the torso only", a.zone),
+                    )
+                    .with_hint("zone = \"torso\""),
+                );
+            }
+            if !(1..=360).contains(&a.arc_deg) {
+                out.push(Issue::new(
+                    format!("{p}.armour.arc_deg"),
+                    format!("must be in 1..=360, got {}", a.arc_deg),
+                ));
+            }
         }
         if !(1..=MAX_SQUAD_MEN).contains(&m.count) {
             out.push(Issue::new(
@@ -710,6 +758,7 @@ mod tests {
             items: BTreeMap::new(),
             traits: Vec::new(),
             when,
+            armour: None,
         };
         let (off, on) = (Some(MemberWhen::FlameOff), Some(MemberWhen::FlameOn));
         let issues = |ms: &[MemberDef]| {
@@ -870,6 +919,7 @@ mod tests {
             items: BTreeMap::new(),
             traits: Vec::new(),
             when: None,
+            armour: None,
         };
         // Three weapons.
         let e = project_members(&[m("a", 1, "x"), m("b", 2, "y"), m("c", 1, "z")]).unwrap_err();

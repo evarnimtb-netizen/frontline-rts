@@ -10,7 +10,7 @@ use frontline_content::vehicle::{BoxSetup, TransportSetup};
 use super::s6_tests::{flat_world_with, members, run, spawn, steps};
 use super::*;
 use crate::command::CommandKind;
-use crate::fx::FxVec3;
+use crate::fx::{FxVec2, FxVec3};
 use crate::s15::{
     AiRiders, RIDER_BOARD, RIDER_DROP, RIDER_RIDE, RiderJob, RiderOff, RiderRefused, rider_exit,
 };
@@ -791,4 +791,235 @@ fn riders_save_and_load_mid_exit() {
         assert_eq!(w.full_state_hash(), back.full_state_hash());
     }
     assert!(w.game().unwrap().riders_of(tank).is_empty());
+}
+
+// ------------------------------------------------------------ P1-P5 --
+
+/// Every member of every squad type wears a 2.0 mm torso plate over a
+/// front arc of `arc` deg; `[body_armour] enabled` = `on`, wounds on (the
+/// zones).
+fn plate_all(s: &mut MatchSetup, on: u32, arc: u16) {
+    s.rules.body_armour.enabled = on;
+    s.rules.wounds.enabled = 1;
+    for t in &mut s.squad_types {
+        for m in &mut t.members {
+            m.plate = Some(frontline_content::setup::PlateSetup {
+                tenths_mm: 20,
+                zone: crate::wounds::ZONE_TORSO,
+                arc_deg: arc,
+            });
+        }
+    }
+}
+
+/// Where a zone's middle is on a standing man, as a share of his height
+/// (%): head, torso, legs by `[wounds]`.
+fn zone_pct(w: &World, zone: u8) -> i64 {
+    let t = &w.match_setup().unwrap().rules.wounds;
+    let (head, legs) = (t.head_top_pct as i64, t.legs_bottom_pct as i64);
+    match zone {
+        crate::wounds::ZONE_HEAD => 100 - head / 2,
+        crate::wounds::ZONE_LEGS => legs / 2,
+        _ => (legs + 100 - head) / 2,
+    }
+}
+
+/// One round of weapon `wpn` (def id) from `dist` m at a lone plated man
+/// of player 0 held at (500, 500), fired from where he faces (`back`:
+/// from behind) at the middle of `zone`. (He faces the way his squad
+/// walks him, so his facing is read after a held tick.) Returns (HP lost,
+/// his suppression after, player 0's counters).
+fn plate_shot(
+    on: u32,
+    wpn: &str,
+    dist: i32,
+    back: bool,
+    zone: u8,
+) -> (u16, u32, crate::s15::S15Counters) {
+    let mut w = flat_world_with(1, |s| plate_all(s, on, 120));
+    let m = super::s11a2_tests::lone(&mut w, 0, 500, 500);
+    let i = m.index();
+    let hold = |w: &mut World| {
+        w.place_soldier(m, FxVec2::from_int(500, 500));
+        steps(w, 1);
+    };
+    hold(&mut w);
+    hold(&mut w);
+    let t = w.state.entities.transform[i];
+    let h = w.state.entities.combat[i].height;
+    let z = t.pos.z + Fx::from_raw((h.raw() as i64 * zone_pct(&w, zone) / 100) as i32);
+    let (s, c) = t.yaw.sin_cos();
+    let d = Fx::from_int(if back { -dist } else { dist });
+    let from = FxVec3::new(t.pos.x + c.mul(d), t.pos.y + s.mul(d), z);
+    let aim = FxVec3::new(t.pos.x, t.pos.y, z);
+    let hp0 = w.state.entities.combat[i].hp;
+    let wi = weapon(&w, wpn);
+    assert!(w.fire_round_now(1, wi, from, aim));
+    for _ in 0..60 {
+        hold(&mut w);
+        if s15(&w, 0).plate_hits > 0 || w.state.entities.combat[i].hp < hp0 {
+            break;
+        }
+    }
+    let c = &w.state.entities.combat[i];
+    (hp0 - c.hp.min(hp0), c.suppression, s15(&w, 0))
+}
+
+/// P1-P3: an MP 40 round at 50 m at the chest of a standing plated man
+/// from his front is stopped (no damage, the hit's suppression kept).
+/// Control: `[body_armour] enabled` 0 (the same plate in the setup)
+/// lets it through.
+#[test]
+fn plate_stops_smg_from_the_front() {
+    let (lost, supp, k) = plate_shot(1, "ww2:mp40", 50, false, crate::wounds::ZONE_TORSO);
+    assert_eq!((k.plate_hits, k.plate_stops), (1, 1));
+    assert_eq!(lost, 0, "stopped: no damage");
+    assert!(supp > 0, "P3: the hit still suppresses");
+    let (lost, _, k) = plate_shot(0, "ww2:mp40", 50, false, crate::wounds::ZONE_TORSO);
+    assert_eq!(k.plate_hits, 0);
+    assert!(lost > 0, "control: plates off, the round hurts");
+}
+
+/// P2: a Kar 98k round (5 mm at 100 m) beats a 2 mm plate: met, not
+/// stopped, full damage. Control: the MP 40 (no table: 1.0 mm) is
+/// stopped at the same range.
+#[test]
+fn plate_does_not_stop_a_rifle() {
+    let (lost, _, k) = plate_shot(1, "ww2:kar98k", 50, false, crate::wounds::ZONE_TORSO);
+    assert_eq!((k.plate_hits, k.plate_stops), (1, 0));
+    assert!(lost > 0);
+    let (lost, _, k) = plate_shot(1, "ww2:mp40", 50, false, crate::wounds::ZONE_TORSO);
+    assert_eq!((k.plate_stops, lost), (1, 0), "control");
+}
+
+/// P1: a round from behind (outside the 120 deg front arc) does not meet
+/// the plate. Control: from the front it is stopped.
+#[test]
+fn plate_does_not_cover_the_back() {
+    let (lost, _, k) = plate_shot(1, "ww2:mp40", 50, true, crate::wounds::ZONE_TORSO);
+    assert_eq!(k.plate_hits, 0);
+    assert!(lost > 0, "from behind: hurt");
+    let (_, _, k) = plate_shot(1, "ww2:mp40", 50, false, crate::wounds::ZONE_TORSO);
+    assert_eq!(k.plate_stops, 1, "control: the front");
+}
+
+/// P1: the plate covers the torso only: head and leg hits from the front
+/// go through untouched. Control: the torso hit is stopped.
+#[test]
+fn plate_does_not_cover_head_or_legs() {
+    for zone in [crate::wounds::ZONE_HEAD, crate::wounds::ZONE_LEGS] {
+        let (lost, _, k) = plate_shot(1, "ww2:mp40", 50, false, zone);
+        assert_eq!(k.plate_hits, 0, "zone {zone}");
+        assert!(lost > 0, "zone {zone}: hurt");
+    }
+    let (lost, _, _) = plate_shot(1, "ww2:mp40", 50, false, crate::wounds::ZONE_TORSO);
+    assert_eq!(lost, 0, "control: the torso");
+}
+
+/// P2: mortar bursts east of a plated man facing them: fragments with
+/// `frag_pen_mm` 1 (under the plate) are stopped; control: the mod's 9
+/// mm fragments go through the plate (met, none stopped).
+#[test]
+fn plate_stops_a_light_fragment_only() {
+    let mut out = Vec::new();
+    for pen in [1, 9] {
+        let mut w = flat_world_with(1, |s| {
+            plate_all(s, 1, 120);
+            let k = s.weapons.iter().position(|x| x.id == "ww2:grw34").unwrap();
+            s.weapons[k].he.as_mut().unwrap().frag_pen_mm = pen;
+        });
+        let m = super::s11a2_tests::lone(&mut w, 0, 500, 500);
+        w.place_soldier(m, FxVec2::from_int(500, 500));
+        w.state.entities.transform[m.index()].yaw = Fx::ZERO;
+        let mortar = weapon(&w, "ww2:grw34");
+        let ground = w.state.terrain.clone();
+        for k in 0..40 {
+            w.state.entities.combat[m.index()].hp = 100;
+            super::s11a2_tests::burst_now(
+                &mut w,
+                1,
+                mortar,
+                0,
+                FxVec2::from_int(508, 500),
+                1000 + k,
+            );
+            w.state.terrain = ground.clone();
+        }
+        out.push(s15(&w, 0));
+    }
+    assert!(out[0].plate_stops_frag > 0, "light fragments stopped");
+    assert!(out[1].plate_hits > 0, "control: heavy fragments meet it");
+    assert_eq!(out[1].plate_stops_frag, 0, "control: and go through");
+}
+
+/// P4: a butt stroke at a plated US man is stopped (`stops_melee` 1;
+/// the plate's arc 360 deg here: the facing is P1's, tested above).
+/// Control: `stops_melee` 0 lets it hurt.
+#[test]
+fn plate_stops_a_strike() {
+    for stops in [1, 0] {
+        let (mut w, a, b) = super::s14c_tests::duel(
+            1,
+            "ww2:kar98k",
+            "ww2:m1_garand",
+            (80, 0),
+            |s| {
+                plate_all(s, 1, 360);
+                s.rules.body_armour.stops_melee = stops;
+            },
+        );
+        use super::s14c_tests::{hp, off, tick_held, wind_up};
+        let full = hp(&w, b);
+        wind_up(&mut w, a, off(200, 0));
+        tick_held(&mut w, (a, off(0, 0)), (b, off(80, 0)), true);
+        let k = s15(&w, 1);
+        assert_eq!(w.game().unwrap().players[0].s14.strike_hits, 1);
+        if stops == 1 {
+            assert_eq!((k.plate_stops_melee, hp(&w, b)), (1, full));
+        } else {
+            assert_eq!(k.plate_stops_melee, 0);
+            assert!(hp(&w, b) < full, "control: stops_melee 0");
+        }
+    }
+}
+
+/// P5: a flame particle at a plated man's chest from his front ignores
+/// the plate (no meeting, damage). Control: an MP 40 round on the same
+/// line is stopped.
+#[test]
+fn flame_ignores_the_plate() {
+    let (lost, _, k) = plate_shot(1, "ww2:fmw41", 8, false, crate::wounds::ZONE_TORSO);
+    assert_eq!(k.plate_hits, 0);
+    assert!(lost > 0, "the flame burns through");
+    let (lost, _, k) = plate_shot(1, "ww2:mp40", 8, false, crate::wounds::ZONE_TORSO);
+    assert_eq!((k.plate_stops, lost), (1, 0), "control");
+}
+
+/// N2 for plates: with `[body_armour] enabled` 0 a match whose men carry
+/// plates in the setup runs as one without them (same hash, tick by
+/// tick, through a rifle fight). Control: switched on, the hashes part.
+#[test]
+fn plates_off_is_base() {
+    let fight = |edit: &dyn Fn(&mut MatchSetup)| {
+        let mut w = flat_world_with(1, |s| {
+            s.rules.wounds.enabled = 1;
+            edit(s);
+        });
+        spawn(&mut w, 0, RIFLES, 500, 500);
+        spawn(&mut w, 1, US_RIFLES, 560, 500);
+        let mut hs = Vec::new();
+        for _ in 0..40 {
+            steps(&mut w, 30);
+            // The state without the setup bytes (the setups differ).
+            hs.push(crate::hash::full_hash(&w.state, &w.config_bytes, &[]));
+        }
+        (hs, s15(&w, 0).plate_hits + s15(&w, 1).plate_hits)
+    };
+    let (base, _) = fight(&|_| {});
+    let (off, n_off) = fight(&|s| plate_all(s, 0, 360));
+    assert_eq!(n_off, 0);
+    assert_eq!(off, base, "plates in the setup, switch 0: base");
+    let (on, n_on) = fight(&|s| plate_all(s, 1, 360));
+    assert!(n_on > 0, "control: plates met");
+    assert_ne!(on, base, "control: switched on, the match differs");
 }

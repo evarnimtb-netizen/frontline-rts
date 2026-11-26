@@ -466,6 +466,7 @@ pub(super) fn bullet(w: &mut World, by: u8, wpn: &str, m: SimId, zone: u8) {
         shooter: SimId(u32::MAX),
         blow: Blow::Hit(m, zone),
         mission: 0,
+        origin: None,
     };
     blows_now(w, &[ev], |_, _| {});
 }
@@ -688,6 +689,7 @@ fn w3_second_same_tick_hit_from_the_same_player_kills() {
             shooter: SimId(u32::MAX),
             blow: Blow::Hit(m, ZONE_TORSO),
             mission: 0,
+            origin: None,
         };
         let evs = if two { vec![ev, ev] } else { vec![ev] };
         blows_now(&mut w, &evs, |_, _| {});
@@ -738,6 +740,7 @@ fn w3_own_fire_down_is_no_credit() {
         shooter: SimId(u32::MAX),
         blow: Blow::Hit(m, ZONE_TORSO),
         mission: 0,
+        origin: None,
     };
     blows_now(&mut w, &[ev], |_, _| {});
     assert_eq!(kind(&w, m), EntityKind::Downed);
@@ -1114,6 +1117,7 @@ fn r1_finished_downed_men_count_once() {
         shooter: SimId(u32::MAX),
         blow: Blow::Hit(c2, ZONE_TORSO),
         mission: 0,
+        origin: None,
     };
     let r0 = kf(&w, rifle);
     blows_now(&mut w, &[ev, ev], |_, _| {});
