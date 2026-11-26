@@ -1405,3 +1405,66 @@ fn bayonets_off_uses_the_butt() {
     s.s15_off();
     assert!(s.weapons.iter().all(|w| w.bayonet.is_none()));
 }
+
+/// S15a Build A step 8: a short scene with every S15 switch on (riders,
+/// plates on every man, bayonets on the Kar 98k, captured bombs): a
+/// plated section rides the tank east into a plated US rifle squad, a US
+/// mortar bomb bursts by the deck. The same hash with 1, 2, 3 and 8
+/// threads and through a save and load at the half.
+fn s15_scene(threads: usize) -> World {
+    let mut w = flat_world_with(threads, |s| {
+        rider_tank(s);
+        s.rules.riders.enabled = 1;
+        plate_all(s, 1, 120);
+        s.rules.melee.enabled = 1;
+        s.rules.melee.bayonets = 1;
+        if let Some(sp) = s.rules.supply.as_mut() {
+            sp.foreign_ammo = 1;
+        }
+        if let Some(k) = s.weapons.iter_mut().find(|w| w.id == "ww2:kar98k")
+            && let Some(m) = k.melee
+        {
+            k.bayonet = Some(frontline_content::defs::MeleeDef { reach_cm: 140, ..m });
+        }
+    });
+    let (tank, _) = ride(&mut w);
+    spawn(&mut w, 1, US_RIFLES, 560, 505);
+    let t = w.state.entities.squad[tank.index()].unwrap();
+    run(
+        &mut w,
+        0,
+        1,
+        CommandKind::Move {
+            squad: t,
+            target: FxVec2::from_int(600, 500),
+        },
+    );
+    let p = w.state.entities.transform[tank.index()].pos.xy();
+    let m1 = weapon(&w, "ww2:m1_mortar");
+    assert!(w.drop_shell_now(1, m1, p + FxVec2::new(Fx::ZERO, Fx::from_int(8))));
+    w
+}
+
+#[test]
+fn s15_scene_is_deterministic_across_threads_and_save_load() {
+    let n = 1800;
+    let mut hashes = Vec::new();
+    for threads in [1, 2, 3, 8] {
+        let mut w = s15_scene(threads);
+        steps(&mut w, n);
+        hashes.push(w.state_hash());
+        assert_eq!(w.state_hash(), w.full_state_hash());
+    }
+    assert!(hashes.windows(2).all(|h| h[0] == h[1]), "{hashes:x?}");
+    let mut w = s15_scene(2);
+    steps(&mut w, n / 2);
+    let mut l = World::load(&w.save(), 3).unwrap();
+    assert_eq!(l.state(), w.state());
+    steps(&mut l, n / 2);
+    assert_eq!(l.state_hash(), hashes[0]);
+    // Something S15 happened: riders boarded and got off, plates met.
+    let (a, b) = (s15(&l, 0), s15(&l, 1));
+    assert!(a.rider_boards > 0, "{a:?}");
+    assert!(a.rider_exits.iter().sum::<u32>() > 0, "{a:?}");
+    assert!(a.plate_hits + b.plate_hits > 0, "{a:?} {b:?}");
+}
