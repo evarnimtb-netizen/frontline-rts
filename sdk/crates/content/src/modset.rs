@@ -1536,6 +1536,29 @@ impl ModDefs {
             .map(|(k, _)| k)
             .collect();
         for (id, w) in &self.weapons {
+            // S15 X1: the foreign feed names a cartridge and a faction.
+            if let Some(f) = &w.foreign_feed {
+                if !self.cartridges.contains_key(&f.cartridge) {
+                    out.push(Issue::new(
+                        format!("weapon `{id}`: foreign_feed.cartridge"),
+                        format!(
+                            "unknown cartridge `{}`{}",
+                            f.cartridge,
+                            did_you_mean(&f.cartridge, self.cartridges.keys())
+                        ),
+                    ));
+                }
+                if !self.factions.contains_key(&f.faction) {
+                    out.push(Issue::new(
+                        format!("weapon `{id}`: foreign_feed.faction"),
+                        format!(
+                            "unknown faction `{}`{}",
+                            f.faction,
+                            did_you_mean(&f.faction, self.factions.keys())
+                        ),
+                    ));
+                }
+            }
             if let Some(f) = &w.feed {
                 match feed_ok(f) {
                     Err(e) => out.push(Issue::new(format!("weapon `{id}`: feed"), e)),

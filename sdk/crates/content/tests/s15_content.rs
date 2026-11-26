@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
+use frontline_content::defs::ForeignFeedDef;
 use frontline_content::variant::BodyArmourDef;
 use frontline_content::vehicle::TenthsMm;
 use frontline_content::{Difficulty, MatchRequest, MatchupsDef, ModDefs};
@@ -167,6 +168,7 @@ fn s15_off_setup_has_no_s15_field() {
     let mut defs = base_defs.clone();
     pz4_riders(&mut defs);
     plate_grenadiers(&mut defs);
+    foreign_m1(&mut defs);
     for (id, v) in &defs.vehicles {
         assert!(v.validate().is_empty(), "{id}: {:?}", v.validate());
     }
@@ -206,9 +208,60 @@ fn s15_off_setup_has_no_s15_field() {
     let on = defs.resolve(&r).unwrap();
     assert!(gren(&on), "control: plates with `[body_armour] enabled` 1");
     assert!(on.validate().is_empty(), "{:?}", on.validate());
+    let feeds = |s: &frontline_content::MatchSetup| {
+        s.weapons.iter().filter(|w| w.foreign_feed.is_some()).count()
+    };
+    assert_eq!(feeds(&on), 0, "foreign feed still off");
+    defs.rules
+        .get_mut(RULES)
+        .unwrap()
+        .supply
+        .as_mut()
+        .unwrap()
+        .foreign_ammo = 1;
+    let on = defs.resolve(&r).unwrap();
+    assert_eq!(feeds(&on), 1, "control: the feed with `foreign_ammo` 1");
+    assert!(on.validate().is_empty(), "{:?}", on.validate());
     let mut off = on.clone();
     off.s15_off();
     assert!(!gren(&off), "s15_off drops the plates");
+    assert_eq!(feeds(&off), 0, "s15_off drops the feed");
+}
+
+/// The stand-in Soviet mortar's feed (plan X3) on the US 81 mm mortar.
+fn foreign_m1(defs: &mut ModDefs) {
+    defs.weapons.get_mut("ww2:m1_mortar").unwrap().foreign_feed = Some(ForeignFeedDef {
+        cartridge: "ww2:8cm_wgr34".into(),
+        faction: "ww2:germany".into(),
+        spread_pct: 130,
+    });
+}
+
+/// X1 def checks: spread 100..=400, a mortar only, a known cartridge and
+/// faction. Control: the stand-in loads clean.
+#[test]
+fn foreign_feed_is_checked() {
+    let mut defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    foreign_m1(&mut defs);
+    let ok = defs.weapons["ww2:m1_mortar"].clone();
+    assert!(ok.validate().is_empty(), "control: {:?}", ok.validate());
+    let mut wide = ok.clone();
+    wide.foreign_feed.as_mut().unwrap().spread_pct = 401;
+    assert!(!wide.validate().is_empty(), "spread 401");
+    let mut rifle = defs.weapons["ww2:kar98k"].clone();
+    rifle.foreign_feed = ok.foreign_feed.clone();
+    assert!(!rifle.validate().is_empty(), "a rifle");
+    // Cross-file names: the whole set's check.
+    let issues = |d: &ModDefs| d.cross_check();
+    assert!(issues(&defs).is_empty(), "control: {:?}", issues(&defs));
+    let mut bad = defs.clone();
+    bad.weapons.get_mut("ww2:m1_mortar").unwrap().foreign_feed.as_mut().unwrap().cartridge =
+        "ww2:8cm_wgr99".into();
+    assert!(!issues(&bad).is_empty(), "unknown cartridge");
+    let mut bad = defs.clone();
+    bad.weapons.get_mut("ww2:m1_mortar").unwrap().foreign_feed.as_mut().unwrap().faction =
+        "ww2:prussia".into();
+    assert!(!issues(&bad).is_empty(), "unknown faction");
 }
 
 const GREN: &str = "ww2:ger_grenadiergruppe";

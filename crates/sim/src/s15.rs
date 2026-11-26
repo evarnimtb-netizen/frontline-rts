@@ -134,21 +134,33 @@ impl MatchState {
                 return Err("a player counter is out of range");
             }
         }
+        let cap = self.foreign_cap();
         for (i, k) in ents.kit.iter().enumerate() {
             if k.foreign == 0 {
                 continue;
             }
-            if ents.kind[i] != EntityKind::Soldier || k.foreign > self.foreign_cap(k.weapon) {
+            if !matches!(ents.kind[i], EntityKind::Soldier | EntityKind::Downed) || k.foreign > cap {
                 return Err("foreign rounds without a foreign feed");
             }
         }
         Ok(())
     }
 
-    /// X1: the most foreign rounds a man with weapon `w` may carry (0:
-    /// none; no weapon has a foreign feed before Build A's X rules).
-    pub(crate) fn foreign_cap(&self, _w: u16) -> u16 {
-        0
+    /// X1: the most foreign rounds one man may carry: the largest slot
+    /// load of a squad type whose mortar has a foreign feed (0: none, so
+    /// always 0 with `[supply] foreign_ammo` 0).
+    pub(crate) fn foreign_cap(&self) -> u16 {
+        let s = &self.setup;
+        s.squad_types
+            .iter()
+            .filter_map(|ty| {
+                let w = s.weapons.get(ty.weapon as usize)?;
+                w.foreign_feed?;
+                let k = ty.feed_slot(w)?;
+                ty.members.iter().map(|m| m.rounds[k]).max()
+            })
+            .max()
+            .unwrap_or(0)
     }
 }
 

@@ -1023,3 +1023,238 @@ fn plates_off_is_base() {
     assert!(n_on > 0, "control: plates met");
     assert_ne!(on, base, "control: switched on, the match differs");
 }
+
+// ------------------------------------------------------------ X1-X3 --
+
+const US_MORTAR: &str = "ww2:usa_mortar_team";
+const GER_MORTAR: &str = "ww2:ger_mortar_team";
+
+/// The stand-in Soviet mortar (plan X3): the US 81 mm mortar given the
+/// GrW 34's bomb as a German foreign feed at `spread` %, with `[supply]
+/// foreign_ammo` 1 (`feed` false: the switch and the feed left off).
+fn foreign_setup(s: &mut MatchSetup, feed: bool, spread: u16) {
+    if !feed {
+        return;
+    }
+    if let Some(sp) = s.rules.supply.as_mut() {
+        sp.foreign_ammo = 1;
+    }
+    let grw = s.weapons.iter().position(|w| w.id == "ww2:grw34").unwrap();
+    let bomb = s.weapons[grw].feed.unwrap();
+    let ger = s.factions.iter().position(|f| f.id == "ww2:germany").unwrap() as u16;
+    let m1 = s.weapons.iter().position(|w| w.id == "ww2:m1_mortar").unwrap();
+    s.weapons[m1].foreign_feed = Some(frontline_content::setup::ForeignFeedSetup {
+        feed: bomb,
+        faction: ger,
+        spread_pct: spread,
+    });
+}
+
+/// Empties every man's bombs and magazine (own and foreign).
+fn dry(w: &mut World, q: SquadId) {
+    for m in members(w, q) {
+        w.edit_soldier(m, |k, c| {
+            k.rounds = [0; frontline_content::setup::MAX_FEEDS];
+            k.foreign = 0;
+            c.mag = 0;
+        });
+    }
+}
+
+/// The man carrying the squad's mortar.
+fn tube(w: &World, q: SquadId) -> SimId {
+    let g = w.game().unwrap();
+    let wi = g.setup().squad_types[g.squads[&q].type_idx as usize].weapon;
+    members(w, q)
+        .into_iter()
+        .find(|m| w.state.entities.kit[m.index()].weapon == wi)
+        .unwrap()
+}
+
+fn bombs_of(w: &World, q: SquadId) -> (u32, u32) {
+    let e = &w.state.entities;
+    let g = w.game().unwrap();
+    let ty = &g.setup().squad_types[g.squads[&q].type_idx as usize];
+    let k = ty
+        .feed_slot(&g.setup().weapons[ty.weapon as usize])
+        .unwrap();
+    members(w, q).iter().fold((0, 0), |(o, f), m| {
+        let i = m.index();
+        (
+            o + e.kit[i].rounds[k] as u32 + e.combat[i].mag as u32,
+            f + e.kit[i].foreign as u32,
+        )
+    })
+}
+
+/// A dry mortar squad of player `p` (`card`) at (500, 500) with a full
+/// set-down shells crate of faction `crate_faction` held by `p` 3 m from
+/// its tube, after `secs` seconds: (own, foreign) bombs and `p`'s
+/// counters.
+fn draw_at_crate(
+    feed: bool,
+    p: u8,
+    card: &str,
+    crate_faction: &str,
+    secs: u64,
+) -> ((u32, u32), crate::s15::S15Counters) {
+    let mut w = flat_world_with(1, |s| foreign_setup(s, feed, 130));
+    let q = spawn(&mut w, p, card, 500, 500);
+    steps(&mut w, 60);
+    dry(&mut w, q);
+    let at = w.state.entities.transform[tube(&w, q).index()].pos.xy();
+    let s = w.match_setup().unwrap();
+    let f = s.factions.iter().position(|x| x.id == crate_faction).unwrap() as u16;
+    let d = s
+        .stock_of(
+            f,
+            frontline_content::setup::StockKind::Crate,
+            Some(frontline_content::setup::SupplyKind::Shells),
+        )
+        .unwrap();
+    w.add_crate_now(PlayerId(p), d, at + FxVec2::from_int(3, 0))
+        .unwrap();
+    steps(&mut w, secs * 30);
+    (bombs_of(&w, q), s15(&w, p as usize))
+}
+
+/// X1: a dry stand-in Soviet mortar at a German shells crate its player
+/// holds draws foreign bombs (no own bomb fits the crate). Control: the
+/// same mortar without the foreign feed (switch 0) draws nothing.
+#[test]
+fn soviet_mortar_draws_german_bombs() {
+    let ((own, foreign), k) = draw_at_crate(true, 1, US_MORTAR, "ww2:germany", 30);
+    assert_eq!(own, 0);
+    assert!(foreign > 0, "foreign bombs drawn");
+    assert_eq!(k.foreign_drawn, foreign);
+    let ((own, foreign), k) = draw_at_crate(false, 1, US_MORTAR, "ww2:germany", 30);
+    assert_eq!((own, foreign, k.foreign_drawn), (0, 0, 0), "control");
+}
+
+/// X3: the GrW 34 has no foreign feed: at a US shells crate its player
+/// holds it draws nothing (with the stand-in feed on). Control: at a
+/// German crate it draws its own bombs.
+#[test]
+fn german_mortar_draws_no_soviet_bombs() {
+    let ((own, foreign), k) = draw_at_crate(true, 0, GER_MORTAR, "ww2:usa", 30);
+    assert_eq!((own, foreign, k.foreign_drawn), (0, 0, 0));
+    let ((own, _), _) = draw_at_crate(true, 0, GER_MORTAR, "ww2:germany", 30);
+    assert!(own > 0, "control: own bombs at an own-faction crate");
+}
+
+/// A stand-in Soviet mortar squad of player 1 at (500, 500) with `own`
+/// own bombs on its tube man and `foreign` foreign ones.
+fn armed_mortar(spread: u16, own: u16, foreign: u16) -> (World, SquadId) {
+    let mut w = flat_world_with(1, |s| foreign_setup(s, true, spread));
+    let q = spawn(&mut w, 1, US_MORTAR, 500, 500);
+    steps(&mut w, 60);
+    dry(&mut w, q);
+    let t = tube(&w, q);
+    let g = w.game().unwrap();
+    let ty = &g.setup().squad_types[g.squads[&q].type_idx as usize];
+    let k = ty
+        .feed_slot(&g.setup().weapons[ty.weapon as usize])
+        .unwrap();
+    w.edit_soldier(t, |kit, _| {
+        kit.rounds[k] = own;
+        kit.foreign = foreign;
+    });
+    (w, q)
+}
+
+/// Orders a mission of `n` rounds at (500, 900) for player 1 and runs it
+/// out.
+fn shoot(w: &mut World, q: SquadId, n: u16) {
+    w.step(&[Command {
+        player: PlayerId(1),
+        seq: 1,
+        kind: CommandKind::FireMission {
+            squad: q,
+            target: FxVec2::from_int(500, 900),
+            rounds: n,
+        },
+    }]);
+    let r = w
+        .snapshot()
+        .fire_mission_refusals
+        .iter()
+        .find(|e| e.squad == q)
+        .map(|e| e.refusal);
+    assert_eq!(r, None, "mission accepted");
+    super::s11a1_tests::run_out(w, q, 240);
+}
+
+/// X2: own bombs go first: a squad with 2 own and 2 foreign fires a
+/// 2-round mission from its own (foreign kept, none counted fired); the
+/// next 2 rounds are the foreign ones. Control: the counter moves only
+/// then.
+#[test]
+fn own_bombs_first() {
+    let (mut w, q) = armed_mortar(130, 2, 2);
+    shoot(&mut w, q, 2);
+    assert_eq!(bombs_of(&w, q), (0, 2), "own fired first");
+    assert_eq!(s15(&w, 1).foreign_fired, 0);
+    shoot(&mut w, q, 2);
+    assert_eq!(bombs_of(&w, q), (0, 0));
+    assert_eq!(s15(&w, 1).foreign_fired, 2, "control: then the foreign");
+}
+
+/// X2: the same mission fired with foreign bombs (spread 200 %) misses by
+/// more than with own bombs (same aim draws, the spread scaled).
+/// Control: at 100 % the miss is the same.
+#[test]
+fn foreign_bombs_fly_wider() {
+    let miss = |spread: u16, foreign: bool| {
+        let (own, f) = if foreign { (0, 4) } else { (4, 0) };
+        let (mut w, q) = armed_mortar(spread, own, f);
+        shoot(&mut w, q, 4);
+        let fm = &w.game().unwrap().players[1].fm;
+        assert_eq!(fm.bombs.iter().sum::<u32>(), 4, "four fired");
+        fm.miss_mm.iter().sum::<u64>()
+    };
+    let own = miss(200, false);
+    assert!(miss(200, true) > own, "foreign wider");
+    assert_eq!(miss(100, true), own, "control: 100 %");
+}
+
+/// N2 for foreign feeds: with `[supply] foreign_ammo` 0 the setup build
+/// drops the feed and a match runs as base. Control: with the feed on, a
+/// dry mortar at a foreign crate differs (draws).
+#[test]
+fn foreign_off_is_base() {
+    let run = |feed: bool, off: bool| {
+        let mut w = flat_world_with(1, |s| {
+            foreign_setup(s, feed, 130);
+            if off {
+                s.s15_off();
+            }
+        });
+        let q = spawn(&mut w, 1, US_MORTAR, 500, 500);
+        steps(&mut w, 60);
+        dry(&mut w, q);
+        let at = w.state.entities.transform[tube(&w, q).index()].pos.xy();
+        let d = w
+            .match_setup()
+            .unwrap()
+            .stock_of(
+                0,
+                frontline_content::setup::StockKind::Crate,
+                Some(frontline_content::setup::SupplyKind::Shells),
+            )
+            .unwrap();
+        w.add_crate_now(PlayerId(1), d, at + FxVec2::from_int(3, 0));
+        let mut hs = Vec::new();
+        for _ in 0..20 {
+            steps(&mut w, 30);
+            hs.push(crate::hash::full_hash(&w.state, &w.config_bytes, &[]));
+        }
+        (hs, w.match_setup().unwrap().weapons.iter().any(|x| x.foreign_feed.is_some()))
+    };
+    let (base, _) = run(false, false);
+    let (off, any) = run(true, true);
+    assert!(!any, "s15_off drops the feed");
+    assert_eq!(off, base);
+    let (on, any) = run(true, false);
+    assert!(any);
+    assert_ne!(on, base, "control: the feed on draws");
+}

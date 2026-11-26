@@ -718,6 +718,23 @@ pub struct WeaponDef {
     /// rules' `[melee]` strike (the entrenching spade).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub melee: Option<MeleeDef>,
+    /// S15 X1-X3 (docs/slices/S15-ussr.md 5.3): a mortar that also fires
+    /// another faction's bombs drawn at a crate its player holds. Dropped
+    /// at setup while `[supply] foreign_ammo` is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foreign_feed: Option<ForeignFeedDef>,
+}
+
+/// S15 X1: a weapon's `[foreign_feed]` block.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ForeignFeedDef {
+    /// The foreign cartridge (`defs/cartridges`), e.g. `ww2:8cm_wgr34`.
+    pub cartridge: String,
+    /// The faction whose crates carry it, e.g. `ww2:germany`.
+    pub faction: String,
+    /// X2: the weapon's spread for a foreign round (%), 100..=400.
+    pub spread_pct: u32,
 }
 
 /// S14 M1: a weapon's `[melee]` block. Ranges as the rules' `[melee]`:
@@ -2920,6 +2937,15 @@ impl WeaponDef {
         }
         if let Some(ind) = &self.indirect {
             ind.check(self, &mut out);
+        }
+        if let Some(f) = &self.foreign_feed {
+            range(&mut out, "foreign_feed.spread_pct", f.spread_pct, 100, 400);
+            if self.class != WeaponClass::Mortar || self.he.is_none() || self.feed.is_none() {
+                out.push(Issue::new(
+                    "foreign_feed",
+                    "only a mortar with `[he]` and its own `feed` has a foreign feed",
+                ));
+            }
         }
         if let Some(m) = &self.melee {
             m.check("melee.", &mut out);

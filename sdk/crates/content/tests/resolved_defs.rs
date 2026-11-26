@@ -221,14 +221,14 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // [ai.riders], [supply] foreign_ammo, [melee] bayonets) and
 // TransportSetup::exposed; no value of an existing key changed.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x6fdc66409252cdaa),
-    ("skirmish usa-ger seed 7 hard", 0x70c8f2faf31e4f64),
-    ("test_unlock ger-usa seed 1 normal", 0xb293e67551b10bcf),
-    ("example override ger-usa seed 1 normal", 0x6fdc66409252cdaa),
-    ("human ger vs ai usa seed 3 easy", 0xcd1d0c4d7a02d95e),
+    ("skirmish ger-usa seed 1 normal", 0x721ba0a70f247834),
+    ("skirmish usa-ger seed 7 hard", 0x5d516c7911f23bd1),
+    ("test_unlock ger-usa seed 1 normal", 0xf0873b47aab31bb0),
+    ("example override ger-usa seed 1 normal", 0x721ba0a70f247834),
+    ("human ger vs ai usa seed 3 easy", 0x7a786f95bf6a0077),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x657dd913bacfec58,
+        0x214d17013c2cb269,
     ),
 ];
 

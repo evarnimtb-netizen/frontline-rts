@@ -469,6 +469,8 @@ pub(crate) fn mortar_bombs(
     for m in &sq.members {
         let i = m.index();
         have += man_total(setup, ty, &ents.kit[i], &ents.combat[i], k);
+        // S15 X1: foreign bombs count as bombs (0 with the switch off).
+        have += ents.kit[i].foreign as u32;
         // The tube's ready bomb, only while the mortar is the weapon in
         // hand (S6 fix: a gunner on his sidearm holds pistol rounds in
         // `mag`, which counted as bombs).
@@ -1052,6 +1054,50 @@ pub(crate) fn take_bomb(
     match giver {
         Some(g) => {
             ents.kit[g.index()].rounds[k] -= 1;
+            true
+        }
+        None => false,
+    }
+}
+
+/// S15 X2: whether [`take_bomb`] would find an own bomb (no change).
+pub(crate) fn own_bomb_left(
+    setup: &MatchSetup,
+    ents: &Entities,
+    members: &[SimId],
+    type_idx: u16,
+    gunner: SimId,
+    wi: u16,
+) -> bool {
+    let ty = &setup.squad_types[type_idx as usize];
+    let Some(k) = ty.feed_slot(&setup.weapons[wi as usize]) else {
+        return true;
+    };
+    let i = gunner.index();
+    if ents.combat[i].mag > 0 || ents.kit[i].rounds[k] > 0 {
+        return true;
+    }
+    let reach = setup.rules.combat.share.crew_feed_m;
+    members
+        .iter()
+        .any(|&g| g != gunner && ents.kit[g.index()].rounds[k] > 0 && within(ents, g, gunner, reach))
+}
+
+/// S15 X2: takes one foreign bomb, the gunner's first, then the crew's
+/// within `crew_feed_m` (lowest id); whether there was one.
+pub(crate) fn take_foreign(
+    setup: &MatchSetup,
+    ents: &mut Entities,
+    members: &[SimId],
+    gunner: SimId,
+) -> bool {
+    let reach = setup.rules.combat.share.crew_feed_m;
+    let giver = std::iter::once(gunner)
+        .chain(members.iter().copied().filter(|&g| g != gunner))
+        .find(|&g| ents.kit[g.index()].foreign > 0 && (g == gunner || within(ents, g, gunner, reach)));
+    match giver {
+        Some(g) => {
+            ents.kit[g.index()].foreign -= 1;
             true
         }
         None => false,

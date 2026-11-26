@@ -1183,6 +1183,11 @@ impl MatchState {
         let c = &ents.combat[i];
         let mut rng = RngStream::new(seed, tick, gunner, Purpose::SHELL_AIM);
         let pct = 100 + (c.suppression / 1000) as i64 * per_point / 100;
+        // S15 X2: no own bomb left, a foreign one flies at `spread_pct`.
+        let foreign = w.foreign_feed.filter(|_| {
+            !crate::supply::own_bomb_left(&self.setup, ents, &sq.members, sq.type_idx, gunner, wi)
+        });
+        let pct = foreign.map_or(pct, |f| pct * f.spread_pct as i64 / 100);
         let sp = d.mul(w.spread.into()).raw() as i64 * pct / 100;
         let sp = Fx::from_raw(sp.min(i32::MAX as i64) as i32);
         let aim_xy =
@@ -1223,7 +1228,14 @@ impl MatchState {
         // `crew_feed_m`); none left: the mission ends.
         let owner = sq.owner;
         let (members, type_idx) = (sq.members.clone(), sq.type_idx);
-        if !crate::supply::take_bomb(&self.setup, ents, &members, type_idx, gunner, wi) {
+        if foreign.is_some() {
+            if !crate::supply::take_foreign(&self.setup, ents, &members, gunner) {
+                self.end_mission(id, ents, tick);
+                return None;
+            }
+            let c = &mut self.players[owner.0 as usize].s15;
+            c.foreign_fired = c.foreign_fired.saturating_add(1);
+        } else if !crate::supply::take_bomb(&self.setup, ents, &members, type_idx, gunner, wi) {
             self.end_mission(id, ents, tick);
             return None;
         }

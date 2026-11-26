@@ -1233,9 +1233,16 @@ impl MatchState {
                 })
                 .min_by_key(|&(s, m)| (s, m.0))
                 .map(|(_, m)| m);
+            // S15 X1: no own source in reach: a crate of the foreign feed.
+            let own = taker.and_then(|_| {
+                self.source_for(sq.owner, at, kind, g, feed, &[], Reach::NoTruck, None)
+            });
+            if own.is_none() && w.foreign_feed.is_some() {
+                self.feed_foreign(ents, hash, tick, sid, at, k, feed, sp);
+                continue;
+            }
             let Some(taker) = taker else { continue };
-            let Some(src) = self.source_for(sq.owner, at, kind, g, feed, &[], Reach::NoTruck, None)
-            else {
+            let Some(src) = own else {
                 continue;
             };
             let every = match src {
@@ -1257,6 +1264,76 @@ impl MatchState {
             }
             self.explain_bombs(owner, 1);
         }
+    }
+
+    /// S15 X1: mortar squad `sid` (its mortar has a foreign feed, no own
+    /// source in reach of its gunner at `at`) takes one foreign bomb from
+    /// a set-down crate its player holds of the feed's faction and supply
+    /// kind within `feed`, at the crate bomb rate and no price, into the
+    /// man furthest below his load (own `k` plus foreign rounds).
+    #[allow(clippy::too_many_arguments)]
+    fn feed_foreign(
+        &mut self,
+        ents: &mut Entities,
+        hash: &mut HashCache,
+        tick: u64,
+        sid: SquadId,
+        at: FxVec2,
+        k: usize,
+        feed: Fx,
+        sp: &frontline_content::tuning::SupplyTuning,
+    ) {
+        let sq = &self.squads[&sid];
+        let ty = &self.setup.squad_types[sq.type_idx as usize];
+        let Some(ff) = self.setup.weapons[ty.weapon as usize].foreign_feed else {
+            return;
+        };
+        let Some((kind, g)) = round_g(&self.setup, ff.feed) else {
+            return;
+        };
+        let taker = sq
+            .members
+            .iter()
+            .copied()
+            .filter_map(|m| {
+                let i = m.index();
+                let load = man_load(ty, &ents.kit[i], k);
+                let mut t = man_total(&self.setup, ty, &ents.kit[i], &ents.combat[i], k);
+                if crate::supply::active_weapon(ty, &ents.kit[i]) == ty.weapon {
+                    t += ents.combat[i].mag as u32;
+                }
+                t += ents.kit[i].foreign as u32;
+                (load > 0 && t < load).then(|| (t * 1000 / load, m))
+            })
+            .min_by_key(|&(s, m)| (s, m.0))
+            .map(|(_, m)| m);
+        let Some(taker) = taker else { return };
+        let owner = sq.owner;
+        let crate_id = self
+            .supply6
+            .crates
+            .iter()
+            .find(|(_, c)| {
+                c.owner == owner
+                    && c.carrier.is_none()
+                    && c.g >= g
+                    && self.setup.stocks[c.def as usize].supply == Some(kind)
+                    && self.setup.stocks[c.def as usize].faction == ff.faction
+                    && within(c.pos, at, feed)
+            })
+            .map(|(&id, _)| id);
+        let Some(id) = crate_id else { return };
+        let every = sp.crate_bomb_s as u64 * self.setup.tick_hz as u64;
+        if !(tick + sid.0 as u64).is_multiple_of(every.max(1)) {
+            return;
+        }
+        self.draw(Source::Crate(id), kind, g);
+        let kit = &mut ents.kit[taker.index()];
+        kit.foreign = kit.foreign.saturating_add(1);
+        hash.mark_entity_chunk(taker.chunk());
+        let c = &mut self.players[owner.0 as usize].s15;
+        c.foreign_drawn = c.foreign_drawn.saturating_add(1);
+        self.explain_bombs(owner.0 as usize, 1);
     }
 
     /// Men outside the own base take small arms and items from a source

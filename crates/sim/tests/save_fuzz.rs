@@ -1052,6 +1052,9 @@ fn staged_s10b() -> World {
     s.rules.wounds.enabled = 1;
     // S15: the Panzer IV takes test-made rider slots (no def has them yet).
     rider_tank(&mut s);
+    // S15 X1: the US 81 mm mortar takes the GrW 34 bomb as a German
+    // foreign feed (no def has one yet), the switch on.
+    foreign_mortar(&mut s);
     let mut w = World::new_match(s, 1).unwrap();
     staged_s11a2_gun(&mut w, leig);
     staged_s11b(&mut w, rifles);
@@ -1143,6 +1146,21 @@ fn rider_tank(s: &mut MatchSetup) {
 /// Fuzz stage S15 (plan 3 N3): men riding a Panzer IV with rider slots,
 /// its riders getting off (R3 timer), player 0's AI with a rider job in
 /// each phase and a failed pairing, S15 counters.
+fn foreign_mortar(s: &mut MatchSetup) {
+    if let Some(sp) = s.rules.supply.as_mut() {
+        sp.foreign_ammo = 1;
+    }
+    let grw = s.weapons.iter().position(|w| w.id == "ww2:grw34").unwrap();
+    let bomb = s.weapons[grw].feed.unwrap();
+    let ger = s.factions.iter().position(|f| f.id == "ww2:germany").unwrap() as u16;
+    let m1 = s.weapons.iter().position(|w| w.id == "ww2:m1_mortar").unwrap();
+    s.weapons[m1].foreign_feed = Some(frontline_content::setup::ForeignFeedSetup {
+        feed: bomb,
+        faction: ger,
+        spread_pct: 130,
+    });
+}
+
 fn staged_s15(w: &mut World) {
     use frontline_sim::fx::{Fx, FxVec2};
     use frontline_sim::s15::{AiRiders, RiderJob, RiderOff, RiderRefused, rider_exit};
@@ -1192,11 +1210,43 @@ fn staged_s15(w: &mut World) {
         ai.counters.rider_jobs = 3;
         ai.counters.rider_job_ends[1] = 1;
     }));
+    // X1: a US mortar squad of player 1 whose tube man carries foreign
+    // bombs.
+    let mortar = s15_mortar(w);
+    assert!(w.edit_soldier(mortar, |k, _| k.foreign = 3));
+    assert!(w.edit_player(PlayerId(1), |p| {
+        p.s15.foreign_drawn = 3;
+        p.s15.foreign_fired = 1;
+    }));
     assert!(w.edit_player(PlayerId(0), |p| {
         p.s15.rider_boards = 10;
         p.s15.rider_exits[rider_exit::HIT as usize] = 2;
         p.s15.plate_hits = 1;
     }));
+}
+
+/// The tube man of a fresh US mortar squad of player 1 (S15 X1 staging).
+fn s15_mortar(w: &mut World) -> frontline_sim::ecs::SimId {
+    use frontline_sim::fx::{Fx, FxVec2};
+    let s = w.match_setup().unwrap();
+    let t = s.squad_type_index("ww2:usa_mortar_team").unwrap();
+    let wi = s.squad_types[t as usize].weapon;
+    let q = w
+        .spawn_squad_at(
+            PlayerId(1),
+            t,
+            FxVec2::from_int(520, 700),
+            FxVec2::new(Fx::ONE, Fx::ZERO),
+        )
+        .unwrap();
+    // The n-th man spawns into slot `slot_of(n)` with its weapon.
+    let s = w.match_setup().unwrap();
+    let ty = &s.squad_types[t as usize];
+    let ms = &w.game().unwrap().squads()[&q].members;
+    let n = (0..ms.len())
+        .find(|&n| ty.members[ty.slot_of(n) as usize].weapon == wi)
+        .unwrap();
+    ms[n]
 }
 
 /// S11b: issues rifle grenades (`[items] rifle_grenades` 1) and gives the

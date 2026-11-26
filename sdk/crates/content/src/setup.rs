@@ -430,6 +430,9 @@ impl MatchSetup {
                 m.plate = None;
             }
         }
+        for w in &mut self.weapons {
+            w.foreign_feed = None;
+        }
     }
 
     /// S11b G1: `[items] rifle_grenades` 0 on a resolved setup (the kind
@@ -998,6 +1001,20 @@ pub struct WeaponSetup {
     /// S14 M1: the weapon's own strike (`[melee]` block, def units: cm,
     /// HP, ms); `None`: the rules' `[melee]` strike.
     pub melee: Option<crate::defs::MeleeDef>,
+    /// S15 X1-X3: the foreign round this mortar also fires; `None`
+    /// without one or while `[supply] foreign_ammo` is 0 (N2).
+    pub foreign_feed: Option<ForeignFeedSetup>,
+}
+
+/// S15 X1: a weapon's foreign feed, lowered.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForeignFeedSetup {
+    /// The foreign cartridge.
+    pub feed: Feed,
+    /// Index into [`MatchSetup::factions`]: whose crates carry it.
+    pub faction: u16,
+    /// X2: spread for a foreign round (%, 100..=400).
+    pub spread_pct: u16,
 }
 
 /// S5b: a mortar's charges and laying limits, lowered. The tangents are
@@ -1684,6 +1701,18 @@ impl ModDefs {
                     max_boxes: c.max_boxes as u8,
                 }),
                 melee: w.melee,
+                // S15 N2: no foreign feed while the switch is 0.
+                foreign_feed: w
+                    .foreign_feed
+                    .as_ref()
+                    .filter(|_| rules.supply.as_ref().is_some_and(|s| s.foreign_ammo == 1))
+                    .and_then(|f| {
+                        Some(ForeignFeedSetup {
+                            feed: self.feed_of(&f.cartridge)?,
+                            faction: index_of(self.factions.keys(), &f.faction)?,
+                            spread_pct: f.spread_pct.min(400) as u16,
+                        })
+                    }),
             })
             .collect();
         let cartridge_ids: Vec<&String> = self.cartridges.keys().collect();
@@ -3359,6 +3388,19 @@ impl MatchSetup {
                     }),
                 "weapons.pen",
                 "penetration rows or core out of range",
+            );
+            // S15 X1: a foreign feed on a mortar with its own feed.
+            check(
+                w.foreign_feed.is_none_or(|f| {
+                    matches!(f.feed, Feed::Cartridge(_))
+                        && self.feed_ok(f.feed)
+                        && (f.faction as usize) < self.factions.len()
+                        && (100..=400).contains(&f.spread_pct)
+                        && w.he.is_some()
+                        && w.feed.is_some()
+                }),
+                "weapons.foreign_feed",
+                "foreign feed out of range",
             );
             if let Some(ind) = &w.indirect {
                 check(
