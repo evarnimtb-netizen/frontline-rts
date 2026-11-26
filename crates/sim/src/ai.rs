@@ -193,6 +193,7 @@ pub(crate) mod medic;
 mod mortar;
 pub(crate) mod obstacles;
 mod overwatch;
+mod riders;
 mod supply;
 mod sweep;
 mod transport;
@@ -1180,7 +1181,7 @@ pub(crate) fn ai_kind(s: &MatchSetup, t: u16) -> AiKind {
 /// S4: the buy-mix slot (index into `AiSetup::mix`) of squad type `t`:
 /// the first mix entry whose tag the card carries; `None` for a card the
 /// AI never buys (no mix tag, or a crew).
-fn mix_slot(s: &MatchSetup, t: u16) -> Option<usize> {
+pub(crate) fn mix_slot(s: &MatchSetup, t: u16) -> Option<usize> {
     let ty = &s.squad_types[t as usize];
     // S8b: recon cars and trucks have their own buys, never a tank's slot
     // (S8a's half-tracks displaced tanks there).
@@ -1571,6 +1572,8 @@ impl Planner<'_> {
         // S8a: half-track jobs take their vehicles out of the tank habits
         // (but support, which is the overwatch habit).
         let waiting = self.transport_jobs(&mut tanks, &known, &busy);
+        // S15-ai A1: rider jobs keep their boarding and dropping tanks.
+        self.riders_continue(&mut tanks, &busy);
         self.ride_locks(&mut mine, &known);
         self.vehicle_upkeep(&mut tanks, &known, &kv);
         self.truck_jobs(&mut tanks, &known, &kv, &busy);
@@ -1610,6 +1613,10 @@ impl Planner<'_> {
         // S10b-ai: new demolition jobs for blocked vehicles (R14).
         let demolishing = self.demolish_start(&mine, &mut tanks, &hunting);
         hunting.extend(demolishing);
+        // S15-ai A1: new rider jobs take a free tank in the base and a
+        // squad there.
+        let riding = self.riders_start(&mut tanks, &mine, &assigned, &points, &hunting);
+        hunting.extend(riding);
         let escorting = self.vehicle_tasks(
             &tanks, &mine, &assigned, &points, &known, &kv, &busy, &hunting,
         );

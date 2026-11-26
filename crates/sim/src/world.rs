@@ -3171,6 +3171,9 @@ mod s14_tests;
 #[path = "s14c_tests.rs"]
 mod s14c_tests;
 #[cfg(test)]
+#[path = "s15_ai_tests.rs"]
+mod s15_ai_tests;
+#[cfg(test)]
 #[path = "s15_tests.rs"]
 mod s15_tests;
 #[cfg(test)]

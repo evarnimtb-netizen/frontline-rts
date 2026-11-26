@@ -98,7 +98,8 @@ pub struct RiderJob {
     pub point: u8,
     /// `RIDER_BOARD`, `RIDER_RIDE` or `RIDER_DROP`.
     pub phase: u8,
-    /// The tick the phase began.
+    /// The tick the job began (Board, Ride: L1 counts from it), or the
+    /// tick of the drop order (Drop).
     pub phase_at: u64,
 }
 
@@ -176,10 +177,12 @@ impl AiRiders {
         tick: u64,
         bad_squad: impl Fn(&SquadId) -> bool,
     ) -> bool {
+        // A wreck over the cap is removed between two plans: a job may
+        // name a vehicle that is gone (the next plan ends it).
         let slots = |id: SimId| {
             g.vehicles
                 .get(&id)
-                .is_some_and(|vs| !vs.riders.is_empty() && g.rider_slots_of(id))
+                .is_none_or(|vs| !vs.riders.is_empty() && g.rider_slots_of(id))
         };
         let own = |sq: &SquadId| g.squads.get(sq).is_none_or(|q| q.owner == player);
         self.jobs.len() <= MAX_RIDER_JOBS

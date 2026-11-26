@@ -1052,6 +1052,9 @@ fn staged_s10b() -> World {
     s.rules.wounds.enabled = 1;
     // S15: the Panzer IV takes test-made rider slots (no def has them yet).
     rider_tank(&mut s);
+    // S15-ai: the rider rules and jobs on, so the staged jobs run (Build D).
+    s.rules.riders.enabled = 1;
+    s.rules.ai.riders.jobs = 1;
     // S15 X1: the US 81 mm mortar takes the GrW 34 bomb as a German
     // foreign feed (no def has one yet), the switch on.
     foreign_mortar(&mut s);
