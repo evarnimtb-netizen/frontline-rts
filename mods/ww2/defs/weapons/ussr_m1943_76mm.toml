@@ -1,0 +1,33 @@
+# 76 mm regimental gun M1943 (OB-25) (S15 Build C, S15-ussr.md 6.3): an infantry gun with fire missions as the leIG 18.
+# Game values not in a source are S15 starting values (no tuning).
+id = "ww2:ussr_m1943_76mm"
+name = "76 mm M1943"
+class = "cannon"
+# Engagement range, m (as every tank and AT gun of the mod).
+range_m = 600
+# A direct hit on a man, HP.
+damage = 300
+# 10-12 rounds/min (Wikipedia, read): the lower figure.
+rounds_per_min = 10
+magazine = 1
+# Reload, ms: 60000 / rounds_per_min.
+reload_ms = 6000
+# 2.5 mrad stationary, urad (as the German and US guns).
+spread_urad = 2500
+muzzle_velocity_m_s = 262
+suppression = 25
+# Muzzle blast: seen at 300 % of sight (as the other guns).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+sources = [
+  "Wikipedia, 76 mm regimental gun M1943: 600 kg, 10-12 rpm, -8 to +25 deg, traverse 60 deg, 4.2 km, 262-311 m/s (read 2026-11-26)",
+]
+
+# Fire missions (S11a1 G1-G7) as the leIG 18: a low-angle table up to the gun's +25 deg; the read 4.2 km range.
+# Lower charges are S15 starting values (unverified); the top is the read 262 m/s.
+[indirect]
+charges_m_s = [150, 200, 262]
+elevation_deg = [0, 25]
+low_angle = true
+range_m = 4200
+spread_mrad = 8

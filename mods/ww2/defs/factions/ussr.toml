@@ -22,6 +22,13 @@ roster = [
     "ww2:ussr_podnoschiki",
     "ww2:ussr_sanitary",
     "ww2:ussr_razvedchiki",
+    # S15 Build C: guns (each with the US6 as its tow), the truck.
+    "ww2:ussr_us6_squad",
+    "ww2:ussr_45mm_m42_squad",
+    "ww2:ussr_57mm_zis2_squad",
+    "ww2:ussr_76mm_zis3_squad",
+    "ww2:ussr_76mm_m1943_squad",
+    "ww2:ussr_122mm_m30_squad",
 ]
 # Squads on the field at tick 0: two rifle sections and the sappers.
 start_squads = ["ww2:ussr_strelkovoe_otdelenie", "ww2:ussr_strelkovoe_otdelenie", "ww2:ussr_sapyornoe_otdelenie"]

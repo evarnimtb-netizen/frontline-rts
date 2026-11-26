@@ -1,0 +1,39 @@
+# 122 mm OF-462: HE-fragmentation for the M-30 (S15 Build C); [he] as the 10.5 cm FH Gr 38 scaled by about 1.15. Velocity 341 m/s: the drag-free charge that reaches the read 11.8 km at 45 deg, as the leFH 18's 325 m/s for 10.7 km.
+id = "ww2:ussr_122mm_of462"
+name = "122 mm OF-462"
+mechanism = "he"
+# S15: priced refill ([supply] shell_mp_per_t per tonne): complete round about 27 kg (unverified: S15 starting value)
+supply = { kind = "shells", g = 27000 }
+caliber_mm = 122
+muzzle_velocity_m_s = 341
+drag_coeff = 0
+# Flat, as every HE round of the mod.
+penetration = [[0, 10]]
+ricochet_angle_deg = 80
+track_damage = 40
+sources = [
+  "Wikipedia, 122 mm howitzer M1938 (M-30): 11.8 km, read 2026-11-26 (no OF-462 mass or velocity on the page)",
+  "S15-research-history.md 5: OF-462 21.76 kg, up to 515 m/s (unverified)",
+]
+
+# The S3b physical-contact HE block, scaled from the German or US round of the nearest calibre
+# (named in the head comment); S15 starting values, no tuning.
+[he]
+damage = 150
+suppression = 40
+blast_radius_cm = 190
+frag_count = 180
+frag_reach_cm = 1900
+frag_damage = 70
+frag_far_pct = 30
+frag_elev_deg = [2, 45]
+frag_track_damage = 1
+suppression_radius_m = 19
+crater_radius_cm = 95
+crater_depth_cm = 48
+pen_mm = 10
+frag_pen_mm = 12
+inside_damage = 150
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 40

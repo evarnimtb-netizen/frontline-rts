@@ -17,6 +17,6 @@ kg = 32
 # verify).
 carry_speed_pct = 70
 # Cooks off when HE breaks it (bursts of this round).
-cookoff = "ww2:75mm_sprgr34"
+cookoff = "ww2:ussr_76mm_of350"
 boxes = [{ part = "crate", size_cm = [70, 40, 35], hp = 60 }]
 sources = ["S15 starting value: the US def's numbers (docs/slices/S15-ussr.md 6.2); Soviet loads not read"]

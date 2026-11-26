@@ -1,0 +1,12 @@
+# The 45 mm M-42 card (S15 Build C): the light AT gun and its crew, as the Pak 38 card.
+# Price, pop, cooldown and unlock are on the vehicle def; card values are S15 starting values (the German card's).
+id = "ww2:ussr_45mm_m42_squad"
+name = "45 mm M-42"
+short_name = "45 mm M-42"
+faction = "ww2:ussr"
+tags = ["vehicle"]
+vehicle = "ww2:ussr_45mm_m42"
+ai_weight = 5
+max_alive = 2
+# The tow it comes with (S15-ussr.md 6.3: every Soviet gun card): pays gun + tow.
+tow = "ww2:ussr_us6_squad"

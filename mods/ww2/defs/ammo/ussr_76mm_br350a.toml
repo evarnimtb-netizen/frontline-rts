@@ -1,0 +1,43 @@
+# 76 mm BR-350A: APHE with a ballistic cap (155 g filler, 6.3 kg; Wikipedia, read) for the ZiS-3 and the SU-76M (S15 Build C).
+id = "ww2:ussr_76mm_br350a"
+name = "76 mm BR-350A"
+mechanism = "aphe"
+# S15: priced refill ([supply] shell_mp_per_t per tonne): complete round about 9.6 kg (unverified: S15 starting value)
+supply = { kind = "shells", g = 9600 }
+caliber_mm = 76
+muzzle_velocity_m_s = 680
+drag_coeff = 0
+# Penetration convention (S15 Build C): the mod's tables are [range_m, mm] at pen_reference_angle_deg
+# (here 0, the normal). Soviet tables give the 'meet angle 90 deg' column (the normal) at a 75 %
+# success criterion (Soviet method); that column is taken as the 0-degree row, mm unchanged: no
+# criterion factor was read in a source, so the rows sit slightly low against the 50 % tables.
+# Read: BR-350A, meet angle 90 deg column (Wikipedia ZiS-3).
+penetration = [[100, 82], [500, 75], [1000, 67], [1500, 60], [2000, 53]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# S13 O1: the slope penalty beyond 1/cos, class "apcbc".
+slope_class = "apcbc"
+nonpen_damage = 40
+track_damage = 60
+sources = [
+  "Wikipedia, 76 mm divisional gun M1942 (ZiS-3): ammunition and BR-350A penetration table (Soviet method, 75 %), read 2026-11-26",
+  "losthistory.net, Specification and Armor Penetration Values for the Soviet Tank Cannons (ARTKOM method, CP 80 %), read 2026-11-26: BR-350A/B/P at 680 m/s",
+]
+
+[core]
+damage = 100
+length_cm = 150
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25
+
+# Filler rays and damage: S15 starting values on the S13 pattern (the round's filler in its comment).
+[filler]
+offset_cm = 100
+rays = 8
+cone_deg = 60
+damage = 60
+reach_cm = 300

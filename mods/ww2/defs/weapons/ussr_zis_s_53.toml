@@ -1,0 +1,25 @@
+# 85 mm ZiS-S-53 (S15 Build C, S15-ussr.md 6.4): the T-34-85's gun (1944).
+# Game values not in a source are S15 starting values (no tuning).
+id = "ww2:ussr_zis_s_53"
+name = "85 mm ZiS-S-53"
+class = "cannon"
+# Engagement range, m (as every tank and AT gun of the mod).
+range_m = 600
+# A direct hit on a man, HP.
+damage = 300
+# About 8 rounds/min in the turret: S15 starting value (unverified; the 8.8 cm KwK 36 is 10).
+rounds_per_min = 8
+magazine = 1
+# Reload, ms: 60000 / rounds_per_min.
+reload_ms = 7500
+# 2.5 mrad stationary, urad (as the German and US guns).
+spread_urad = 2500
+muzzle_velocity_m_s = 792
+suppression = 30
+# Muzzle blast: seen at 300 % of sight (as the other guns).
+fire_reveal_pct = 300
+fire_reveal_ms = 3000
+sources = [
+  "Wikipedia, T-34-85: 85 mm ZiS-S-53 (read 2026-11-26)",
+  "Wikipedia, 85 mm air defense gun M1939 (52-K): 792 m/s (read 2026-11-26)",
+]

@@ -1,0 +1,14 @@
+# The 76 mm regimental gun M1943 card (S15 Build C): as the leIG 18 card; bought only by `[ai.arty]`.
+# Price, pop, cooldown and unlock are on the vehicle def; card values are S15 starting values (the German card's).
+id = "ww2:ussr_76mm_m1943_squad"
+name = "76 mm M1943"
+short_name = "76 mm M1943"
+faction = "ww2:ussr"
+tags = ["vehicle"]
+vehicle = "ww2:ussr_76mm_m1943"
+ai_weight = 5
+max_alive = 2
+# The tow it comes with (S15-ussr.md 6.3: every Soviet gun card): pays gun + tow.
+tow = "ww2:ussr_us6_squad"
+# One of the gun cards of the artillery group.
+limit_group = "ww2:artillery"

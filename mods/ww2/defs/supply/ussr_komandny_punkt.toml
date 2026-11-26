@@ -22,7 +22,7 @@ rebuild_s = 120
 built_by = ["hq"]
 # A broken stock box with shells or explosives cooks off as bursts of this
 # HE round (S6-10 (A): one per 16 kg, at most 8).
-cookoff = "ww2:75mm_sprgr34"
+cookoff = "ww2:ussr_76mm_of350"
 # Boxes: centre offsets from the pit centre in its facing frame (x along
 # the facing, y across, z from the ground); hp in fragment/bullet points.
 # Both stand on the pit floor (hq_pit: floor 170 cm across, 220 cm along

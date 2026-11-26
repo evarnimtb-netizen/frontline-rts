@@ -1,0 +1,36 @@
+# 57 mm BR-271P: APCR 'reel' type for the ZiS-2 (S15 Build C); projectile 1.79 kg, up to 1,250 m/s (Wikipedia, read); rare.
+id = "ww2:ussr_57mm_br271p"
+name = "57 mm BR-271P"
+mechanism = "ap"
+# S15: priced refill ([supply] shell_mp_per_t per tonne): complete round about 5.2 kg (unverified: S15 starting value)
+supply = { kind = "shells", g = 5200 }
+caliber_mm = 57
+muzzle_velocity_m_s = 1250
+drag_coeff = 0
+# Penetration convention (S15 Build C): the mod's tables are [range_m, mm] at pen_reference_angle_deg
+# (here 0, the normal). Soviet tables give the 'meet angle 90 deg' column (the normal) at a 75 %
+# success criterion (Soviet method); that column is taken as the 0-degree row, mm unchanged: no
+# criterion factor was read in a source, so the rows sit slightly low against the 50 % tables.
+# Read: BR-271P APCR, meet angle 90 deg column (Wikipedia ZiS-2).
+penetration = [[100, 190], [300, 168], [500, 147], [1000, 101]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# S13 O1: the slope penalty beyond 1/cos, class "apcr".
+slope_class = "apcr"
+nonpen_damage = 40
+track_damage = 60
+sources = [
+  "Wikipedia, 57 mm anti-tank gun M1943 (ZiS-2): ammunition and penetration tables (Soviet method, 75 %), read 2026-11-26",
+]
+# S5a (D3): a rare round: refilled one per supply.rare_rearm_base_s up to the vehicle's rare_cap, never a weapon's only feed.
+rare = true
+
+[core]
+damage = 100
+length_cm = 110
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 30
+cone_deg = 25

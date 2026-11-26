@@ -14,7 +14,7 @@ radius_m = 15
 cap_kg = { small_arms = 150, explosives = 100, shells = 300 }
 rebuild_s = 0
 built_by = ["hq", "engineer"]
-cookoff = "ww2:75mm_sprgr34"
+cookoff = "ww2:ussr_76mm_of350"
 boxes = [
     { part = "stock", size_cm = [160, 100, 80], offset_cm = [0, 0, 0], hp = 250 },
 ]

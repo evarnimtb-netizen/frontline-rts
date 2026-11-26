@@ -79,6 +79,8 @@ fn load_rejects_bad_s13_keys() {
         .ammo
         .iter()
         .filter_map(|x| x.slope_class.map(|c| (x.id.as_str(), c)))
+        // S15 Build C: the Soviet rounds are checked in s15_content.rs.
+        .filter(|&(id, _)| !id.starts_with("ww2:ussr_"))
         .collect();
     classed.sort_by_key(|&(id, _)| id);
     assert_eq!(

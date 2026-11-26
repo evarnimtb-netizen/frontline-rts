@@ -1822,6 +1822,858 @@
         "kind": "explosives"
       },
       "track_damage": 50
+    },
+    "ww2:ussr_122mm_br471": {
+      "caliber_mm": 122,
+      "core": {
+        "damage": 120,
+        "length_cm": 200,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "filler": {
+        "cone_deg": 60,
+        "damage": 60,
+        "offset_cm": 100,
+        "rays": 14,
+        "reach_cm": 300
+      },
+      "id": "ww2:ussr_122mm_br471",
+      "mechanism": "aphe",
+      "muzzle_velocity_m_s": 780,
+      "name": "122 mm BR-471",
+      "nonpen_damage": 60,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          500,
+          152
+        ],
+        [
+          1000,
+          142
+        ],
+        [
+          1500,
+          133
+        ],
+        [
+          2000,
+          122
+        ]
+      ],
+      "ricochet_angle_deg": 70,
+      "slope_class": "apcbc",
+      "sources": [
+        "losthistory.net, Specification and Armor Penetration Values for the Soviet Tank Cannons (ARTKOM method, CP 80 %), read 2026-11-26",
+        "Wikipedia, IS-2: OF-471 25 kg, 800 m/s, 3.8 kg TNT; BR-471 the only AP round of 1944, read 2026-11-26"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 40,
+        "rays": 7
+      },
+      "supply": {
+        "g": 40000,
+        "kind": "shells"
+      },
+      "track_damage": 80
+    },
+    "ww2:ussr_122mm_of462": {
+      "caliber_mm": 122,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 190,
+        "crater_depth_cm": 48,
+        "crater_radius_cm": 95,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 180,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_pen_mm": 12,
+        "frag_reach_cm": 1900,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 10,
+        "suppression": 40,
+        "suppression_radius_m": 19,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:ussr_122mm_of462",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 341,
+      "name": "122 mm OF-462",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          10
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "Wikipedia, 122 mm howitzer M1938 (M-30): 11.8 km, read 2026-11-26 (no OF-462 mass or velocity on the page)",
+        "S15-research-history.md 5: OF-462 21.76 kg, up to 515 m/s (unverified)"
+      ],
+      "supply": {
+        "g": 27000,
+        "kind": "shells"
+      },
+      "track_damage": 40
+    },
+    "ww2:ussr_122mm_of471": {
+      "caliber_mm": 122,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 190,
+        "crater_depth_cm": 48,
+        "crater_radius_cm": 95,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 180,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_pen_mm": 12,
+        "frag_reach_cm": 1900,
+        "frag_track_damage": 1,
+        "inside_damage": 200,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 10,
+        "suppression": 40,
+        "suppression_radius_m": 19,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:ussr_122mm_of471",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 800,
+      "name": "122 mm OF-471",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          10
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "Wikipedia, IS-2: OF-471 25 kg, 800 m/s, 3.8 kg TNT; BR-471 the only AP round of 1944, read 2026-11-26"
+      ],
+      "supply": {
+        "g": 40000,
+        "kind": "shells"
+      },
+      "track_damage": 60
+    },
+    "ww2:ussr_45mm_br240": {
+      "caliber_mm": 45,
+      "core": {
+        "damage": 80,
+        "length_cm": 120,
+        "max_boxes": 2
+      },
+      "drag_coeff": 0.0,
+      "filler": {
+        "cone_deg": 60,
+        "damage": 60,
+        "offset_cm": 100,
+        "rays": 4,
+        "reach_cm": 200
+      },
+      "id": "ww2:ussr_45mm_br240",
+      "mechanism": "aphe",
+      "muzzle_velocity_m_s": 870,
+      "name": "45 mm BR-240",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          71
+        ],
+        [
+          500,
+          61
+        ],
+        [
+          1000,
+          51
+        ],
+        [
+          1500,
+          42
+        ]
+      ],
+      "ricochet_angle_deg": 70,
+      "slope_class": "apcbc",
+      "sources": [
+        "Wikipedia, 45 mm anti-tank gun M1942 (M-42): AP 1.43 kg at 870 m/s, APCR 0.85 kg, fragmentation 2.14 kg; its penetration table is empty, read 2026-11-26",
+        "S15-research-history.md 5: penetration about 61 mm at 500 m (unverified)"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 25,
+        "rays": 4
+      },
+      "supply": {
+        "g": 2850,
+        "kind": "shells"
+      },
+      "track_damage": 60
+    },
+    "ww2:ussr_45mm_br240p": {
+      "caliber_mm": 45,
+      "core": {
+        "damage": 80,
+        "length_cm": 100,
+        "max_boxes": 2
+      },
+      "drag_coeff": 0.0,
+      "id": "ww2:ussr_45mm_br240p",
+      "mechanism": "ap",
+      "muzzle_velocity_m_s": 1070,
+      "name": "45 mm BR-240P",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          95
+        ],
+        [
+          500,
+          81
+        ],
+        [
+          1000,
+          62
+        ]
+      ],
+      "rare": true,
+      "ricochet_angle_deg": 70,
+      "slope_class": "apcr",
+      "sources": [
+        "Wikipedia, 45 mm anti-tank gun M1942 (M-42): AP 1.43 kg at 870 m/s, APCR 0.85 kg, fragmentation 2.14 kg; its penetration table is empty, read 2026-11-26",
+        "armytanks.org (M1942 45 mm): BR-240P 1,070 m/s, 81 mm at 500 m, read 2026-11-26"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 25,
+        "rays": 4
+      },
+      "supply": {
+        "g": 2300,
+        "kind": "shells"
+      },
+      "track_damage": 60
+    },
+    "ww2:ussr_45mm_o240": {
+      "caliber_mm": 45,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 80,
+        "crater_depth_cm": 30,
+        "crater_radius_cm": 60,
+        "cuts_trenches": false,
+        "damage": 80,
+        "frag_count": 40,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_pen_mm": 12,
+        "frag_reach_cm": 800,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 10,
+        "suppression": 25,
+        "suppression_radius_m": 12,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:ussr_45mm_o240",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 335,
+      "name": "45 mm O-240",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          10
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "Wikipedia, 45 mm anti-tank gun M1942 (M-42): AP 1.43 kg at 870 m/s, APCR 0.85 kg, fragmentation 2.14 kg; its penetration table is empty, read 2026-11-26",
+        "muzzle velocity 335 m/s: unverified, S15 starting value"
+      ],
+      "supply": {
+        "g": 2900,
+        "kind": "shells"
+      },
+      "track_damage": 40
+    },
+    "ww2:ussr_57mm_br271": {
+      "caliber_mm": 57,
+      "core": {
+        "damage": 100,
+        "length_cm": 130,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "filler": {
+        "cone_deg": 60,
+        "damage": 60,
+        "offset_cm": 100,
+        "rays": 4,
+        "reach_cm": 250
+      },
+      "id": "ww2:ussr_57mm_br271",
+      "mechanism": "aphe",
+      "muzzle_velocity_m_s": 990,
+      "name": "57 mm BR-271",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          114
+        ],
+        [
+          300,
+          109
+        ],
+        [
+          500,
+          103
+        ],
+        [
+          1000,
+          91
+        ],
+        [
+          1500,
+          79
+        ],
+        [
+          2000,
+          69
+        ]
+      ],
+      "ricochet_angle_deg": 70,
+      "slope_class": "apcbc",
+      "sources": [
+        "Wikipedia, 57 mm anti-tank gun M1943 (ZiS-2): ammunition and penetration tables (Soviet method, 75 %), read 2026-11-26"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 30,
+        "rays": 6
+      },
+      "supply": {
+        "g": 6600,
+        "kind": "shells"
+      },
+      "track_damage": 60
+    },
+    "ww2:ussr_57mm_br271p": {
+      "caliber_mm": 57,
+      "core": {
+        "damage": 100,
+        "length_cm": 110,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "id": "ww2:ussr_57mm_br271p",
+      "mechanism": "ap",
+      "muzzle_velocity_m_s": 1250,
+      "name": "57 mm BR-271P",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          190
+        ],
+        [
+          300,
+          168
+        ],
+        [
+          500,
+          147
+        ],
+        [
+          1000,
+          101
+        ]
+      ],
+      "rare": true,
+      "ricochet_angle_deg": 70,
+      "slope_class": "apcr",
+      "sources": [
+        "Wikipedia, 57 mm anti-tank gun M1943 (ZiS-2): ammunition and penetration tables (Soviet method, 75 %), read 2026-11-26"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 30,
+        "rays": 6
+      },
+      "supply": {
+        "g": 5200,
+        "kind": "shells"
+      },
+      "track_damage": 60
+    },
+    "ww2:ussr_57mm_o271": {
+      "caliber_mm": 57,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 90,
+        "crater_depth_cm": 30,
+        "crater_radius_cm": 60,
+        "cuts_trenches": false,
+        "damage": 100,
+        "frag_count": 50,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_pen_mm": 12,
+        "frag_reach_cm": 900,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 10,
+        "suppression": 30,
+        "suppression_radius_m": 12,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:ussr_57mm_o271",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 700,
+      "name": "57 mm O-271U",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          10
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "Wikipedia, 57 mm anti-tank gun M1943 (ZiS-2): ammunition and penetration tables (Soviet method, 75 %), read 2026-11-26"
+      ],
+      "supply": {
+        "g": 6700,
+        "kind": "shells"
+      },
+      "track_damage": 40
+    },
+    "ww2:ussr_76mm_br350a": {
+      "caliber_mm": 76,
+      "core": {
+        "damage": 100,
+        "length_cm": 150,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "filler": {
+        "cone_deg": 60,
+        "damage": 60,
+        "offset_cm": 100,
+        "rays": 8,
+        "reach_cm": 300
+      },
+      "id": "ww2:ussr_76mm_br350a",
+      "mechanism": "aphe",
+      "muzzle_velocity_m_s": 680,
+      "name": "76 mm BR-350A",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          82
+        ],
+        [
+          500,
+          75
+        ],
+        [
+          1000,
+          67
+        ],
+        [
+          1500,
+          60
+        ],
+        [
+          2000,
+          53
+        ]
+      ],
+      "ricochet_angle_deg": 70,
+      "slope_class": "apcbc",
+      "sources": [
+        "Wikipedia, 76 mm divisional gun M1942 (ZiS-3): ammunition and BR-350A penetration table (Soviet method, 75 %), read 2026-11-26",
+        "losthistory.net, Specification and Armor Penetration Values for the Soviet Tank Cannons (ARTKOM method, CP 80 %), read 2026-11-26: BR-350A/B/P at 680 m/s"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 35,
+        "rays": 6
+      },
+      "supply": {
+        "g": 9600,
+        "kind": "shells"
+      },
+      "track_damage": 60
+    },
+    "ww2:ussr_76mm_br350p": {
+      "caliber_mm": 76,
+      "core": {
+        "damage": 100,
+        "length_cm": 120,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "id": "ww2:ussr_76mm_br350p",
+      "mechanism": "ap",
+      "muzzle_velocity_m_s": 950,
+      "name": "76 mm BR-350P",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          102
+        ],
+        [
+          300,
+          98
+        ],
+        [
+          500,
+          92
+        ]
+      ],
+      "rare": true,
+      "ricochet_angle_deg": 70,
+      "slope_class": "apcr",
+      "sources": [
+        "Wikipedia, 76 mm divisional gun M1942 (ZiS-3): ammunition and BR-350A penetration table (Soviet method, 75 %), read 2026-11-26: BR-350P 3.02 kg, up to 950 m/s",
+        "losthistory.net, Specification and Armor Penetration Values for the Soviet Tank Cannons (ARTKOM method, CP 80 %), read 2026-11-26"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 35,
+        "rays": 6
+      },
+      "supply": {
+        "g": 6300,
+        "kind": "shells"
+      },
+      "track_damage": 60
+    },
+    "ww2:ussr_76mm_of350": {
+      "caliber_mm": 76,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 120,
+        "crater_depth_cm": 30,
+        "crater_radius_cm": 60,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 80,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_pen_mm": 12,
+        "frag_reach_cm": 1200,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 10,
+        "suppression": 40,
+        "suppression_radius_m": 12,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:ussr_76mm_of350",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 680,
+      "name": "76 mm OF-350",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          10
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "Wikipedia, 76 mm divisional gun M1942 (ZiS-3): ammunition and BR-350A penetration table (Soviet method, 75 %), read 2026-11-26: OF-350 6.2 kg, 710 g filler, 680 m/s"
+      ],
+      "supply": {
+        "g": 9500,
+        "kind": "shells"
+      },
+      "track_damage": 40
+    },
+    "ww2:ussr_76mm_of350_rg": {
+      "caliber_mm": 76,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 120,
+        "crater_depth_cm": 30,
+        "crater_radius_cm": 60,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 80,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_pen_mm": 12,
+        "frag_reach_cm": 1200,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 10,
+        "suppression": 40,
+        "suppression_radius_m": 12,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:ussr_76mm_of350_rg",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 262,
+      "name": "76 mm OF-350 (M1943)",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          10
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "Wikipedia, 76 mm regimental gun M1943: muzzle velocity 262-311 m/s, read 2026-11-26",
+        "Wikipedia, 76 mm divisional gun M1942 (ZiS-3): ammunition and BR-350A penetration table (Soviet method, 75 %), read 2026-11-26: OF-350 6.2 kg, 710 g filler"
+      ],
+      "supply": {
+        "g": 9000,
+        "kind": "shells"
+      },
+      "track_damage": 40
+    },
+    "ww2:ussr_85mm_br365": {
+      "caliber_mm": 85,
+      "core": {
+        "damage": 100,
+        "length_cm": 160,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "filler": {
+        "cone_deg": 60,
+        "damage": 60,
+        "offset_cm": 100,
+        "rays": 10,
+        "reach_cm": 300
+      },
+      "id": "ww2:ussr_85mm_br365",
+      "mechanism": "aphe",
+      "muzzle_velocity_m_s": 792,
+      "name": "85 mm BR-365",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          139
+        ],
+        [
+          250,
+          133
+        ],
+        [
+          500,
+          123
+        ],
+        [
+          750,
+          114
+        ],
+        [
+          1000,
+          105
+        ],
+        [
+          1500,
+          91
+        ],
+        [
+          2000,
+          81
+        ]
+      ],
+      "ricochet_angle_deg": 70,
+      "slope_class": "apcbc",
+      "sources": [
+        "Wikipedia, 85 mm air defense gun M1939 (52-K): D-5T calculated penetration at 90 deg (normal), 50 % criterion (US/UK), read 2026-11-26",
+        "losthistory.net, Specification and Armor Penetration Values for the Soviet Tank Cannons (ARTKOM method, CP 80 %), read 2026-11-26: BR-365 CP 105 mm at 500 m at 90 deg (the stricter Soviet figure)"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 35,
+        "rays": 6
+      },
+      "supply": {
+        "g": 15900,
+        "kind": "shells"
+      },
+      "track_damage": 60
+    },
+    "ww2:ussr_85mm_br365p": {
+      "caliber_mm": 85,
+      "core": {
+        "damage": 100,
+        "length_cm": 120,
+        "max_boxes": 3
+      },
+      "drag_coeff": 0.0,
+      "id": "ww2:ussr_85mm_br365p",
+      "mechanism": "ap",
+      "muzzle_velocity_m_s": 1050,
+      "name": "85 mm BR-365P",
+      "nonpen_damage": 40,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          100,
+          175
+        ],
+        [
+          250,
+          159
+        ],
+        [
+          500,
+          136
+        ],
+        [
+          750,
+          117
+        ],
+        [
+          1000,
+          100
+        ],
+        [
+          1500,
+          73
+        ],
+        [
+          2000,
+          54
+        ]
+      ],
+      "rare": true,
+      "ricochet_angle_deg": 70,
+      "slope_class": "apcr",
+      "sources": [
+        "Wikipedia, 85 mm air defense gun M1939 (52-K): D-5T calculated penetration at 90 deg (normal), 50 % criterion (US/UK), read 2026-11-26",
+        "losthistory.net, Specification and Armor Penetration Values for the Soviet Tank Cannons (ARTKOM method, CP 80 %), read 2026-11-26: BR-365P CP 140 mm at 500 m at 90 deg"
+      ],
+      "spall": {
+        "cone_deg": 25,
+        "damage": 35,
+        "rays": 6
+      },
+      "supply": {
+        "g": 11500,
+        "kind": "shells"
+      },
+      "track_damage": 60
+    },
+    "ww2:ussr_85mm_o365": {
+      "caliber_mm": 85,
+      "drag_coeff": 0.0,
+      "he": {
+        "blast_radius_cm": 130,
+        "crater_depth_cm": 30,
+        "crater_radius_cm": 60,
+        "cuts_trenches": false,
+        "damage": 150,
+        "frag_count": 90,
+        "frag_damage": 70,
+        "frag_elev_deg": [
+          2,
+          45
+        ],
+        "frag_far_pct": 30,
+        "frag_pen_mm": 12,
+        "frag_reach_cm": 1200,
+        "frag_track_damage": 1,
+        "inside_damage": 150,
+        "inside_rays": 16,
+        "inside_reach_cm": 150,
+        "pen_mm": 10,
+        "suppression": 40,
+        "suppression_radius_m": 12,
+        "vs_vehicle_pct": 40
+      },
+      "id": "ww2:ussr_85mm_o365",
+      "mechanism": "he",
+      "muzzle_velocity_m_s": 785,
+      "name": "85 mm O-365",
+      "nonpen_damage": 0,
+      "pen_reference_angle_deg": 0,
+      "penetration": [
+        [
+          0,
+          10
+        ]
+      ],
+      "ricochet_angle_deg": 80,
+      "sources": [
+        "S15-research-history.md 6: O-365 9.5 kg (unverified); velocity 785 m/s unverified"
+      ],
+      "supply": {
+        "g": 15000,
+        "kind": "shells"
+      },
+      "track_damage": 40
     }
   },
   "factions": {
@@ -1916,7 +2768,13 @@
         "ww2:ussr_upravlenie_vzvoda",
         "ww2:ussr_podnoschiki",
         "ww2:ussr_sanitary",
-        "ww2:ussr_razvedchiki"
+        "ww2:ussr_razvedchiki",
+        "ww2:ussr_us6_squad",
+        "ww2:ussr_45mm_m42_squad",
+        "ww2:ussr_57mm_zis2_squad",
+        "ww2:ussr_76mm_zis3_squad",
+        "ww2:ussr_76mm_m1943_squad",
+        "ww2:ussr_122mm_m30_squad"
       ],
       "start_squads": [
         "ww2:ussr_strelkovoe_otdelenie",
@@ -6910,6 +7768,134 @@
       "unlock_s": 0,
       "weapon": ""
     },
+    "ww2:ussr_122mm_m30_squad": {
+      "ai_weight": 5,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:ussr",
+      "hp": 100,
+      "id": "ww2:ussr_122mm_m30_squad",
+      "initial_cooldown_s": 0,
+      "limit_group": "ww2:artillery",
+      "max_alive": 1,
+      "men": 0,
+      "name": "122 mm M-30",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "M-30",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle",
+        "field_howitzer"
+      ],
+      "tow": "ww2:ussr_us6_squad",
+      "vehicle": "ww2:ussr_122mm_m30",
+      "weapon": ""
+    },
+    "ww2:ussr_45mm_m42_squad": {
+      "ai_weight": 5,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:ussr",
+      "hp": 100,
+      "id": "ww2:ussr_45mm_m42_squad",
+      "initial_cooldown_s": 0,
+      "max_alive": 2,
+      "men": 0,
+      "name": "45 mm M-42",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "45 mm M-42",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle"
+      ],
+      "tow": "ww2:ussr_us6_squad",
+      "vehicle": "ww2:ussr_45mm_m42",
+      "weapon": ""
+    },
+    "ww2:ussr_57mm_zis2_squad": {
+      "ai_weight": 5,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:ussr",
+      "hp": 100,
+      "id": "ww2:ussr_57mm_zis2_squad",
+      "initial_cooldown_s": 0,
+      "max_alive": 2,
+      "men": 0,
+      "name": "57 mm ZiS-2",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "ZiS-2",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle"
+      ],
+      "tow": "ww2:ussr_us6_squad",
+      "vehicle": "ww2:ussr_57mm_zis2",
+      "weapon": ""
+    },
+    "ww2:ussr_76mm_m1943_squad": {
+      "ai_weight": 5,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:ussr",
+      "hp": 100,
+      "id": "ww2:ussr_76mm_m1943_squad",
+      "initial_cooldown_s": 0,
+      "limit_group": "ww2:artillery",
+      "max_alive": 2,
+      "men": 0,
+      "name": "76 mm M1943",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "76 mm M1943",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle"
+      ],
+      "tow": "ww2:ussr_us6_squad",
+      "vehicle": "ww2:ussr_76mm_m1943",
+      "weapon": ""
+    },
+    "ww2:ussr_76mm_zis3_squad": {
+      "ai_weight": 5,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:ussr",
+      "hp": 100,
+      "id": "ww2:ussr_76mm_zis3_squad",
+      "initial_cooldown_s": 0,
+      "max_alive": 2,
+      "men": 0,
+      "name": "76 mm ZiS-3",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "ZiS-3",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle"
+      ],
+      "tow": "ww2:ussr_us6_squad",
+      "vehicle": "ww2:ussr_76mm_zis3",
+      "weapon": ""
+    },
     "ww2:ussr_gun_crew_122mm": {
       "capabilities": [
         "recrew",
@@ -8179,6 +9165,31 @@
         "hq"
       ],
       "unlock_s": 0,
+      "weapon": ""
+    },
+    "ww2:ussr_us6_squad": {
+      "ai_weight": 5,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:ussr",
+      "hp": 100,
+      "id": "ww2:ussr_us6_squad",
+      "initial_cooldown_s": 0,
+      "max_alive": 2,
+      "men": 0,
+      "name": "Studebaker US6 truck",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "US6",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle",
+        "truck"
+      ],
+      "vehicle": "ww2:ussr_us6",
       "weapon": ""
     }
   },
@@ -19522,6 +20533,2166 @@
           "traverse_deg_s": 30
         }
       ]
+    },
+    "ww2:ussr_122mm_m30": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              45
+            ],
+            "half": [
+              15,
+              95,
+              20
+            ]
+          },
+          "frame": "hull",
+          "id": "axle"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 8.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 4.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            }
+          },
+          "box": {
+            "center": [
+              40,
+              0,
+              65
+            ],
+            "half": [
+              4,
+              50,
+              45
+            ]
+          },
+          "frame": "hull",
+          "id": "shield"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              -170,
+              0,
+              25
+            ],
+            "half": [
+              140,
+              20,
+              25
+            ]
+          },
+          "frame": "hull",
+          "id": "trail"
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -30,
+              0,
+              85
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              15,
+              15
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              -60,
+              20
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              25,
+              15
+            ]
+          },
+          "hp": 40,
+          "type": "ammo_rack"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                85,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -85,
+                40
+              ]
+            }
+          ],
+          "hp": 60,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 60
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -15,
+                30,
+                110
+              ]
+            }
+          ],
+          "hp": 30,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 30
+          },
+          "type": "sight"
+        },
+        {
+          "box": {
+            "center": [
+              10,
+              0,
+              75
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              10,
+              10
+            ]
+          },
+          "hp": 50,
+          "repair": {
+            "time_s": 45,
+            "to_hp": 50
+          },
+          "type": "recoil"
+        }
+      ],
+      "cost": 520,
+      "crew_model": "served",
+      "crew_squad": "ww2:ussr_gun_crew_122mm",
+      "eye_height_cm": 110,
+      "faction": "ww2:ussr",
+      "hull": {
+        "track_band_pct": 0,
+        "track_mm": 0
+      },
+      "id": "ww2:ussr_122mm_m30",
+      "initial_cooldown_s": 480,
+      "mass_kg": 2450,
+      "mobility": {
+        "accel_cm_s2": 50,
+        "bog_pct": 0,
+        "brake_cm_s2": 200,
+        "ditch_block_dm": 6,
+        "emplace_s": 90,
+        "hitch_s": 25,
+        "max_slope_pct": 15,
+        "moving_spread_pct": 100,
+        "pack_s": 54,
+        "push_men": 7,
+        "relay_trail_s": 25,
+        "reverse_cm_s": 1,
+        "speed_cm_s": 1,
+        "tow_bar_cm": 310,
+        "turn_deg_s": 22,
+        "type": "towed",
+        "unbog_s": [
+          0,
+          0
+        ]
+      },
+      "name": "122 mm howitzer M1938 (M-30)",
+      "optic": {
+        "sight_pct": 250
+      },
+      "pop": 2,
+      "rare_cap": 0,
+      "recall_cooldown_s": 180,
+      "role": "inf_gun",
+      "service": [
+        {
+          "at": [
+            -60,
+            55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "gunner"
+        },
+        {
+          "at": [
+            -60,
+            -55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "loader"
+        },
+        {
+          "at": [
+            -300,
+            80,
+            0
+          ],
+          "pose": "kneel",
+          "role": "commander"
+        },
+        {
+          "at": [
+            -420,
+            75,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -420,
+            -75,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -520,
+            0,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -520,
+            90,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        }
+      ],
+      "short_name": "M-30",
+      "sight_m": 175,
+      "sources": [
+        "Wikipedia, 122 mm howitzer M1938 (M-30): 2,450 kg, crew 8, -3 to +63.5 deg, traverse 49 deg (read 2026-11-26)",
+        "S15-ussr.md 6.3 (cost); 12 rounds as the leFH 18 (unverified)"
+      ],
+      "spot_size_pct": 130,
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 12,
+              "id": "ww2:ussr_122mm_of462"
+            }
+          ],
+          "barrel": {
+            "length_cm": 90,
+            "radius_cm": 6
+          },
+          "def": "ww2:ussr_m30_122mm",
+          "elevate_deg_s": 6,
+          "elevation_deg": [
+            -3,
+            63
+          ],
+          "mount": "casemate",
+          "muzzle": [
+            90,
+            0,
+            5
+          ],
+          "pivot": [
+            0,
+            0,
+            70
+          ],
+          "traverse_deg": [
+            -24,
+            25
+          ],
+          "traverse_deg_s": 9
+        }
+      ]
+    },
+    "ww2:ussr_45mm_m42": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              45
+            ],
+            "half": [
+              15,
+              95,
+              20
+            ]
+          },
+          "frame": "hull",
+          "id": "axle"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 8.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 4.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            }
+          },
+          "box": {
+            "center": [
+              40,
+              0,
+              80
+            ],
+            "half": [
+              4,
+              100,
+              50
+            ]
+          },
+          "frame": "hull",
+          "id": "shield"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              -170,
+              0,
+              25
+            ],
+            "half": [
+              140,
+              20,
+              25
+            ]
+          },
+          "frame": "hull",
+          "id": "trail"
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -30,
+              0,
+              85
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              15,
+              15
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              -60,
+              20
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              25,
+              15
+            ]
+          },
+          "hp": 40,
+          "type": "ammo_rack"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                85,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -85,
+                40
+              ]
+            }
+          ],
+          "hp": 60,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 60
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -15,
+                30,
+                110
+              ]
+            }
+          ],
+          "hp": 30,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 30
+          },
+          "type": "sight"
+        },
+        {
+          "box": {
+            "center": [
+              10,
+              0,
+              75
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              10,
+              10
+            ]
+          },
+          "hp": 50,
+          "repair": {
+            "time_s": 45,
+            "to_hp": 50
+          },
+          "type": "recoil"
+        }
+      ],
+      "cost": 200,
+      "crew_model": "served",
+      "crew_squad": "ww2:ussr_gun_crew_45mm",
+      "eye_height_cm": 110,
+      "faction": "ww2:ussr",
+      "hull": {
+        "track_band_pct": 0,
+        "track_mm": 0
+      },
+      "id": "ww2:ussr_45mm_m42",
+      "initial_cooldown_s": 0,
+      "mass_kg": 625,
+      "mobility": {
+        "accel_cm_s2": 50,
+        "bog_pct": 0,
+        "brake_cm_s2": 200,
+        "ditch_block_dm": 6,
+        "emplace_s": 20,
+        "hitch_s": 15,
+        "max_slope_pct": 15,
+        "moving_spread_pct": 100,
+        "pack_s": 12,
+        "push_men": 4,
+        "relay_trail_s": 10,
+        "reverse_cm_s": 60,
+        "speed_cm_s": 60,
+        "tow_bar_cm": 310,
+        "turn_deg_s": 25,
+        "type": "towed",
+        "unbog_s": [
+          0,
+          0
+        ]
+      },
+      "name": "45 mm anti-tank gun M1942 (M-42)",
+      "optic": {
+        "sight_pct": 250
+      },
+      "pop": 1,
+      "rare_cap": 2,
+      "recall_cooldown_s": 60,
+      "role": "at_gun",
+      "service": [
+        {
+          "at": [
+            -60,
+            55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "gunner"
+        },
+        {
+          "at": [
+            -60,
+            -55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "loader"
+        },
+        {
+          "at": [
+            -300,
+            80,
+            0
+          ],
+          "pose": "kneel",
+          "role": "commander"
+        },
+        {
+          "at": [
+            -420,
+            75,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -420,
+            -75,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        }
+      ],
+      "short_name": "45 mm M-42",
+      "sight_m": 175,
+      "sources": [
+        "Wikipedia, 45 mm anti-tank gun M1942 (M-42): 625 kg, crew 6, traverse 60 deg, -8 to +25 deg (read 2026-11-26)",
+        "S15-ussr.md 6.3 (cost); rack split as the Pak 38 (unverified)"
+      ],
+      "spot_size_pct": 85,
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 22,
+              "id": "ww2:ussr_45mm_br240"
+            },
+            {
+              "count": 16,
+              "id": "ww2:ussr_45mm_o240"
+            },
+            {
+              "count": 2,
+              "id": "ww2:ussr_45mm_br240p"
+            }
+          ],
+          "barrel": {
+            "length_cm": 260,
+            "radius_cm": 4
+          },
+          "def": "ww2:ussr_m42_45mm",
+          "elevate_deg_s": 5,
+          "elevation_deg": [
+            -8,
+            25
+          ],
+          "mount": "casemate",
+          "muzzle": [
+            280,
+            0,
+            10
+          ],
+          "pivot": [
+            0,
+            0,
+            85
+          ],
+          "traverse_deg": [
+            -30,
+            30
+          ],
+          "traverse_deg_s": 8
+        }
+      ]
+    },
+    "ww2:ussr_57mm_zis2": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              45
+            ],
+            "half": [
+              15,
+              95,
+              20
+            ]
+          },
+          "frame": "hull",
+          "id": "axle"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 8.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 4.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            }
+          },
+          "box": {
+            "center": [
+              40,
+              0,
+              85
+            ],
+            "half": [
+              4,
+              110,
+              55
+            ]
+          },
+          "frame": "hull",
+          "id": "shield"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              -170,
+              0,
+              25
+            ],
+            "half": [
+              140,
+              20,
+              25
+            ]
+          },
+          "frame": "hull",
+          "id": "trail"
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -30,
+              0,
+              85
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              15,
+              15
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              -60,
+              20
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              25,
+              15
+            ]
+          },
+          "hp": 40,
+          "type": "ammo_rack"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                85,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -85,
+                40
+              ]
+            }
+          ],
+          "hp": 60,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 60
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -15,
+                30,
+                110
+              ]
+            }
+          ],
+          "hp": 30,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 30
+          },
+          "type": "sight"
+        },
+        {
+          "box": {
+            "center": [
+              10,
+              0,
+              75
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              10,
+              10
+            ]
+          },
+          "hp": 50,
+          "repair": {
+            "time_s": 45,
+            "to_hp": 50
+          },
+          "type": "recoil"
+        }
+      ],
+      "cost": 360,
+      "crew_model": "served",
+      "crew_squad": "ww2:ussr_gun_crew_57mm",
+      "eye_height_cm": 110,
+      "faction": "ww2:ussr",
+      "hull": {
+        "track_band_pct": 0,
+        "track_mm": 0
+      },
+      "id": "ww2:ussr_57mm_zis2",
+      "initial_cooldown_s": 0,
+      "mass_kg": 1250,
+      "mobility": {
+        "accel_cm_s2": 50,
+        "bog_pct": 0,
+        "brake_cm_s2": 200,
+        "ditch_block_dm": 6,
+        "emplace_s": 30,
+        "hitch_s": 20,
+        "max_slope_pct": 15,
+        "moving_spread_pct": 100,
+        "pack_s": 18,
+        "push_men": 5,
+        "relay_trail_s": 15,
+        "reverse_cm_s": 35,
+        "speed_cm_s": 35,
+        "tow_bar_cm": 310,
+        "turn_deg_s": 20,
+        "type": "towed",
+        "unbog_s": [
+          0,
+          0
+        ]
+      },
+      "name": "57 mm anti-tank gun M1943 (ZiS-2)",
+      "optic": {
+        "sight_pct": 250
+      },
+      "pop": 1,
+      "rare_cap": 2,
+      "recall_cooldown_s": 90,
+      "role": "at_gun",
+      "service": [
+        {
+          "at": [
+            -60,
+            55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "gunner"
+        },
+        {
+          "at": [
+            -60,
+            -55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "loader"
+        },
+        {
+          "at": [
+            -300,
+            80,
+            0
+          ],
+          "pose": "kneel",
+          "role": "commander"
+        },
+        {
+          "at": [
+            -440,
+            90,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -440,
+            0,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -440,
+            -90,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        }
+      ],
+      "short_name": "ZiS-2",
+      "sight_m": 175,
+      "sources": [
+        "Wikipedia, 57 mm anti-tank gun M1943 (ZiS-2): 1,250 kg, crew 7, traverse 56 deg, -5 to +25 deg (read 2026-11-26)",
+        "S15-ussr.md 6.3 (cost); rack split as the Pak 40 (unverified)"
+      ],
+      "spot_size_pct": 90,
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 20,
+              "id": "ww2:ussr_57mm_br271"
+            },
+            {
+              "count": 16,
+              "id": "ww2:ussr_57mm_o271"
+            },
+            {
+              "count": 2,
+              "id": "ww2:ussr_57mm_br271p"
+            }
+          ],
+          "barrel": {
+            "length_cm": 300,
+            "radius_cm": 5
+          },
+          "def": "ww2:ussr_zis2",
+          "elevate_deg_s": 5,
+          "elevation_deg": [
+            -5,
+            25
+          ],
+          "mount": "casemate",
+          "muzzle": [
+            345,
+            0,
+            12
+          ],
+          "pivot": [
+            0,
+            0,
+            85
+          ],
+          "traverse_deg": [
+            -28,
+            28
+          ],
+          "traverse_deg_s": 8
+        }
+      ]
+    },
+    "ww2:ussr_76mm_m1943": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              45
+            ],
+            "half": [
+              15,
+              95,
+              20
+            ]
+          },
+          "frame": "hull",
+          "id": "axle"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 8.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 4.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            }
+          },
+          "box": {
+            "center": [
+              40,
+              0,
+              65
+            ],
+            "half": [
+              4,
+              50,
+              45
+            ]
+          },
+          "frame": "hull",
+          "id": "shield"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              -170,
+              0,
+              25
+            ],
+            "half": [
+              140,
+              20,
+              25
+            ]
+          },
+          "frame": "hull",
+          "id": "trail"
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -30,
+              0,
+              85
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              15,
+              15
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              -60,
+              20
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              25,
+              15
+            ]
+          },
+          "hp": 40,
+          "type": "ammo_rack"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                85,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -85,
+                40
+              ]
+            }
+          ],
+          "hp": 60,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 60
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -15,
+                30,
+                110
+              ]
+            }
+          ],
+          "hp": 30,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 30
+          },
+          "type": "sight"
+        },
+        {
+          "box": {
+            "center": [
+              10,
+              0,
+              75
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              10,
+              10
+            ]
+          },
+          "hp": 50,
+          "repair": {
+            "time_s": 45,
+            "to_hp": 50
+          },
+          "type": "recoil"
+        }
+      ],
+      "cost": 300,
+      "crew_model": "served",
+      "crew_squad": "ww2:ussr_gun_crew_76mm_m1943",
+      "eye_height_cm": 110,
+      "faction": "ww2:ussr",
+      "hull": {
+        "track_band_pct": 0,
+        "track_mm": 0
+      },
+      "id": "ww2:ussr_76mm_m1943",
+      "initial_cooldown_s": 180,
+      "mass_kg": 600,
+      "mobility": {
+        "accel_cm_s2": 50,
+        "bog_pct": 0,
+        "brake_cm_s2": 200,
+        "ditch_block_dm": 6,
+        "emplace_s": 20,
+        "hitch_s": 15,
+        "max_slope_pct": 15,
+        "moving_spread_pct": 100,
+        "pack_s": 12,
+        "push_men": 4,
+        "relay_trail_s": 10,
+        "reverse_cm_s": 60,
+        "speed_cm_s": 60,
+        "tow_bar_cm": 310,
+        "turn_deg_s": 25,
+        "type": "towed",
+        "unbog_s": [
+          0,
+          0
+        ]
+      },
+      "name": "76 mm regimental gun M1943",
+      "optic": {
+        "sight_pct": 250
+      },
+      "pop": 2,
+      "rare_cap": 0,
+      "recall_cooldown_s": 90,
+      "role": "inf_gun",
+      "service": [
+        {
+          "at": [
+            -60,
+            55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "gunner"
+        },
+        {
+          "at": [
+            -60,
+            -55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "loader"
+        },
+        {
+          "at": [
+            -300,
+            80,
+            0
+          ],
+          "pose": "kneel",
+          "role": "commander"
+        },
+        {
+          "at": [
+            -420,
+            75,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -420,
+            -75,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        }
+      ],
+      "short_name": "76 mm M1943",
+      "sight_m": 175,
+      "sources": [
+        "Wikipedia, 76 mm regimental gun M1943: 600 kg, -8 to +25 deg, traverse 60 deg (read 2026-11-26)",
+        "S15-ussr.md 6.3 (cost; BP-350M HEAT left out: no HEAT rule for guns); 12 rounds as the leIG 18 (unverified)"
+      ],
+      "spot_size_pct": 85,
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 12,
+              "id": "ww2:ussr_76mm_of350_rg"
+            }
+          ],
+          "barrel": {
+            "length_cm": 90,
+            "radius_cm": 5
+          },
+          "def": "ww2:ussr_m1943_76mm",
+          "elevate_deg_s": 5,
+          "elevation_deg": [
+            -8,
+            25
+          ],
+          "mount": "casemate",
+          "muzzle": [
+            90,
+            0,
+            5
+          ],
+          "pivot": [
+            0,
+            0,
+            70
+          ],
+          "traverse_deg": [
+            -30,
+            30
+          ],
+          "traverse_deg_s": 8
+        }
+      ]
+    },
+    "ww2:ussr_76mm_zis3": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              0,
+              0,
+              45
+            ],
+            "half": [
+              15,
+              95,
+              20
+            ]
+          },
+          "frame": "hull",
+          "id": "axle"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 8.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 18,
+              "thickness_mm": 4.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 4.0
+            }
+          },
+          "box": {
+            "center": [
+              40,
+              0,
+              85
+            ],
+            "half": [
+              4,
+              110,
+              55
+            ]
+          },
+          "frame": "hull",
+          "id": "shield"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 6.0
+            }
+          },
+          "box": {
+            "center": [
+              -170,
+              0,
+              25
+            ],
+            "half": [
+              140,
+              20,
+              25
+            ]
+          },
+          "frame": "hull",
+          "id": "trail"
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              -30,
+              0,
+              85
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              15,
+              15
+            ]
+          },
+          "hp": 80,
+          "type": "gun"
+        },
+        {
+          "box": {
+            "center": [
+              -120,
+              -60,
+              20
+            ],
+            "frame": "hull",
+            "half": [
+              30,
+              25,
+              15
+            ]
+          },
+          "hp": 40,
+          "type": "ammo_rack"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                85,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                0,
+                -85,
+                40
+              ]
+            }
+          ],
+          "hp": 60,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 60
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -15,
+                30,
+                110
+              ]
+            }
+          ],
+          "hp": 30,
+          "repair": {
+            "time_s": 30,
+            "to_hp": 30
+          },
+          "type": "sight"
+        },
+        {
+          "box": {
+            "center": [
+              10,
+              0,
+              75
+            ],
+            "frame": "hull",
+            "half": [
+              25,
+              10,
+              10
+            ]
+          },
+          "hp": 50,
+          "repair": {
+            "time_s": 45,
+            "to_hp": 50
+          },
+          "type": "recoil"
+        }
+      ],
+      "cost": 340,
+      "crew_model": "served",
+      "crew_squad": "ww2:ussr_gun_crew_76mm",
+      "eye_height_cm": 110,
+      "faction": "ww2:ussr",
+      "hull": {
+        "track_band_pct": 0,
+        "track_mm": 0
+      },
+      "id": "ww2:ussr_76mm_zis3",
+      "initial_cooldown_s": 0,
+      "mass_kg": 1116,
+      "mobility": {
+        "accel_cm_s2": 50,
+        "bog_pct": 0,
+        "brake_cm_s2": 200,
+        "ditch_block_dm": 6,
+        "emplace_s": 30,
+        "hitch_s": 20,
+        "max_slope_pct": 15,
+        "moving_spread_pct": 100,
+        "pack_s": 18,
+        "push_men": 5,
+        "relay_trail_s": 15,
+        "reverse_cm_s": 35,
+        "speed_cm_s": 35,
+        "tow_bar_cm": 310,
+        "turn_deg_s": 20,
+        "type": "towed",
+        "unbog_s": [
+          0,
+          0
+        ]
+      },
+      "name": "76 mm divisional gun M1942 (ZiS-3)",
+      "optic": {
+        "sight_pct": 250
+      },
+      "pop": 1,
+      "rare_cap": 2,
+      "recall_cooldown_s": 90,
+      "role": "at_gun",
+      "service": [
+        {
+          "at": [
+            -60,
+            55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "gunner"
+        },
+        {
+          "at": [
+            -60,
+            -55,
+            0
+          ],
+          "pose": "kneel",
+          "role": "loader"
+        },
+        {
+          "at": [
+            -300,
+            80,
+            0
+          ],
+          "pose": "kneel",
+          "role": "commander"
+        },
+        {
+          "at": [
+            -440,
+            90,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -440,
+            0,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        },
+        {
+          "at": [
+            -440,
+            -90,
+            0
+          ],
+          "pose": "kneel",
+          "role": "ammo"
+        }
+      ],
+      "short_name": "ZiS-3",
+      "sight_m": 175,
+      "sources": [
+        "Wikipedia, 76 mm divisional gun M1942 (ZiS-3): 1,116 kg, crew 7, traverse 54 deg, -5 to +37 deg (read 2026-11-26)",
+        "S15-ussr.md 6.3 (cost); rack split as the Pak 40 (unverified)"
+      ],
+      "spot_size_pct": 90,
+      "weapons": [
+        {
+          "ammo": [
+            {
+              "count": 18,
+              "id": "ww2:ussr_76mm_br350a"
+            },
+            {
+              "count": 18,
+              "id": "ww2:ussr_76mm_of350"
+            },
+            {
+              "count": 2,
+              "id": "ww2:ussr_76mm_br350p"
+            }
+          ],
+          "barrel": {
+            "length_cm": 300,
+            "radius_cm": 5
+          },
+          "def": "ww2:ussr_zis3",
+          "elevate_deg_s": 5,
+          "elevation_deg": [
+            -5,
+            37
+          ],
+          "mount": "casemate",
+          "muzzle": [
+            345,
+            0,
+            12
+          ],
+          "pivot": [
+            0,
+            0,
+            85
+          ],
+          "traverse_deg": [
+            -27,
+            27
+          ],
+          "traverse_deg_s": 8
+        }
+      ]
+    },
+    "ww2:ussr_us6": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 2.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            }
+          },
+          "box": {
+            "center": [
+              170,
+              0,
+              150
+            ],
+            "half": [
+              130,
+              115,
+              60
+            ]
+          },
+          "frame": "hull",
+          "id": "cab"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 2.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            }
+          },
+          "box": {
+            "center": [
+              -130,
+              0,
+              145
+            ],
+            "half": [
+              170,
+              115,
+              55
+            ]
+          },
+          "floor_cm": 100,
+          "frame": "hull",
+          "id": "bed",
+          "open": [
+            "top"
+          ]
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              250,
+              0,
+              135
+            ],
+            "frame": "hull",
+            "half": [
+              40,
+              45,
+              35
+            ]
+          },
+          "hp": 60,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 30
+          },
+          "type": "engine"
+        },
+        {
+          "box": {
+            "center": [
+              130,
+              0,
+              110
+            ],
+            "frame": "hull",
+            "half": [
+              40,
+              25,
+              18
+            ]
+          },
+          "hp": 60,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 30
+          },
+          "type": "transmission"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                235,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                235,
+                -95,
+                40
+              ]
+            }
+          ],
+          "hp": 40,
+          "repair": {
+            "time_s": 25,
+            "to_hp": 40
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -120,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -120,
+                -95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -220,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -220,
+                -95,
+                40
+              ]
+            }
+          ],
+          "hp": 40,
+          "repair": {
+            "time_s": 25,
+            "to_hp": 40
+          },
+          "type": "wheels_rear"
+        },
+        {
+          "box": {
+            "center": [
+              -130,
+              0,
+              147
+            ],
+            "frame": "hull",
+            "half": [
+              150,
+              100,
+              45
+            ]
+          },
+          "hp": 60,
+          "type": "cargo"
+        }
+      ],
+      "cost": 200,
+      "crew_squad": "ww2:ussr_tank_crew",
+      "eye_height_cm": 230,
+      "faction": "ww2:ussr",
+      "hatches": [
+        {
+          "exit_ms": 2000,
+          "frame": "hull",
+          "pos": [
+            120,
+            115,
+            150
+          ],
+          "seats": [
+            "driver"
+          ]
+        },
+        {
+          "exit_ms": 2000,
+          "frame": "hull",
+          "pos": [
+            120,
+            -115,
+            150
+          ],
+          "seats": [
+            "commander"
+          ]
+        }
+      ],
+      "hull": {
+        "track_band_pct": 40,
+        "track_mm": 3
+      },
+      "id": "ww2:ussr_us6",
+      "initial_cooldown_s": 0,
+      "mobility": {
+        "accel_cm_s2": 120,
+        "bog_pct": 15,
+        "brake_cm_s2": 350,
+        "ditch_block_dm": 10,
+        "max_slope_pct": 40,
+        "moving_spread_pct": 100,
+        "reverse_cm_s": 200,
+        "slope_loss_pct": 85,
+        "speed_cm_s": 800,
+        "turn_deg_s": 0,
+        "turn_radius_cm": 900,
+        "type": "wheeled",
+        "unbog_s": [
+          25,
+          45
+        ],
+        "woods_speed_pct": 30
+      },
+      "name": "Studebaker US6 2.5-ton truck",
+      "pop": 2,
+      "rare_cap": 0,
+      "recall_cooldown_s": 45,
+      "role": "truck",
+      "seats": [
+        {
+          "box": {
+            "center": [
+              120,
+              60,
+              150
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              45
+            ]
+          },
+          "id": "driver",
+          "in": "cab",
+          "role": "driver"
+        },
+        {
+          "box": {
+            "center": [
+              120,
+              -60,
+              150
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              45
+            ]
+          },
+          "id": "co_driver",
+          "in": "cab",
+          "role": "commander"
+        }
+      ],
+      "short_name": "US6",
+      "sight_m": 150,
+      "sources": [
+        "Wikipedia, Studebaker US6: a 2.5-short-ton cargo load; most exported to the USSR; towed artillery and AT guns (read 2026-11-26)",
+        "docs/design/roster/vehicles.md 4.3",
+        "the GMC CCKW def's dimensions, speeds and plates (unverified for the US6)"
+      ],
+      "spot_size_pct": 150,
+      "stations": [
+        {
+          "id": "cab",
+          "seats": [
+            "driver",
+            "commander"
+          ]
+        }
+      ],
+      "supply": {
+        "cap_kg_total": 2270,
+        "cookoff": "ww2:ussr_76mm_of350",
+        "crates": [
+          "ww2:ussr_shells_crate",
+          "ww2:ussr_small_arms_crate",
+          "ww2:ussr_explosives_crate"
+        ],
+        "load_kg": {
+          "explosives": 40,
+          "shells": 320,
+          "small_arms": 120
+        },
+        "radius_m": 8,
+        "round_interval_s": 4,
+        "vehicle_radius_m": 15
+      },
+      "tow": {
+        "max_kg": 3000,
+        "towed_speed_pct": 80
+      },
+      "weapons": []
     }
   },
   "weapons": {
@@ -21104,6 +24275,54 @@
       "spread_urad": 0,
       "suppression": 30
     },
+    "ww2:ussr_d25t": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 3000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:ussr_d25t",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 780,
+      "name": "122 mm D-25T",
+      "range_m": 600,
+      "reload_ms": 20000,
+      "rounds_carried": 0,
+      "rounds_per_min": 3,
+      "setup_ms": 0,
+      "sources": [
+        "Wikipedia, IS-2: D-25T, 28 rounds, 2-3 rpm (read 2026-11-26)",
+        "losthistory.net: D-25T BR-471 780 m/s (read 2026-11-26)"
+      ],
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 40
+    },
+    "ww2:ussr_d5s": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 3000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:ussr_d5s",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 792,
+      "name": "85 mm D-5S",
+      "range_m": 600,
+      "reload_ms": 7500,
+      "rounds_carried": 0,
+      "rounds_per_min": 8,
+      "setup_ms": 0,
+      "sources": [
+        "Wikipedia, SU-85: 85 mm D-5 gun (read 2026-11-26)",
+        "Wikipedia, 85 mm air defense gun M1939 (52-K): 792 m/s (read 2026-11-26)"
+      ],
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 30
+    },
     "ww2:ussr_dp27": {
       "burst_pause_ms": 900,
       "burst_rounds": 5,
@@ -21149,6 +24368,149 @@
       "spread_mrad": 22,
       "spread_urad": 0,
       "suppression": 12
+    },
+    "ww2:ussr_dt": {
+      "burst_pause_ms": 1000,
+      "burst_rounds": 6,
+      "class": "mg",
+      "core": {
+        "damage": 30,
+        "length_cm": 30,
+        "max_boxes": 1
+      },
+      "damage": 45,
+      "feed": "ww2:ussr_762x54r_pan",
+      "handover_ms": 0,
+      "id": "ww2:ussr_dt",
+      "magazine": 63,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 840,
+      "name": "DT",
+      "penetration": [
+        [
+          0,
+          7
+        ],
+        [
+          100,
+          5
+        ],
+        [
+          300,
+          3
+        ]
+      ],
+      "range_m": 450,
+      "reload_ms": 5000,
+      "rounds_carried": 0,
+      "rounds_per_min": 600,
+      "setup_ms": 0,
+      "short_name": "DT",
+      "sources": [
+        "Wikipedia, BA-64: one 7.62 mm DT, 1,070 rounds (read 2026-11-26)",
+        "Wikipedia, DP-27 (the DP's rate and velocity; read 2026-11-26 in Build B)",
+        "DT drum of 63 rounds: unverified"
+      ],
+      "spread_mrad": 15,
+      "spread_urad": 0,
+      "suppression": 12
+    },
+    "ww2:ussr_m1943_76mm": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:ussr_m1943_76mm",
+      "indirect": {
+        "charges_m_s": [
+          150,
+          200,
+          262
+        ],
+        "elevation_deg": [
+          0,
+          25
+        ],
+        "low_angle": true,
+        "range_m": 4200,
+        "spread_mrad": 8
+      },
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 262,
+      "name": "76 mm M1943",
+      "range_m": 600,
+      "reload_ms": 6000,
+      "rounds_carried": 0,
+      "rounds_per_min": 10,
+      "setup_ms": 0,
+      "sources": [
+        "Wikipedia, 76 mm regimental gun M1943: 600 kg, 10-12 rpm, -8 to +25 deg, traverse 60 deg, 4.2 km, 262-311 m/s (read 2026-11-26)"
+      ],
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 25
+    },
+    "ww2:ussr_m30_122mm": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:ussr_m30_122mm",
+      "indirect": {
+        "charges_m_s": [
+          200,
+          280,
+          341
+        ],
+        "elevation_deg": [
+          0,
+          63
+        ],
+        "low_angle": true,
+        "range_m": 11800,
+        "spread_mrad": 6
+      },
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 341,
+      "name": "122 mm M-30",
+      "range_m": 600,
+      "reload_ms": 12000,
+      "rounds_carried": 0,
+      "rounds_per_min": 5,
+      "setup_ms": 0,
+      "sources": [
+        "Wikipedia, 122 mm howitzer M1938 (M-30): 2,450 kg, crew 8, 5-6 rpm, -3 to +63.5 deg, traverse 49 deg, 11.8 km (read 2026-11-26)"
+      ],
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 25
+    },
+    "ww2:ussr_m42_45mm": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:ussr_m42_45mm",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 870,
+      "name": "45 mm M-42",
+      "range_m": 600,
+      "reload_ms": 4000,
+      "rounds_carried": 0,
+      "rounds_per_min": 15,
+      "setup_ms": 0,
+      "sources": [
+        "Wikipedia, 45 mm anti-tank gun M1942 (M-42): 625 kg, crew 6, 15-20 rpm, traverse 60 deg, -8 to +25 deg, 870 m/s (read 2026-11-26)"
+      ],
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 25
     },
     "ww2:ussr_maxim_1910": {
       "burst_pause_ms": 1000,
@@ -21459,6 +24821,76 @@
       "spread_mrad": 30,
       "spread_urad": 0,
       "suppression": 2
+    },
+    "ww2:ussr_zis2": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:ussr_zis2",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 990,
+      "name": "57 mm ZiS-2",
+      "range_m": 600,
+      "reload_ms": 6000,
+      "rounds_carried": 0,
+      "rounds_per_min": 10,
+      "setup_ms": 0,
+      "sources": [
+        "Wikipedia, 57 mm anti-tank gun M1943 (ZiS-2): 1,250 kg, crew 7, 10 rpm practical, traverse 56 deg, -5 to +25 deg (read 2026-11-26)"
+      ],
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 25
+    },
+    "ww2:ussr_zis3": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 5000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:ussr_zis3",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 680,
+      "name": "76 mm ZiS-3",
+      "range_m": 600,
+      "reload_ms": 4000,
+      "rounds_carried": 0,
+      "rounds_per_min": 15,
+      "setup_ms": 0,
+      "sources": [
+        "Wikipedia, 76 mm divisional gun M1942 (ZiS-3): 1,116 kg, crew 7, up to 25 rpm, traverse 54 deg, -5 to +37 deg (read 2026-11-26)"
+      ],
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 30
+    },
+    "ww2:ussr_zis_s_53": {
+      "class": "cannon",
+      "damage": 300,
+      "fire_reveal_ms": 3000,
+      "fire_reveal_pct": 300,
+      "handover_ms": 0,
+      "id": "ww2:ussr_zis_s_53",
+      "magazine": 1,
+      "min_range_m": 0,
+      "muzzle_velocity_m_s": 792,
+      "name": "85 mm ZiS-S-53",
+      "range_m": 600,
+      "reload_ms": 7500,
+      "rounds_carried": 0,
+      "rounds_per_min": 8,
+      "setup_ms": 0,
+      "sources": [
+        "Wikipedia, T-34-85: 85 mm ZiS-S-53 (read 2026-11-26)",
+        "Wikipedia, 85 mm air defense gun M1939 (52-K): 792 m/s (read 2026-11-26)"
+      ],
+      "spread_mrad": 0,
+      "spread_urad": 2500,
+      "suppression": 30
     }
   }
 }

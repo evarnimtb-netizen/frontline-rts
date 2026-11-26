@@ -1,0 +1,26 @@
+# DT tank machine gun (S15 Build C, S15-ussr.md 6.4): the DP-27 in a tank mount with a 63-round drum
+# (unverified; the DP-27's pan cartridge def stands for its rounds). Coax and bow MG of the Soviet vehicles,
+# the BA-64B's only weapon. Game values copy the DP-27's (S15 starting values).
+id = "ww2:ussr_dt"
+name = "DT"
+short_name = "DT"
+class = "mg"
+feed = "ww2:ussr_762x54r_pan"
+sources = [
+    "Wikipedia, BA-64: one 7.62 mm DT, 1,070 rounds (read 2026-11-26)",
+    "Wikipedia, DP-27 (the DP's rate and velocity; read 2026-11-26 in Build B)",
+    "DT drum of 63 rounds: unverified",
+]
+range_m = 450
+damage = 45
+rounds_per_min = 600
+magazine = 63
+reload_ms = 5000
+spread_mrad = 15
+# S8a: ball ammunition table (unverified), as the DP-27's.
+penetration = [[0, 7], [100, 5], [300, 3]]
+core = { damage = 30, length_cm = 30, max_boxes = 1 }
+suppression = 12
+burst_rounds = 6
+burst_pause_ms = 1000
+muzzle_velocity_m_s = 840

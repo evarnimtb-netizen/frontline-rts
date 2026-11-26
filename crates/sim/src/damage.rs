@@ -1832,6 +1832,14 @@ mod tests {
             // bins and no turret ring, four crew.
             let (seats, bins, others) = match v.id.as_str() {
                 "ww2:ger_stug3_g" => (4, 2, 3),
+                // S15 Build C: the Soviet casemates as the StuG; the IS-2 has
+                // no bow gunner; the BA-64B (no main gun) as a half-track.
+                "ww2:ussr_su85" | "ww2:ussr_su76m" => (4, 2, 3),
+                "ww2:ussr_is2" => (4, 3, 4),
+                "ww2:ussr_ba64b" | "ww2:ussr_m3a1_scout" => (2, 0, 2),
+                "ww2:ussr_us6" => (2, 0, 3),
+                "ww2:ussr_45mm_m42" | "ww2:ussr_57mm_zis2" | "ww2:ussr_76mm_zis3"
+                | "ww2:ussr_76mm_m1943" | "ww2:ussr_122mm_m30" => (0, 1, 2),
                 // S8a half-tracks: two crew, no gun or rack; engine and
                 // transmission (passenger slots are Build B's).
                 "ww2:ger_sdkfz251_1" | "ww2:usa_m3a1" => (2, 0, 2),
