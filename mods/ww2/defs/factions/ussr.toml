@@ -22,8 +22,10 @@ roster = [
     "ww2:ussr_podnoschiki",
     "ww2:ussr_sanitary",
     "ww2:ussr_razvedchiki",
-    # S15 Build C: guns (each with the US6 as its tow), the truck.
+    # S15 Build C: guns, the truck; S15 Fix: the AT guns' tow is the US6 gun tractor (seats the crew), the
+    # infantry gun and howitzer come without a tow.
     "ww2:ussr_us6_squad",
+    "ww2:ussr_us6_tractor_squad",
     "ww2:ussr_45mm_m42_squad",
     "ww2:ussr_57mm_zis2_squad",
     "ww2:ussr_76mm_zis3_squad",

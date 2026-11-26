@@ -1838,6 +1838,8 @@ mod tests {
                 "ww2:ussr_is2" => (4, 3, 4),
                 "ww2:ussr_ba64b" | "ww2:ussr_m3a1_scout" => (2, 0, 2),
                 "ww2:ussr_us6" => (2, 0, 3),
+                // S15 Fix: the gun tractor has no cargo box.
+                "ww2:ussr_us6_tractor" => (2, 0, 2),
                 "ww2:ussr_45mm_m42"
                 | "ww2:ussr_57mm_zis2"
                 | "ww2:ussr_76mm_zis3"

@@ -2770,6 +2770,7 @@
         "ww2:ussr_sanitary",
         "ww2:ussr_razvedchiki",
         "ww2:ussr_us6_squad",
+        "ww2:ussr_us6_tractor_squad",
         "ww2:ussr_45mm_m42_squad",
         "ww2:ussr_57mm_zis2_squad",
         "ww2:ussr_76mm_zis3_squad",
@@ -7802,7 +7803,6 @@
         "vehicle",
         "field_howitzer"
       ],
-      "tow": "ww2:ussr_us6_squad",
       "vehicle": "ww2:ussr_122mm_m30",
       "weapon": ""
     },
@@ -7827,7 +7827,7 @@
       "tags": [
         "vehicle"
       ],
-      "tow": "ww2:ussr_us6_squad",
+      "tow": "ww2:ussr_us6_tractor_squad",
       "vehicle": "ww2:ussr_45mm_m42",
       "weapon": ""
     },
@@ -7852,7 +7852,7 @@
       "tags": [
         "vehicle"
       ],
-      "tow": "ww2:ussr_us6_squad",
+      "tow": "ww2:ussr_us6_tractor_squad",
       "vehicle": "ww2:ussr_57mm_zis2",
       "weapon": ""
     },
@@ -7878,7 +7878,6 @@
       "tags": [
         "vehicle"
       ],
-      "tow": "ww2:ussr_us6_squad",
       "vehicle": "ww2:ussr_76mm_m1943",
       "weapon": ""
     },
@@ -7903,7 +7902,7 @@
       "tags": [
         "vehicle"
       ],
-      "tow": "ww2:ussr_us6_squad",
+      "tow": "ww2:ussr_us6_tractor_squad",
       "vehicle": "ww2:ussr_76mm_zis3",
       "weapon": ""
     },
@@ -9346,6 +9345,30 @@
         "truck"
       ],
       "vehicle": "ww2:ussr_us6",
+      "weapon": ""
+    },
+    "ww2:ussr_us6_tractor_squad": {
+      "ai_weight": 0,
+      "cost": 0,
+      "dig_rate_pct": 0,
+      "faction": "ww2:ussr",
+      "hp": 100,
+      "id": "ww2:ussr_us6_tractor_squad",
+      "initial_cooldown_s": 0,
+      "max_alive": 2,
+      "men": 0,
+      "name": "Studebaker US6 (gun tractor)",
+      "recall_cooldown_s": 0,
+      "role": "vehicle",
+      "short_name": "US6 tractor",
+      "sight_m": 0,
+      "spacing_dm": 0,
+      "speed_cm_s": 0,
+      "steadiness_pct": 100,
+      "tags": [
+        "vehicle"
+      ],
+      "vehicle": "ww2:ussr_us6_tractor",
       "weapon": ""
     }
   },
@@ -25956,6 +25979,443 @@
       "tow": {
         "max_kg": 3000,
         "towed_speed_pct": 80
+      },
+      "weapons": []
+    },
+    "ww2:ussr_us6_tractor": {
+      "boxes": [
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 2.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "top": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            }
+          },
+          "box": {
+            "center": [
+              170,
+              0,
+              150
+            ],
+            "half": [
+              130,
+              115,
+              60
+            ]
+          },
+          "frame": "hull",
+          "id": "cab"
+        },
+        {
+          "armor": {
+            "front": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 2.0
+            },
+            "rear": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            },
+            "side": {
+              "material": "rha",
+              "slope_deg": 0,
+              "thickness_mm": 1.0
+            }
+          },
+          "box": {
+            "center": [
+              -130,
+              0,
+              145
+            ],
+            "half": [
+              170,
+              115,
+              55
+            ]
+          },
+          "floor_cm": 100,
+          "frame": "hull",
+          "id": "bed",
+          "open": [
+            "top"
+          ]
+        }
+      ],
+      "components": [
+        {
+          "box": {
+            "center": [
+              250,
+              0,
+              135
+            ],
+            "frame": "hull",
+            "half": [
+              40,
+              45,
+              35
+            ]
+          },
+          "hp": 60,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 30
+          },
+          "type": "engine"
+        },
+        {
+          "box": {
+            "center": [
+              130,
+              0,
+              110
+            ],
+            "frame": "hull",
+            "half": [
+              40,
+              25,
+              18
+            ]
+          },
+          "hp": 60,
+          "repair": {
+            "time_s": 60,
+            "to_hp": 30
+          },
+          "type": "transmission"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                235,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                235,
+                -95,
+                40
+              ]
+            }
+          ],
+          "hp": 40,
+          "repair": {
+            "time_s": 25,
+            "to_hp": 40
+          },
+          "type": "wheels_front"
+        },
+        {
+          "anchors": [
+            {
+              "frame": "hull",
+              "pos": [
+                -120,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -120,
+                -95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -220,
+                95,
+                40
+              ]
+            },
+            {
+              "frame": "hull",
+              "pos": [
+                -220,
+                -95,
+                40
+              ]
+            }
+          ],
+          "hp": 40,
+          "repair": {
+            "time_s": 25,
+            "to_hp": 40
+          },
+          "type": "wheels_rear"
+        }
+      ],
+      "cost": 200,
+      "crew_squad": "ww2:ussr_tank_crew",
+      "eye_height_cm": 230,
+      "faction": "ww2:ussr",
+      "hatches": [
+        {
+          "exit_ms": 2000,
+          "frame": "hull",
+          "pos": [
+            120,
+            115,
+            150
+          ],
+          "seats": [
+            "driver"
+          ]
+        },
+        {
+          "exit_ms": 2000,
+          "frame": "hull",
+          "pos": [
+            120,
+            -115,
+            150
+          ],
+          "seats": [
+            "commander"
+          ]
+        }
+      ],
+      "hull": {
+        "track_band_pct": 40,
+        "track_mm": 3
+      },
+      "id": "ww2:ussr_us6_tractor",
+      "initial_cooldown_s": 0,
+      "mobility": {
+        "accel_cm_s2": 120,
+        "bog_pct": 15,
+        "brake_cm_s2": 350,
+        "ditch_block_dm": 10,
+        "max_slope_pct": 40,
+        "moving_spread_pct": 100,
+        "reverse_cm_s": 200,
+        "slope_loss_pct": 85,
+        "speed_cm_s": 800,
+        "turn_deg_s": 0,
+        "turn_radius_cm": 900,
+        "type": "wheeled",
+        "unbog_s": [
+          25,
+          45
+        ],
+        "woods_speed_pct": 30
+      },
+      "name": "Studebaker US6 (gun tractor)",
+      "passenger_slots": [
+        {
+          "box": {
+            "center": [
+              -30,
+              70,
+              145
+            ],
+            "half": [
+              22,
+              18,
+              40
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -90,
+              70,
+              145
+            ],
+            "half": [
+              22,
+              18,
+              40
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -150,
+              70,
+              145
+            ],
+            "half": [
+              22,
+              18,
+              40
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -210,
+              70,
+              145
+            ],
+            "half": [
+              22,
+              18,
+              40
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -30,
+              -70,
+              145
+            ],
+            "half": [
+              22,
+              18,
+              40
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -90,
+              -70,
+              145
+            ],
+            "half": [
+              22,
+              18,
+              40
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -150,
+              -70,
+              145
+            ],
+            "half": [
+              22,
+              18,
+              40
+            ]
+          }
+        },
+        {
+          "box": {
+            "center": [
+              -210,
+              -70,
+              145
+            ],
+            "half": [
+              22,
+              18,
+              40
+            ]
+          }
+        }
+      ],
+      "pop": 2,
+      "rare_cap": 0,
+      "recall_cooldown_s": 45,
+      "role": "tractor",
+      "seats": [
+        {
+          "box": {
+            "center": [
+              120,
+              60,
+              150
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              45
+            ]
+          },
+          "id": "driver",
+          "in": "cab",
+          "role": "driver"
+        },
+        {
+          "box": {
+            "center": [
+              120,
+              -60,
+              150
+            ],
+            "frame": "hull",
+            "half": [
+              35,
+              30,
+              45
+            ]
+          },
+          "id": "co_driver",
+          "in": "cab",
+          "role": "commander"
+        }
+      ],
+      "short_name": "US6 tractor",
+      "sight_m": 150,
+      "sources": [
+        "Wikipedia, Studebaker US6: most exported to the USSR; used as the prime mover of artillery and AT guns, crew in the bed (read 2026-11-26)",
+        "docs/design/roster/vehicles.md 4.3",
+        "the GMC CCKW def's dimensions, speeds and plates (unverified for the US6)",
+        "seats: the Sd.Kfz. 11 def's 8 (a gun crew of up to 6 plus room; unverified for the US6 bed)"
+      ],
+      "spot_size_pct": 150,
+      "stations": [
+        {
+          "id": "cab",
+          "seats": [
+            "driver",
+            "commander"
+          ]
+        }
+      ],
+      "tow": {
+        "max_kg": 3000,
+        "towed_speed_pct": 80
+      },
+      "transport": {
+        "board_ms": 1000,
+        "capacity": 8,
+        "entry": [
+          -310,
+          0,
+          60
+        ],
+        "exit_ms": 800,
+        "exit_raise_cm": 0
       },
       "weapons": []
     }

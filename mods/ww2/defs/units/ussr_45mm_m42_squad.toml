@@ -8,5 +8,6 @@ tags = ["vehicle"]
 vehicle = "ww2:ussr_45mm_m42"
 ai_weight = 5
 max_alive = 2
-# The tow it comes with (S15-ussr.md 6.3: every Soviet gun card): pays gun + tow.
-tow = "ww2:ussr_us6_squad"
+# The tow it comes with (S15-ussr.md 6.3; S15 Fix: the US6 gun tractor, which seats the crew, as the Sd.Kfz. 11): pays
+# gun + tow.
+tow = "ww2:ussr_us6_tractor_squad"

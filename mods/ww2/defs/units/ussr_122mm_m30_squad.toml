@@ -8,7 +8,7 @@ tags = ["vehicle", "field_howitzer"]
 vehicle = "ww2:ussr_122mm_m30"
 ai_weight = 5
 max_alive = 1
-# The tow it comes with (S15-ussr.md 6.3: every Soviet gun card): pays gun + tow.
-tow = "ww2:ussr_us6_squad"
+# No tow (S15 Fix, review finding 1): as the leIG 18 / leFH 18 cards, it arrives limbered with its crew, so `[ai.arty]`
+# emplaces it (plan 6.3 gave every Soviet gun card a tow; no habit unhitches an infantry gun).
 # One of the gun cards of the artillery group.
 limit_group = "ww2:artillery"

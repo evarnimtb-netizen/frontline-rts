@@ -1,0 +1,10 @@
+# The US6 gun tractor card (S15 Fix, review findings 2-3): the tow that comes with the Soviet AT-gun cards, as the
+# Sd.Kfz. 11 card. AI weight 0: never bought on its own (the supply truck is `ww2:ussr_us6_squad`).
+id = "ww2:ussr_us6_tractor_squad"
+name = "Studebaker US6 (gun tractor)"
+short_name = "US6 tractor"
+faction = "ww2:ussr"
+tags = ["vehicle"]
+vehicle = "ww2:ussr_us6_tractor"
+ai_weight = 0
+max_alive = 2

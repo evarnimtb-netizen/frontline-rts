@@ -402,6 +402,35 @@ fn rider_slots_are_checked() {
     assert!(!truck.validate().is_empty(), "riders on a truck");
 }
 
+/// S15 Fix (review 2): a gun card's tow must seat the gun's crew. Control:
+/// the shipped defs pass; the M-42 card towed by the US6 truck (no seats)
+/// is refused, and so is the gun tractor with its seats taken out.
+#[test]
+fn gun_tow_seats_its_crew() {
+    let defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    let seats = |d: &ModDefs| {
+        d.cross_check()
+            .into_iter()
+            .filter(|i| format!("{i:?}").contains("seats"))
+            .count()
+    };
+    assert_eq!(
+        seats(&defs),
+        0,
+        "control: the shipped tows seat their crews"
+    );
+    let mut truck = defs.clone();
+    truck.squads.get_mut("ww2:ussr_45mm_m42_squad").unwrap().tow =
+        Some("ww2:ussr_us6_squad".into());
+    assert_eq!(seats(&truck), 1, "the US6 truck has no seats");
+    let mut bare = defs.clone();
+    bare.vehicles
+        .get_mut("ww2:ussr_us6_tractor")
+        .unwrap()
+        .transport = None;
+    assert_eq!(seats(&bare), 3, "the three AT-gun cards");
+}
+
 // ------------------------------------------- Build B: the real USSR defs --
 
 /// Sets every S15 switch of every rules def to 1 (or 0).
@@ -628,15 +657,33 @@ fn s15c_rounds_cards_and_tows() {
         let k = s.squad_type_index(id).unwrap_or_else(|| panic!("{id}")) as usize;
         &s.squad_types[k]
     };
-    let us6 = s.squad_type_index("ww2:ussr_us6_squad").unwrap();
+    // S15 Fix (review 1-3): the AT guns come with the US6 gun tractor (a
+    // tractor that seats the crew, as the Sd.Kfz. 11); the infantry gun and
+    // the howitzer come without a tow (as the leIG 18 / leFH 18 cards).
+    let tractor = s.squad_type_index("ww2:ussr_us6_tractor_squad").unwrap();
     for g in [
         "ww2:ussr_45mm_m42_squad",
         "ww2:ussr_57mm_zis2_squad",
         "ww2:ussr_76mm_zis3_squad",
-        "ww2:ussr_76mm_m1943_squad",
-        "ww2:ussr_122mm_m30_squad",
     ] {
-        assert_eq!(card(g).tow_card, Some(us6), "{g}: towed by the US6");
+        assert_eq!(
+            card(g).tow_card,
+            Some(tractor),
+            "{g}: towed by the US6 tractor"
+        );
+        let tv = &s.vehicles[s.squad_types[tractor as usize].vehicle.unwrap() as usize];
+        assert_eq!(tv.role, frontline_content::VehicleRole::Tractor, "{g}");
+        let crew = s.vehicles[card(g).vehicle.unwrap() as usize]
+            .crew_squad
+            .unwrap();
+        let seats = tv.transport.as_ref().map_or(0, |t| t.slots.len());
+        assert!(
+            seats >= usize::from(s.squad_types[crew as usize].men),
+            "{g}: the tow seats the crew"
+        );
+    }
+    for g in ["ww2:ussr_76mm_m1943_squad", "ww2:ussr_122mm_m30_squad"] {
+        assert_eq!(card(g).tow_card, None, "{g}: no tow");
     }
     for (id, wt) in [
         ("ww2:ussr_t34_85_squad", 100),
@@ -645,6 +692,7 @@ fn s15c_rounds_cards_and_tows() {
         ("ww2:ussr_is2_squad", 0),
         ("ww2:ussr_ba64b_squad", 5),
         ("ww2:ussr_us6_squad", 5),
+        ("ww2:ussr_us6_tractor_squad", 0),
         ("ww2:ussr_m3a1_scout_squad", 100),
     ] {
         assert_eq!(card(id).ai_weight, wt, "{id}");

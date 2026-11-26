@@ -1346,6 +1346,32 @@ impl ModDefs {
                 ));
             }
         }
+        // S15 Fix: a card's tow seats the gun's crew (the crew rides with
+        // the gun; a tow without seats leaves it to walk, S15 review 2).
+        for (id, s) in &self.squads {
+            let Some(t) = &s.tow else { continue };
+            let crew = s
+                .vehicle
+                .as_ref()
+                .and_then(|v| self.vehicles.get(v))
+                .and_then(|g| g.crew_squad.as_ref())
+                .and_then(|c| self.squads.get(c))
+                .map(|c| c.members.iter().map(|m| u32::from(m.count)).sum::<u32>());
+            let seats = self
+                .squads
+                .get(t)
+                .and_then(|q| q.vehicle.as_ref())
+                .and_then(|v| self.vehicles.get(v))
+                .map(|tv| tv.transport.as_ref().map_or(0, |tr| tr.capacity));
+            if let (Some(crew), Some(seats)) = (crew, seats)
+                && seats < crew
+            {
+                out.push(Issue::new(
+                    format!("squad `{id}`: tow"),
+                    format!("the tow `{t}` seats {seats}, the gun's crew is {crew} men"),
+                ));
+            }
+        }
         // S3c: a vehicle's crew squad is a crew of its faction.
         for (id, v) in &self.vehicles {
             if let Some(c) = &v.crew_squad {

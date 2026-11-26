@@ -6,7 +6,7 @@
 //! control.
 
 use frontline_content::MatchSetup;
-use frontline_content::setup::{Capability, member_trait};
+use frontline_content::setup::Capability;
 use frontline_content::vehicle::VehicleRole;
 
 use super::s6_tests::{members, run, spawn, steps};
@@ -304,9 +304,9 @@ fn rider_job_is_deterministic_across_threads_and_save_load() {
 
 /// A2 (plan 7): every AI habit finds its USSR card by the tag, capability
 /// or role it already uses (the habits' own pick rules, read on the
-/// resolved setup): mix slots, builder, HQ, bearers, medic, observer,
-/// infantry gun then howitzer, heavy, flame, recon, truck and tow,
-/// transport, AT gun. Control: the German roster finds its own cards by
+/// resolved setup): mix slots, builder, HQ, bearers, medic, heavy, flame,
+/// recon, truck, transport, AT gun (the guns, the observer and the tow are
+/// driven below). Control: the German roster finds its own cards by
 /// the same rules (none of them a USSR card).
 #[test]
 fn ai_habits_find_ussr_cards() {
@@ -345,28 +345,6 @@ fn ai_habits_find_ussr_cards() {
         table.push(("hq", first(&|t| s.type_has_tag(t, "hq"))));
         table.push(("bearers", first(&|t| s.type_has_tag(t, "bearers"))));
         table.push(("medic", first(&|t| bought(t) && s.type_has_tag(t, "medic"))));
-        let fo = |t: u16| {
-            let ty = &s.squad_types[t as usize];
-            ty.vehicle.is_none()
-                && ty
-                    .members
-                    .iter()
-                    .any(|m| m.traits & member_trait::OBSERVER != 0)
-                && ty
-                    .members
-                    .iter()
-                    .any(|m| m.traits & member_trait::RADIO != 0)
-        };
-        table.push(("observer", first(&fo)));
-        let how = |t: u16| s.type_has_tag(t, "field_howitzer");
-        table.push((
-            "inf_gun",
-            first(&|t| bought(t) && !how(t) && role(t, VehicleRole::InfGun)),
-        ));
-        table.push((
-            "howitzer",
-            first(&|t| bought(t) && how(t) && role(t, VehicleRole::InfGun)),
-        ));
         table.push(("heavy", first(&|t| s.squad_types[t as usize].ai_heavy)));
         table.push((
             "flame",
@@ -392,18 +370,11 @@ fn ai_habits_find_ussr_cards() {
             let card = card.unwrap_or_else(|| panic!("{f}: no card for {habit}"));
             assert!(id(card).starts_with(prefix), "{f} {habit}: {}", id(card));
         }
-        // Every USSR gun card is towed by the faction's truck (S15 Build C;
-        // some German guns are towed by a tractor or not at all).
-        let truck = table.iter().find(|h| h.0 == "truck").unwrap().1;
+        // The gun, howitzer, observer and tow rows are driven habits now
+        // (S15 Fix, review 7): `ussr_ai_emplaces_its_infantry_gun_and_buys_an_observer`,
+        // `ussr_ai_emplaces_its_howitzer`, `ussr_at_gun_crew_rides_the_tractor`.
         if f != "ww2:ussr" {
             continue;
-        }
-        for &t in roster
-            .iter()
-            .filter(|&&t| role(t, VehicleRole::AtGun) || role(t, VehicleRole::InfGun))
-        {
-            let tow = s.squad_types[t as usize].tow_card;
-            assert_eq!(tow, truck, "{}", id(t));
         }
         {
             let named: Vec<(&str, &str)> =
@@ -413,9 +384,6 @@ fn ai_habits_find_ussr_cards() {
                 ("hq", "ww2:ussr_upravlenie_vzvoda"),
                 ("bearers", "ww2:ussr_podnoschiki"),
                 ("medic", "ww2:ussr_sanitary"),
-                ("observer", "ww2:ussr_razvedchiki"),
-                ("inf_gun", "ww2:ussr_76mm_m1943_squad"),
-                ("howitzer", "ww2:ussr_122mm_m30_squad"),
                 ("heavy", "ww2:ussr_is2_squad"),
                 ("flame", "ww2:ussr_shturmovaya_gruppa"),
                 ("recon", "ww2:ussr_ba64b_squad"),
@@ -479,4 +447,207 @@ fn vehicle_sight_over_327_m_reaches_its_range() {
         327,
         "the old cap"
     );
+}
+
+// ------------------------------- S15 Fix: the Soviet guns in play (review 1-3, 7) --
+
+const M1943: &str = "ww2:ussr_76mm_m1943_squad";
+const M30: &str = "ww2:ussr_122mm_m30_squad";
+const M42: &str = "ww2:ussr_45mm_m42_squad";
+const US6: &str = "ww2:ussr_us6_squad";
+const US6_TRACTOR: &str = "ww2:ussr_us6_tractor_squad";
+const OBSERVER: &str = "ww2:ussr_razvedchiki";
+
+/// A flat match whose player 1 is a USSR AI with 5,000 MP that buys only
+/// the cards in `cards` (each `ai_weight` 5, unlocked at once); player 0
+/// (Germany) is not an AI and has no men. `edit` changes the setup last.
+fn gun_world(cards: &[&str], edit: impl FnOnce(&mut MatchSetup)) -> World {
+    let s = ussr_setup(|s| {
+        s.players.iter_mut().for_each(|p| p.is_ai = false);
+        s.players[1].is_ai = true;
+        s.map.terrain.octaves.clear();
+        s.map.terrain.bands.clear();
+        s.map.woods.clear();
+        s.factions.iter_mut().for_each(|f| f.start_squads.clear());
+        for t in s.squad_types.iter_mut() {
+            if cards.contains(&t.id.as_str()) {
+                t.ai_weight = 5;
+                t.initial_cooldown_ticks = 0;
+            } else {
+                t.ai_weight = 0;
+            }
+        }
+        s.rules.start_manpower = 5000;
+        edit(s);
+    });
+    let mut w = World::new_match(s, 1).unwrap();
+    w.state.game.as_mut().unwrap().players[1].manpower = 5000;
+    w
+}
+
+/// Squads of player 1 whose card is `id`.
+fn own1(w: &World, id: &str) -> Vec<SquadId> {
+    let s = w.match_setup().unwrap();
+    w.game()
+        .unwrap()
+        .squads
+        .iter()
+        .filter(|(_, q)| q.owner == PlayerId(1) && s.squad_types[q.type_idx as usize].id == id)
+        .map(|(&id, _)| id)
+        .collect()
+}
+
+fn gun_state(w: &World, q: SquadId) -> crate::vehicle::GunState {
+    let gun = members(w, q)[0];
+    w.game().unwrap().vehicles[&gun]
+        .served
+        .as_ref()
+        .unwrap()
+        .state
+}
+
+/// Gives card `gun` the US6 truck as its tow again (Build C's data).
+fn us6_tow(s: &mut MatchSetup, gun: &str) {
+    let us6 = s.squad_type_index(US6).unwrap();
+    let g = s.squad_type_index(gun).unwrap() as usize;
+    s.squad_types[g].tow_card = Some(us6);
+}
+
+/// Review 1 and 7: the USSR AI buys its M1943 through `[ai.arty]`, the gun
+/// arrives limbered with its crew, the habit emplaces it (Ready), and the
+/// AI buys one observer team (razvedchiki) for it. Control: Build C's data
+/// (the US6 truck as the card's tow): the gun arrives hitched and stays
+/// hitched; no observer is bought for a gun that is never Ready.
+#[test]
+fn ussr_ai_emplaces_its_infantry_gun_and_buys_an_observer() {
+    use crate::vehicle::GunState;
+    let run = |old: bool| {
+        let mut w = gun_world(&[M1943, OBSERVER], |s| {
+            let a = &mut s.rules.ai.arty;
+            a.buy = 1;
+            a.fo = 1;
+            a.after_s = 0;
+            a.income_max_pct = 100;
+            if old {
+                us6_tow(s, M1943);
+            }
+        });
+        let n = 150 * hz(&w);
+        steps(&mut w, n);
+        let q = own1(&w, M1943);
+        assert_eq!(q.len(), 1, "one M1943 bought");
+        (
+            gun_state(&w, q[0]),
+            own1(&w, OBSERVER).len(),
+            ai_of(&w).arty.get(&q[0]).map(|a| a.phase),
+        )
+    };
+    let (state, fo, phase) = run(false);
+    assert_eq!(state, GunState::Emplaced);
+    assert_eq!(phase, Some(crate::ai::ArtyPhase::Ready));
+    assert_eq!(fo, 1, "one observer team for the gun");
+    let (state, fo, _) = run(true);
+    assert_eq!((state, fo), (GunState::Hitched, 0), "control: the US6 tow");
+}
+
+/// Review 1 and 7: with `[ai.arty] how` 1 the USSR AI buys its M-30 and
+/// emplaces it. Control: the US6 truck as the card's tow: hitched for good.
+#[test]
+fn ussr_ai_emplaces_its_howitzer() {
+    use crate::vehicle::GunState;
+    let run = |old: bool| {
+        let mut w = gun_world(&[M30], |s| {
+            let a = &mut s.rules.ai.arty;
+            a.buy = 1;
+            a.after_s = 3600;
+            a.how = 1;
+            a.how_after_s = 0;
+            a.how_income_pct = 100;
+            for t in s.squad_types.iter_mut().filter(|t| t.id == M30) {
+                t.initial_cooldown_ticks = 0;
+            }
+            if old {
+                us6_tow(s, M30);
+            }
+        });
+        let n = 200 * hz(&w);
+        steps(&mut w, n);
+        let q = own1(&w, M30);
+        assert_eq!(q.len(), 1, "one M-30 bought");
+        gun_state(&w, q[0])
+    };
+    assert_eq!(run(false), GunState::Emplaced);
+    assert_eq!(run(true), GunState::Hitched, "control: the US6 tow");
+}
+
+/// Review 2, 3 and 7: the USSR AI's M-42 arrives on the US6 gun tractor
+/// with its whole crew aboard; the gun job takes it to a site, unhitches
+/// and emplaces it, and the crew stands at the gun (no neutral gun); the
+/// tractor is never a supply truck. Control: the US6 truck as the tow:
+/// nobody aboard at the hitch (the crew is left to walk).
+#[test]
+fn ussr_at_gun_crew_rides_the_tractor() {
+    let run = |old: bool, secs: u64| {
+        let mut w = gun_world(&[M42], |s| {
+            s.rules.ai.guns.income_max_pct = 100;
+            s.rules.ai.guns.after_s = 0;
+            if old {
+                us6_tow(s, M42);
+            }
+        });
+        let mut aboard = None;
+        for _ in 0..secs * hz(&w) {
+            steps(&mut w, 1);
+            if aboard.is_none()
+                && let Some(&q) = own1(&w, M42).first()
+            {
+                let g = w.game().unwrap();
+                let gun = members(&w, q)[0];
+                let sv = g.vehicles[&gun].served.as_ref().unwrap();
+                let tow = sv.hitched.expect("arrives hitched");
+                let crew = sv.crew.expect("a crew");
+                let riders = g.riders_of(tow);
+                aboard = Some(
+                    g.squads[&crew]
+                        .members
+                        .iter()
+                        .filter(|m| riders.contains(m))
+                        .count(),
+                );
+                let tq = w.state.entities.squad[tow.index()].unwrap();
+                let ty = &g.setup.squad_types[g.squads[&tq].type_idx as usize];
+                assert_eq!(ty.id, if old { US6 } else { US6_TRACTOR });
+            }
+        }
+        (w, aboard.expect("an M-42 bought"))
+    };
+    let (w, aboard) = run(false, 300);
+    let g = w.game().unwrap();
+    let men = g.setup.squad_types
+        [g.setup.squad_type_index("ww2:ussr_gun_crew_45mm").unwrap() as usize]
+        .men;
+    assert_eq!(aboard, men as usize, "the whole crew aboard");
+    let p = &g.players[1].s9;
+    assert!(p.guns_emplaced >= 1, "{p:?}");
+    assert_eq!(p.guns_neutral, 0);
+    let q = own1(&w, M42)[0];
+    let gun = members(&w, q)[0];
+    let crew = g.vehicles[&gun].served.as_ref().unwrap().crew.unwrap();
+    let at = w.state.entities.transform[gun.index()].pos.xy();
+    let near = g.squads[&crew]
+        .members
+        .iter()
+        .filter(|m| {
+            (w.state.entities.transform[m.index()].pos.xy() - at).length() <= Fx::from_int(15)
+        })
+        .count();
+    assert!(near >= 1, "the crew at the gun");
+    for t in own1(&w, US6_TRACTOR) {
+        assert!(
+            !ai_of(&w).trucks.contains_key(&t),
+            "the tractor is no supply truck"
+        );
+    }
+    let (_, aboard) = run(true, 30);
+    assert_eq!(aboard, 0, "control: the US6 truck seats nobody");
 }

@@ -2139,7 +2139,9 @@ struct ArmourTally {
 }
 
 /// S3c abandonment trigger names, by `bail::AB_*` (index 0 unused).
-pub const ABANDON_CAUSES: [&str; 7] = [
+/// By `bail::AB_*` (S15 Fix, review 2: `AB_GUN` 7, a gun left with no man
+/// at it, is named; it was counted as "none").
+pub const ABANDON_CAUSES: [&str; 8] = [
     "none",
     "ammo_fire",
     "engine_fire",
@@ -2147,6 +2149,7 @@ pub const ABANDON_CAUSES: [&str; 7] = [
     "useless",
     "under_fire",
     "order",
+    "gun",
 ];
 
 impl ArmourTally {
@@ -5185,6 +5188,16 @@ mod tests {
             players: vec![PlayerArmour::default(); 2],
             ..ArmourTally::default()
         }
+    }
+
+    /// S15 Fix (review 2): every `bail::AB_*` has a name; a gun left with no
+    /// man at it is "gun". Control: the last name is the sim's last cause.
+    #[test]
+    fn abandon_causes_name_every_cause() {
+        use frontline_sim::bail;
+        assert_eq!(ABANDON_CAUSES[bail::AB_GUN as usize], "gun");
+        assert_eq!(ABANDON_CAUSES[bail::AB_ORDER as usize], "order");
+        assert_eq!(ABANDON_CAUSES.len(), bail::AB_GUN as usize + 1);
     }
 
     /// The trace and `gun_armour_out` agree: a vehicle bailed out, recrewed
