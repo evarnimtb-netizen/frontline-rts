@@ -206,10 +206,11 @@ exit_ms = 4000
 
 
 # S15 R1 (S15-3 (A)): tank riders (tankovy desant) on the engine deck behind the turret, outside every plate;
-# 8 places (S15-ussr.md 6.4). Positions approximate (hull frame, cm); a seated man's box as the half-track's slots.
+# 10 places (S15 Fix, S15-14 (A) assumed 2026-11-26: plan 6.4 gave 8, but plan 6.1 sends the 9-man sections as riders;
+# 10 is the consistency fix of review finding 5, two on the centre line; no source counts the men on a deck). Positions approximate (hull frame, cm); a seated man's box as the half-track's slots.
 # Board time per man an S15 starting value (as the W2 stand-in). Dropped at setup while [riders] enabled is 0.
 [riders]
-capacity = 8
+capacity = 10
 entry = [-335, 0, 60]
 board_ms = 1000
 
@@ -229,3 +230,7 @@ box = { center = [-250, -65, 230], half = [22, 20, 45] }
 box = { center = [-305, 65, 230], half = [22, 20, 45] }
 [[rider_slots]]
 box = { center = [-305, -65, 230], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-190, 0, 230], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-250, 0, 230], half = [22, 20, 45] }

@@ -1705,8 +1705,11 @@ otherwise it arms Board as before (S14-11 (A)).
 Design: `docs/slices/S15-ussr.md` (R riders, P plates, X captured bombs,
 B bayonets, M matchups). Every part is off unless its rules switch is on
 (`[riders] enabled`, `[body_armour] enabled`, `[supply] foreign_ammo`,
-`[melee] bayonets`; all 0 in the shipped rules), and the setup drops the def
-parts while it is off, so the keys below are absent or false. Build A put
+`[melee] bayonets`, `[ai.riders] jobs`): S15-ai Build D ships all of them at
+1 and enables `ww2:ussr` in `[matchups]` (pairs Germany-USA, the default,
+and Germany-USSR), so the menu has three factions. With a switch at 0 the
+setup drops the def parts (a deck or a foreign feed left in a setup with its
+switch 0 is refused, S15 Fix), so the keys below are absent or false. Build A put
 the fields in the sim's `RenderSnapshot`; the presenter stage (P) sends
 them, see "State keys (P)" and "Menus and lobby (P)".
 

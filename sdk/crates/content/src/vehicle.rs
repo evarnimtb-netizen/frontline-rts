@@ -2723,7 +2723,7 @@ impl VehicleDef {
             if inside {
                 out.push(Issue::new(
                     format!("rider_slots[{i}].box"),
-                    "a rider box lies outside every hull box (on the deck)",
+                    "a rider box's centre lies inside a hull box (it must sit on the deck)",
                 ));
             }
         }

@@ -708,9 +708,11 @@ impl VehicleState {
                     || !(Fx::ZERO..=map).contains(&d.point.y)
             })
             // S15 R3: a timer running, a reason of R3a-c, on a vehicle with
-            // slots that is not a wreck.
+            // rider slots (an exposed deck, S15 Fix review 8: `riders_jump`
+            // counts no other down) that is not a wreck.
             || self.rider_off.is_some_and(|r| {
-                r.ticks == 0
+                v.transport.as_ref().is_none_or(|t| !t.exposed)
+                    || r.ticks == 0
                     || r.ticks as u64
                         > (s.rules.riders.exit_ms as u64 * s.tick_hz as u64).div_ceil(1000)
                     || !(crate::s15::rider_exit::SUPPRESSED..=crate::s15::rider_exit::GUN_FIRED)

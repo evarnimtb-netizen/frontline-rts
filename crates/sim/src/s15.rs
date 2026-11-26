@@ -140,7 +140,21 @@ impl MatchState {
             if k.foreign == 0 {
                 continue;
             }
-            if !matches!(ents.kind[i], EntityKind::Soldier | EntityKind::Downed) || k.foreign > cap
+            // S15 Fix (review 8): the man's weapon or his squad's weapon
+            // (a crew member carries the team's bombs) has a foreign feed.
+            let s = &self.setup;
+            let fed = |w: u16| {
+                s.weapons
+                    .get(w as usize)
+                    .is_some_and(|w| w.foreign_feed.is_some())
+            };
+            let squad_fed = ents.squad[i]
+                .and_then(|q| self.squads.get(&q))
+                .and_then(|q| s.squad_types.get(q.type_idx as usize))
+                .is_some_and(|t| fed(t.weapon));
+            if !matches!(ents.kind[i], EntityKind::Soldier | EntityKind::Downed)
+                || k.foreign > cap
+                || !(fed(k.weapon) || squad_fed)
             {
                 return Err("foreign rounds without a foreign feed");
             }
@@ -168,8 +182,10 @@ impl MatchState {
 
 impl AiRiders {
     /// Load checks of AI `player`'s rider state (untrusted saves): bounds,
-    /// ascending tanks, own vehicles with rider slots, own squads, phases
-    /// in range, ticks not in the future.
+    /// ascending tanks, vehicles with rider slots (or gone), own squads,
+    /// phases in range, ticks not in the future. The tank's owner is not
+    /// checked (S15 Fix, review 8): a tank no longer the player's (or
+    /// gone) ends the job as tank lost at the next plan.
     pub(crate) fn valid(
         &self,
         g: &MatchState,
@@ -348,6 +364,13 @@ impl MatchState {
     }
 }
 
+/// S15 plan 9 (S15 Fix, review 12): the one owner test of the S15 rules
+/// in this file, so that the PR 11 merge swaps it for `teams.hostile` in
+/// one place.
+pub(crate) fn hostile_to(a: PlayerId, b: PlayerId) -> bool {
+    a != b
+}
+
 impl MatchState {
     /// S15 R3a: burst `b` at `pos` suppresses the enemy riders on the
     /// decks of vehicles within `supp_r` (the vehicle's position for each
@@ -371,7 +394,7 @@ impl MatchState {
             }
             for m in vs.riders.iter().flatten() {
                 let i = m.index();
-                let own = ctx.ents.owner[i].0 == b.player;
+                let own = !hostile_to(ctx.ents.owner[i], PlayerId(b.player));
                 if ctx.ents.kind[i] != EntityKind::Soldier || (own && !b.ff) {
                     continue;
                 }

@@ -650,6 +650,14 @@ rounds, ids with the `ussr_` prefix) are settled in the plan and only reported t
   map in S15.
 - S15-13 The ZiS-3's second role. (A) Direct fire only (AP at armour, HE at what it sees); firing it as artillery, with the
   artillery-cap rule, comes later. **(A) assumed 2026-11-26.** (B) Indirect fire in S15.
+- S15-14 Rider places on the T-34-85 and IS-2 (review finding 5; plan 6.1 sends the 9-man sections as riders, plan 6.4 gave 8
+  places, so only the 6-man card and weakened squads fit). (A) 10 places on both decks (two on the centre line), a consistency fix,
+  not a tuned value; no source counts the men on a deck. **(A) assumed 2026-11-26.** (B) Keep 8 and leave the riders to the balance
+  pass. (C) 9-man sections lose the `vehicle_riders` tag.
+- S15-15 T213c (ROKS-3 hits) and T213d (bayonet strikes) in the Germany-USSR 40 set (both 0 in Build D). (A) Reports, not hard
+  rows: the S14 flame habit is rare for every faction and no AI habit closes to melee reach; sim tests prove both rules
+  (`roks3_hits_a_man_at_20_m`, `bayonet_reaches_150_cm`, W4). **(A) assumed 2026-11-26: reports; a close-assault habit is later
+  work.** (B) Build a close-assault habit now.
 
 ## Planned work queue
 

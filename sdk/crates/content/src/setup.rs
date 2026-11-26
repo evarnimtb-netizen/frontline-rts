@@ -3399,7 +3399,18 @@ impl MatchSetup {
                 "weapons.pen",
                 "penetration rows or core out of range",
             );
-            // S15 X1: a foreign feed on a mortar with its own feed.
+            // S15 X1: a foreign feed on a mortar with its own feed; S15 Fix
+            // (review 8): only with `[supply] foreign_ammo` 1.
+            check(
+                w.foreign_feed.is_none()
+                    || self
+                        .rules
+                        .supply
+                        .as_ref()
+                        .is_some_and(|sp| sp.foreign_ammo == 1),
+                "weapons.foreign_feed",
+                "a foreign feed while [supply] foreign_ammo is 0",
+            );
             check(
                 w.foreign_feed.is_none_or(|f| {
                     matches!(f.feed, Feed::Cartridge(_))
@@ -3548,6 +3559,13 @@ impl MatchSetup {
             if let Some(m) = check_vehicle(v, &self.weapons, &self.ammo, nf) {
                 check(false, "vehicles", m);
             }
+            // S15 Fix (review 8): a rider deck only with `[riders] enabled`
+            // 1 (the sim reads the deck, not the switch; N2 for any setup).
+            check(
+                self.rules.riders.enabled == 1 || v.transport.as_ref().is_none_or(|t| !t.exposed),
+                "vehicles.transport",
+                "rider slots while [riders] enabled is 0",
+            );
             // S8b: a truck's crate defs are crates of its kind and faction.
             if let Some(t) = &v.supply {
                 let ok = t.crates.iter().enumerate().all(|(k, c)| {

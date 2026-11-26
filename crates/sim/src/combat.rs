@@ -1239,6 +1239,11 @@ impl MatchState {
             self.end_mission(id, ents, tick);
             return None;
         }
+        // S15 Fix (review 9): the bomb may come from a crew giver's kit in
+        // another hash chunk than the gunner's.
+        for g in &members {
+            hash.mark_entity_chunk(g.chunk());
+        }
         let ttl = (flight + Fx::from_int(4)).mul_int(SUBSTEP_HZ).floor_int();
         out.push(FireRequest {
             shooter: gunner,

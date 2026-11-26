@@ -1245,14 +1245,15 @@ pub const S15_COUNTERS: [&str; 15] = [
 ];
 
 /// S15: the AI's rider counters (names of [`S15Player::ai`]; the job ends
-/// as `rider_job_end_<n>`).
+/// as `rider_job_end_<name>`, `s15::RIDER_END_NAMES` order; S15 Fix,
+/// review 13: named, as `s15_derived.rider_job_ends`).
 pub const S15_AI: [&str; 6] = [
     "rider_jobs",
-    "rider_job_end_0",
-    "rider_job_end_1",
-    "rider_job_end_2",
-    "rider_job_end_3",
-    "rider_job_end_4",
+    "rider_job_end_dropped",
+    "rider_job_end_forced_off",
+    "rider_job_end_tank_lost",
+    "rider_job_end_deadline",
+    "rider_job_end_stall",
 ];
 
 /// S15 numbers of one player in one match (docs/slices/S15-ussr.md 3):
@@ -5187,6 +5188,16 @@ mod tests {
         ArmourTally {
             players: vec![PlayerArmour::default(); 2],
             ..ArmourTally::default()
+        }
+    }
+
+    /// S15 Fix (review 13): the JSON's rider job ends carry the sim's
+    /// names, in its order. Control: the first entry is the job count.
+    #[test]
+    fn s15_ai_names_follow_the_sim() {
+        assert_eq!(S15_AI[0], "rider_jobs");
+        for (k, n) in frontline_sim::s15::RIDER_END_NAMES.iter().enumerate() {
+            assert_eq!(S15_AI[k + 1], format!("rider_job_end_{n}"));
         }
     }
 

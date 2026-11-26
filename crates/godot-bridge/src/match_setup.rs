@@ -348,8 +348,9 @@ mod tests {
 
     /// S15 M3: a choice without an opponent resolves as before (Germany
     /// against the USA, the same setup bytes as naming the USA); the menu
-    /// offers today's two factions. Control: an opponent not enabled is
-    /// refused.
+    /// offers the shipped three factions (S15-ai enables the USSR, review
+    /// 6). Control: the USA against the USSR is refused (the pair is off
+    /// without `free`).
     #[test]
     fn menu_choice_without_opponent_is_base() {
         let m = mods();
@@ -366,33 +367,29 @@ mod tests {
         assert_eq!(named, base);
         let defs = load_defs(&m, false).unwrap();
         let c = MenuChoice::default();
-        assert_eq!(menu_factions(&defs, &c), ["germany", "usa"]);
-        assert_eq!(menu_opponents(&defs, &c, "germany"), ["usa"]);
+        assert_eq!(menu_factions(&defs, &c), ["germany", "usa", "ussr"]);
+        assert_eq!(menu_opponents(&defs, &c, "germany"), ["usa", "ussr"]);
         assert_eq!(menu_opponents(&defs, &c, "usa"), ["germany"]);
+        assert_eq!(menu_opponents(&defs, &c, "ussr"), ["germany"]);
         let bad = MenuChoice {
+            faction: "usa".into(),
             opponent: Some("ussr".into()),
             ..MenuChoice::default()
         };
         assert!(resolve(&m, &bad).is_err(), "control");
     }
 
-    /// S15 P (M3, M6): with the USSR switched on in the rules' `[matchups]`
-    /// (Germany-USA, Germany-USSR) the menu lists three factions with the
-    /// partners each may face, the default first; USA against USSR gets the
-    /// lobby's refusal words and the setup refuses it too; Germany against
-    /// the USSR and the USSR's default opponent resolve. Control: the
-    /// shipped rules offer two factions and no USSR.
+    /// S15 P (M3, M6): the shipped rules' `[matchups]` (Germany-USA,
+    /// Germany-USSR) give the menu three factions with the partners each may
+    /// face, the default first; USA against USSR gets the lobby's refusal
+    /// words and the setup refuses it too; Germany against the USSR and the
+    /// USSR's default opponent resolve. Control: with `ww2:ussr` and its pair
+    /// taken out of the table the menu has two factions and one opponent
+    /// each (the picker is hidden).
     #[test]
     fn menu_options_follow_the_matchups_table() {
         let mut defs = load_defs(&mods(), false).unwrap();
         let c = MenuChoice::default();
-        let shipped = menu_options(&defs, &c);
-        assert_eq!(shipped.factions.len(), 2, "control: today's menu");
-        assert!(shipped.factions.iter().all(|f| f.0 != "ussr"));
-        let r = defs.rules.get_mut("ww2:skirmish").unwrap();
-        let m = r.matchups.as_mut().unwrap();
-        m.factions.push("ww2:ussr".into());
-        m.pairs.push(["ww2:germany".into(), "ww2:ussr".into()]);
         let o = menu_options(&defs, &c);
         let ids: Vec<&str> = o.factions.iter().map(|f| f.0.as_str()).collect();
         assert_eq!(ids, ["germany", "usa", "ussr"]);
@@ -410,9 +407,9 @@ mod tests {
                 .unwrap()
                 .contains("must differ")
         );
-        let play = |f: &str, o: Option<&str>| {
+        let play = |defs: &ModDefs, f: &str, o: Option<&str>| {
             resolve_with(
-                &defs,
+                defs,
                 &MenuChoice {
                     faction: f.into(),
                     opponent: o.map(str::to_owned),
@@ -420,20 +417,35 @@ mod tests {
                 },
             )
         };
-        let s = play("ussr", None).unwrap();
+        let s = play(&defs, "ussr", None).unwrap();
         assert_eq!(
             short_id(&s.factions[s.players[1].faction as usize].id),
             "germany"
         );
-        assert!(play("germany", Some("ussr")).is_ok());
-        assert!(play("usa", Some("ussr")).is_err(), "the refused pair");
+        assert!(play(&defs, "germany", Some("ussr")).is_ok());
+        assert!(
+            play(&defs, "usa", Some("ussr")).is_err(),
+            "the refused pair"
+        );
+        let r = defs.rules.get_mut("ww2:skirmish").unwrap();
+        let m = r.matchups.as_mut().unwrap();
+        m.factions.retain(|f| f != "ww2:ussr");
+        m.pairs.retain(|p| !p.iter().any(|f| f == "ww2:ussr"));
+        let two = menu_options(&defs, &c);
+        assert_eq!(two.factions.len(), 2, "control: two factions");
+        assert!(two.factions.iter().all(|f| f.0 != "ussr"));
+        assert!(
+            two.opponents.iter().all(|x| x.1.len() == 1),
+            "control: one opponent each"
+        );
     }
 
     #[test]
     fn rejects_bad_choices() {
         let m = mods();
+        // S15 Fix (review 6): the USSR resolves now; no rules enable Japan.
         let bad = MenuChoice {
-            faction: "ussr".into(),
+            faction: "japan".into(),
             ..MenuChoice::default()
         };
         assert!(resolve(&m, &bad).is_err());

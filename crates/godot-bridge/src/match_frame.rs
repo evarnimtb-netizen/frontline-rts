@@ -1444,7 +1444,7 @@ pub(crate) mod tests_support {
 mod tests {
     use super::tests_support::test_world;
     use super::*;
-    use frontline_sim::{Command, CommandKind, Fx, FxVec2, PlayerId};
+    use frontline_sim::{Command, CommandKind, Fx, FxVec2, PlayerId, SimId};
 
     #[test]
     fn frame_matches_the_world() {
@@ -1524,25 +1524,95 @@ mod tests {
         assert!(f.burning.iter().all(|b| !b) && f.strike.iter().all(|s| *s == 0));
     }
 
-    /// S15 P: the frame copies the rider and plate fields one per soldier;
-    /// with every S15 switch 0 (the shipped rules) nobody rides a deck or
-    /// wears a plate. (The positive case, riders on a deck, is the sim's
-    /// `snapshot_shows_plates_and_deck`; the frame copies those vectors.)
+    /// S15 P (S15 Fix, review 7): the frame copies the rider and plate
+    /// fields one per soldier, values included: the six-man section aboard
+    /// a T-34-85 has `riding` = the tank's id and its six deck slots; the
+    /// assault group's plated men (and only they) have `plate`. Control:
+    /// the men on foot ride nothing.
     #[test]
     fn frame_carries_riders_and_plates() {
         let mut w = test_world(false);
         let setup = w.match_setup().unwrap().clone();
-        let mut ctx = FrameCtx::new(&setup, 0);
-        let mut f = MatchFrame::empty();
-        for _ in 0..30 {
+        let card = |id: &str| setup.squad_type_index(id).unwrap();
+        let east = FxVec2::new(Fx::ONE, Fx::ZERO);
+        let t = w
+            .spawn_squad_at(
+                PlayerId(0),
+                card("ww2:ussr_t34_85_squad"),
+                FxVec2::from_int(300, 300),
+                east,
+            )
+            .unwrap();
+        let inf = w
+            .spawn_squad_at(
+                PlayerId(0),
+                card("ww2:ussr_strelkovoe_otdelenie_6"),
+                FxVec2::from_int(285, 305),
+                east,
+            )
+            .unwrap();
+        let group = w
+            .spawn_squad_at(
+                PlayerId(0),
+                card("ww2:ussr_shturmovaya_gruppa"),
+                FxVec2::from_int(320, 340),
+                east,
+            )
+            .unwrap();
+        for _ in 0..2 {
             w.step(&[]);
         }
+        let g = w.game().unwrap();
+        let tank = g.squad(t).unwrap().members[0];
+        let men = g.squad(inf).unwrap().members.clone();
+        let plated: Vec<SimId> = {
+            let ty = &setup.squad_types[g.squad(group).unwrap().type_idx as usize];
+            g.squad(group)
+                .unwrap()
+                .members
+                .iter()
+                .copied()
+                .filter(|m| {
+                    ty.members[w.entities().kit()[m.index()].slot as usize]
+                        .plate
+                        .is_some()
+                })
+                .collect()
+        };
+        assert!(!plated.is_empty(), "the assault group wears plates");
+        w.step(&[Command {
+            player: PlayerId(0),
+            seq: 1,
+            kind: CommandKind::Embark {
+                squads: vec![inf],
+                vehicle: tank,
+            },
+        }]);
+        for _ in 0..900 {
+            w.step(&[]);
+        }
+        let mut ctx = FrameCtx::new(&setup, 0);
+        let mut f = MatchFrame::empty();
         f.fill(&w, &mut ctx, 0.0, Instant::now());
         assert_eq!(f.riding.len(), f.ids.len());
         assert_eq!(f.ride_slot.len(), f.ids.len());
         assert_eq!(f.plate.len(), f.ids.len());
-        assert!(f.riding.iter().all(|r| *r == u32::MAX));
-        assert!(f.plate.iter().all(|p| !p));
+        let at = |id: SimId| f.ids.iter().position(|x| *x == id.0).unwrap();
+        let mut slots: Vec<u8> = men
+            .iter()
+            .map(|&m| {
+                assert_eq!(f.riding[at(m)], tank.0, "a rider names the tank");
+                f.ride_slot[at(m)]
+            })
+            .collect();
+        slots.sort();
+        assert_eq!(slots, [0, 1, 2, 3, 4, 5], "one deck slot each");
+        let riders = f.riding.iter().filter(|r| **r != u32::MAX).count();
+        assert_eq!(riders, men.len(), "control: nobody else rides");
+        for (k, &id) in f.ids.iter().enumerate() {
+            let want = plated.iter().any(|m| m.0 == id);
+            assert_eq!(f.plate[k], want, "plate of soldier {id}");
+        }
     }
 
     /// S10b review R14: the frame keeps the mines the local player knows

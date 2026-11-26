@@ -5881,7 +5881,10 @@ note = "T213b: and got off it (any reason)"
 id = "T213c"
 metric = "pair_germany_ussr40.factions.ussr.s14.flame_hits"
 min = 1
-kind = "hard"
+# S15 Fix (S15-15 (A) assumed 2026-11-26): a report. The S14 flame habit is rare for every faction (Germany 3 hits from 147
+# units in 40) and 46 ROKS-3 units is about four bursts; sim `roks3_hits_a_man_at_20_m` proves the weapon hits. A close-assault
+# habit is later work.
+kind = "report"
 exposure = "pair_germany_ussr40.wins.matches"
 exposure_min = 40
 control = "pair_germany_ussr40.factions.germany.s14.flame_hits"
@@ -5890,7 +5893,10 @@ note = "T213c: a ROKS-3 hit"
 id = "T213d"
 metric = "pair_germany_ussr40.factions.ussr.s15.bayonet_strikes"
 min = 1
-kind = "hard"
+# S15 Fix (S15-15 (A) assumed 2026-11-26): a report. A strike starts only within reach plus a body radius (about 2 m) and no
+# AI habit closes to that range (Germany: 1 strike in 40); W4 and sim `bayonet_reaches_150_cm` prove the rule. A close-assault
+# habit is later work.
+kind = "report"
 exposure = "pair_germany_ussr40.wins.matches"
 exposure_min = 40
 control = "pair_germany_ussr40.factions.germany.s15.bayonet_strikes"

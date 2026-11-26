@@ -129,6 +129,17 @@ impl super::Planner<'_> {
                 }
                 Step::End(why) => {
                     self.ai.counters.rider_job_ends[why] += 1;
+                    // S15 Fix (review 4): a squad still told to board the
+                    // tank is stopped, so that the habits take it again
+                    // (`Order::Embark` keeps it out of the free list).
+                    if self
+                        .g
+                        .squads
+                        .get(&j.squad)
+                        .is_some_and(|q| q.order == (Order::Embark { vehicle: j.tank }))
+                    {
+                        self.ai.emit(self.due, CommandKind::Stop { squad: j.squad });
+                    }
                     if why == END_STALL {
                         self.rider_refuse(j.tank, j.squad);
                     }

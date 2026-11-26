@@ -15,10 +15,11 @@ use crate::command::CommandKind;
 use crate::s15::{RIDER_BOARD, RIDER_DROP, RIDER_END_NAMES, RIDER_RIDE, RiderJob};
 
 const T34: &str = "ww2:ussr_t34_85_squad";
-/// The six-man rifle section (tag `line`; the SMG section, tag
-/// `vehicle_riders`, has nine men and does not fit the T-34-85's eight
-/// deck slots at full strength).
+/// The six-man rifle section (tag `line`).
 const SMG: &str = "ww2:ussr_strelkovoe_otdelenie_6";
+/// The nine-man SMG section (tag `vehicle_riders`): it fits the ten deck
+/// places at full strength since the S15 Fix (S15-14).
+const SMG9: &str = "ww2:ussr_otdelenie_avtomatchikov";
 
 fn end(name: &str) -> usize {
     RIDER_END_NAMES.iter().position(|n| *n == name).unwrap()
@@ -63,6 +64,15 @@ pub(super) fn ussr_setup(edit: impl FnOnce(&mut MatchSetup)) -> MatchSetup {
 /// six-man section of player 1 (the AI) in its base, the squad 20 m beside the
 /// tank. Returns (world, tank, squad).
 fn rider_world(threads: usize, edit: impl FnOnce(&mut MatchSetup)) -> (World, SimId, SquadId) {
+    rider_world_with(SMG, threads, edit)
+}
+
+/// [`rider_world`] with squad card `card` beside the tank.
+fn rider_world_with(
+    card: &str,
+    threads: usize,
+    edit: impl FnOnce(&mut MatchSetup),
+) -> (World, SimId, SquadId) {
     let s = ussr_setup(|s| {
         s.players.iter_mut().for_each(|p| p.is_ai = false);
         s.players[1].is_ai = true;
@@ -86,7 +96,7 @@ fn rider_world(threads: usize, edit: impl FnOnce(&mut MatchSetup)) -> (World, Si
     let (x, y) = (base.x.floor_int(), base.y.floor_int());
     let t = spawn(&mut w, 1, T34, x, y);
     let tank = members(&w, t)[0];
-    let sq = spawn(&mut w, 1, SMG, x + 20, y);
+    let sq = spawn(&mut w, 1, card, x + 20, y);
     (w, tank, sq)
 }
 
@@ -169,6 +179,32 @@ fn rider_job_drops_short() {
     assert_eq!(ai_of(&w).counters.rider_jobs, 0, "control: jobs 0");
 }
 
+/// Review 5 (S15-14): the nine-man SMG section rides the T-34-85 at full
+/// strength (ten deck places). Control: with the deck cut to Build C's
+/// eight places the job never starts (`members > free` skips the pair).
+#[test]
+fn rider_job_takes_the_nine_man_section() {
+    let run = |cut: bool| {
+        let (mut w, tank, sq) = rider_world_with(SMG9, 1, |s| {
+            if cut {
+                let i = s
+                    .vehicles
+                    .iter()
+                    .position(|v| v.id == "ww2:ussr_t34_85")
+                    .unwrap();
+                s.vehicles[i].transport.as_mut().unwrap().slots.truncate(8);
+            }
+        });
+        assert_eq!(members(&w, sq).len(), 9);
+        let rode = until(&mut w, 120, |w| {
+            job(w).is_some_and(|j| j.phase == RIDER_RIDE)
+        });
+        (rode, w.game().unwrap().riders_of(tank).len())
+    };
+    assert_eq!(run(false), (true, 9));
+    assert_eq!(run(true), (false, 0), "control: eight places");
+}
+
 /// Liveness: the tank wrecked while it rides ends the job as tank lost.
 /// Control: the same scene unwrecked ends it as dropped (above).
 #[test]
@@ -179,6 +215,38 @@ fn rider_job_ends_when_tank_dies() {
     assert!(w.wreck_vehicle(tank));
     assert!(until(&mut w, 10, |w| job(w).is_none()), "the job ends");
     assert_eq!(ends(&w)[end("tank_lost")], 1, "{:?}", ends(&w));
+    // S15 Fix (review 4): the tank lost while the squad walks to it: the
+    // squad is no longer told to board it (control: it was, before).
+    let (mut w, tank, sq) = rider_world(1, |_| {});
+    assert!(until(&mut w, 60, |w| w.game().unwrap().squads[&sq].order
+        == (Order::Embark { vehicle: tank })));
+    assert!(w.wreck_vehicle(tank));
+    assert!(until(&mut w, 10, |w| job(w).is_none()), "the job ends");
+    assert!(
+        until(&mut w, 3, |w| w.game().unwrap().squads[&sq].order
+            != (Order::Embark { vehicle: tank })),
+        "the squad is stopped"
+    );
+}
+
+/// S15 Fix (review 4): a stall while the squad still walks to the tank
+/// (nobody aboard after `stall_s`) stops the squad, so the habits take it
+/// again. Control: the order was `Embark` when the job ended.
+#[test]
+fn rider_job_stall_stops_the_walking_squad() {
+    let (mut w, tank, sq) = rider_world(1, |s| s.rules.ai.riders.stall_s = 1);
+    let mut embark_at_end = false;
+    assert!(until(&mut w, 60, |w| {
+        embark_at_end = w.game().unwrap().squads[&sq].order == (Order::Embark { vehicle: tank });
+        job(w).is_none() && ai_of(w).counters.rider_jobs >= 1
+    }));
+    assert!(embark_at_end, "control: still told to board at the end");
+    assert_eq!(ends(&w)[end("stall")], 1, "{:?}", ends(&w));
+    assert!(
+        until(&mut w, 3, |w| w.game().unwrap().squads[&sq].order
+            != (Order::Embark { vehicle: tank })),
+        "the squad is stopped"
+    );
 }
 
 /// A wreck over `[vehicles] wreck_cap` is removed between two plans: a

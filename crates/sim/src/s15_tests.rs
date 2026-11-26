@@ -41,6 +41,8 @@ fn deck_box(x: i32, y: i32) -> BoxSetup {
 /// deck (outside every plate: the hull box tops out at 176 cm), entry at
 /// the hull's rear, the rules' exit times.
 pub(super) fn rider_tank(s: &mut MatchSetup) {
+    // A deck needs the switch (S15 Fix: the setup check).
+    s.rules.riders.enabled = 1;
     let hz = s.tick_hz;
     let v = s
         .vehicles
@@ -650,11 +652,12 @@ fn rider_hit_on_the_deck() {
 
 /// R3a: a rider past the threshold gets everyone off over the sides
 /// within `exit_ms`, stunned; the tank keeps its order. Control:
-/// `[riders] enabled` 0 leaves them on.
+/// `off_on_suppression` 0 leaves them on (S15 Fix: a deck with `[riders]
+/// enabled` 0 is refused by the setup check now).
 #[test]
 fn riders_off_when_suppressed() {
     for on in [1, 0] {
-        let mut w = rider_world(on, |_| {});
+        let mut w = rider_world(1, |s| s.rules.riders.off_on_suppression = on);
         let (tank, inf) = ride(&mut w);
         let n = members(&w, inf).len();
         let m0 = members(&w, inf)[0];
@@ -675,25 +678,27 @@ fn riders_off_when_suppressed() {
             let m1 = members(&w, inf)[1];
             assert!(w.state.entities.weapon[m1.index()].cooldown > 0, "stunned");
         } else {
-            assert_eq!(left, n, "control: switch off, they stay");
+            assert_eq!(left, n, "control: R3a off, they stay");
         }
     }
 }
 
 /// R3a (S15a Build A, W2): an enemy mortar burst 10 m off the tank
 /// suppresses its riders (they are in no spatial hash; no fragment
-/// reaches them at 10 m). Control: `[riders] enabled` 0: the same burst
-/// leaves them unsuppressed and all on the deck. (The exit past the
-/// threshold is `riders_off_when_suppressed`.)
+/// reaches them at 10 m). Control: the same burst 150 m off (beyond its
+/// suppression radius) leaves them unsuppressed and all on the deck. (The
+/// exit past the threshold is `riders_off_when_suppressed`; S15 Fix: a
+/// deck with `[riders] enabled` 0 is refused by the setup check now.)
 #[test]
 fn riders_suppressed_by_a_burst() {
     for on in [1, 0] {
-        let mut w = rider_world(on, |_| {});
+        let mut w = rider_world(1, |_| {});
         let (tank, inf) = ride(&mut w);
         let n = members(&w, inf).len();
         let p = w.state.entities.transform[tank.index()].pos.xy();
         let grw = weapon(&w, "ww2:grw34");
-        assert!(w.drop_shell_now(1, grw, p + FxVec2::new(Fx::ZERO, Fx::from_int(10))));
+        let off = if on == 1 { 10 } else { 150 };
+        assert!(w.drop_shell_now(1, grw, p + FxVec2::new(Fx::ZERO, Fx::from_int(off))));
         // The shell falls 20 m (about 10 ticks): the most any man has.
         let mut supp = 0;
         for _ in 0..30 {
@@ -705,7 +710,7 @@ fn riders_suppressed_by_a_burst() {
         if on == 1 {
             assert!(supp > 0, "the burst suppresses the riders");
         } else {
-            assert_eq!(supp, 0, "control: switch off, no rider suppressed");
+            assert_eq!(supp, 0, "control: far off, no rider suppressed");
             let left = w.game().unwrap().riders_of(tank).len();
             assert_eq!(left, n, "control: they stay");
         }
@@ -713,14 +718,27 @@ fn riders_suppressed_by_a_burst() {
 }
 
 /// S15a Build A step 6: the snapshot marks plated men, a rider deck and
-/// the riders' exit under way. Control: both switches 0 (the same plates
-/// and slots left in the setup) mark nothing.
+/// the riders' exit under way. Control: the S15 switches off as the setup
+/// build leaves them (`s15_off`: no plates, no deck; S15 Fix: a deck with
+/// `[riders] enabled` 0 is refused by the setup check now) mark nothing.
 #[test]
 fn snapshot_shows_plates_and_deck() {
     use crate::snapshot::vehicle_flags::{DECK, RIDERS_OFF};
     for on in [1, 0] {
-        let mut w = rider_world(on, |s| plate_all(s, on, 120));
-        let (tank, inf) = ride(&mut w);
+        let mut w = rider_world(1, |s| {
+            plate_all(s, 1, 120);
+            if on == 0 {
+                s.s15_off();
+            }
+        });
+        let (tank, inf) = if on == 1 {
+            ride(&mut w)
+        } else {
+            let t = spawn(&mut w, 0, TANK, 500, 500);
+            let inf = spawn(&mut w, 0, RIFLES, 490, 500);
+            steps(&mut w, 2);
+            (members(&w, t)[0], inf)
+        };
         let flags = |w: &World| {
             let snap = w.snapshot();
             snap.vehicles.iter().find(|v| v.id == tank.0).unwrap().flags
@@ -1426,7 +1444,72 @@ fn s15_scene(threads: usize) -> World {
         {
             k.bayonet = Some(frontline_content::defs::MeleeDef { reach_cm: 140, ..m });
         }
+        // S15 Fix (review 7): the stand-in Soviet mortar (the M1 with the
+        // GrW 34 bombs as its foreign feed).
+        foreign_setup(s, true, 130);
     });
+    // S15 Fix (review 7): captured bombs carried and fired: a US mortar
+    // (the stand-in) with foreign bombs only fires a mission far from the
+    // rest.
+    let mortar = spawn(&mut w, 1, US_MORTAR, 200, 800);
+    steps(&mut w, 60);
+    dry(&mut w, mortar);
+    let tm = tube(&w, mortar);
+    w.edit_soldier(tm, |k, _| k.foreign = 6);
+    run(
+        &mut w,
+        1,
+        2,
+        CommandKind::FireMission {
+            squad: mortar,
+            target: FxVec2::from_int(200, 450),
+            rounds: 3,
+        },
+    );
+    assert!(
+        w.snapshot()
+            .fire_mission_refusals
+            .iter()
+            .all(|e| e.squad != mortar),
+        "the mission is accepted"
+    );
+    // And a bayonet strike: a dry German Kar 98k man one tick from the end
+    // of his wind-up, a passive US man 1.2 m east (the s14c staging).
+    {
+        use super::s14c_tests::wind_up;
+        let g = spawn(&mut w, 0, "ww2:ger_grenadiergruppe", 800, 300);
+        let u = spawn(&mut w, 1, US_RIFLES, 800, 340);
+        steps(&mut w, 2);
+        let kar = weapon(&w, "ww2:kar98k");
+        let a = members(&w, g)
+            .into_iter()
+            .find(|m| w.state.entities.kit[m.index()].weapon == kar)
+            .unwrap();
+        let b = members(&w, u)[0];
+        for m in members(&w, g).into_iter().chain(members(&w, u)) {
+            if m != a && m != b {
+                assert!(w.kill_soldier(m));
+            }
+        }
+        w.place_soldier(a, FxVec2::from_int(800, 300));
+        w.place_soldier(
+            b,
+            FxVec2::new(
+                Fx::from_int(800) + Fx::from_ratio(120, 100),
+                Fx::from_int(300),
+            ),
+        );
+        w.edit_soldier(a, |k, c| {
+            c.mag = 0;
+            k.rounds.iter_mut().for_each(|r| *r = 0);
+        });
+        w.edit_soldier(b, |_, c| {
+            c.close.strike_phase = crate::flame::STRIKE_RECOVER;
+            c.close.strike = 200;
+            c.close.strike_at = FxVec2::from_int(300, 300);
+        });
+        wind_up(&mut w, a, FxVec2::from_int(803, 300));
+    }
     let (tank, _) = ride(&mut w);
     spawn(&mut w, 1, US_RIFLES, 560, 505);
     let t = w.state.entities.squad[tank.index()].unwrap();
@@ -1462,11 +1545,14 @@ fn s15_scene_is_deterministic_across_threads_and_save_load() {
     assert_eq!(l.state(), w.state());
     steps(&mut l, n / 2);
     assert_eq!(l.state_hash(), hashes[0]);
-    // Something S15 happened: riders boarded and got off, plates met.
+    // Something S15 happened: riders boarded and got off, plates met,
+    // foreign bombs were fired and a bayonet struck (S15 Fix, review 7).
     let (a, b) = (s15(&l, 0), s15(&l, 1));
     assert!(a.rider_boards > 0, "{a:?}");
     assert!(a.rider_exits.iter().sum::<u32>() > 0, "{a:?}");
     assert!(a.plate_hits + b.plate_hits > 0, "{a:?} {b:?}");
+    assert!(b.foreign_fired > 0, "{b:?}");
+    assert!(a.bayonet_strikes > 0, "{a:?}");
 }
 
 // ----------------------------------------- Build B: the real USSR defs --
@@ -1785,9 +1871,9 @@ fn riders_board_each_soviet_tank_with_slots() {
     assert_eq!(
         decks,
         [
-            ("ww2:ussr_is2".to_string(), 8),
+            ("ww2:ussr_is2".to_string(), 10),
             ("ww2:ussr_su85".to_string(), 6),
-            ("ww2:ussr_t34_85".to_string(), 8),
+            ("ww2:ussr_t34_85".to_string(), 10),
         ]
     );
     for card in [
@@ -1809,5 +1895,244 @@ fn riders_board_each_soviet_tank_with_slots() {
         board_card(&mut w, "ww2:ussr_t34_85_squad").1,
         0,
         "control: [riders] enabled 0, no slots"
+    );
+}
+
+/// S15 Fix (review 7, T213c's backstop): the real ROKS-3 of the assault
+/// group (flame on), its operator alone, at a standing US rifle squad
+/// with no rounds 20 m off: the stream strikes men (`flame_hits` > 0).
+/// Control: the squad 50 m off (beyond the 35 m range): no hit.
+#[test]
+fn roks3_hits_a_man_at_20_m() {
+    let hits = |gap: i32| {
+        let mut w = ussr_world(
+            |defs| {
+                for r in defs.rules.values_mut() {
+                    r.flame.get_or_insert_with(Default::default).enabled = 1;
+                }
+            },
+            |s| s.rules.flame.enabled = 1,
+        );
+        let roks = weapon(&w, "ww2:ussr_roks3");
+        let g = spawn(&mut w, 0, USSR_GROUP, 300, 300);
+        let u = spawn(&mut w, 1, US_RIFLES, 300 + gap, 300);
+        steps(&mut w, 2);
+        let op = members(&w, g)
+            .into_iter()
+            .find(|m| w.state.entities.kit[m.index()].weapon == roks)
+            .expect("a ROKS-3 operator");
+        for m in members(&w, g) {
+            if m != op {
+                assert!(w.kill_soldier(m));
+            }
+        }
+        for m in members(&w, u) {
+            w.edit_soldier(m, |k, c| {
+                k.rounds = [0; frontline_content::setup::MAX_FEEDS];
+                c.mag = 0;
+            });
+        }
+        steps(&mut w, 600);
+        w.game().unwrap().players[0].s14.flame_hits
+    };
+    assert!(hits(20) > 0, "the ROKS-3 hits at 20 m");
+    assert_eq!(hits(50), 0, "control: beyond its range");
+}
+
+/// Plan 5.1 `riders_off_is_base` (S15 Fix, review 7): with `[riders]
+/// enabled` 0 the T-34-85 is today's tank: a match where its section is
+/// told to board it, with a US squad on the map, runs tick by tick as one
+/// on defs with no deck at all (same state hash; the `Embark` refused in
+/// both). Control: switched on, the section boards and the hashes part.
+#[test]
+fn riders_off_is_base() {
+    let fight = |defs_edit: &dyn Fn(&mut frontline_content::ModDefs)| {
+        let mut w = ussr_world(defs_edit, |s| s.rules.wounds.enabled = 1);
+        let t = spawn(&mut w, 0, "ww2:ussr_t34_85_squad", 500, 500);
+        let tank = members(&w, t)[0];
+        let inf = spawn(&mut w, 0, "ww2:ussr_strelkovoe_otdelenie_6", 480, 510);
+        // Out of sight: the tank's gun would empty the deck at once (R3c).
+        spawn(&mut w, 1, US_RIFLES, 900, 100);
+        steps(&mut w, 2);
+        run(
+            &mut w,
+            0,
+            1,
+            CommandKind::Embark {
+                squads: vec![inf],
+                vehicle: tank,
+            },
+        );
+        let mut hs = Vec::new();
+        for _ in 0..30 {
+            steps(&mut w, 30);
+            hs.push(crate::hash::full_hash(&w.state, &w.config_bytes, &[]));
+        }
+        (hs, s15(&w, 0).rider_boards)
+    };
+    let (base, n) = fight(&|d| {
+        let v = d.vehicles.get_mut("ww2:ussr_t34_85").unwrap();
+        v.riders = None;
+        v.rider_slots.clear();
+    });
+    assert_eq!(n, 0);
+    let (off, n_off) = fight(&|_| {});
+    assert_eq!(n_off, 0, "switch 0: nobody boards");
+    assert_eq!(off, base, "the deck in the defs, switch 0: base");
+    let (on, n_on) = fight(&riders_on);
+    assert!(n_on > 0, "control: the section boards");
+    assert_ne!(on, base, "control: switched on, the match differs");
+}
+
+/// S15 Fix (review 8): the load check reads the feed per man: with the
+/// stand-in feed on (the M1 mortar fed German bombs) a German mortar man
+/// with one foreign bomb is refused. Control: the US mortar's tube man
+/// with one loads, and so does one of his squad mates (a crew member
+/// carries the team's bombs).
+#[test]
+fn load_rejects_foreign_rounds_on_a_man_without_the_feed() {
+    let mut w = flat_world_with(1, |s| foreign_setup(s, true, 130));
+    let us = spawn(&mut w, 1, US_MORTAR, 500, 500);
+    let ger = spawn(&mut w, 0, GER_MORTAR, 300, 300);
+    steps(&mut w, 2);
+    let tm = tube(&w, us);
+    let mate = members(&w, us).into_iter().find(|m| *m != tm).unwrap();
+    let gm = tube(&w, ger);
+    let with = |m: SimId| {
+        let mut x = World::load(&w.save(), 1).unwrap();
+        x.state.entities.kit[m.index()].foreign = 1;
+        World::load(&x.save(), 1).is_ok()
+    };
+    assert!(with(tm), "control: the fed tube");
+    assert!(with(mate), "control: his squad mate");
+    assert!(!with(gm), "a German mortar man without the feed");
+}
+
+/// S15 Fix (review 8): a rider timer only on an exposed deck: on a
+/// half-track (passenger slots, not a deck) the load refuses it, since
+/// `riders_jump` would never count it down. Control: the same timer on the
+/// rider tank loads.
+#[test]
+fn load_rejects_a_rider_timer_on_a_half_track() {
+    let mut w = flat_world_with(1, rider_tank);
+    let t = spawn(&mut w, 0, TANK, 500, 500);
+    let tank = members(&w, t)[0];
+    let h = spawn(&mut w, 0, "ww2:ger_sdkfz251_1_squad", 300, 300);
+    let ht = members(&w, h)[0];
+    let inf = spawn(&mut w, 0, RIFLES, 490, 500);
+    let inf2 = spawn(&mut w, 0, RIFLES, 290, 300);
+    steps(&mut w, 2);
+    assert!(w.seat_now(inf, tank));
+    assert!(w.seat_now(inf2, ht));
+    steps(&mut w, 1);
+    let with = |v: SimId| {
+        let mut x = World::load(&w.save(), 1).unwrap();
+        x.state
+            .game
+            .as_mut()
+            .unwrap()
+            .vehicles
+            .get_mut(&v)
+            .unwrap()
+            .rider_off = Some(RiderOff {
+            ticks: 3,
+            why: rider_exit::HIT,
+        });
+        World::load(&x.save(), 1).is_ok()
+    };
+    assert!(with(tank), "control: the deck");
+    assert!(!with(ht), "a half-track");
+}
+
+/// S15 Fix (review 9): a foreign bomb taken from a crew member whose id
+/// sits in another 256-id hash chunk than the gunner's keeps the
+/// incremental hash equal to the full one, tick by tick. Control: the
+/// squad straddles a chunk border and the giver's bombs are spent.
+#[test]
+fn crew_giver_bomb_marks_his_chunk() {
+    let mut w = flat_world_with(1, |s| foreign_setup(s, true, 130));
+    let mut found = None;
+    for i in 0..200 {
+        let q = spawn(
+            &mut w,
+            1,
+            US_MORTAR,
+            250 + (i % 10) * 40,
+            250 + (i / 10) * 25,
+        );
+        let ms = members(&w, q);
+        if ms.first().map(|m| m.chunk()) != ms.last().map(|m| m.chunk()) {
+            found = Some(q);
+            break;
+        }
+    }
+    let q = found.expect("a squad over a chunk border");
+    steps(&mut w, 60);
+    dry(&mut w, q);
+    let t = tube(&w, q);
+    let giver = members(&w, q)
+        .into_iter()
+        .find(|m| m.chunk() != t.chunk())
+        .unwrap();
+    w.edit_soldier(giver, |k, _| k.foreign = 2);
+    let at = w.state.entities.transform[t.index()].pos.xy();
+    w.place_soldier(giver, at + FxVec2::from_int(1, 0));
+    run(
+        &mut w,
+        1,
+        1,
+        CommandKind::FireMission {
+            squad: q,
+            target: at + FxVec2::from_int(0, 350),
+            rounds: 2,
+        },
+    );
+    let r = w
+        .snapshot()
+        .fire_mission_refusals
+        .iter()
+        .find(|e| e.squad == q)
+        .map(|e| e.refusal);
+    assert_eq!(r, None, "mission accepted");
+    for _ in 0..900 {
+        steps(&mut w, 1);
+        assert_eq!(w.state_hash(), w.full_state_hash(), "tick {}", w.tick());
+    }
+    assert_eq!(
+        w.state.entities.kit[giver.index()].foreign,
+        0,
+        "control: his bombs spent"
+    );
+}
+
+/// S15 Fix (review 8, N2 for any setup): a rider deck while `[riders]
+/// enabled` is 0, or a foreign feed while `[supply] foreign_ammo` is 0, is
+/// refused by the setup check (the sim reads the def parts). Control: with
+/// the switches on both setups are valid.
+#[test]
+fn setup_refuses_s15_parts_without_their_switch() {
+    let base = flat_world_with(1, |s| {
+        rider_tank(s);
+        foreign_setup(s, true, 130);
+    })
+    .match_setup()
+    .unwrap()
+    .clone();
+    assert!(base.validate().is_empty(), "control: switches on");
+    let mut deck = base.clone();
+    deck.rules.riders.enabled = 0;
+    assert!(
+        deck.validate()
+            .iter()
+            .any(|i| format!("{i:?}").contains("rider slots")),
+        "a deck with riders off"
+    );
+    let mut feed = base.clone();
+    feed.rules.supply.as_mut().unwrap().foreign_ammo = 0;
+    assert!(
+        feed.validate()
+            .iter()
+            .any(|i| format!("{i:?}").contains("foreign_ammo")),
+        "a feed with foreign ammo off"
     );
 }

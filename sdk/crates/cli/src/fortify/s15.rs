@@ -300,6 +300,13 @@ fn rider_slots(s: &mut MatchSetup, on: bool) {
     use frontline_content::vehicle::{BoxSetup, FixedVec3, TransportSetup};
     s.rules.riders.enabled = on as u32;
     if !on {
+        // As the setup build: no deck while the switch is 0 (the shipped
+        // Soviet decks too; S15 Fix, the setup check refuses one).
+        for v in &mut s.vehicles {
+            if v.transport.as_ref().is_some_and(|t| t.exposed) {
+                v.transport = None;
+            }
+        }
         return;
     }
     let hz = s.tick_hz as u64;
