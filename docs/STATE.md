@@ -46,8 +46,9 @@ in the AI, HE for the 57 mm.
 
 `SAVE_VERSION` **32** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **33** and **17** on the branch
 `claude/project-thread-aj1tww` (S14: flame particles, patches, clears, `Combat::close`, `AiState::flame`; commands
-`ClearTrench` and `Strike`). SAVE 33 / PROTOCOL 17 also after S14 Fix (no layout change). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
-S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16; S14 33/17 (branch). A save, hash or command change
+`ClearTrench` and `Strike`). SAVE 33 / PROTOCOL 17 also after S14 Fix (no layout change). S15a Build A: SAVE **34**,
+PROTOCOL 17 (no new command; `PlayerState::s15`, rider jobs, `Kit::foreign`, `VehicleState::rider_off`, `TransportSetup::exposed`). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
+S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16; S14 33/17 (branch); S15a 34/17 (branch). A save, hash or command change
 bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
 BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 

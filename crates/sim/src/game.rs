@@ -498,6 +498,8 @@ pub struct PlayerState {
     pub s12: crate::wounds::S12Counters,
     /// S14: flame, strike and clear counters (report).
     pub s14: crate::flame::S14Counters,
+    /// S15: plate, rider, captured-bomb and bayonet counters (report).
+    pub s15: crate::s15::S15Counters,
 }
 
 /// S8a per-player counters (saved and hashed, read only by reports;
@@ -865,6 +867,7 @@ impl MatchState {
                 s11b: crate::fire_mission::S11bCounters::default(),
                 s12: crate::wounds::S12Counters::default(),
                 s14: crate::flame::S14Counters::default(),
+                s15: crate::s15::S15Counters::default(),
             })
             .collect();
         let np = setup.players.len();
@@ -2513,6 +2516,8 @@ impl MatchState {
         self.validate_s12(ents, tick)?;
         // S14.
         self.validate_s14(ents, tick)?;
+        // S15.
+        self.validate_s15(ents)?;
         if self.players.len() != np
             || self.path_queue.queues.len() != np
             || self.path_queue.cursor as usize >= np

@@ -410,6 +410,8 @@ pub struct AiState {
     /// S14-ai (`ai::flame`): flame jobs, failed flame targets and the AI's
     /// clear orders.
     pub flame: AiFlameState,
+    /// S15-ai (`ai::riders`): rider jobs and failed pairings.
+    pub riders: crate::s15::AiRiders,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -782,6 +784,11 @@ pub struct AiCounters {
     pub flame_buys: u32,
     pub refuels: u32,
     pub clear_orders: u32,
+    /// S15-ai A1: rider jobs started and ended by reason
+    /// (`crate::s15::RIDER_END_NAMES`: dropped, forced off, tank lost,
+    /// deadline, stall).
+    pub rider_jobs: u32,
+    pub rider_job_ends: [u32; 5],
 }
 
 /// S14-ai: `AiCounters::flame_job_ends` names, by index.
@@ -836,6 +843,7 @@ impl AiState {
             armour_seen_at: 0,
             heavy_plan_since: 0,
             flame: AiFlameState::default(),
+            riders: crate::s15::AiRiders::default(),
         }
     }
 
@@ -994,6 +1002,8 @@ impl AiState {
             || self.heavy_plan_since > tick
             // S14-ai.
             || !self.flame.valid(np, tick, ents_len, on_map, bad_squad)
+            // S15-ai.
+            || !self.riders.valid(g, player, tick, bad_squad)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             // Due one reaction delay after its plan at most (the save fuzz).
             || self.pending.last().is_some_and(|c| {

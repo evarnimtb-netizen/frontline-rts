@@ -489,7 +489,12 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `AiCounters`; in the setup `[flame]`, `[melee]`, `[clear]`,
 /// `[ai.flame]`, `WeaponClass::Flame` and a member's `when`). One bump for
 /// the whole slice.
-const SAVE_VERSION: u32 = 33;
+/// 34: S15 (`PlayerState::s15`, `AiCounters::{rider_jobs,
+/// rider_job_ends}`, `AiState::riders`, `Kit::foreign`,
+/// `VehicleState::rider_off`; in the setup `TransportSetup::exposed`, the
+/// `[matchups]`, `[riders]`, `[body_armour]` keys, plates, foreign feeds
+/// and bayonet blocks). One bump for the whole slice.
+const SAVE_VERSION: u32 = 34;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -3166,6 +3171,9 @@ mod s14_tests;
 #[path = "s14c_tests.rs"]
 mod s14c_tests;
 #[cfg(test)]
+#[path = "s15_tests.rs"]
+mod s15_tests;
+#[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;
 #[cfg(test)]
@@ -4860,6 +4868,7 @@ mod tests {
             door_ticks: _,
             unload: _,
             trip: _,
+            rider_off: _,
             served: _,
             towing: _,
             material_g: _,
@@ -4904,6 +4913,11 @@ mod tests {
             (
                 "trip",
                 Box::new(|v| v.trip = Some(crate::vehicle::Trip::default())),
+            ),
+            // S15.
+            (
+                "rider_off",
+                Box::new(|v| v.rider_off = Some(crate::s15::RiderOff::default())),
             ),
             // S9.
             ("served", Box::new(|v| v.served = Some(Default::default()))),
@@ -6622,6 +6636,7 @@ mod tests {
             rounds: _,
             on_sidearm: _,
             refill: _,
+            foreign: _,
         } = crate::items::Kit::default();
         type StateEdit = Box<dyn Fn(&mut SimState)>;
         fn acct(s: &mut SimState) -> &mut AmmoAccount {
@@ -6641,6 +6656,11 @@ mod tests {
             (
                 "kit.refill",
                 Box::new(move |s| s.entities.kit[gi].refill += 1),
+            ),
+            // S15.
+            (
+                "kit.foreign",
+                Box::new(move |s| s.entities.kit[gi].foreign += 1),
             ),
             ("ammo.credit", Box::new(|s| acct(s).credit += 1)),
             ("ammo.paid", Box::new(|s| acct(s).paid[2] += 1)),

@@ -347,6 +347,9 @@ pub struct VehicleState {
     /// S8a: the loaded trip under way, from the first man aboard to the
     /// last man out (report counters only).
     pub trip: Option<Trip>,
+    /// S15 R3: its riders are getting off by themselves (all slots at once
+    /// when the timer runs out); only on a vehicle with rider slots.
+    pub rider_off: Option<crate::s15::RiderOff>,
 }
 
 /// S8a: an unload under way (`crate::transport`).
@@ -467,6 +470,7 @@ impl VehicleState {
             door_ticks: 0,
             unload: None,
             trip: None,
+            rider_off: None,
         }
     }
 
@@ -702,6 +706,15 @@ impl VehicleState {
                     || d.count > crate::structures::MAX_DROP
                     || !(Fx::ZERO..=map).contains(&d.point.x)
                     || !(Fx::ZERO..=map).contains(&d.point.y)
+            })
+            // S15 R3: a timer running, a reason of R3a-c, on a vehicle with
+            // slots that is not a wreck.
+            || self.rider_off.is_some_and(|r| {
+                r.ticks == 0
+                    || !(crate::s15::rider_exit::SUPPRESSED..=crate::s15::rider_exit::GUN_FIRED)
+                        .contains(&r.why)
+                    || self.riders.is_empty()
+                    || self.wreck_tick.is_some()
             });
         if bad {
             return Err("vehicle state is out of range");

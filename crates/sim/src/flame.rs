@@ -602,7 +602,13 @@ impl MatchState {
         }
         let merge = Fx::from_int(f.patch_merge_cm as i32).div_int(100);
         let ends = tick + lim.patch_ticks;
+        let size = Fx::from_int(self.setup.map.size_m);
         for (pt, player) in landed {
+            // S15a save fuzz: a landing off the map makes no patch (a patch
+            // there would not load).
+            if !(Fx::ZERO..=size).contains(&pt.x) || !(Fx::ZERO..=size).contains(&pt.y) {
+                continue;
+            }
             if let Some(k) = self
                 .patches
                 .iter()

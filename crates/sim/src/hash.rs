@@ -212,6 +212,8 @@ impl StableHash for Kit {
         }
         self.on_sidearm.put(out);
         self.refill.put(out);
+        // S15.
+        self.foreign.put(out);
     }
 }
 
@@ -436,6 +438,8 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         put_postcard(&p.s12, out);
         // S14.
         put_postcard(&p.s14, out);
+        // S15.
+        put_postcard(&p.s15, out);
     }
     g.next_squad.put(out);
     (g.squads.len() as u32).put(out);

@@ -350,7 +350,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 33,
+        version: 34,
         state: w.state(),
     });
     assert!(
@@ -750,6 +750,12 @@ fn s10b_path(path: &str) -> bool {
         || path.starts_with("state.game.clears")
         || path.contains(".close")
         || path.contains(".s14.")
+        // S15: riders, their timers, rider jobs, foreign rounds, counters.
+        || path.contains(".riders")
+        || path.contains(".rider_off")
+        || path.contains(".foreign")
+        || path.contains(".s15.")
+        || path.contains("rider_job")
         || path.contains("Order.ClearMines")
         || path.contains("Order.Demolish")
         // Fuzz stage `staged_s10b_ai`.
@@ -1044,6 +1050,8 @@ fn staged_s10b() -> World {
     let rifles = arm_rifle_grenades(&mut s, "ww2:usa_rifle_squad", "rifleman", 3);
     // S12: wounds on, so the staged wounded and downed men play on.
     s.rules.wounds.enabled = 1;
+    // S15: the Panzer IV takes test-made rider slots (no def has them yet).
+    rider_tank(&mut s);
     let mut w = World::new_match(s, 1).unwrap();
     staged_s11a2_gun(&mut w, leig);
     staged_s11b(&mut w, rifles);
@@ -1097,7 +1105,98 @@ fn staged_s10b() -> World {
         }
     });
     staged_s10b_ai(&mut w, ap, piece);
+    staged_s15(&mut w);
     w
+}
+
+/// S15 R1 stand-in (no def has rider slots before Build C): the Panzer IV
+/// gets ten deck slots outside its armour.
+fn rider_tank(s: &mut MatchSetup) {
+    use frontline_content::setup::Fixed;
+    use frontline_content::vehicle::{BoxSetup, FixedVec3, TransportSetup};
+    let hz = s.tick_hz as u64;
+    let v = s
+        .vehicles
+        .iter_mut()
+        .find(|v| v.id == "ww2:ger_pz4_h")
+        .unwrap();
+    let ticks = |ms: u64| (ms * hz).div_ceil(1000) as u32;
+    v.transport = Some(TransportSetup {
+        entry: FixedVec3::from_cm([-300, 0, 60]),
+        board_ticks: ticks(1000),
+        exit_ticks: ticks(600),
+        exit_over_sides_ticks: Some(ticks(600)),
+        exit_raise: Fixed(0),
+        slots: [-120, -170, -220, -265]
+            .into_iter()
+            .flat_map(|x| [(x, 60), (x, -60)])
+            .chain([(-145, 0), (-245, 0)])
+            .map(|(x, y)| BoxSetup {
+                center: FixedVec3::from_cm([x, y, 221]),
+                half: FixedVec3::from_cm([22, 20, 45]),
+            })
+            .collect(),
+        exposed: true,
+    });
+}
+
+/// Fuzz stage S15 (plan 3 N3): men riding a Panzer IV with rider slots,
+/// its riders getting off (R3 timer), player 0's AI with a rider job in
+/// each phase and a failed pairing, S15 counters.
+fn staged_s15(w: &mut World) {
+    use frontline_sim::fx::{Fx, FxVec2};
+    use frontline_sim::s15::{AiRiders, RiderJob, RiderOff, RiderRefused, rider_exit};
+    let c = |x: i32, y: i32| FxVec2::from_int(x, y);
+    let east = FxVec2::new(Fx::ONE, Fx::ZERO);
+    let s = w.match_setup().unwrap();
+    let tank = s.squad_type_index("ww2:ger_pz4_h_squad").unwrap();
+    let rifles = s.squad_type_index("ww2:ger_grenadiergruppe").unwrap();
+    let mut tanks = Vec::new();
+    let mut squads = Vec::new();
+    for k in 0..4 {
+        let t = w
+            .spawn_squad_at(PlayerId(0), tank, c(440 + 25 * k, 640), east)
+            .unwrap();
+        tanks.push(w.game().unwrap().squads()[&t].members[0]);
+        squads.push(
+            w.spawn_squad_at(PlayerId(0), rifles, c(440 + 25 * k, 620), east)
+                .unwrap(),
+        );
+    }
+    // The first tank carries its squad and is getting it off (R3b).
+    assert!(w.seat_now(squads[0], tanks[0]), "the staged riders board");
+    assert!(w.edit_vehicle(tanks[0], |v| {
+        v.rider_off = Some(RiderOff {
+            ticks: 200,
+            why: rider_exit::HIT,
+        })
+    }));
+    let tick = w.tick();
+    assert!(w.with_ai_state(0, |ai| {
+        ai.riders = AiRiders {
+            jobs: (1..4)
+                .map(|k| RiderJob {
+                    tank: tanks[k],
+                    squad: squads[k],
+                    point: 0,
+                    phase: (k - 1) as u8,
+                    phase_at: tick,
+                })
+                .collect(),
+            refused: vec![RiderRefused {
+                tank: tanks[1],
+                squad: squads[0],
+                at: tick,
+            }],
+        };
+        ai.counters.rider_jobs = 3;
+        ai.counters.rider_job_ends[1] = 1;
+    }));
+    assert!(w.edit_player(PlayerId(0), |p| {
+        p.s15.rider_boards = 10;
+        p.s15.rider_exits[rider_exit::HIT as usize] = 2;
+        p.s15.plate_hits = 1;
+    }));
 }
 
 /// S11b: issues rifle grenades (`[items] rifle_grenades` 1) and gives the

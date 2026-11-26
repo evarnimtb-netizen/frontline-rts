@@ -986,7 +986,8 @@ impl MatchState {
                         cr.carrier = None;
                         cr.dest = None;
                         if !in_own_base(&self.setup, c.owner, at) {
-                            self.supply6.accounts[c.owner.0 as usize].crates_delivered += 1;
+                            let a = &mut self.supply6.accounts[c.owner.0 as usize];
+                            a.crates_delivered = a.crates_delivered.saturating_add(1);
                         }
                     }
                 }

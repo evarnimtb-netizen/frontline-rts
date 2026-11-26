@@ -63,6 +63,7 @@ pub mod path;
 pub mod projectile;
 pub mod rng;
 pub mod rules;
+pub mod s15;
 pub mod scenarios;
 pub mod snapshot;
 pub mod spatial;
