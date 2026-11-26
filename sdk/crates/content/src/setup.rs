@@ -408,6 +408,25 @@ impl MatchSetup {
         (a.jobs, a.refuel, a.buy, a.clear) = (0, 0, 0, 0);
     }
 
+    /// S15: every S15 switch 0 on a resolved setup (`[riders] enabled`,
+    /// `[body_armour] enabled`, `[supply] foreign_ammo`, `[melee]
+    /// bayonets`, `[ai.riders] jobs`) and the S15 def parts the setup build
+    /// keeps only with their switch on (rider slots, plates, foreign feeds,
+    /// bayonet blocks) dropped (plan N2).
+    pub fn s15_off(&mut self) {
+        let r = &mut self.rules;
+        (r.riders.enabled, r.body_armour.enabled, r.melee.bayonets) = (0, 0, 0);
+        if let Some(sp) = r.supply.as_mut() {
+            sp.foreign_ammo = 0;
+        }
+        r.ai.riders.jobs = 0;
+        for v in &mut self.vehicles {
+            if v.transport.as_ref().is_some_and(|t| t.exposed) {
+                v.transport = None;
+            }
+        }
+    }
+
     /// S11b G1: `[items] rifle_grenades` 0 on a resolved setup (the kind
     /// dropped from every squad type: `items[kind]` None, member counts 0).
     pub fn rifle_grenades_off(&mut self) {
@@ -523,6 +542,10 @@ pub struct RulesSetup {
     pub melee: crate::tuning::MeleeTuning,
     /// S14: `[clear]` (or the S14a values, the switch off).
     pub clear: crate::tuning::ClearTuning,
+    /// S15: `[riders]` (or the S15a values, the switch off).
+    pub riders: crate::tuning::RidersTuning,
+    /// S15: `[body_armour]` (or the S15a values, the switch off).
+    pub body_armour: crate::tuning::BodyArmourTuning,
 }
 
 impl RulesSetup {
@@ -719,6 +742,8 @@ pub struct AiSetup {
     pub medic: AiMedicTuning,
     /// S14-ai: `[ai.flame]` (or the S14a values, switches off).
     pub flame: crate::tuning::AiFlameTuning,
+    /// S15-ai: `[ai.riders]` (or the S15a values, the switch off).
+    pub riders: crate::tuning::AiRidersTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2242,6 +2267,7 @@ impl ModDefs {
                         arty: a.arty.clone().unwrap_or_default(),
                         medic: a.medic.clone().unwrap_or_default(),
                         flame: a.flame.clone().unwrap_or_default(),
+                        riders: a.riders.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2262,6 +2288,8 @@ impl ModDefs {
                 flame: rules.flame.clone().unwrap_or_default(),
                 melee: rules.melee.clone().unwrap_or_default(),
                 clear: rules.clear.clone().unwrap_or_default(),
+                riders: rules.riders.clone().unwrap_or_default(),
+                body_armour: rules.body_armour.clone().unwrap_or_default(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -3116,6 +3144,9 @@ impl MatchSetup {
                 melee: &r.melee,
                 clear: &r.clear,
                 ai_flame: &a.flame,
+                riders: &r.riders,
+                body_armour: &r.body_armour,
+                ai_riders: &a.riders,
             },
         );
         r.at_ditch

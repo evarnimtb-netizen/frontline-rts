@@ -1550,6 +1550,129 @@ pub struct HeDef {
     pub frag_pen_mm: u32,
 }
 
+/// S15 M1-M4 (`[matchups]` in the rules, docs/slices/S15-ussr.md 4): the
+/// factions a match may name and the hostile pairs allowed. The menus,
+/// the lobby and `ModDefs::resolve` read it; absent: no check.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MatchupsDef {
+    /// M1: the factions a match may name (empty: no check).
+    #[serde(default)]
+    pub factions: Vec<String>,
+    /// M2: the hostile pairs allowed, in menu order; the first pair holding
+    /// a faction gives its default opponent (M3).
+    #[serde(default)]
+    pub pairs: Vec<[String; 2]>,
+    /// M2: 1 = any two different enabled factions may fight (0..=1).
+    #[serde(default)]
+    pub free: u32,
+    /// M4: 1 = the menus and lobby offer the same faction on both sides
+    /// of a 1v1 (0..=1).
+    #[serde(default)]
+    pub mirror: u32,
+}
+
+impl MatchupsDef {
+    /// Shape checks (the faction ids are checked against the mod's
+    /// factions in `ModDefs`).
+    pub fn validate(&self, out: &mut Vec<Issue>) {
+        if self.free > 1 {
+            out.push(Issue::new("matchups.free", "must be 0 or 1"));
+        }
+        if self.mirror > 1 {
+            out.push(Issue::new("matchups.mirror", "must be 0 or 1"));
+        }
+        for (k, f) in self.factions.iter().enumerate() {
+            if self.factions[..k].contains(f) {
+                out.push(Issue::new(
+                    format!("matchups.factions[{k}]"),
+                    "listed twice",
+                ));
+            }
+        }
+        for (k, [a, b]) in self.pairs.iter().enumerate() {
+            let at = format!("matchups.pairs[{k}]");
+            if a == b {
+                out.push(Issue::new(
+                    at.clone(),
+                    "a pair names two different factions",
+                ));
+            }
+            if !self.factions.is_empty()
+                && (!self.factions.contains(a) || !self.factions.contains(b))
+            {
+                out.push(Issue::new(
+                    at.clone(),
+                    "a pair names a faction not in `factions`",
+                ));
+            }
+            if self.pairs[..k]
+                .iter()
+                .any(|[c, d]| (c == a && d == b) || (c == b && d == a))
+            {
+                out.push(Issue::new(at, "listed twice"));
+            }
+        }
+    }
+
+    /// M1: whether faction `f` may be named (an empty list: any).
+    pub fn enabled(&self, f: &str) -> bool {
+        self.factions.is_empty() || self.factions.iter().any(|x| x == f)
+    }
+
+    /// M2: whether hostile factions `a` and `b` may fight (the same
+    /// faction always may: a mirror is M4's matter for the menus).
+    pub fn allows(&self, a: &str, b: &str) -> bool {
+        a == b
+            || self.free == 1
+            || self.pairs.is_empty()
+            || self
+                .pairs
+                .iter()
+                .any(|[c, d]| (c == a && d == b) || (c == b && d == a))
+    }
+
+    /// M3: the default opponent of faction `f`: the other member of the
+    /// first pair holding it.
+    pub fn default_opponent(&self, f: &str) -> Option<&str> {
+        self.pairs.iter().find_map(|[a, b]| {
+            if a == f {
+                Some(b.as_str())
+            } else if b == f {
+                Some(a.as_str())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// M2: the opponents faction `f` may face, in menu order (with `free`
+    /// 1: every other enabled faction, pair partners first).
+    pub fn opponents(&self, f: &str, all: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .pairs
+            .iter()
+            .filter_map(|[a, b]| {
+                if a == f {
+                    Some(b.clone())
+                } else if b == f {
+                    Some(a.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if self.free == 1 || self.pairs.is_empty() {
+            for x in all {
+                if x != f && self.enabled(x) && !out.contains(x) {
+                    out.push(x.clone());
+                }
+            }
+        }
+        out
+    }
+}
+
 /// A playable side (`defs/factions/*.toml`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1739,6 +1862,16 @@ pub struct RulesDef {
     /// S14: the `ClearTrench` order (`[clear]`). Without it: switch off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clear: Option<crate::tuning::ClearTuning>,
+    /// S15: infantry riding on tanks (`[riders]`). Without it: switch off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub riders: Option<crate::tuning::RidersTuning>,
+    /// S15: plates worn by men (`[body_armour]`). Without it: switch off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_armour: Option<crate::tuning::BodyArmourTuning>,
+    /// S15: which factions a match may name and who fights whom
+    /// (`[matchups]`). Without it: no check (old rules files).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matchups: Option<MatchupsDef>,
     /// S10a: fortification rules (`[fortify]`). Without it no blueprint
     /// can be built.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2186,6 +2319,9 @@ pub struct AiDef {
     /// S14-ai: `[ai.flame]` (default: the S14a values, switches off).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flame: Option<crate::tuning::AiFlameTuning>,
+    /// S15-ai: `[ai.riders]` (default: the S15a values, switch off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub riders: Option<crate::tuning::AiRidersTuning>,
 }
 
 impl AiDef {
@@ -3036,6 +3172,10 @@ impl RulesDef {
         let mut out = Vec::new();
         check_id(&mut out, "id", &self.id);
         check_name(&mut out, "name", &self.name);
+        // S15 M1-M4.
+        if let Some(m) = &self.matchups {
+            m.validate(&mut out);
+        }
         if !crate::TICK_HZ_ALLOWED.contains(&self.tick_hz) {
             out.push(
                 Issue::new("tick_hz", format!("must be 30 or 20, got {}", self.tick_hz))
@@ -3413,6 +3553,9 @@ impl RulesDef {
                 melee: &self.melee.clone().unwrap_or_default(),
                 clear: &self.clear.clone().unwrap_or_default(),
                 ai_flame: &a.flame.clone().unwrap_or_default(),
+                riders: &self.riders.clone().unwrap_or_default(),
+                body_armour: &self.body_armour.clone().unwrap_or_default(),
+                ai_riders: &a.riders.clone().unwrap_or_default(),
             },
         );
         match (a.barrage_rounds, &a.mortar) {

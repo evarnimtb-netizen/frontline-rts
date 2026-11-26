@@ -293,6 +293,19 @@ fn load_rejects_bad_s15_state() {
             }),
         ),
         (
+            "rider timer over the exit time",
+            Box::new(move |s| {
+                game_mut(s)
+                    .vehicles
+                    .get_mut(&tank)
+                    .unwrap()
+                    .rider_off
+                    .as_mut()
+                    .unwrap()
+                    .ticks = 19
+            }),
+        ),
+        (
             "rider timer with an ordered reason",
             Box::new(move |s| {
                 game_mut(s)
@@ -335,5 +348,170 @@ fn load_rejects_bad_s15_state() {
         let mut x = World::load(&bytes, 1).unwrap();
         e(&mut x.state);
         assert!(World::load(&x.save(), 1).is_err(), "{name} loads");
+    }
+}
+
+/// Plan 2: every S15 key is part of the setup (saved, hashed) and checked
+/// against its range. Control: the unedited setup is valid, and each
+/// in-range edit is valid too.
+#[test]
+fn load_rejects_bad_s15_keys() {
+    let w = flat_world_with(1, |_| {});
+    let base = w.game().unwrap().setup.clone();
+    let h0 = postcard::to_allocvec(&base).unwrap();
+    assert!(
+        base.validate().is_empty(),
+        "control: the unedited setup is valid"
+    );
+    type Edit = Box<dyn Fn(&mut MatchSetup)>;
+    let good: Vec<Edit> = vec![
+        Box::new(|s| s.rules.riders.enabled = 1),
+        Box::new(|s| s.rules.riders.off_on_suppression = 0),
+        Box::new(|s| s.rules.riders.suppression_pct = 150),
+        Box::new(|s| s.rules.riders.off_on_hit = 0),
+        Box::new(|s| s.rules.riders.off_on_fire = 0),
+        Box::new(|s| s.rules.riders.exit_ms = 900),
+        Box::new(|s| s.rules.riders.stun_ms = 2000),
+        Box::new(|s| s.rules.body_armour.enabled = 1),
+        Box::new(|s| s.rules.body_armour.soft_pen_tenths_mm = 25),
+        Box::new(|s| s.rules.body_armour.stopped_damage_pct = 10),
+        Box::new(|s| s.rules.body_armour.stops_melee = 0),
+        Box::new(|s| s.rules.body_armour.prone = 1),
+        Box::new(|s| s.rules.melee.bayonets = 1),
+        Box::new(|s| s.rules.supply.as_mut().unwrap().foreign_ammo = 1),
+        Box::new(|s| s.rules.ai.riders.jobs = 1),
+        Box::new(|s| s.rules.ai.riders.squads_max = 3),
+        Box::new(|s| s.rules.ai.riders.drop_m = 100),
+        Box::new(|s| s.rules.ai.riders.job_max_s = 200),
+        Box::new(|s| s.rules.ai.riders.stall_s = 30),
+        Box::new(|s| s.rules.ai.riders.recheck_s = 90),
+    ];
+    for (k, e) in good.into_iter().enumerate() {
+        let mut s = base.clone();
+        e(&mut s);
+        assert_ne!(
+            postcard::to_allocvec(&s).unwrap(),
+            h0,
+            "edit {k} is not in the setup bytes"
+        );
+        assert!(s.validate().is_empty(), "edit {k}: {:?}", s.validate());
+    }
+    let bad: Vec<(&str, Edit)> = vec![
+        ("riders enabled 2", Box::new(|s| s.rules.riders.enabled = 2)),
+        (
+            "suppression_pct 401",
+            Box::new(|s| s.rules.riders.suppression_pct = 401),
+        ),
+        ("off_on_hit 2", Box::new(|s| s.rules.riders.off_on_hit = 2)),
+        ("exit_ms 99", Box::new(|s| s.rules.riders.exit_ms = 99)),
+        (
+            "stun_ms 30001",
+            Box::new(|s| s.rules.riders.stun_ms = 30_001),
+        ),
+        (
+            "body_armour enabled 2",
+            Box::new(|s| s.rules.body_armour.enabled = 2),
+        ),
+        (
+            "soft_pen_tenths_mm 1001",
+            Box::new(|s| s.rules.body_armour.soft_pen_tenths_mm = 1001),
+        ),
+        (
+            "stopped_damage_pct 401",
+            Box::new(|s| s.rules.body_armour.stopped_damage_pct = 401),
+        ),
+        ("prone 2", Box::new(|s| s.rules.body_armour.prone = 2)),
+        ("bayonets 2", Box::new(|s| s.rules.melee.bayonets = 2)),
+        (
+            "foreign_ammo 2",
+            Box::new(|s| s.rules.supply.as_mut().unwrap().foreign_ammo = 2),
+        ),
+        ("ai.riders jobs 2", Box::new(|s| s.rules.ai.riders.jobs = 2)),
+        (
+            "ai.riders squads_max 9",
+            Box::new(|s| s.rules.ai.riders.squads_max = 9),
+        ),
+        (
+            "ai.riders drop_m 0",
+            Box::new(|s| s.rules.ai.riders.drop_m = 0),
+        ),
+        (
+            "ai.riders recheck_s 3601",
+            Box::new(|s| s.rules.ai.riders.recheck_s = 3601),
+        ),
+    ];
+    for (name, e) in bad {
+        let mut s = base.clone();
+        e(&mut s);
+        assert!(!s.validate().is_empty(), "{name} is accepted");
+    }
+}
+
+/// Plan 2 M1-M4: `[matchups]` shape checks. Control: the shipped table
+/// is valid.
+#[test]
+fn matchups_table_is_checked() {
+    use frontline_content::MatchupsDef;
+    let ok = MatchupsDef {
+        factions: vec!["ww2:germany".into(), "ww2:usa".into()],
+        pairs: vec![["ww2:germany".into(), "ww2:usa".into()]],
+        free: 0,
+        mirror: 0,
+    };
+    let mut out = Vec::new();
+    ok.validate(&mut out);
+    assert!(out.is_empty(), "control: {out:?}");
+    let bad: Vec<(&str, MatchupsDef)> = vec![
+        (
+            "free 2",
+            MatchupsDef {
+                free: 2,
+                ..ok.clone()
+            },
+        ),
+        (
+            "mirror 2",
+            MatchupsDef {
+                mirror: 2,
+                ..ok.clone()
+            },
+        ),
+        (
+            "a pair of one faction",
+            MatchupsDef {
+                pairs: vec![["ww2:usa".into(), "ww2:usa".into()]],
+                ..ok.clone()
+            },
+        ),
+        (
+            "a pair outside the list",
+            MatchupsDef {
+                pairs: vec![["ww2:germany".into(), "ww2:ussr".into()]],
+                ..ok.clone()
+            },
+        ),
+        (
+            "a pair twice",
+            MatchupsDef {
+                pairs: vec![
+                    ["ww2:germany".into(), "ww2:usa".into()],
+                    ["ww2:usa".into(), "ww2:germany".into()],
+                ],
+                ..ok.clone()
+            },
+        ),
+        (
+            "a faction twice",
+            MatchupsDef {
+                factions: vec!["ww2:usa".into(), "ww2:usa".into()],
+                pairs: vec![],
+                ..ok.clone()
+            },
+        ),
+    ];
+    for (name, m) in bad {
+        let mut out = Vec::new();
+        m.validate(&mut out);
+        assert!(!out.is_empty(), "{name} is accepted");
     }
 }

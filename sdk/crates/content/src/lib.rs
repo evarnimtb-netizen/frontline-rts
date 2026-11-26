@@ -34,8 +34,8 @@ pub mod vehicle;
 
 pub use defs::{
     CartridgeDef, FactionDef, ITEM_KINDS, ItemDef, ItemKind, MAX_COOLDOWN_S,
-    MAX_INITIAL_COOLDOWN_S, MapFileDef, RulesDef, SquadDef, SquadRole, SupplyDef, SupplyKind,
-    WeaponClass, WeaponDef,
+    MAX_INITIAL_COOLDOWN_S, MapFileDef, MatchupsDef, RulesDef, SquadDef, SquadRole, SupplyDef,
+    SupplyKind, WeaponClass, WeaponDef,
 };
 pub use issue::{ContentError, Issue};
 pub use modset::{ModDefs, ModManifest, OverrideChange};

@@ -1,0 +1,24 @@
+# S15 neutrality control (docs/slices/S15-ussr.md 2, 11 T210): every S15
+# switch at its off value and the [matchups] lists without the USSR. Against
+# the S14 head's 40 set (NEUTRAL_BASE, target/s14-F-40, base 96d4b4b) it
+# must be the same match for match.
+[matchups]
+factions = ["ww2:germany", "ww2:usa"]
+pairs = [["ww2:germany", "ww2:usa"]]
+free = 0
+mirror = 0
+
+[riders]
+enabled = 0
+
+[body_armour]
+enabled = 0
+
+[supply]
+foreign_ammo = 0
+
+[melee]
+bayonets = 0
+
+[ai.riders]
+jobs = 0

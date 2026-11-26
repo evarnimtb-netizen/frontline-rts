@@ -1217,6 +1217,9 @@ tuning_table! {
         /// S8b (S8b-9): kg of shells and explosives in the cargo for a hit
         /// to detonate it; below this it only burns.
         cargo_detonate_min_kg: 0..=5000 = "d_cargo_detonate_min_kg",
+        /// S15 X1-X3 switch: a weapon's `[foreign_feed]` draws rounds from
+        /// a held enemy crate (0: every foreign feed is dropped at setup).
+        foreign_ammo: 0..=1 = "d_fl_zero",
     }
 }
 
@@ -3457,6 +3460,9 @@ tuning_table! {
         down_cm: 0..=1000 = "d_ml_reach_z_cm",
         /// ... or up to this far above them (cm).
         up_cm: 0..=1000 = "d_ml_reach_z_cm",
+        /// S15 B1 switch: a weapon's `[melee.bayonet]` block replaces its
+        /// `[melee]` block (0: every bayonet block is dropped at setup).
+        bayonets: 0..=1 = "d_fl_zero",
     }
 }
 
@@ -3495,6 +3501,7 @@ impl Default for MeleeTuning {
             start_pad_cm: 0,
             down_cm: 200,
             up_cm: 200,
+            bayonets: 0,
         }
     }
 }
@@ -3670,6 +3677,151 @@ impl Default for AiFlameTuning {
     }
 }
 
+tuning_table! {
+    /// `[riders]` (S15, docs/slices/S15-ussr.md 2, rules R1-R6): infantry
+    /// riding on the deck of a tank, assault gun or tank destroyer. The
+    /// switch `enabled` is 0 in S15a (absent: these values). Every number
+    /// is a balance lever: change it here, not in code.
+    pub struct RidersTuning {
+        /// R1-R6 switch (0: every `[[rider_slots]]` is dropped at setup).
+        enabled: 0..=1 = "d_fl_zero",
+        /// R3a switch: a suppressed rider gets everyone off ...
+        off_on_suppression: 0..=1 = "d_fl_one",
+        /// ... past this share of `[suppression] crouch_suppression` (%).
+        suppression_pct: 0..=400 = "d_rd_suppression_pct",
+        /// R3b switch: a shell, rocket or mine striking the vehicle.
+        off_on_hit: 0..=1 = "d_fl_one",
+        /// R3c switch: its main gun firing.
+        off_on_fire: 0..=1 = "d_fl_one",
+        /// R3: all riders are off this long after the cause (ms) ...
+        exit_ms: 100..=30000 = "d_rd_exit_ms",
+        /// ... and cannot fire for this long after (ms).
+        stun_ms: 100..=30000 = "d_rd_stun_ms",
+    }
+}
+
+fn d_rd_suppression_pct() -> u32 {
+    100
+}
+fn d_rd_exit_ms() -> u32 {
+    600
+}
+fn d_rd_stun_ms() -> u32 {
+    1000
+}
+
+impl RidersTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for RidersTuning {
+    /// The S15a values (a rules def without `[riders]`): switch off.
+    fn default() -> RidersTuning {
+        RidersTuning {
+            enabled: 0,
+            off_on_suppression: 1,
+            suppression_pct: 100,
+            off_on_hit: 1,
+            off_on_fire: 1,
+            exit_ms: 600,
+            stun_ms: 1000,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[body_armour]` (S15, docs/slices/S15-ussr.md 2, rules P1-P5): a
+    /// member's steel plate (`armour = { mm, zone, arc_deg }`). The switch
+    /// `enabled` is 0 in S15a (absent: these values).
+    pub struct BodyArmourTuning {
+        /// P1-P5 switch (0: every member `armour` is dropped at setup).
+        enabled: 0..=1 = "d_fl_zero",
+        /// P2: the strength of a bullet whose weapon has no `penetration`
+        /// table (pistol calibres; tenths of a mm).
+        soft_pen_tenths_mm: 0..=1000 = "d_ba_soft_pen",
+        /// P3: a stopped hit deals this share of its damage (%).
+        stopped_damage_pct: 0..=400 = "d_fl_zero",
+        /// P4 switch: the plate stops a butt or bayonet strike.
+        stops_melee: 0..=1 = "d_fl_one",
+        /// P1 switch: a prone man's plate counts.
+        prone: 0..=1 = "d_fl_zero",
+    }
+}
+
+fn d_ba_soft_pen() -> u32 {
+    10
+}
+
+impl BodyArmourTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for BodyArmourTuning {
+    /// The S15a values (a rules def without `[body_armour]`): switch off.
+    fn default() -> BodyArmourTuning {
+        BodyArmourTuning {
+            enabled: 0,
+            soft_pen_tenths_mm: 10,
+            stopped_damage_pct: 0,
+            stops_melee: 1,
+            prone: 0,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[ai.riders]` (S15-ai, docs/slices/S15-ussr.md 2, 7 A1): the AI's
+    /// rider jobs. Switch 0 in S15a (absent: these values).
+    pub struct AiRidersTuning {
+        /// A1 switch: rider jobs.
+        jobs: 0..=1 = "d_fl_zero",
+        /// A1: rider jobs at once (hard ceiling 8).
+        squads_max: 1..=8 = "d_ar_squads_max",
+        /// A1: the riders get off this far short of the point (m).
+        drop_m: 1..=1000 = "d_ar_drop_m",
+        /// L1: a job ends after this long (s) ...
+        job_max_s: 1..=3600 = "d_ar_job_max_s",
+        /// ... L2: or with no progress for this long (s).
+        stall_s: 1..=3600 = "d_ar_stall_s",
+        /// L3: a failed pairing is not tried again for this long (s).
+        recheck_s: 1..=3600 = "d_ar_recheck_s",
+    }
+}
+
+fn d_ar_squads_max() -> u32 {
+    2
+}
+fn d_ar_drop_m() -> u32 {
+    150
+}
+fn d_ar_job_max_s() -> u32 {
+    240
+}
+fn d_ar_stall_s() -> u32 {
+    45
+}
+fn d_ar_recheck_s() -> u32 {
+    60
+}
+
+impl AiRidersTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for AiRidersTuning {
+    /// The S15a values (a rules def without `[ai.riders]`): switch off.
+    fn default() -> AiRidersTuning {
+        AiRidersTuning {
+            jobs: 0,
+            squads_max: 2,
+            drop_m: 150,
+            job_max_s: 240,
+            stall_s: 45,
+            recheck_s: 60,
+        }
+    }
+}
+
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
 pub const TABLES: &[(&str, &[TuningKey])] = &[
@@ -3692,6 +3844,9 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("armour", ArmourTuning::KEYS),
     ("flame", FlameTuning::KEYS),
     ("melee", MeleeTuning::KEYS),
+    ("riders", RidersTuning::KEYS),
+    ("body_armour", BodyArmourTuning::KEYS),
+    ("ai.riders", AiRidersTuning::KEYS),
     ("clear", ClearTuning::KEYS),
     ("ai.flame", AiFlameTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
@@ -3768,6 +3923,9 @@ pub(crate) struct TuningRefs<'a> {
     pub melee: &'a MeleeTuning,
     pub clear: &'a ClearTuning,
     pub ai_flame: &'a AiFlameTuning,
+    pub riders: &'a RidersTuning,
+    pub body_armour: &'a BodyArmourTuning,
+    pub ai_riders: &'a AiRidersTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -3839,6 +3997,9 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.melee.check(&p("melee"), out);
     t.clear.check(&p("clear"), out);
     t.ai_flame.check(&p("ai.flame"), out);
+    t.riders.check(&p("riders"), out);
+    t.body_armour.check(&p("body_armour"), out);
+    t.ai_riders.check(&p("ai.riders"), out);
 }
 
 #[cfg(test)]

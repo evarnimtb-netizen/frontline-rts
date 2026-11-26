@@ -971,6 +971,27 @@ impl ModDefs {
     /// S4: a rules def's references (the training default).
     fn check_rules_refs(&self, r: &RulesDef) -> Vec<Issue> {
         let mut out = Vec::new();
+        // S15 M1: every faction `[matchups]` names exists.
+        if let Some(m) = &r.matchups {
+            for (k, f) in m.factions.iter().enumerate() {
+                if !self.factions.contains_key(f) {
+                    out.push(Issue::new(
+                        format!("matchups.factions[{k}]"),
+                        format!("unknown faction `{f}`"),
+                    ));
+                }
+            }
+            for (k, pair) in m.pairs.iter().enumerate() {
+                for f in pair {
+                    if !self.factions.contains_key(f) {
+                        out.push(Issue::new(
+                            format!("matchups.pairs[{k}]"),
+                            format!("unknown faction `{f}`"),
+                        ));
+                    }
+                }
+            }
+        }
         if let Some(t) = &r.training
             && !self.training.contains_key(&t.default)
         {

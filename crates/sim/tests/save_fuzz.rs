@@ -1167,7 +1167,7 @@ fn staged_s15(w: &mut World) {
     assert!(w.seat_now(squads[0], tanks[0]), "the staged riders board");
     assert!(w.edit_vehicle(tanks[0], |v| {
         v.rider_off = Some(RiderOff {
-            ticks: 200,
+            ticks: 15,
             why: rider_exit::HIT,
         })
     }));

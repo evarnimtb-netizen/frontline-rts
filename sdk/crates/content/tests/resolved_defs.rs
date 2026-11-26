@@ -217,15 +217,18 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // changed it; the Build B values were
 // 0x6ecc7eeea9c3f6b0, 0xaaec0ee881b5f065, 0x702e969a764a6f12,
 // 0x6ecc7eeea9c3f6b0, 0xd61c8badbd467e85, 0x6e581b6585ee642c.
+// S15a Build A: the S15 keys ([matchups], [riders], [body_armour],
+// [ai.riders], [supply] foreign_ammo, [melee] bayonets) and
+// TransportSetup::exposed; no value of an existing key changed.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x8c803c7043b1fb83),
-    ("skirmish usa-ger seed 7 hard", 0x53f81dfab12c92f9),
-    ("test_unlock ger-usa seed 1 normal", 0xdd59ae85c7a13ab3),
-    ("example override ger-usa seed 1 normal", 0x8c803c7043b1fb83),
-    ("human ger vs ai usa seed 3 easy", 0xee4b09fa4eed7791),
+    ("skirmish ger-usa seed 1 normal", 0xce2cdd3641bdb5c2),
+    ("skirmish usa-ger seed 7 hard", 0x8cd20984ecbb5a50),
+    ("test_unlock ger-usa seed 1 normal", 0xa7342dccff36ff16),
+    ("example override ger-usa seed 1 normal", 0xce2cdd3641bdb5c2),
+    ("human ger vs ai usa seed 3 easy", 0xd6fb94c00381309b),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xa3e249d8063b302c,
+        0xddd3bc294ac10a7c,
     ),
 ];
 

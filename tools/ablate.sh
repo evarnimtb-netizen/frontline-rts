@@ -88,6 +88,16 @@
 # default target/s14-base40, the 40 set of base a27ce63). Written by S14a
 # Build A; run by a later balance pass (owner 2026-11-25).
 #
+# S15 (docs/slices/S15-ussr.md 2, 11): with ABLATIONS=docs/slices/targets/
+# S15-ablations every *.toml there is an override (s15_off, no_riders,
+# no_plates, no_foreign, no_bayonets, no_rider_ai, free); a file may hold
+# only the S15 switches ([riders] enabled; [body_armour] enabled; [supply]
+# foreign_ammo; [melee] bayonets; [ai.riders] jobs; [matchups] free,
+# mirror; each 0 or 1) and the [matchups] lists `factions` and `pairs`
+# (not counted as keys). s15_off is the neutrality control (NEUTRAL_BASE
+# default target/s14-F-40, the S14 head 96d4b4b's 40 set). Written by S15a
+# Build A; run by a later balance pass (owner 2026-11-25).
+#
 # Env: ABLATIONS=DIR (default docs/slices/targets/S10b-ai-ablations; the
 # S10a set is docs/slices/targets/S10a-ai-ablations), TARGETS (default the
 # slice file beside DIR: S10b-ai.toml / S10a-ai.toml), NEUTRAL_BASE (default
@@ -148,6 +158,12 @@ if [ "$(basename "$DIR")" = S14-ablations ]; then
     MODE=s14
     NEUTRAL_NAME=s14_off
     NEUTRAL_BASE=${NEUTRAL_BASE:-target/s14-base40}
+fi
+if [ "$(basename "$DIR")" = S15-ablations ]; then
+    S10C=1
+    MODE=s15
+    NEUTRAL_NAME=s15_off
+    NEUTRAL_BASE=${NEUTRAL_BASE:-target/s14-F-40}
 fi
 NEUTRAL_BASE=${NEUTRAL_BASE:-target/s10b-verify}
 DRY=0
@@ -249,6 +265,17 @@ elif mode == "s14":
         "clear": {"enabled": on_off},
         "ai.flame": {"jobs": on_off, "refuel": on_off, "buy": on_off, "clear": on_off},
     }
+elif mode == "s15":
+    # S15: its switches (0 or 1); the [matchups] lists are skipped below.
+    on_off = {0, 1}
+    switches = {
+        "riders": {"enabled": on_off},
+        "body_armour": {"enabled": on_off},
+        "supply": {"foreign_ammo": on_off},
+        "melee": {"bayonets": on_off},
+        "ai.riders": {"jobs": on_off},
+        "matchups": {"free": on_off, "mirror": on_off},
+    }
 elif mode == "s11a2":
     # S11a2: its four switches, at 0 only.
     switches = {
@@ -267,6 +294,8 @@ for n, raw in enumerate(open(path), 1):
         table = m.group(1)
         if table not in switches:
             sys.exit(f"{path}:{n}: only the tables {sorted(switches)}, not [{table}]")
+        continue
+    if mode == "s15" and table == "matchups" and re.fullmatch(r"(factions|pairs)\s*=\s*\[.*\]", line):
         continue
     m = re.fullmatch(r"([a-z_]+)\s*=\s*(-?[0-9]+)", line)
     if not m or table not in switches:

@@ -711,6 +711,8 @@ impl VehicleState {
             // slots that is not a wreck.
             || self.rider_off.is_some_and(|r| {
                 r.ticks == 0
+                    || r.ticks as u64
+                        > (s.rules.riders.exit_ms as u64 * s.tick_hz as u64).div_ceil(1000)
                     || !(crate::s15::rider_exit::SUPPRESSED..=crate::s15::rider_exit::GUN_FIRED)
                         .contains(&r.why)
                     || self.riders.is_empty()

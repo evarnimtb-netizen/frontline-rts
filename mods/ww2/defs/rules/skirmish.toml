@@ -1350,6 +1350,7 @@ truck_load_kg_s = 8          # kg per s of small arms or explosives into a truck
 drop_s = 3                   # s per crate off a truck
 drop_reach_m = 8             # m: a truck this close to its drop point stops and drops there
 cargo_detonate_min_kg = 40   # kg of shells + explosives in the cargo for a hit to detonate it (S8b-9); below this it only burns
+foreign_ammo = 0             # S15 X1-X3 switch: a [foreign_feed] draws rounds from a held enemy crate (0..=1; 0 in S15a, 1 in S15-ai)
 
 # S6: the AI's HQ, crate runs and supply to tanks (owner request
 # 2026-11-01: bring supply to a tank, not only drive it back).
@@ -1837,6 +1838,7 @@ recover_ms = 1000            # M3: recovery with no fire (1..=4000 ms)
 start_pad_cm = 0             # M2: start with an enemy within reach + this (0..=1000 cm; S14 Fix 3: 0, a start beyond reach misses)
 down_cm = 200                # M1: strike a man whose feet are up to this far below the striker's (0..=1000 cm; a 180 cm trench from its lip)
 up_cm = 200                  # M1: ... or up to this far above them (0..=1000 cm; the lip from a trench)
+bayonets = 0                 # S15 B1 switch: a weapon's [melee.bayonet] block replaces its [melee] block (0..=1; 0 in S15a, 1 in S15-ai)
 
 # S14 ClearTrench C1-C5 (plan 2, 6). Switch on since S14-ai Build D.
 [clear]
@@ -1866,3 +1868,39 @@ memory_s = 60                # A1, A3, A4: an enemy seen in a dug cell is rememb
 burn_min_s = 10              # A1: Burn runs at least this long before the "nobody left" test (0..=600 s; S14 Fix 2)
 clear_max_s = 300            # A4: an AI clear running this long is ended (1..=3600 s; S14 Fix 4)
 stand_trench_m = 2           # A1: the flame man burns a trench target from this far, its lip (1..=1000 m; S14 Fix 2; stand_m is a bunker's)
+
+# S15 USSR (docs/slices/S15-ussr.md 2, 4): who may be picked and who fights whom. Germany against the
+# USA stays the default everywhere; ww2:ussr is appended to both lists in S15-ai.
+[matchups]
+factions = ["ww2:germany", "ww2:usa"]   # M1: the factions a match may name (empty or absent: no check)
+pairs = [["ww2:germany", "ww2:usa"]]     # M2: hostile pairs allowed, menu order; the first pair holding a faction is its default opponent (M3)
+free = 0                     # M2: 1 = any two different enabled factions may fight ("free skirmish"; 0..=1)
+mirror = 0                   # M4: 1 = menus and lobby offer the same faction on both sides of a 1v1 (0..=1)
+
+# S15 riders R1-R6 (plan 2, 5.1): infantry on the deck of a tank, assault gun or TD. Every number is
+# a balance lever (owner 2026-11-25: no balance runs, no tuning; a later pass fixes them here).
+[riders]
+enabled = 0                  # switch R1-R6 (0..=1; 0: every [[rider_slots]] is dropped at setup; 1 in S15-ai)
+off_on_suppression = 1       # switch R3a: a rider past suppression_pct gets everyone off (0..=1)
+suppression_pct = 100        # R3a: share of [suppression] crouch_suppression (0..=400 %)
+off_on_hit = 1               # switch R3b: a shell, AT rocket or mine strikes the vehicle (0..=1)
+off_on_fire = 1              # switch R3c: its main gun fires (0..=1)
+exit_ms = 600                # R3: all riders off this long after the cause, over the sides (100..=30000 ms)
+stun_ms = 1000               # R3: no fire for this long after a forced exit (100..=30000 ms)
+
+# S15 plates P1-P5 (plan 2, 5.2): a member's `armour = { mm, zone, arc_deg }`.
+[body_armour]
+enabled = 0                  # switch P1-P5 (0..=1; 0: every member armour is dropped at setup; 1 in S15-ai)
+soft_pen_tenths_mm = 10      # P2: strength of a bullet with no penetration table, pistol calibres (0..=1000 tenths of a mm; 1.0 mm)
+stopped_damage_pct = 0       # P3: a stopped hit deals this share of its damage (0..=400 %)
+stops_melee = 1              # switch P4: the plate stops a butt or bayonet strike (0..=1)
+prone = 0                    # switch P1: a prone man's plate counts (0..=1)
+
+# S15-ai A1 (plan 2, 7): the AI's rider jobs. 0 in S15a, 1 in S15-ai.
+[ai.riders]
+jobs = 0                     # switch A1 (0..=1)
+squads_max = 2               # A1: rider jobs at once (1..=8)
+drop_m = 150                 # A1: the riders get off this far short of the point (1..=1000 m)
+job_max_s = 240              # L1: a job ends after this long (1..=3600 s)
+stall_s = 45                 # L2: or with no progress this long (1..=3600 s)
+recheck_s = 60               # L3: a failed pairing waits this long (1..=3600 s)
