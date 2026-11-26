@@ -608,7 +608,8 @@ S14 Fix (2026-11-25, review `docs/slices/S14-review.md`; log `S14-log.md` "S14 F
 
 ## S15 USSR owner questions (asked 2026-11-26 by the Plan stage; each runs on (A): "(A) assumed 2026-11-26")
 
-Plan `docs/slices/S15-ussr.md` 13 (notes `S15-research-history.md`, `S15-research-code-audit.md`). Nothing built. Owner rule
+Plan `docs/slices/S15-ussr.md` 13 (notes `S15-research-history.md`, `S15-research-code-audit.md`). Built, reviewed and fixed on the
+branch (log `S15-log.md`; S15-14 and S15-15 added by the Fix; T212c met in the Fix's 40 set, max 28.4 min). Owner rule
 2026-11-25 applies: no balance run in S15; the proof is a neutral 40 set and one breakage 40 set (Germany against the USSR); the
 USSR's win rates are reported, not judged; the roster card's "inside the win-rate band" waits for a later balance pass. Minor data
 and scope points (every price as a starting value copied from the nearest German or US card, 9 and 6 men, ROKS-3 10 L, T-34-85 55

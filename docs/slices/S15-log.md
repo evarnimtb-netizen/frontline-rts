@@ -5,33 +5,23 @@ Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never
 `godot/match/*.gd.uid`. Do not push. Owner rule: no balance runs, no tuning; every number a TOML key with a range, switches off.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S15-ai Build D done; Review next** (sim, save layout untouched: SAVE 34 / PROTOCOL 17). Shipped: `ww2:ussr` in
-`[matchups]` (pairs Germany-USA, the default, and Germany-USSR), `[riders]`, `[body_armour]`, `[supply] foreign_ammo`,
-`[melee] bayonets`, `[ai.riders] jobs` all 1. **Code map:** `crates/sim/src/ai/riders.rs` (A1: `riders_continue` after the
-transport jobs, `riders_start` after the demolition jobs, both in `ai.rs` `plan`); `ai/transport.rs` `carrier` (a rider deck is
-not a half-track); `s15.rs` `AiRiders::valid` (a tank removed over the wreck cap loads); `spotting.rs` `pct_of`; tests
-`crates/sim/src/s15_ai_tests.rs`; JSON `s15_derived` (`json_out.rs`); targets runs `pair_germany_ussr40`, `pair_usa_ussr40`
-(`faction0/1` in the run spec), rows T212-T218; `tools/batch.sh pair OUTDIR F0 F1`.
-**Numbers (D, three 40 sets).** T210 `target/s15-D-off40`, T211 `target/s15-D-40`: neutral.py "same 40/40" against
-`target/s14-F-40`. T212 `target/s15-D-pair40`: 40 winners, no panic, 10.4 / 18.3 / 41.5 min (min / median / max: **one match
-over 40, T212c misses**), hashes equal at 1 and 4 threads on seeds 1 and 2 (and equal to the set's). Germany 26, USSR 14 (base 0
-18, base 1 22; USSR 6 / 8 by base). T213a plate_stops 8 (48 plate hits); b rider_boards 11, exits 11 (all R3c gun fired);
-**c ROKS-3 hits 0 (46 fuel units fired; Germany 3 of 147)**; **d bayonet strikes 0** (Germany made 1 strike in 40); e T-34-85 16,
-M-42 116; f rider_jobs 2 (ends: forced off 1, stall 1), none open at an end. `targets S15.toml --from-json target/s15-D-proof`:
-hard misses T212c, T213c, T213d and T8c (inherited, the default set's value).
-**Open owner questions.** (1) T212c: one Germany-USSR match ran 41.5 min (levers: USSR `ai_weight`, S15-5; no tuning here).
-(2) T213c/d: no AI habit closes to melee reach (strikes are M2's automatic ones; 1 in 40 for Germany), and the ROKS-3 fires but
-did not hit in 40: accept as reports, or add habits? (3) The SMG section (`vehicle_riders`) and the 9-man rifle section do not
-fit the 8-slot T-34-85 / IS-2 decks at full strength: only the 6-man card and weakened squads ride (2 jobs in 40); R3c then
-empties the deck at the first shot. (4) Cards never bought: ZiS-2, ZiS-3 (the AT-gun habit takes the first `at_gun` card of the
-roster, the M-42, as Germany always takes the PaK 40), SU-76M (weight 50 in a slot with about one vehicle buy per match), medics,
-bearers, HQ (as for Germany and the USA in the default pair). (5) `second_bases` USSR 439 vs Germany 16: a matter of numbers (the
-rule compares a base's fire weight with the enemy's best MG team weapon: MG 42 1200 rpm x 15 = 18000 against a Maxim team
-about 8800; the USA in the default pair has 237 against Germany 16).
-**check.sh quick 96d4b4b** (at 2fcd35d): fmt, clippy, neutral.py, every ablate dry run ok; tests 1356 passed, **2 failed**, both
-in `crates/godot-bridge/src/match_setup.rs` (`menu_choice_without_opponent_is_base`, `rejects_bad_choices`): they assert the
-shipped menu has no USSR. The bridge is the presenter stage's (not touched here): it updates them to the shipped table.
-**Deviations:** see "S15-ai D".
+**State: S15 Fix done; Docs / PR next** (SAVE 34 / PROTOCOL 17, no layout change; three factions in the shipped `[matchups]`).
+Review findings 1-14 fixed or settled (see "S15 F"). For the PR: the USSR's AT guns come with `ww2:ussr_us6_tractor_squad` (a
+`tractor` US6 that seats the crew, AI weight 0); the M1943 and M-30 cards have no tow and arrive limbered; T-34-85 and IS-2 decks
+have 10 places (S15-14 (A)); T213c/d are reports (S15-15 (A)); JSON `s15.rider_job_end_<name>` and `abandon_causes.gun` (was
+"none") are renamed keys, so `neutral.py` against older sets lists them as the only differences.
+**Numbers (Fix, three 40 sets).** T210 `target/s15-F-off40`, T211 `target/s15-F-40`: `neutral.py target/s14-F-40` same 40/40
+each; the only JSON differences are `abandon_causes.none` -> `gun` (12 AB_GUN losses, the review 2 label). T212
+`target/s15-F-pair40`: 40 winners, length 10.3 / 17.9 / 28.4 min (T212c met). Germany 28, USSR 12 (USSR 5 / 7 by base; reported,
+not judged). Guns, Germany | USSR: AT guns bought 69 | 74, emplaced 84 | 70, rounds 268 | 335, neutral 0 | 7, re-sites 25 | 13,
+tows lost 0 | 14; arty buys 40 | 41, emplaced 72 | 68, missions 117 | 117, gun rounds 639 | 567, howitzers 35 | 30, howitzer
+rounds 210 | 91, FO buys 40 | 41, matches with a gun fired 39 | 40. Rules (USSR): plate hits 47 / stops 5; rider boards 58, exits 49
+(all R3c gun fired); rider jobs 9 (forced off 5, stall 3, one open at an end); ROKS-3 hits 4; bayonet strikes 0; captured bombs 0.
+**check.sh quick 96d4b4b** (at bb73bf5): all ok (fmt, clippy, neutral.py, every ablate dry run; tests 1375 passed, 0 failed).
+Godot headless `test_net_ui.gd` / `test_match_view.gd` not run (no Godot binary in this container; the bridge changed only in
+`net_session::set_choice` / `set_defs` and tests): run them before the PR.
+**Open owner questions.** S15-1..15 on (A); S15-14 and S15-15 added by this stage. Earlier ones still open: cards never bought
+(ZiS-2 / ZiS-3: the AT-gun habit takes the roster's first `at_gun` card), `second_bases` (a numbers matter for the balance pass).
 
 ## S15a A (Build A)
 Commits: ae409fd layout (SAVE 34); 1e1f16f keys, `[matchups]`, ablations, targets; 6545360 matchups M1-M4; 896a91e riders
@@ -166,3 +156,28 @@ S13 vehicles; the stage adds the `deck` key, the paint and the pads. (2) "Riders
 rider crouched at the foot of his slot box; the presenter adds a thin pad there. (3) Placeholder only: no spark on a plate stop (no
 event), no riders-off animation (`riders_off` is sent, not drawn). (4) `Vehicles.GLACIS_DEG.ussr` is the mock's look; the bridge sends
 `glacis_deg`. (5) The lobby's pair check runs in the client at Ready (relay unchanged); the panel pre-checks with the same options.
+
+## S15 F (Fix)
+Commits: c44b267 guns (review 1-3); bb73bf5 riders, bridge tests, proving tests, lows (4-13); then this log.
+Fixed: (1-3) data: M1943 / M-30 cards without a tow (as leIG 18 / leFH 18); new `ussr_us6_tractor` (+ card) towing the M-42, ZiS-2,
+ZiS-3 with 8 seats; content check "a gun card's tow seats its crew"; CLI `ABANDON_CAUSES` names AB_GUN "gun". (4) `riders_continue`
+sends `Stop` when an ended job's squad is still told to board its tank. (5) 10 deck places (S15-14). (6) bridge menu tests on
+the shipped three-faction table. (7) driven habit tests replace the card table's gun, howitzer, observer and tow rows; the
+determinism scene fires captured bombs and makes a bayonet strike; the frame test checks rider and plate values; a ROKS-3 hits
+at 20 m; `riders_off_is_base`. (8) foreign rounds per man / squad feed; rider timer only on an exposed deck; the setup check
+refuses a deck or a foreign feed with its switch 0 (tests that ran a deck with `[riders] enabled` 0 now use the R3 key, a far burst
+or `s15_off` as their control). (9) mortar bombs mark every crew member's chunk. (12) `s15::hostile_to`. (13) `match_state.md`
+says what ships; a faction set before the defs load is kept and checked by `set_defs`; JSON job ends named.
+Tests added: sim `ussr_ai_emplaces_its_infantry_gun_and_buys_an_observer`, `ussr_ai_emplaces_its_howitzer`,
+`ussr_at_gun_crew_rides_the_tractor`, `rider_job_stall_stops_the_walking_squad`, `rider_job_takes_the_nine_man_section`,
+`roks3_hits_a_man_at_20_m`, `riders_off_is_base`, `load_rejects_foreign_rounds_on_a_man_without_the_feed`,
+`load_rejects_a_rider_timer_on_a_half_track`, `crew_giver_bomb_marks_his_chunk`, `setup_refuses_s15_parts_without_their_switch`;
+content `gun_tow_seats_its_crew`; cli `abandon_causes_name_every_cause`, `s15_ai_names_follow_the_sim`; bridge
+`faction_picked_before_the_defs_is_checked_when_they_load`.
+**Deviations / settled without code.** (1) Review 8c: `AiRiders::valid` keeps no owner check (a save may hold a tank lost between
+plans); its doc says so. (2) Review 10: two behaviour changes outside a switch, both bug fixes: a flame landing off the map makes
+no patch (`flame.rs`), `pct_of` saturates (`spotting.rs`); T210/T211 same 40/40. (3) Review 11: R4 kept as the centre test against
+hull boxes (deviation A2); the issue text now says what it checks. (4) Review 14: data notes left for the data pass (BR-471 under
+500 m, PPSh rate). (5) `crew_giver_bomb_marks_his_chunk` passes without the fix too (the giver's chunk is marked by other updates in
+that scene); it guards the hash equality, not the order. (6) Godot tests not run here (no binary). (7) Edits outside the brief's
+files: `fortify/s15.rs` (the W2 stand-in drops the shipped decks with the switch 0), `s11a1_tests.rs` (38 vehicle defs).
