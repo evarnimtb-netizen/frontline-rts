@@ -1,13 +1,15 @@
 # Otdelenie avtomatchikov (S15 Build B): a nine-man section of the SMG
 # platoon (battleorder.org: the rifle platoon's frame with every rifle
 # replaced by a PPSh-41 / PPS-43, the DP gunners kept): seven PPSh-41 men
-# (the leader one of them), the DP pair, RG-42 grenades. Tag `riders`: the
-# cards the AI seats on tanks first (S15-ussr.md 7, A1).
+# (the leader one of them), the DP pair, RG-42 grenades. Tag `vehicle_riders`
+# (the plan's `riders`; the tag list is sorted, and this name sorts after
+# every older tag, so no tag index moves: N1): the cards the AI seats on
+# tanks first (S15-ussr.md 7, A1).
 id = "ww2:ussr_otdelenie_avtomatchikov"
 name = "Otdelenie avtomatchikov"
 short_name = "Avtomatchiki"
 faction = "ww2:ussr"
-tags = ["line", "riders"]
+tags = ["line", "vehicle_riders"]
 capabilities = ["dig_basic", "recrew"]
 sources = [
     "battleorder.org, USSR rifle company 1944 (shtat 04/550, December 1942; read 2026-11-26)",

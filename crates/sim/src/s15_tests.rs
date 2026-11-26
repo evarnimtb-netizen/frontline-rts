@@ -1468,3 +1468,260 @@ fn s15_scene_is_deterministic_across_threads_and_save_load() {
     assert!(a.rider_exits.iter().sum::<u32>() > 0, "{a:?}");
     assert!(a.plate_hits + b.plate_hits > 0, "{a:?} {b:?}");
 }
+
+// ----------------------------------------- Build B: the real USSR defs --
+
+const USSR_GROUP: &str = "ww2:ussr_shturmovaya_gruppa";
+const USSR_SECTION: &str = "ww2:ussr_strelkovoe_otdelenie";
+
+/// [`flat_world_with`] on defs edited before the resolve (the S15
+/// switches drop their def parts at the resolve, so the real USSR defs
+/// need them on there); `edit` then changes the setup. The USSR squads are
+/// in every setup (the faction is not enabled, so they only spawn in
+/// tests).
+fn ussr_world(
+    defs_edit: impl FnOnce(&mut frontline_content::ModDefs),
+    edit: impl FnOnce(&mut MatchSetup),
+) -> World {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let mut defs = frontline_content::ModDefs::load(&root).unwrap();
+    for r in defs.rules.values_mut() {
+        if let Some(f) = r.flame.as_mut() {
+            f.enabled = 0;
+        }
+    }
+    defs_edit(&mut defs);
+    let req = frontline_content::MatchRequest::skirmish(
+        1,
+        "ww2:germany",
+        "ww2:usa",
+        frontline_content::Difficulty::Normal,
+    );
+    let mut setup = defs.resolve(&req).unwrap();
+    setup.players.iter_mut().for_each(|p| p.is_ai = false);
+    setup.map.terrain.octaves.clear();
+    setup.map.terrain.bands.clear();
+    setup.map.woods.clear();
+    setup.s11b_off();
+    setup.s12_off();
+    setup.s13_off();
+    setup.s14_off();
+    edit(&mut setup);
+    World::new_match(setup, 1).unwrap()
+}
+
+fn plates_on(defs: &mut frontline_content::ModDefs) {
+    for r in defs.rules.values_mut() {
+        r.body_armour.get_or_insert_with(Default::default).enabled = 1;
+    }
+}
+
+/// One round of `wpn` from `dist` m in front of the first man of `card`
+/// (the others dead), at his chest; plates on in the defs. Returns (HP
+/// lost, plate stops). The man's own card decides whether he wears the
+/// plate.
+fn real_plate_shot(card: &str, wpn: &str, dist: i32) -> (u16, u32) {
+    let mut w = ussr_world(plates_on, |s| s.rules.wounds.enabled = 1);
+    let q = spawn(&mut w, 0, card, 500, 500);
+    steps(&mut w, 2);
+    let ms = members(&w, q);
+    for &m in &ms[1..] {
+        assert!(w.kill_soldier(m));
+    }
+    steps(&mut w, 1);
+    let m = ms[0];
+    let i = m.index();
+    let hold = |w: &mut World| {
+        w.place_soldier(m, FxVec2::from_int(500, 500));
+        steps(w, 1);
+    };
+    hold(&mut w);
+    hold(&mut w);
+    let t = w.state.entities.transform[i];
+    let h = w.state.entities.combat[i].height;
+    let z = t.pos.z
+        + Fx::from_raw((h.raw() as i64 * zone_pct(&w, crate::wounds::ZONE_TORSO) / 100) as i32);
+    let (sn, cs) = t.yaw.sin_cos();
+    let d = Fx::from_int(dist);
+    let from = FxVec3::new(t.pos.x + cs.mul(d), t.pos.y + sn.mul(d), z);
+    let aim = FxVec3::new(t.pos.x, t.pos.y, z);
+    let hp0 = w.state.entities.combat[i].hp;
+    let wi = weapon(&w, wpn);
+    assert!(w.fire_round_now(1, wi, from, aim));
+    for _ in 0..60 {
+        hold(&mut w);
+        if s15(&w, 0).plate_hits > 0 || w.state.entities.combat[i].hp < hp0 {
+            break;
+        }
+    }
+    let c = &w.state.entities.combat[i];
+    (hp0 - c.hp.min(hp0), s15(&w, 0).plate_stops)
+}
+
+/// P1-P2 on the real defs: a PPSh-41 round (no `penetration` table: the
+/// soft 1 mm) at 50 m is stopped by the SN-42 on the assault group's
+/// leader; a Mosin round (5 mm at 100 m) goes through. Controls: a
+/// rifle-section man, no plate, takes the PPSh round; the PPSh round
+/// stopped is the same man's.
+#[test]
+fn sn42_stops_a_ppsh_round_not_a_mosin_round() {
+    let (lost, stops) = real_plate_shot(USSR_GROUP, "ww2:ussr_ppsh41", 50);
+    assert_eq!((lost, stops), (0, 1), "the PPSh round is stopped");
+    let (lost, stops) = real_plate_shot(USSR_GROUP, "ww2:ussr_mosin_9130", 50);
+    assert_eq!(stops, 0, "the Mosin round beats 2 mm");
+    assert!(lost > 0, "and wounds him");
+    let (lost, stops) = real_plate_shot(USSR_SECTION, "ww2:ussr_ppsh41", 50);
+    assert_eq!(stops, 0, "control: the section wears no plate");
+    assert!(lost > 0, "control: the PPSh round wounds him");
+}
+
+/// B1 on the real Mosin: a strike by a rifle-section man at an enemy
+/// 1.5 m ahead hits with the bayonet (switch on), 1.9 m misses; with the
+/// switch off the butt misses at 1.5 m (control).
+fn mosin_strike(bayonets: u32, dx: i32) -> bool {
+    use super::s14c_tests::{AT, off, tick_held, wind_up};
+    let mut w = ussr_world(
+        |d| {
+            for r in d.rules.values_mut() {
+                r.melee.get_or_insert_with(Default::default).bayonets = bayonets;
+            }
+        },
+        |s| {
+            s.rules.melee.enabled = 1;
+            s.rules.wounds.enabled = 1;
+        },
+    );
+    let a_sq = spawn(&mut w, 0, USSR_SECTION, AT, AT);
+    let b_sq = spawn(&mut w, 1, US_RIFLES, AT + 200, AT + 200);
+    steps(&mut w, 2);
+    let mosin = weapon(&w, "ww2:ussr_mosin_9130");
+    let a = members(&w, a_sq)
+        .into_iter()
+        .find(|m| w.state.entities.kit[m.index()].weapon == mosin)
+        .expect("a Mosin man");
+    let b = members(&w, b_sq)[0];
+    for m in members(&w, a_sq).into_iter().chain(members(&w, b_sq)) {
+        if m != a && m != b {
+            assert!(w.kill_soldier(m));
+        }
+    }
+    steps(&mut w, 1);
+    wind_up(&mut w, a, off(300, 0));
+    tick_held(&mut w, (a, off(0, 0)), (b, off(dx, 0)), true);
+    let k = &w.game().unwrap().players[0].s14;
+    assert_eq!(k.strikes, 1, "one strike");
+    assert_eq!(s15(&w, 0).bayonet_strikes, bayonets, "bayonet counted");
+    k.strike_hits == 1
+}
+
+#[test]
+fn mosin_bayonet_reaches_150_not_190_cm() {
+    assert!(mosin_strike(1, 150), "the bayonet at 1.5 m");
+    assert!(
+        !mosin_strike(1, 240),
+        "not at 2.4 m (reach 1.8 m and the capsule)"
+    );
+    assert!(
+        !mosin_strike(0, 150),
+        "control: the butt does not reach 1.5 m"
+    );
+    assert!(mosin_strike(0, 90), "control: the butt at 0.9 m");
+}
+
+/// ptrd_engages_a_halftrack (plan
+/// risk 4). A PTR team 80 m from a US half-track standing still opens
+/// fire on it unordered and holes it within a minute; control: the same half-track 600 m
+/// away (past the PTRD's range) draws no shot.
+fn ptrd_vs_halftrack(dist: i32) -> (u32, bool) {
+    let mut w = ussr_world(|_| {}, |s| s.rules.wounds.enabled = 0);
+    let q = spawn(&mut w, 0, "ww2:ussr_raschyot_ptr", 300, 300);
+    let ht = spawn(&mut w, 1, "ww2:usa_m3a1_squad", 300 + dist, 300);
+    steps(&mut w, 3);
+    let v = members(&w, ht)[0];
+    let comps = |w: &World| -> u32 {
+        w.game().unwrap().vehicles[&v]
+            .components
+            .iter()
+            .map(|&c| c as u32)
+            .sum()
+    };
+    // The half-track's own MGs are spent (they would kill the team first).
+    w.edit_vehicle(v, |vs| {
+        vs.mgs.iter_mut().for_each(|m| m.spent = u32::MAX / 2)
+    });
+    let crew_hp = |w: &World| -> u32 {
+        w.game().unwrap().vehicles[&v]
+            .seats
+            .iter()
+            .map(|s| s.hp as u32)
+            .sum()
+    };
+    let before = comps(&w) + crew_hp(&w);
+    let ptrd = weapon(&w, "ww2:ussr_ptrd41");
+    let gunner = members(&w, q)
+        .into_iter()
+        .find(|m| w.state.entities.kit[m.index()].weapon == ptrd)
+        .unwrap();
+    let mag0 = w.state.entities.combat[gunner.index()].mag;
+    let rounds = |w: &World| -> u32 { w.state.entities.kit[gunner.index()].rounds[0] as u32 };
+    let r0 = rounds(&w);
+    steps(&mut w, 30 * 60);
+    let fired = (r0 - rounds(&w).min(r0))
+        + (mag0 as u32 - w.state.entities.combat[gunner.index()].mag.min(mag0) as u32);
+    (fired.min(1000), comps(&w) + crew_hp(&w) < before)
+}
+
+#[test]
+fn ptrd_engages_a_halftrack() {
+    let (fired, holed) = ptrd_vs_halftrack(80);
+    assert!(fired > 0, "the PTRD fired at the half-track unordered");
+    assert!(holed, "and holed it");
+    let (fired, holed) = ptrd_vs_halftrack(600);
+    assert_eq!((fired, holed), (0, false), "control: out of range");
+}
+
+/// A2: a roster without any `at` card (the AI's gated mix slot) does not
+/// stall the buys: player 0's AI still buys, also in the second half of
+/// five minutes, and buys no AT card. Control: with the cards the AI buys
+/// at least as many squads overall.
+fn buys_without_at(strip: bool) -> (u32, u32, u32) {
+    let mut w = flat_world_with(1, |s| {
+        s.players[0].is_ai = true;
+        if strip {
+            let at: Vec<u16> = (0..s.squad_types.len() as u16)
+                .filter(|&t| s.type_has_tag(t, "at"))
+                .collect();
+            let f = s.players[0].faction as usize;
+            s.factions[f].roster.retain(|t| !at.contains(t));
+            s.factions[f].start_squads.retain(|t| !at.contains(t));
+        }
+        s.rules.start_manpower = 2000;
+    });
+    let total = |w: &World| -> u32 {
+        w.game().unwrap().ai[0]
+            .as_ref()
+            .unwrap()
+            .counters
+            .bought
+            .iter()
+            .sum()
+    };
+    steps(&mut w, 30 * 150);
+    let half = total(&w);
+    steps(&mut w, 30 * 150);
+    let at_bought = w.game().unwrap().ai[0].as_ref().unwrap().counters.at_bought;
+    (half, total(&w), at_bought)
+}
+
+#[test]
+fn ai_tolerates_an_empty_mix_slot() {
+    let (half, all, at) = buys_without_at(true);
+    assert!(half > 0, "the AI buys with no AT card in the roster");
+    assert!(
+        all > half,
+        "and keeps buying in the second half: {half} {all}"
+    );
+    assert_eq!(at, 0, "no AT card to buy");
+    let (_, ctl, _) = buys_without_at(false);
+    assert!(ctl > 0, "control: the full roster buys");
+}

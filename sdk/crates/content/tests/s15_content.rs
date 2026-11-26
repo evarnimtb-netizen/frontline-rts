@@ -389,3 +389,195 @@ fn rider_slots_are_checked() {
     truck.rider_slots = ok.rider_slots.clone();
     assert!(!truck.validate().is_empty(), "riders on a truck");
 }
+
+// ------------------------------------------- Build B: the real USSR defs --
+
+/// Sets every S15 switch of every rules def to 1 (or 0).
+fn s15_switches(defs: &mut ModDefs, on: u32) {
+    for r in defs.rules.values_mut() {
+        r.riders.get_or_insert_with(Default::default).enabled = on;
+        r.body_armour.get_or_insert_with(Default::default).enabled = on;
+        r.supply.as_mut().expect("[supply]").foreign_ammo = on;
+        r.melee.get_or_insert_with(Default::default).bayonets = on;
+    }
+}
+
+/// Plan N1 (the Append rule): every id S15 adds starts `ww2:ussr` and
+/// sorts after every older id, so the Germany-USA setup is the setup
+/// without the USSR defs with the USSR entries appended at the end of each
+/// list: nothing is renumbered, no German or US def gained a key. Checked
+/// with the S15 switches off and with them on (T210, T211 in the small).
+/// Control: the USSR entries exist in each list (the check is not empty).
+#[test]
+fn s15_defs_sort_last() {
+    for on in [0, 1] {
+        let mut full = ModDefs::load(&root().join("mods/ww2")).unwrap();
+        s15_switches(&mut full, on);
+        let mut base = full.clone();
+        base.squads.retain(|k, _| !k.starts_with("ww2:ussr"));
+        base.weapons.retain(|k, _| !k.starts_with("ww2:ussr"));
+        base.items.retain(|k, _| !k.starts_with("ww2:ussr"));
+        base.vehicles.retain(|k, _| !k.starts_with("ww2:ussr"));
+        base.ammo.retain(|k, _| !k.starts_with("ww2:ussr"));
+        base.cartridges.retain(|k, _| !k.starts_with("ww2:ussr"));
+        base.supply.retain(|k, _| !k.starts_with("ww2:ussr"));
+        base.factions.retain(|k, _| !k.starts_with("ww2:ussr"));
+        let r = req("ww2:germany", "ww2:usa");
+        let mut got = full.resolve(&r).unwrap();
+        let want = base.resolve(&r).unwrap();
+        let mut seen = Vec::new();
+        macro_rules! list {
+            ($f:ident) => {{
+                let ids: Vec<String> = got.$f.iter().map(|d| d.id.clone()).collect();
+                let first = ids.iter().position(|i| i.starts_with("ww2:ussr"));
+                let old = ids.iter().filter(|i| !i.starts_with("ww2:ussr")).count();
+                assert_eq!(
+                    first.unwrap_or(old),
+                    old,
+                    "{}: USSR ids come last",
+                    stringify!($f)
+                );
+                assert!(
+                    ids[old..].iter().all(|i| i.starts_with("ww2:ussr")),
+                    "{}",
+                    stringify!($f)
+                );
+                seen.push((stringify!($f), ids.len() - old));
+                got.$f.truncate(old);
+            }};
+        }
+        list!(squad_types);
+        list!(weapons);
+        list!(items);
+        list!(vehicles);
+        list!(ammo);
+        list!(cartridges);
+        list!(stocks);
+        list!(factions);
+        // The vehicles list gains nothing until Build C.
+        for (name, n) in &seen {
+            if *name != "vehicles" && *name != "ammo" {
+                assert!(*n > 0, "{name}: no USSR entry");
+            }
+        }
+        // The tag list is sorted: the one USSR tag (`vehicle_riders`) sorts
+        // after every older one, so the list only grows at its end.
+        assert!(got.tags.starts_with(&want.tags), "no tag index moved");
+        assert!(
+            got.tags[want.tags.len()..]
+                .iter()
+                .all(|t| t == "vehicle_riders")
+        );
+        got.tags.truncate(want.tags.len());
+        macro_rules! same {
+            ($($f:ident),*) => {$( assert!(got.$f == want.$f, "switches {on}: {} changed", stringify!($f)); )*};
+        }
+        same!(
+            weapons,
+            items,
+            squad_types,
+            factions,
+            ammo,
+            vehicles,
+            tags,
+            training,
+            cartridges,
+            stocks,
+            forts,
+            rules,
+            map,
+            players
+        );
+        assert!(got == want, "switches {on}: the old entries changed");
+    }
+}
+
+fn assault_group(s: &frontline_content::MatchSetup) -> &frontline_content::setup::SquadTypeSetup {
+    &s.squad_types[s.squad_type_index("ww2:ussr_shturmovaya_gruppa").unwrap() as usize]
+}
+
+/// P1 data: with `[body_armour] enabled` 1 every man of the assault group
+/// wears the 2 mm torso plate (the SN-42) and no man of any other card
+/// does; with 0 nobody does (control: the plate is in the def).
+#[test]
+fn only_the_assault_group_wears_a_plate() {
+    let mut defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    s15_switches(&mut defs, 1);
+    let on = defs.resolve(&req("ww2:germany", "ww2:usa")).unwrap();
+    for t in &on.squad_types {
+        let plated = t.members.iter().filter(|m| m.plate.is_some()).count();
+        if t.id == "ww2:ussr_shturmovaya_gruppa" {
+            assert_eq!(plated, t.members.len(), "every man of the group");
+            assert!(t.members.iter().all(|m| m.plate.unwrap().tenths_mm == 20));
+        } else {
+            assert_eq!(plated, 0, "{}", t.id);
+        }
+    }
+    s15_switches(&mut defs, 0);
+    let off = defs.resolve(&req("ww2:germany", "ww2:usa")).unwrap();
+    assert!(
+        assault_group(&off)
+            .members
+            .iter()
+            .all(|m| m.plate.is_none()),
+        "control: switch 0 drops the plates"
+    );
+}
+
+/// S14 4.2 on the ROKS-3 pair: with `[flame] enabled` 0 the assault group
+/// has no flame man and no `flame` capability (every man a PPSh-41 man);
+/// with 1 it has one ROKS-3 operator and a `crew_assistant`. Control: the
+/// flame-on group differs.
+#[test]
+fn roks3_pair_off_is_no_flame_man() {
+    use frontline_content::setup::Capability;
+    let roks = |defs: &ModDefs, on: u32| {
+        let mut d = defs.clone();
+        d.rules
+            .values_mut()
+            .for_each(|r| r.flame.get_or_insert_with(Default::default).enabled = on);
+        let s = d.resolve(&req("ww2:germany", "ww2:usa")).unwrap();
+        let w = s
+            .weapons
+            .iter()
+            .position(|w| w.id == "ww2:ussr_roks3")
+            .unwrap();
+        let t = assault_group(&s);
+        let n = t.members.iter().filter(|m| m.weapon as usize == w).count();
+        (n, t.men as usize, t.has(Capability::Flame))
+    };
+    let defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    assert_eq!(roks(&defs, 0), (0, 8, false), "flame off: eight PPSh men");
+    assert_eq!(roks(&defs, 1), (1, 8, true), "control: flame on");
+}
+
+/// The Mosin carries both strikes: the butt always, the bayonet only with
+/// `[melee] bayonets` 1 (the setup drops it at 0).
+#[test]
+fn mosin_has_butt_and_bayonet_blocks() {
+    let mut defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    let m = defs.weapons["ww2:ussr_mosin_9130"].melee.unwrap();
+    assert_eq!((m.reach_cm, m.bayonet.unwrap().reach_cm), (100, 180));
+    s15_switches(&mut defs, 1);
+    let on = defs.resolve(&req("ww2:germany", "ww2:usa")).unwrap();
+    let k = on
+        .weapons
+        .iter()
+        .position(|w| w.id == "ww2:ussr_mosin_9130")
+        .unwrap();
+    assert!(on.weapons[k].bayonet.is_some());
+    let kar = on
+        .weapons
+        .iter()
+        .position(|w| w.id == "ww2:kar98k")
+        .unwrap();
+    assert!(on.weapons[kar].bayonet.is_none(), "no German bayonet");
+    let sn = on
+        .weapons
+        .iter()
+        .position(|w| w.id == "ww2:ussr_82mm_bm37")
+        .unwrap();
+    assert!(on.weapons[sn].foreign_feed.is_some());
+    let grw = on.weapons.iter().position(|w| w.id == "ww2:grw34").unwrap();
+    assert!(on.weapons[grw].foreign_feed.is_none(), "X3: one way only");
+}
