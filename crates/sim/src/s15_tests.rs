@@ -1490,6 +1490,8 @@ fn ussr_world(
             f.enabled = 0;
         }
     }
+    // S15-ai Build D ships the S15 switches on: off first, as written.
+    super::s6_tests::s15_defs_off(&mut defs);
     defs_edit(&mut defs);
     let req = frontline_content::MatchRequest::skirmish(
         1,
