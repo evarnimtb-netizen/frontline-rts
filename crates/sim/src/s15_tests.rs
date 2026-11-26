@@ -1725,3 +1725,87 @@ fn ai_tolerates_an_empty_mix_slot() {
     let (_, ctl, _) = buys_without_at(false);
     assert!(ctl > 0, "control: the full roster buys");
 }
+
+// ------------------------------------ Build C: the real Soviet vehicles --
+
+fn riders_on(defs: &mut frontline_content::ModDefs) {
+    for r in defs.rules.values_mut() {
+        r.riders.get_or_insert_with(Default::default).enabled = 1;
+    }
+}
+
+/// `card`'s vehicle at (500, 500) and the 6-man Soviet section beside its
+/// rear; `Embark`; at most 30 s. Returns (men in the squad, riders on).
+fn board_card(w: &mut World, card: &str) -> (usize, usize) {
+    let t = spawn(w, 0, card, 500, 500);
+    let v = members(w, t)[0];
+    let inf = spawn(w, 0, "ww2:ussr_strelkovoe_otdelenie_6", 480, 510);
+    steps(w, 2);
+    run(
+        w,
+        0,
+        1,
+        CommandKind::Embark {
+            squads: vec![inf],
+            vehicle: v,
+        },
+    );
+    let n = members(w, inf).len();
+    for _ in 0..900 {
+        steps(w, 1);
+        if w.game().unwrap().riders_of(v).len() == n {
+            break;
+        }
+    }
+    (n, w.game().unwrap().riders_of(v).len())
+}
+
+/// S15 Build C (plan 6.4, S15-3 (A)): with `[riders] enabled` 1 the rider
+/// slots are exactly the T-34-85's 8, the IS-2's 8 and the SU-85's 6; no
+/// German or US def has one. A 6-man section boards each of the three;
+/// it does not board a Panzer IV or a Sherman. Control: `[riders]
+/// enabled` 0 drops the slots and nobody boards the T-34-85.
+#[test]
+fn riders_board_each_soviet_tank_with_slots() {
+    let w = ussr_world(riders_on, |_| {});
+    let s = w.match_setup().unwrap();
+    let mut decks: Vec<(String, usize)> = s
+        .vehicles
+        .iter()
+        .filter_map(|v| {
+            v.transport
+                .as_ref()
+                .filter(|t| t.exposed)
+                .map(|t| (v.id.clone(), t.slots.len()))
+        })
+        .collect();
+    decks.sort();
+    assert_eq!(
+        decks,
+        [
+            ("ww2:ussr_is2".to_string(), 8),
+            ("ww2:ussr_su85".to_string(), 6),
+            ("ww2:ussr_t34_85".to_string(), 8),
+        ]
+    );
+    for card in [
+        "ww2:ussr_t34_85_squad",
+        "ww2:ussr_su85_squad",
+        "ww2:ussr_is2_squad",
+    ] {
+        let mut w = ussr_world(riders_on, |_| {});
+        let (n, on) = board_card(&mut w, card);
+        assert_eq!(on, n, "{card}: the section is on the deck");
+        assert_eq!(s15(&w, 0).rider_boards, n as u32, "{card}");
+    }
+    for card in [TANK, "ww2:usa_m4a3_75_squad"] {
+        let mut w = ussr_world(riders_on, |_| {});
+        assert_eq!(board_card(&mut w, card).1, 0, "{card}: no rider slots");
+    }
+    let mut w = ussr_world(|_| {}, |_| {});
+    assert_eq!(
+        board_card(&mut w, "ww2:ussr_t34_85_squad").1,
+        0,
+        "control: [riders] enabled 0, no slots"
+    );
+}
