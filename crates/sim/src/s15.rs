@@ -195,3 +195,51 @@ impl MatchState {
         self.transport_of(id).is_some_and(|t| t.exposed)
     }
 }
+
+/// R3b, R3c: cause `why` (`rider_exit::HIT` or `GUN_FIRED`) on vehicle
+/// state `vs` starts its riders' exit timer when `[riders] enabled` and
+/// the cause's switch are 1, the vehicle has rider slots and men on them,
+/// and no timer runs yet. Reads the setup only (callers hold `vs` mutably).
+pub(crate) fn rider_cause(
+    s: &frontline_content::MatchSetup,
+    vs: &mut crate::vehicle::VehicleState,
+    why: u8,
+) {
+    let r = &s.rules.riders;
+    let on = match why {
+        rider_exit::SUPPRESSED => r.off_on_suppression,
+        rider_exit::HIT => r.off_on_hit,
+        rider_exit::GUN_FIRED => r.off_on_fire,
+        _ => 0,
+    };
+    if r.enabled == 0 || on == 0 || vs.rider_off.is_some() || vs.wreck_tick.is_some() {
+        return;
+    }
+    let exposed = s
+        .vehicles
+        .get(vs.type_idx as usize)
+        .and_then(|v| v.transport.as_ref())
+        .is_some_and(|t| t.exposed);
+    if !exposed || vs.riders.iter().all(|m| m.is_none()) {
+        return;
+    }
+    let ticks = (r.exit_ms as u64 * s.tick_hz as u64).div_ceil(1000);
+    vs.rider_off = Some(RiderOff {
+        ticks: ticks.clamp(1, u16::MAX as u64) as u16,
+        why,
+    });
+}
+
+/// R3a: whether a rider of `vs` is past `[riders] suppression_pct` of
+/// `crouch_suppression` (`suppression` in thousandths of a point).
+pub(crate) fn riders_suppressed(
+    s: &frontline_content::MatchSetup,
+    ents: &Entities,
+    vs: &crate::vehicle::VehicleState,
+) -> bool {
+    let at = s.rules.riders.suppression_pct as u64 * s.rules.combat.crouch_suppression as u64 * 10;
+    vs.riders
+        .iter()
+        .flatten()
+        .any(|m| ents.combat[m.index()].suppression as u64 >= at)
+}

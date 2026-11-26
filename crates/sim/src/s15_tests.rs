@@ -7,8 +7,10 @@
 use frontline_content::MatchSetup;
 use frontline_content::vehicle::{BoxSetup, TransportSetup};
 
-use super::s6_tests::{flat_world_with, members, spawn, steps};
+use super::s6_tests::{flat_world_with, members, run, spawn, steps};
 use super::*;
+use crate::command::CommandKind;
+use crate::fx::FxVec3;
 use crate::s15::{
     AiRiders, RIDER_BOARD, RIDER_DROP, RIDER_RIDE, RiderJob, RiderOff, RiderRefused, rider_exit,
 };
@@ -514,4 +516,279 @@ fn matchups_table_is_checked() {
         m.validate(&mut out);
         assert!(!out.is_empty(), "{name} is accepted");
     }
+}
+
+// ------------------------------------------------------------ R1-R6 --
+
+/// A world with the stand-in rider tank, `[riders] enabled` = `on` (the
+/// other R3 switches as `edit` leaves them).
+fn rider_world(on: u32, edit: impl FnOnce(&mut MatchSetup)) -> World {
+    flat_world_with(1, |s| {
+        rider_tank(s);
+        s.rules.riders.enabled = on;
+        edit(s);
+    })
+}
+
+fn weapon(w: &World, id: &str) -> u16 {
+    w.match_setup()
+        .unwrap()
+        .weapons
+        .iter()
+        .position(|x| x.id == id)
+        .unwrap_or_else(|| panic!("{id}")) as u16
+}
+
+fn s15(w: &World, p: usize) -> crate::s15::S15Counters {
+    w.game().unwrap().players[p].s15.clone()
+}
+
+/// A tank of player 0 at (500, 500) facing east with a rifle squad seated
+/// on its deck. Returns `(tank, squad)`.
+fn ride(w: &mut World) -> (SimId, SquadId) {
+    let t = spawn(w, 0, TANK, 500, 500);
+    let tank = members(w, t)[0];
+    let inf = spawn(w, 0, RIFLES, 490, 500);
+    steps(w, 2);
+    assert!(w.seat_now(inf, tank));
+    steps(w, 1);
+    (tank, inf)
+}
+
+fn exit_ticks(w: &World) -> u64 {
+    let s = w.match_setup().unwrap();
+    (s.rules.riders.exit_ms as u64 * s.tick_hz as u64).div_ceil(1000)
+}
+
+/// R1-R2: `Embark` on a tank with rider slots: the squad walks to the rear
+/// and climbs on; every man is counted. Control: the same tank without
+/// slots refuses the order (nobody boards).
+#[test]
+fn riders_board_a_tank() {
+    for slots in [true, false] {
+        let mut w = flat_world_with(1, |s| {
+            if slots {
+                rider_tank(s);
+            }
+        });
+        let t = spawn(&mut w, 0, TANK, 500, 500);
+        let tank = members(&w, t)[0];
+        let inf = spawn(&mut w, 0, RIFLES, 480, 510);
+        steps(&mut w, 2);
+        run(
+            &mut w,
+            0,
+            1,
+            CommandKind::Embark {
+                squads: vec![inf],
+                vehicle: tank,
+            },
+        );
+        let n = members(&w, inf).len();
+        for _ in 0..900 {
+            steps(&mut w, 1);
+            if w.game().unwrap().riders_of(tank).len() == n {
+                break;
+            }
+        }
+        let aboard = w.game().unwrap().riders_of(tank).len();
+        if slots {
+            assert_eq!(aboard, n, "the squad is on the deck");
+            assert_eq!(s15(&w, 0).rider_boards, n as u32);
+        } else {
+            assert_eq!(aboard, 0, "control: no slots, no riders");
+        }
+    }
+}
+
+/// R4: a rifle round at a rider on the deck hits him (his box is outside
+/// every plate). Control: the same round with the deck empty hurts no
+/// man of player 0.
+#[test]
+fn rider_hit_on_the_deck() {
+    for seated in [true, false] {
+        let mut w = rider_world(1, |s| s.rules.riders.off_on_suppression = 0);
+        let t = spawn(&mut w, 0, TANK, 500, 500);
+        let tank = members(&w, t)[0];
+        let inf = spawn(&mut w, 0, RIFLES, 470, 520);
+        steps(&mut w, 2);
+        if seated {
+            assert!(w.seat_now(inf, tank));
+            steps(&mut w, 1);
+        }
+        let g = w.game().unwrap();
+        // The front rider's slot centre, in the world.
+        let geo = &g.vderived.geo[g.vehicles[&tank].type_idx as usize];
+        let f = g.vderived.frame(tank).unwrap();
+        let c = f.origin + f.hull.axes.apply(geo.slots[0].0);
+        let hp0: u32 = members(&w, inf)
+            .iter()
+            .map(|m| w.state.entities.combat[m.index()].hp as u32)
+            .sum();
+        let kar = weapon(&w, "ww2:kar98k");
+        let from = FxVec3::new(c.x, c.y + Fx::from_int(30), c.z);
+        assert!(w.fire_round_now(1, kar, from, c));
+        steps(&mut w, 30);
+        let hp1: u32 = members(&w, inf)
+            .iter()
+            .map(|m| {
+                let e = &w.state.entities;
+                if e.kind[m.index()] == EntityKind::Soldier {
+                    e.combat[m.index()].hp as u32
+                } else {
+                    0
+                }
+            })
+            .sum();
+        if seated {
+            assert!(hp1 < hp0, "the rider is hit ({hp0} -> {hp1})");
+        } else {
+            assert_eq!(hp1, hp0, "control: an empty deck");
+        }
+    }
+}
+
+/// R3a: a rider past the threshold gets everyone off over the sides
+/// within `exit_ms`, stunned; the tank keeps its order. Control:
+/// `[riders] enabled` 0 leaves them on.
+#[test]
+fn riders_off_when_suppressed() {
+    for on in [1, 0] {
+        let mut w = rider_world(on, |_| {});
+        let (tank, inf) = ride(&mut w);
+        let n = members(&w, inf).len();
+        let m0 = members(&w, inf)[0];
+        let at = {
+            let s = w.match_setup().unwrap();
+            s.rules.combat.crouch_suppression * 1000
+        };
+        assert!(w.edit_soldier(m0, |_, c| c.suppression = at + 1000));
+        let n_ex = exit_ticks(&w) + 2;
+        steps(&mut w, n_ex);
+        let left = w.game().unwrap().riders_of(tank).len();
+        if on == 1 {
+            assert_eq!(left, 0, "everyone is off");
+            assert_eq!(
+                s15(&w, 0).rider_exits[rider_exit::SUPPRESSED as usize],
+                n as u32
+            );
+            let m1 = members(&w, inf)[1];
+            assert!(w.state.entities.weapon[m1.index()].cooldown > 0, "stunned");
+        } else {
+            assert_eq!(left, n, "control: switch off, they stay");
+        }
+    }
+}
+
+/// R3b: an AT rocket striking the tank gets its riders off. Control:
+/// `off_on_hit` 0 (R3a off in both runs: the strike's suppression alone
+/// does not count here).
+#[test]
+fn riders_off_when_tank_is_hit() {
+    for hit in [1, 0] {
+        let mut w = rider_world(1, |s| {
+            s.rules.riders.off_on_suppression = 0;
+            s.rules.riders.off_on_hit = hit;
+        });
+        let (tank, inf) = ride(&mut w);
+        let n = members(&w, inf).len();
+        let p = w.state.entities.transform[tank.index()].pos;
+        let aim = FxVec3::new(p.x, p.y, p.z + Fx::ONE);
+        let from = FxVec3::new(p.x + Fx::from_int(40), p.y, aim.z);
+        let rpzb = weapon(&w, "ww2:rpzb54");
+        assert!(w.fire_rocket_now(1, rpzb, from, aim));
+        let n_ex = 60 + exit_ticks(&w);
+        steps(&mut w, n_ex);
+        let left = w.game().unwrap().riders_of(tank).len();
+        let hits = s15(&w, 0).rider_exits[rider_exit::HIT as usize];
+        assert!(
+            w.game().unwrap().vehicles[&tank].last_attacker == Some(1),
+            "the rocket struck the tank"
+        );
+        if hit == 1 {
+            assert_eq!(left, 0, "everyone is off");
+            assert!(hits > 0 && hits <= n as u32);
+        } else {
+            assert_eq!(hits, 0, "control: off_on_hit 0");
+        }
+    }
+}
+
+/// R3c: the tank's main gun firing gets its riders off. Control:
+/// `off_on_fire` 0.
+#[test]
+fn riders_off_when_gun_fires() {
+    for fire in [1, 0] {
+        let mut w = rider_world(1, |s| {
+            s.rules.riders.off_on_suppression = 0;
+            s.rules.riders.off_on_hit = 0;
+            s.rules.riders.off_on_fire = fire;
+        });
+        let (tank, _) = ride(&mut w);
+        spawn(&mut w, 1, "ww2:usa_m4a3_75_squad", 700, 500);
+        for _ in 0..1800 {
+            steps(&mut w, 1);
+            if w.game().unwrap().vehicles[&tank].since_fire < 5 {
+                break;
+            }
+        }
+        assert!(
+            w.game().unwrap().vehicles[&tank].since_fire < u16::MAX,
+            "the gun fired"
+        );
+        let n_ex = exit_ticks(&w) + 2;
+        steps(&mut w, n_ex);
+        let fired = s15(&w, 0).rider_exits[rider_exit::GUN_FIRED as usize];
+        if fire == 1 {
+            assert!(fired > 0, "riders off when the gun fired");
+        } else {
+            assert_eq!(fired, 0, "control: off_on_fire 0");
+        }
+    }
+}
+
+/// R5: riders neither capture nor contest a point (S8a). Control: the
+/// same men standing on the point capture it.
+#[test]
+fn riders_do_not_capture() {
+    for riding in [true, false] {
+        let mut w = rider_world(1, |s| s.rules.riders.off_on_suppression = 0);
+        let at = {
+            let p = w.match_setup().unwrap().map.points[2].pos;
+            (Fx::from(p.x).floor_int(), Fx::from(p.y).floor_int())
+        };
+        let inf = spawn(&mut w, 0, RIFLES, at.0, at.1 + 4);
+        if riding {
+            let t = spawn(&mut w, 0, TANK, at.0, at.1);
+            let tank = members(&w, t)[0];
+            steps(&mut w, 2);
+            assert!(w.seat_now(inf, tank));
+        }
+        steps(&mut w, 600);
+        let pt = &w.game().unwrap().points()[2];
+        let took = pt.capturer == Some(PlayerId(0)) || pt.owner == Some(PlayerId(0));
+        assert_eq!(took, !riding, "riding {riding}: {pt:?}");
+    }
+}
+
+/// R3 save/load mid-exit: a save taken while the timer runs loads and
+/// plays on tick for tick. Control: the unedited run.
+#[test]
+fn riders_save_and_load_mid_exit() {
+    let mut w = rider_world(1, |_| {});
+    let (tank, inf) = ride(&mut w);
+    let m0 = members(&w, inf)[0];
+    assert!(w.edit_soldier(m0, |_, c| c.suppression = 100_000));
+    steps(&mut w, 3);
+    assert!(
+        w.game().unwrap().vehicles[&tank].rider_off.is_some(),
+        "mid-exit"
+    );
+    let mut back = World::load(&w.save(), 1).expect("mid-exit loads");
+    for _ in 0..40 {
+        steps(&mut w, 1);
+        steps(&mut back, 1);
+        assert_eq!(w.full_state_hash(), back.full_state_hash());
+    }
+    assert!(w.game().unwrap().riders_of(tank).is_empty());
 }

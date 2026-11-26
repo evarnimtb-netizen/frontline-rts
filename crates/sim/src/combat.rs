@@ -3950,6 +3950,12 @@ impl MatchState {
         // S8a: a passenger leaves his slot; his body lies on the vehicle's
         // ground level where he sat.
         if let Some(r) = ents.unit[i].riding {
+            // S15 R4: a rider killed on a deck.
+            if self.rider_slots_of(r.vehicle)
+                && let Some(p) = self.players.get_mut(owner)
+            {
+                p.s15.rider_casualties = p.s15.rider_casualties.saturating_add(1);
+            }
             if let Some(vs) = self.vehicles.get_mut(&r.vehicle)
                 && vs.riders.get(r.slot as usize) == Some(&Some(id))
             {
@@ -4292,6 +4298,12 @@ impl MatchState {
         };
         // S8a: a rider leaves his slot and lies at the door.
         if let Some(r) = ents.unit[i].riding {
+            // S15 R4: a rider downed on a deck.
+            if self.rider_slots_of(r.vehicle)
+                && let Some(p) = self.players.get_mut(owner as usize)
+            {
+                p.s15.rider_casualties = p.s15.rider_casualties.saturating_add(1);
+            }
             if let Some(vs) = self.vehicles.get_mut(&r.vehicle)
                 && vs.riders.get(r.slot as usize) == Some(&Some(id))
             {

@@ -412,6 +412,11 @@ impl MatchState {
         }
         // S8a: a round striking a passenger over the rim is not a hit on
         // the vehicle (its bail-out rule).
+        // S15 R3b: a shell or rocket striking the vehicle (not a rider)
+        // gets its riders off.
+        if !small && !matches!(hit.via, armour::HitVia::Rider(_)) {
+            crate::s15::rider_cause(&self.setup, vs, crate::s15::rider_exit::HIT);
+        }
         if r.result == PenResult::Penetration
             && !matches!(hit.via, armour::HitVia::Rider(_))
             && vs.last_pen != Some(ctx.tick)
@@ -1060,6 +1065,8 @@ impl MatchState {
             vs.repairing = None;
             vs.repair_progress = 0;
             vs.last_attacker = Some(player);
+            // S15 R3b: a blast (a mine, a shell) striking the tracks.
+            crate::s15::rider_cause(&self.setup, vs, crate::s15::rider_exit::HIT);
             ctx.stats.blast_track_hits += dealt.len() as u64;
             // Tracks never start a fire or set off the rack: no knock-out.
             self.deal(

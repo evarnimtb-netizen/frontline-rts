@@ -130,3 +130,82 @@ fn shipped_matchups_keep_the_default_pair() {
         "unknown faction accepted"
     );
 }
+
+/// Stand-in rider slots on the Panzer IV H's def (ten deck boxes).
+fn pz4_riders(defs: &mut ModDefs) {
+    use frontline_content::vehicle::{BoxDef, PassengerSlotDef, RidersDef};
+    let v = defs.vehicles.get_mut("ww2:ger_pz4_h").unwrap();
+    v.riders = Some(RidersDef {
+        capacity: 10,
+        entry: [-300, 0, 60],
+        board_ms: 1000,
+    });
+    v.rider_slots = [-120, -170, -220, -265]
+        .into_iter()
+        .flat_map(|x| [(x, 60), (x, -60)])
+        .chain([(-145, 0), (-245, 0)])
+        .map(|(x, y)| PassengerSlotDef {
+            bounds: BoxDef {
+                center: [x, y, 221],
+                half: [22, 20, 45],
+            },
+        })
+        .collect();
+}
+
+/// Plan N2: with every S15 switch 0 the setup build drops the S15 def
+/// parts before anything reads them: a mod whose Panzer IV has rider
+/// slots resolves to exactly today's setup. Control: `[riders] enabled` 1
+/// gives the tank its (exposed) slots.
+#[test]
+fn s15_off_setup_has_no_s15_field() {
+    let base_defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    let r = req("ww2:germany", "ww2:usa");
+    let base = base_defs.resolve(&r).unwrap();
+    let mut defs = base_defs.clone();
+    pz4_riders(&mut defs);
+    for (id, v) in &defs.vehicles {
+        assert!(v.validate().is_empty(), "{id}: {:?}", v.validate());
+    }
+    let off = defs.resolve(&r).unwrap();
+    assert_eq!(off, base, "switches off: today's setup");
+    defs.rules
+        .get_mut(RULES)
+        .unwrap()
+        .riders
+        .as_mut()
+        .unwrap()
+        .enabled = 1;
+    let on = defs.resolve(&r).unwrap();
+    let pz = on
+        .vehicles
+        .iter()
+        .find(|v| v.id == "ww2:ger_pz4_h")
+        .unwrap();
+    let t = pz
+        .transport
+        .as_ref()
+        .expect("control: rider slots with the switch on");
+    assert!(t.exposed && t.slots.len() == 10);
+    assert!(on.validate().is_empty(), "{:?}", on.validate());
+}
+
+/// R1 def checks: `[riders]` only on a tank, assault gun or TD, one box
+/// per rider, each box on the deck. Control: the stand-in is valid.
+#[test]
+fn rider_slots_are_checked() {
+    let mut defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    pz4_riders(&mut defs);
+    let ok = defs.vehicles["ww2:ger_pz4_h"].clone();
+    assert!(ok.validate().is_empty(), "control");
+    let mut few = ok.clone();
+    few.rider_slots.pop();
+    assert!(!few.validate().is_empty(), "nine boxes for ten riders");
+    let mut inside = ok.clone();
+    inside.rider_slots[0].bounds.center = [0, 0, 108];
+    assert!(!inside.validate().is_empty(), "a box inside the hull");
+    let mut truck = defs.vehicles["ww2:ger_opel_blitz"].clone();
+    truck.riders = ok.riders.clone();
+    truck.rider_slots = ok.rider_slots.clone();
+    assert!(!truck.validate().is_empty(), "riders on a truck");
+}

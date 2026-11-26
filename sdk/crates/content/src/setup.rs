@@ -1718,6 +1718,16 @@ impl ModDefs {
         }
         let ammo: Vec<AmmoSetup> = self.ammo.values().map(lower_ammo).collect();
         let mut vehicles = self.lower_vehicles(hz);
+        // S15 N2 (plan 3): rider slots only with `[riders] enabled` 1.
+        if let Some(rd) = rules.riders.as_ref().filter(|r| r.enabled == 1) {
+            for v in &mut vehicles {
+                if let Some(d) = self.vehicles.get(&v.id)
+                    && let Some(t) = crate::vehicle::lower_riders(d, hz, rd.exit_ms)
+                {
+                    v.transport = Some(t);
+                }
+            }
+        }
         // S5a: rare rounds, `rare_cap` and the rack price factor (D3, D4).
         for v in &mut vehicles {
             for m in &mut v.mounts {

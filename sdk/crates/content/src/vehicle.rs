@@ -660,6 +660,15 @@ pub struct VehicleDef {
     /// man's hit volume.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub passenger_slots: Vec<PassengerSlotDef>,
+    /// S15 R1: infantry riding on the deck (tank, assault gun or tank
+    /// destroyer only); its seats are `rider_slots`. Dropped at setup while
+    /// the rules' `[riders] enabled` is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub riders: Option<RidersDef>,
+    /// S15 R1, R4: one per rider (hull frame, cm, on the deck: outside
+    /// every hull box); the box is the man's hit volume.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rider_slots: Vec<PassengerSlotDef>,
     /// S8b (6.9): stationary observation; absent: no effect.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub optics: Option<OpticsDef>,
@@ -792,6 +801,35 @@ pub struct TransportDef {
     /// time (cm).
     #[serde(default)]
     pub exit_raise_cm: u32,
+}
+
+/// S15 R1-R2: men riding on the deck. They get off over the sides (the
+/// rules' `[riders] exit_ms`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RidersDef {
+    /// Riders (equals the number of `rider_slots`; 1..=`MAX_PASSENGERS`).
+    pub capacity: u32,
+    /// Where men climb on, hull frame, cm (the hull's rear).
+    pub entry: [i32; 3],
+    /// Time per man climbing on (100..=30000 ms).
+    pub board_ms: u32,
+}
+
+/// S15 R1: the setup of a vehicle def's rider slots (`exit_ms`: the rules'
+/// `[riders] exit_ms`), or `None` without them.
+pub fn lower_riders(v: &VehicleDef, hz: u32, exit_ms: u32) -> Option<TransportSetup> {
+    let r = v.riders.as_ref()?;
+    let ticks = |ms: u32| (ms as u64 * hz as u64).div_ceil(1000) as u32;
+    Some(TransportSetup {
+        entry: FixedVec3::from_cm(r.entry),
+        board_ticks: ticks(r.board_ms),
+        exit_ticks: ticks(exit_ms),
+        exit_over_sides_ticks: Some(ticks(exit_ms)),
+        exit_raise: Fixed::ZERO,
+        slots: v.rider_slots.iter().map(|sl| (&sl.bounds).into()).collect(),
+        exposed: true,
+    })
 }
 
 /// S8a: one passenger seat; the box (hull frame, cm) is the man's hit
@@ -2574,6 +2612,7 @@ impl VehicleDef {
                 "only role = \"transport\" has passenger slots",
             ));
         }
+        self.check_riders(out);
         let Some(t) = &self.transport else {
             return;
         };
@@ -2622,6 +2661,70 @@ impl VehicleDef {
                 half: sl.bounds.half,
             };
             check_part(out, &format!("passenger_slots[{i}].box"), &part, frames);
+        }
+    }
+
+    /// S15 R1: `[riders]` only on a tank, assault gun or tank destroyer
+    /// without `[transport]`, one deck box per rider, each outside every
+    /// hull box.
+    fn check_riders(&self, out: &mut Vec<Issue>) {
+        let deck = matches!(
+            self.role,
+            VehicleRole::Tank | VehicleRole::AssaultGun | VehicleRole::TankDestroyer
+        );
+        let Some(r) = &self.riders else {
+            if !self.rider_slots.is_empty() {
+                out.push(Issue::new("rider_slots", "rider slots need [riders]"));
+            }
+            return;
+        };
+        if !deck || self.transport.is_some() {
+            out.push(Issue::new(
+                "riders",
+                "only a tank, assault gun or tank destroyer without [transport] has [riders]",
+            ));
+        }
+        range(
+            out,
+            "riders.capacity",
+            r.capacity as i64,
+            1,
+            MAX_PASSENGERS as i64,
+        );
+        if r.capacity as usize != self.rider_slots.len() {
+            out.push(Issue::new(
+                "rider_slots",
+                format!(
+                    "needs one slot per rider ({}), got {}",
+                    r.capacity,
+                    self.rider_slots.len()
+                ),
+            ));
+        }
+        for (a, c) in r.entry.iter().enumerate() {
+            range(out, &format!("riders.entry[{a}]"), *c as i64, -2000, 2000);
+        }
+        range(out, "riders.board_ms", r.board_ms as i64, 100, 30_000);
+        for (i, sl) in self.rider_slots.iter().enumerate() {
+            let (c, h) = (sl.bounds.center, sl.bounds.half);
+            if h.iter().any(|&x| x == 0 || x > 200) {
+                out.push(Issue::new(
+                    format!("rider_slots[{i}].box"),
+                    "half extents 1..=200 cm",
+                ));
+            }
+            let inside = self.boxes.iter().any(|b| {
+                b.frame == Frame::Hull
+                    && (0..3).all(|a| {
+                        (c[a] as i64 - b.bounds.center[a] as i64).abs() < b.bounds.half[a] as i64
+                    })
+            });
+            if inside {
+                out.push(Issue::new(
+                    format!("rider_slots[{i}].box"),
+                    "a rider box lies outside every hull box (on the deck)",
+                ));
+            }
         }
     }
 

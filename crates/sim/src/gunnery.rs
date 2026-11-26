@@ -712,6 +712,8 @@ impl MatchState {
                     vs.loaded = None;
                     vs.reload = reload_ticks;
                     vs.since_fire = 0;
+                    // S15 R3c: riders on the deck get off.
+                    crate::s15::rider_cause(&self.setup, vs, crate::s15::rider_exit::GUN_FIRED);
                     vs.ranging = vs.ranging.saturating_add(1);
                     let kind = match k {
                         AP => 1,
@@ -1118,6 +1120,7 @@ impl MatchState {
         vs.loaded = None;
         vs.reload = reload_ticks;
         vs.since_fire = 0;
+        crate::s15::rider_cause(&self.setup, vs, crate::s15::rider_exit::GUN_FIRED);
         let ev = ArmourEv::new(ArmourEventKind::Fired, id, sq_owner.0, sq_owner.0)
             .component(2)
             .ammo(ammo)

@@ -938,9 +938,11 @@ impl Geo {
                 for (k, sl) in t.slots.iter().enumerate().take(MAX_PASSENGERS) {
                     let b = &v.boxes[slot_box(v, sl) as usize];
                     let top = |c: Fx, h: Fx| c + h;
-                    if b.open != 0
-                        && top(v3(sl.center).z, v3(sl.half).z)
-                            > top(v3(b.bounds.center).z, v3(b.bounds.half).z)
+                    // S15 R4: a rider on the deck is outside every plate.
+                    if t.exposed
+                        || b.open != 0
+                            && top(v3(sl.center).z, v3(sl.half).z)
+                                > top(v3(b.bounds.center).z, v3(b.bounds.half).z)
                     {
                         bits |= 1 << k;
                     }
