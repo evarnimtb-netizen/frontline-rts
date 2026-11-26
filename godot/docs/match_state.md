@@ -1700,16 +1700,15 @@ on, men selected and an enemy within 1.5 m of one of them
 (`STRIKE_KEY_M`, the sim's default reach plus a margin) `V` strikes;
 otherwise it arms Board as before (S14-11 (A)).
 
-## S15: riders, plates, captured bombs, bayonets (mechanics A; presenter later)
+## S15: riders, plates, captured bombs, bayonets, the third faction
 
 Design: `docs/slices/S15-ussr.md` (R riders, P plates, X captured bombs,
-B bayonets). Every part is off unless its rules switch is on (`[riders]
-enabled`, `[body_armour] enabled`, `[supply] foreign_ammo`, `[melee]
-bayonets`; all 0 in the shipped rules), and the setup drops the def parts
-while it is off, so the fields below read empty or false. Build A adds
-them to the sim's `RenderSnapshot` only: the bridge does not send them yet
-(it is built, not changed, in Build A), so there are no state keys and no
-mock for them until the presenter stage.
+B bayonets, M matchups). Every part is off unless its rules switch is on
+(`[riders] enabled`, `[body_armour] enabled`, `[supply] foreign_ammo`,
+`[melee] bayonets`; all 0 in the shipped rules), and the setup drops the def
+parts while it is off, so the keys below are absent or false. Build A put
+the fields in the sim's `RenderSnapshot`; the presenter stage (P) sends
+them, see "State keys (P)" and "Menus and lobby (P)".
 
 ### Snapshot fields (`crates/sim/src/snapshot.rs`)
 
@@ -1728,6 +1727,51 @@ mock for them until the presenter stage.
 - Captured bombs (X) and bayonets (B) need no new field: a foreign bomb
   is a mortar shell of the firing weapon (`shots[]`, `explosions[]`), and
   a bayonet strike is the S14 strike (`soldier_strike`).
+
+### State keys (P)
+
+- `vehicles[].deck: bool` (public) -- the `DECK` flag; `vehicles[].riders_off:
+  bool` (public) -- the `RIDERS_OFF` flag. `vehicles[].flags` carries the
+  bits as before (`Vehicles.DECK` 2048, `Vehicles.RIDERS_OFF` 4096).
+  `riders`/`capacity` count the men, as for any transport.
+- `rules.vehicle_types[t].deck: true` -- the type's `slots` (hull-frame
+  boxes, sim axes) are an exposed deck, not a closed compartment. `slots`
+  is sent for every vehicle with rider slots as for a half-track.
+- `soldiers[].riding: int` (the vehicle id) and `soldiers[].ride_slot: int`
+  -- present only while he rides (S8a transports too). His `stance` is
+  `crouch` (seated) and his position is the bottom of his slot box.
+- `soldiers[].plate: true` -- present only for a man wearing a body plate
+  (P1). No per-hit event: a spark on the plate needs one.
+- Weapon words: a soldier's `weapon` comes from the sim as before; the
+  mock's fallback table `MatchView.WEAPONS` has a `ussr` row.
+
+### Menus and lobby (P)
+
+- `FrontlineNet.match_options(test_unlock: bool) -> Dictionary` (loads the mod,
+  no lobby needed): `{ factions: [{ id, name, color }], opponents: { id:
+  [ids, the default first] }, mirror: bool }`, from the rules' `[matchups]`
+  (M1-M4). Empty when the content cannot be loaded. `Session.menu_options()`
+  reads it once; without the bridge, or with the USSR off, it is today's two
+  factions, so the menu is today's menu (the opponent picker is hidden while
+  a faction has one opponent).
+- Skirmish choice: `Session.setup.opponent` (short id; `""` or absent: the
+  default opponent). `--opponent ussr` sets it from the command line.
+- Lobby: `FrontlineNet.set_choice({faction})` takes any faction the rules
+  enable. At `ready()` the client resolves the pair; a refused one (or the
+  same faction without `mirror`) puts the words in `status().mismatch`:
+  "<A> cannot fight <B> in this ruleset; pick another faction." The panel
+  shows the same words before Ready (`Session.pair_refusal`). MockNet has
+  three factions and the pairs Germany-USA, Germany-USSR (`MockNet.PAIRS`).
+- USSR look: `UiPalette` colour `#9a5a4a`, name `USSR`, short `SOV`;
+  `Vehicles.PAINT` / `GLACIS_DEG` have a `ussr` row (the glacis row is the
+  mock's: the bridge sends `glacis_deg` from the def). The twelve Soviet
+  blockouts (T-34-85, IS-2, SU-85, SU-76M, BA-64B, M3A1 scout car, US6 and
+  five guns) are built by `meshgen` from `rules.vehicle_types` as the S13
+  vehicles are: no new mesh code.
+- Presenter: `VehicleView` draws a thin pad at the foot of each rider's slot
+  box on a `deck` vehicle (`deck_pads`, `pad_xf`), so the seated men sit on
+  the deck; the squad card shows `PLATE` / `PLATE×n` while men wear plates
+  (`Roster.plates_worn`).
 
 ### Intents
 

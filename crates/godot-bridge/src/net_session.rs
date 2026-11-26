@@ -318,7 +318,12 @@ impl NetSession {
     /// Merges `u` into the choice and sends it (the relay clears both
     /// players' Ready on any change).
     pub fn set_choice(&mut self, u: ChoiceUpdate) {
-        if let Some(f) = u.faction.filter(|f| FACTIONS.contains(&f.as_str())) {
+        // S15 M1: any faction the rules enable (without defs, today's two).
+        let offered: Vec<String> = match &self.defs {
+            Some(d) => crate::match_setup::menu_factions(d, &MenuChoice::default()),
+            None => FACTIONS.iter().map(|f| (*f).to_owned()).collect(),
+        };
+        if let Some(f) = u.faction.filter(|f| offered.contains(f)) {
             self.choice.faction = f;
         }
         if let Some(s) = u.seed {
@@ -621,11 +626,15 @@ impl NetSession {
 
     fn resolve(&self, factions: &[String; 2], seed: u64, map: &str) -> Result<MatchSetup, String> {
         let defs = self.defs.as_ref().ok_or("no mod content loaded")?;
-        if factions[0] == factions[1] {
-            return Err(format!(
-                "Both players picked {}; factions must differ.",
-                factions[0]
-            ));
+        // S15 M2, M4, M6: the rules' pairs (and a mirror) decide, with the
+        // words the lobby shows.
+        if let Some(why) = crate::match_setup::pair_refusal(
+            defs,
+            &MenuChoice::default(),
+            &factions[0],
+            &factions[1],
+        ) {
+            return Err(why);
         }
         let choice = MenuChoice {
             faction: factions[self.slot.unwrap_or(0) as usize % 2].clone(),

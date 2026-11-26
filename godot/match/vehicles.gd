@@ -19,6 +19,10 @@ const KNOCKED_OUT := 256
 ## climbing in (re-crew).
 const ABANDONED := 512
 const BOARDING := 1024
+## S15: its rider slots are an exposed deck; the riders' exit timer runs
+## (snapshot.rs `vehicle_flags::DECK`, `RIDERS_OFF`).
+const DECK := 2048
+const RIDERS_OFF := 4096
 
 ## Crew seats in pip order (D G C L R).
 const SEATS := ["driver", "gunner", "commander", "loader", "radio_mg"]
@@ -56,11 +60,14 @@ const HIT_WORDS := {"ricochet": "Ricochet", "no_pen": "No pen", "pen": "Penetrat
 ## Placeholder paint by faction, mixed toward the side colour for the team
 ## tint; glacis slope for the mesh look (not in the state: a Sherman's
 ## steep glacis, a Panzer IV's near-vertical plate).
-const PAINT := {"germany": Color(0.46, 0.43, 0.32), "usa": Color(0.30, 0.33, 0.22)}
+## S15: the USSR's field green, a little browner than the US olive.
+const PAINT := {"germany": Color(0.46, 0.43, 0.32), "usa": Color(0.30, 0.33, 0.22), "ussr": Color(0.27, 0.31, 0.19)}
 ## Side colours for the tint (darker than the HUD's, so painted steel reads).
 const TEAM_OWN := Color(0.22, 0.36, 0.56)
 const TEAM_ENEMY := Color(0.58, 0.24, 0.20)
-const GLACIS_DEG := {"germany": 10.0, "usa": 47.0}
+## S15: the T-34's sloped front plate (the defs' `glacis_deg` wins when the
+## state sends one; this is the mock's and the fallback's look).
+const GLACIS_DEG := {"germany": 10.0, "usa": 47.0, "ussr": 60.0}
 const TEAM_MIX := 0.42
 
 

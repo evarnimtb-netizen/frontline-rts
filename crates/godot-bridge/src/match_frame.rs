@@ -346,6 +346,11 @@ pub struct MatchFrame {
     pub burning: Vec<bool>,
     /// S14: per soldier, his strike phase (0 none, 1 wind-up, 2 recovery).
     pub strike: Vec<u8>,
+    /// S8a / S15: per soldier, the vehicle he rides (`u32::MAX`: on foot)
+    /// and his slot there; S15 P1: he wears a body plate.
+    pub riding: Vec<u32>,
+    pub ride_slot: Vec<u8>,
+    pub plate: Vec<bool>,
     /// S14: flame particles and burning ground, ascending id, with
     /// whether the local player sees them.
     pub flame: Vec<FlameView>,
@@ -426,6 +431,9 @@ impl MatchFrame {
             wound: Vec::new(),
             burning: Vec::new(),
             strike: Vec::new(),
+            riding: Vec::new(),
+            ride_slot: Vec::new(),
+            plate: Vec::new(),
             flame: Vec::new(),
             patches: Vec::new(),
             corpse_visible: Vec::new(),
@@ -500,6 +508,9 @@ impl MatchFrame {
         self.wound.clone_from(&snap.soldier_wound);
         self.burning.clone_from(&snap.soldier_burning);
         self.strike.clone_from(&snap.soldier_strike);
+        self.riding.clone_from(&snap.soldier_riding);
+        self.ride_slot.clone_from(&snap.soldier_ride_slot);
+        self.plate.clone_from(&snap.soldier_plate);
         self.throwing.clone_from(&snap.soldier_throwing);
         self.units.clear();
         self.units.extend(
@@ -1511,6 +1522,27 @@ mod tests {
         assert_eq!(f.burning.len(), f.ids.len());
         assert_eq!(f.strike.len(), f.ids.len());
         assert!(f.burning.iter().all(|b| !b) && f.strike.iter().all(|s| *s == 0));
+    }
+
+    /// S15 P: the frame copies the rider and plate fields one per soldier;
+    /// with every S15 switch 0 (the shipped rules) nobody rides a deck or
+    /// wears a plate. (The positive case, riders on a deck, is the sim's
+    /// `snapshot_shows_plates_and_deck`; the frame copies those vectors.)
+    #[test]
+    fn frame_carries_riders_and_plates() {
+        let mut w = test_world(false);
+        let setup = w.match_setup().unwrap().clone();
+        let mut ctx = FrameCtx::new(&setup, 0);
+        let mut f = MatchFrame::empty();
+        for _ in 0..30 {
+            w.step(&[]);
+        }
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        assert_eq!(f.riding.len(), f.ids.len());
+        assert_eq!(f.ride_slot.len(), f.ids.len());
+        assert_eq!(f.plate.len(), f.ids.len());
+        assert!(f.riding.iter().all(|r| *r == u32::MAX));
+        assert!(f.plate.iter().all(|p| !p));
     }
 
     /// S10b review R14: the frame keeps the mines the local player knows

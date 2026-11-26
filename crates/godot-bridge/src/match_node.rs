@@ -420,6 +420,11 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             "seat_ids" => &seat_ids,
         };
         let mut d = d;
+        // S15 R1: the `slots` are an exposed deck (riders sit on the hull's
+        // top, drawn seated on the slot boxes), not a closed compartment.
+        if v.transport.as_ref().is_some_and(|t| t.exposed) {
+            d.set("deck", true);
+        }
         // S8b: wheels instead of tracks (the blockout: 8 on a long car, 6 on
         // a truck and a short car), the wire screen, and a truck's cargo box.
         if v.mobility.kind == frontline_content::vehicle::MobilityKind::Wheeled {
@@ -2269,6 +2274,16 @@ impl MatchRuntime {
             if f.burning.get(i).copied().unwrap_or(false) {
                 d.set("burning", true);
             }
+            // S8a / S15 R1: the vehicle he rides and his slot; S15 P1: he
+            // wears a body plate.
+            let ride = f.riding.get(i).copied().unwrap_or(u32::MAX);
+            if ride != u32::MAX {
+                d.set("riding", ride as i64);
+                d.set("ride_slot", f.ride_slot.get(i).copied().unwrap_or(0) as i64);
+            }
+            if f.plate.get(i).copied().unwrap_or(false) {
+                d.set("plate", true);
+            }
             let st = f.strike.get(i).copied().unwrap_or(0);
             if st != 0 {
                 d.set("strike", st as i64);
@@ -2914,6 +2929,10 @@ impl MatchRuntime {
                     2 => "sides",
                     _ => "",
                 },
+                // S15 R1, R3: the riders sit on an exposed deck; their exit
+                // timer runs (they jump off over the sides). Public.
+                "deck" => v.flags & vehicle_flags::DECK != 0,
+                "riders_off" => v.flags & vehicle_flags::RIDERS_OFF != 0,
             };
             // S9: a served gun; a vehicle towing one.
             if v.gun_state != 0 {

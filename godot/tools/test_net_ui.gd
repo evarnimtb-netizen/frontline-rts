@@ -30,6 +30,7 @@ func _run() -> void:
 	_test_parse()
 	_test_session_flags(session)
 	await _test_menu(session)
+	await _test_three_factions(session)
 	await _test_match(session)
 	await _test_handover(session)
 	print("test_net_ui: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -208,6 +209,77 @@ func _test_menu(session: Node) -> void:
 	mock.leave()
 	menu.queue_free()
 	session.net = null
+	await _frames(2)
+
+
+# --- S15: three factions ------------------------------------------------------------
+
+## The menu options the rules give with the USSR on (Germany-USA, Germany-USSR).
+func _three_options() -> Dictionary:
+	return {
+		"factions": [{"id": "germany", "name": "Germany", "color": ""}, {"id": "usa", "name": "USA", "color": ""}, {"id": "ussr", "name": "USSR", "color": "#9a5a4a"}],
+		"opponents": {"germany": ["usa", "ussr"], "usa": ["germany"], "ussr": ["germany"]},
+		"mirror": false,
+	}
+
+
+func _test_three_factions(session: Node) -> void:
+	# Control: the shipped options are today's menu (two factions, no picker).
+	session.set_options(session.default_options())
+	var menu: Control = load("res://ui/menu/main_menu.tscn").instantiate()
+	root.add_child(menu)
+	await _frames(2)
+	_check(menu._faction_btns.size() == 2 and not menu._faction_btns.has("ussr"), "USSR off: the menu lists two factions")
+	_check(not menu._opp_row.visible and not menu._opp_section.visible, "USSR off: the opponent picker is hidden")
+	menu.queue_free()
+	await _frames(2)
+	# USSR on.
+	session.set_options(_three_options())
+	_check(session.faction_ids() == ["germany", "usa", "ussr"], "options: three factions in order")
+	_check(UiPalette.faction_name("ussr") == "USSR" and UiPalette.FACTION_SHORT.ussr == "SOV" and UiPalette.faction_color("ussr").to_html(false) == "9a5a4a", "USSR: name, short name SOV, colour #9a5a4a")
+	menu = load("res://ui/menu/main_menu.tscn").instantiate()
+	root.add_child(menu)
+	await _frames(2)
+	_check(menu._faction_btns.size() == 3 and menu._faction_btns.ussr.text == "USSR", "the menu lists Germany, USA and USSR")
+	_check(menu._faction == "germany" and menu._opp_row.visible and menu._opp_btns.size() == 2, "Germany: an opponent picker with USA and USSR")
+	_check(menu._opponent == "usa" and menu._opp_btns.usa.button_pressed, "the default opponent (USA) is pressed")
+	menu._opp_btns.ussr.pressed.emit()
+	_check(menu._opponent == "ussr", "the picker chooses the USSR")
+	menu._faction_btns.ussr.pressed.emit()
+	_check(menu._faction == "ussr" and not menu._opp_row.visible and menu._opponent == "germany", "USSR: one opponent (Germany), the picker is hidden")
+	menu._faction_btns.usa.pressed.emit()
+	_check(menu._opponent == "germany" and not menu._opp_row.visible, "USA: Germany only")
+	menu.queue_free()
+	await _frames(2)
+	# Lobby: the buttons follow the options; USA against USSR is refused.
+	var mock := MockNet.new()
+	mock.manual_clock = true
+	session.net = mock
+	menu = load("res://ui/menu/main_menu.tscn").instantiate()
+	root.add_child(menu)
+	await _frames(2)
+	menu._show("multiplayer")
+	var mp: Node = menu._mp
+	mp.name_edit.text = "Erik"
+	mp.host_port.text = "47015"
+	mp.on_host()
+	mock.advance(1.5)
+	mp.refresh()
+	_check(mp.faction_btns.size() == 3 and mp.faction_btns.ussr.text == "USSR", "lobby: three faction buttons")
+	mp.pick_faction("ussr")
+	mp.refresh()
+	_check(mp.slot_rows[0].faction.text == "USSR" and mp.slot_rows[1].faction.text == "USA", "lobby: the USSR against the guest's USA")
+	_check(mp.ready_button.disabled and mp.lobby_msg.text.contains("cannot fight"), "lobby: USSR against USA is refused with its reason")
+	mock.ready()
+	_check(String(mock.status().mismatch).contains("cannot fight"), "the mock net refuses the pair at Ready, as the bridge does")
+	mp.pick_faction("germany")
+	mp.refresh()
+	_check(not mp.ready_button.disabled and mp.lobby_msg.text.contains("Press Ready"), "Germany against USA: Ready")
+	_check(session.pair_refusal("germany", "ussr") == "" and session.pair_refusal("usa", "ussr").contains("cannot fight") and session.pair_refusal("usa", "usa").contains("must differ"), "pair_refusal: allowed, refused, same faction")
+	mock.leave()
+	menu.queue_free()
+	session.net = null
+	session.set_options(session.default_options())
 	await _frames(2)
 
 

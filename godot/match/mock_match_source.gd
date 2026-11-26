@@ -174,7 +174,11 @@ func start(s: Dictionary) -> void:
 	setup = s.duplicate()
 	rng.seed = int(setup.get("seed", 1)) * 7919 + 17
 	var mine: String = setup.get("faction", "germany")
-	var theirs := "usa" if mine == "germany" else "germany"
+	# S15 M3: the chosen opponent, else the first pair's partner (Germany ->
+	# USA, USA -> Germany, USSR -> Germany); the same faction never.
+	var theirs: String = String(setup.get("opponent", ""))
+	if theirs == "" or theirs == mine:
+		theirs = "usa" if mine == "germany" else "germany"
 	players = [
 		{"id": 0, "faction": mine, "name": "You", "is_ai": false, "tickets": 500.0, "manpower": 260.0, "income": 0.0, "pop": 0, "points_held": 0, "ticket_drain": 0.0},
 		{"id": 1, "faction": theirs, "name": "AI (%s)" % setup.get("difficulty", "normal"), "is_ai": true, "tickets": 500.0, "manpower": 260.0, "income": 0.0, "pop": 0, "points_held": 0, "ticket_drain": 0.0},
@@ -861,7 +865,7 @@ func _step(dt: float) -> void:
 ## and its tank (S3), each with a squad type id (`id`).
 func catalog(owner: int) -> Array:
 	var faction: String = players[owner].faction
-	var short := "ger" if faction == "germany" else "usa"
+	var short: String = {"germany": "ger", "ussr": "ussr"}.get(faction, "usa")
 	var out: Array = []
 	for c in CATALOG:
 		var e: Dictionary = c.duplicate()
@@ -1835,6 +1839,10 @@ func _soldier_state(sq: Dictionary, man: Dictionary, own: bool) -> Dictionary:
 		out.burning = true
 	if int(man.get("strike", 0)) != 0:
 		out.strike = int(man.strike)
+	# S15 (mock): the USSR's engineer squad stands in for the assault
+	# group: its men wear a body plate (the state's `plate`).
+	if sq.type == "engineer" and String(players[int(sq.owner)].faction) == "ussr":
+		out.plate = true
 	# S12 (mock): a wound a test staged ({bandaged, legs, treated, bandaging}).
 	if man.has("wound"):
 		out.wound = man.wound.duplicate()

@@ -54,7 +54,11 @@ const MOCK_MATCH_SCENE := "res://match/match_mock.tscn"
 ## Wall-clock seconds --autoplay_net waits for the lobby to start.
 const AUTOPLAY_NET_WAIT_S := 90.0
 
+## The factions of the shipped menu before the rules say otherwise (S15 M3:
+## with the USSR off the matchups table this is the whole menu), and every
+## faction the presenter knows a name and a colour for (`--faction`).
 const FACTIONS := ["germany", "usa"]
+const KNOWN_FACTIONS := ["germany", "usa", "ussr"]
 const DIFFICULTIES := ["easy", "normal", "hard"]
 const MAPS := {
 	"kessel_ridge": {
@@ -144,8 +148,13 @@ func _ready() -> void:
 					_capture_size = Vector2i(wh[0].to_int(), wh[1].to_int())
 				i += 1
 			"--faction":
-				if v in FACTIONS:
+				if v in KNOWN_FACTIONS:
 					setup.faction = v
+				i += 1
+			"--opponent":
+				# S15 M3: the AI's faction in a skirmish (default: the rules').
+				if v in KNOWN_FACTIONS:
+					setup.opponent = v
 				i += 1
 			"--difficulty":
 				if v in DIFFICULTIES:
@@ -250,6 +259,65 @@ func autoplay_dir() -> String:
 	if autoplay_shots != "":
 		return autoplay_shots
 	return ProjectSettings.globalize_path("res://").path_join("../docs/slices/screens").simplify_path()
+
+
+## S15 M3: what the menus offer, from the loaded rules (FrontlineNet.
+## match_options; the mock and a bridge without it keep today's two
+## factions): `{factions: [{id, name, color}], opponents: {id: [ids, the
+## default first]}, mirror}`. Read once, on first use; set_options() replaces
+## it (tests, mocks with three factions).
+var options := {}
+
+
+## The default menu: today's two factions facing each other.
+static func default_options() -> Dictionary:
+	var f: Array = []
+	for id in FACTIONS:
+		f.append({"id": id, "name": UiPalette.faction_name(id), "color": ""})
+	return {"factions": f, "opponents": {"germany": ["usa"], "usa": ["germany"]}, "mirror": false}
+
+
+func set_options(o: Dictionary) -> void:
+	options = o
+
+
+## The menu options, reading the rules on first use.
+func menu_options() -> Dictionary:
+	if options.is_empty():
+		options = default_options()
+		if ClassDB.class_exists(&"FrontlineNet"):
+			var probe: Object = ClassDB.instantiate(&"FrontlineNet")
+			if probe != null and probe.has_method("match_options"):
+				var o: Dictionary = probe.match_options(test_unlock)
+				if not (o.get("factions", []) as Array).is_empty():
+					options = o
+	return options
+
+
+## Faction ids the menus list, in order.
+func faction_ids() -> Array:
+	var out: Array = []
+	for f in menu_options().get("factions", []):
+		out.append(String(f.id))
+	return out
+
+
+## Opponents faction `f` may face, the default first (empty: none).
+func opponents_of(f: String) -> Array:
+	return (menu_options().get("opponents", {}) as Dictionary).get(f, [])
+
+
+## The lobby's words for a pair the rules refuse (a faction against itself
+## unless `mirror`; a pair outside the table), "" when it may fight.
+func pair_refusal(a: String, b: String) -> String:
+	if a == "" or b == "":
+		return ""
+	var o := menu_options()
+	if a == b:
+		return "" if bool(o.get("mirror", false)) else "Both players picked %s. Factions must differ: pick the other one." % UiPalette.faction_name(a)
+	if b in opponents_of(a):
+		return ""
+	return "%s and %s cannot fight each other in this ruleset. Pick another faction." % [UiPalette.faction_name(a), UiPalette.faction_name(b)]
 
 
 ## What FrontlineMatch.start_match() takes: the menu choice plus overrides.

@@ -177,6 +177,72 @@ pub fn menu_opponents(defs: &ModDefs, choice: &MenuChoice, f: &str) -> Vec<Strin
     }
 }
 
+/// S15 P (M3): what the menus and the lobby offer, read from the loaded
+/// rules: every faction the rules enable (short id, display name, colour
+/// `#rrggbb`, in the `[matchups] factions` order), the opponents each may
+/// face (the default first), and whether a faction may fight itself.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MenuOptions {
+    pub factions: Vec<(String, String, String)>,
+    pub opponents: Vec<(String, Vec<String>)>,
+    pub mirror: bool,
+}
+
+/// [`MenuOptions`] of the rules `choice` plays. With no `[matchups]` table
+/// it is today's two factions facing each other.
+pub fn menu_options(defs: &ModDefs, choice: &MenuChoice) -> MenuOptions {
+    let ids = menu_factions(defs, choice);
+    let factions = ids
+        .iter()
+        .map(|id| {
+            let d = defs.factions.get(&format!("{MOD_ID}:{id}"));
+            (
+                id.clone(),
+                d.map_or_else(|| id.clone(), |d| d.name.clone()),
+                d.map_or_else(String::new, |d| d.color.clone()),
+            )
+        })
+        .collect();
+    let opponents = ids
+        .iter()
+        .map(|id| (id.clone(), menu_opponents(defs, choice, id)))
+        .collect();
+    MenuOptions {
+        factions,
+        opponents,
+        mirror: matchups(defs, choice).is_some_and(|m| m.mirror == 1),
+    }
+}
+
+/// The lobby's words for a refused pair (`a` and `b` short ids), or `None`
+/// when the rules let them fight (the same faction only with `[matchups]
+/// mirror`).
+pub fn pair_refusal(defs: &ModDefs, choice: &MenuChoice, a: &str, b: &str) -> Option<String> {
+    let o = menu_options(defs, choice);
+    let name = |id: &str| {
+        o.factions
+            .iter()
+            .find(|f| f.0 == id)
+            .map_or_else(|| id.to_owned(), |f| f.1.clone())
+    };
+    if a == b {
+        return (!o.mirror)
+            .then(|| format!("Both players picked {}; factions must differ.", name(a)));
+    }
+    let ok = o
+        .opponents
+        .iter()
+        .find(|(f, _)| f == a)
+        .is_some_and(|(_, v)| v.iter().any(|x| x == b));
+    (!ok).then(|| {
+        format!(
+            "{} cannot fight {} in this ruleset; pick another faction.",
+            name(a),
+            name(b)
+        )
+    })
+}
+
 pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, String> {
     let d = difficulty(&choice.difficulty)?;
     let slots = match &choice.slots {
@@ -308,6 +374,59 @@ mod tests {
             ..MenuChoice::default()
         };
         assert!(resolve(&m, &bad).is_err(), "control");
+    }
+
+    /// S15 P (M3, M6): with the USSR switched on in the rules' `[matchups]`
+    /// (Germany-USA, Germany-USSR) the menu lists three factions with the
+    /// partners each may face, the default first; USA against USSR gets the
+    /// lobby's refusal words and the setup refuses it too; Germany against
+    /// the USSR and the USSR's default opponent resolve. Control: the
+    /// shipped rules offer two factions and no USSR.
+    #[test]
+    fn menu_options_follow_the_matchups_table() {
+        let mut defs = load_defs(&mods(), false).unwrap();
+        let c = MenuChoice::default();
+        let shipped = menu_options(&defs, &c);
+        assert_eq!(shipped.factions.len(), 2, "control: today's menu");
+        assert!(shipped.factions.iter().all(|f| f.0 != "ussr"));
+        let r = defs.rules.get_mut("ww2:skirmish").unwrap();
+        let m = r.matchups.as_mut().unwrap();
+        m.factions.push("ww2:ussr".into());
+        m.pairs.push(["ww2:germany".into(), "ww2:ussr".into()]);
+        let o = menu_options(&defs, &c);
+        let ids: Vec<&str> = o.factions.iter().map(|f| f.0.as_str()).collect();
+        assert_eq!(ids, ["germany", "usa", "ussr"]);
+        assert_eq!(o.factions[2].1, "USSR");
+        assert_eq!(o.factions[2].2, "#9a5a4a");
+        let opp = |f: &str| o.opponents.iter().find(|x| x.0 == f).unwrap().1.clone();
+        assert_eq!(opp("germany"), ["usa", "ussr"]);
+        assert_eq!(opp("usa"), ["germany"]);
+        assert_eq!(opp("ussr"), ["germany"]);
+        assert!(pair_refusal(&defs, &c, "germany", "ussr").is_none());
+        let why = pair_refusal(&defs, &c, "usa", "ussr").unwrap();
+        assert!(why.contains("USA cannot fight USSR"), "{why}");
+        assert!(
+            pair_refusal(&defs, &c, "ussr", "ussr")
+                .unwrap()
+                .contains("must differ")
+        );
+        let play = |f: &str, o: Option<&str>| {
+            resolve_with(
+                &defs,
+                &MenuChoice {
+                    faction: f.into(),
+                    opponent: o.map(str::to_owned),
+                    ..MenuChoice::default()
+                },
+            )
+        };
+        let s = play("ussr", None).unwrap();
+        assert_eq!(
+            short_id(&s.factions[s.players[1].faction as usize].id),
+            "germany"
+        );
+        assert!(play("germany", Some("ussr")).is_ok());
+        assert!(play("usa", Some("ussr")).is_err(), "the refused pair");
     }
 
     #[test]
