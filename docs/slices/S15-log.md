@@ -5,28 +5,24 @@ Commit only your files (`git commit -m ... -- FILES`), never `git add -A`, never
 `godot/match/*.gd.uid`. Do not push. Owner rule: no balance runs, no tuning; every number a TOML key with a range, switches off.
 
 ## For the next stage (rewritten by every stage, not appended; at most 30 lines)
-**State: S15a Build A done; Build B (USSR data) next.** SAVE 34 / PROTOCOL 17. Every S15 switch is 0 in
-`mods/ww2/defs/rules/skirmish.toml` (`[riders] enabled`, `[body_armour] enabled`, `[supply] foreign_ammo`, `[melee] bayonets`,
-`[ai.riders] jobs`); the setup drops every S15 def part while its switch is 0 (`MatchSetup::s15_off`, N2).
-**T210:** `target/s15-A-40` vs `target/s14-F-40`: `neutral.py` "same 40/40" (run once, at dfcff03; later commits only add
-switch-gated code, JSON blocks, snapshot fields and saturating counters, and every existing test still passes).
-**Rows (hard, `fortify10.s15.*`, seed 1):** W1 plate stops 100 / control 0, ratio 3333 %, rifle and back diff 0; W2 riders
-boarded 10, off 900 ms, 0 on the deck after the KO (10 stunned), control refused 1; W3 drawn 22, fired 20, miss 913 vs own 682 cm
-(wider 1), German drawn 0; W4 bayonet 100 of 100 at 1.5 m, 0 at 1.9 m, switch 0: 0.
-**Code map.** Rules: `crates/sim/src/s15.rs` (counters, `rider_exit`, `RiderOff`, `plate_damage`, `burst_riders`, rider causes),
-`transport.rs` (seats, R3 exits), `combat.rs` (plate on hits and fragments, foreign spread, burst -> riders), `flame.rs` (bayonet
-reach, plate on strikes), `supply.rs` + `structures.rs` (`Kit::foreign`, `feed_foreign`, `take_foreign`). Content: `defs.rs`
-(`ForeignFeedDef`, `WeaponMeleeDef.bayonet`), `variant.rs` (`MemberDef::armour`), `setup.rs` (`PlateSetup`, `ForeignFeedSetup`,
-`WeaponSetup::bayonet`, `TransportSetup::exposed`, `s15_off`), `modset.rs` (cross-checks), matchups in `resolve`. Rows:
-`sdk/crates/cli/src/fortify/s15.rs`; JSON `s15` blocks and `s15_*` checks in `json_out.rs`. Snapshot: `DECK`, `RIDERS_OFF`,
-`soldier_plate` (`godot/docs/match_state.md` "S15"; the bridge does not send them yet).
-**Build B needs:** the USSR defs (no def in the mod carries a plate, rider slots, a foreign feed or a bayonet yet: the rows use
-stand-ins made in code); the Pz IV / T-34 `[[rider_slots]]` boxes; the Mosin `[melee.bayonet]`; the 82-PM foreign feed; risk 4
-(`ptrd_engages_a_halftrack`); T211 (switches on = base) after the data lands; T212-T218 are comments in `targets/S15.toml` until then.
-**Deviations** (details in "S15a A"): `VehicleState::rider_off` and `AiRiders` added to the layout; hull-only rider box check;
-plates skip riders and crews; bayonet via `WeaponMeleeDef` (setup keeps `MeleeDef` + `bayonet`); bursts suppress deck riders
-(new, `[riders] enabled` 1 only); W2 KO staged as an engine fire; supply account counters saturate (fuzz); setup grew three times
-after the layout commit (BASELINE refreshed each time); ablation files inherit the lists; batch.sh, pool.py, lobby FACTIONS unchanged.
+**State: S15a Build B done (USSR infantry data); Build C (guns, vehicles) next.** SAVE 34 / PROTOCOL 17. Every S15 switch is 0 in
+`mods/ww2/defs/rules/skirmish.toml`; `ww2:ussr` is a faction file but not in `[matchups] factions`, so it is played only through an
+override (`docs/slices/targets/S15-smoke.toml`: the USSR enabled against Germany, switches on).
+**T210** (`s15_off`, `target/s15-B-off40`) and **T211** (shipped defaults, `target/s15-B-40`): `neutral.py` "same 40/40" against
+`target/s14-F-40`, both at the Build B data commits. **Smoke** (4 seeds Germany-USSR, S15-smoke.toml): no panic, 16-26 min, USSR won 3.
+**What Build B made** (all `ww2:ussr_*`, all sorting after every older id; test `s15_defs_sort_last` compares the Germany-USA setup
+with and without the USSR defs, switches off and on): faction file, 13 roster cards + 6 crews (tank crew 5; gun crews 45 / 57 / 76 /
+76 M1943 / 122 mm), weapons `mosin_9130` (butt + bayonet), `ppsh41`, `pps43`, `dp27`, `maxim_1910`, `sg43` (no card), `tt33`, `ptrd41`,
+`roks3`, `82mm_bm37` (foreign feed, German 8 cm bombs 130 %), cartridges, items (F-1, RG-42, RDG, satchel, UZ), 7 supply defs.
+**Build C needs:** the five gun cards (`ussr_gun_crew_*` exist, `crew_squad` of the vehicle defs points at them), seven vehicles and
+their rounds; the T-34-85 / SU-85 / IS-2 `[[rider_slots]]` and `[riders]` blocks (nothing carries them yet; the tag
+`vehicle_riders` is on `ussr_otdelenie_avtomatchikov`); the supply defs' cook-off round is the German 7.5 cm HE until a Soviet HE
+round exists (`ussr_*` supply, six files: change `cookoff`); the roster gets the gun and vehicle cards appended. T212-T218 still
+comments in `targets/S15.toml`. The AI bought: 82 mm mortar, PTR team, MG section, rifle section (9 and 6), SMG section, sappers,
+assault group; no vehicles (none exist), no medics, observers, HQ or bearers (as the German AI's smoke buys).
+**Deviations** (details in "S15a B"): the plan's tag `riders` is `vehicle_riders` (a new tag shifts every later tag index: the tag list
+is sorted); the AT-team check accepts a crew AT rifle with a `penetration` table (content `modset.rs`); the Soviet assault group
+is an S10a-style card for the AI's fort habits (test list in `ai/fort.rs` updated); see below for the verify marks.
 
 ## S15a A (Build A)
 Commits: ae409fd layout (SAVE 34); 1e1f16f keys, `[matchups]`, ablations, targets; 6545360 matchups M1-M4; 896a91e riders
@@ -64,3 +60,28 @@ supply account counter now saturates. (13) T210 was run once (owner-approved set
 **Save fuzz** (e391bb2): 13146 mutations, 7688 rejected, 5458 loaded and ran 300 ticks, 0 then unloadable, 0 panicked.
 **`tools/check.sh quick 96d4b4b`** at e391bb2: fmt ok, clippy ok, neutral.py ok, every ablate dry run ok (S15 included), tests
 (cli, content, sim, godot-bridge) 1339 passed, 0 failed (the net crate is unchanged, so the IPv6 test did not run).
+
+## S15a B (Build B)
+Commits: f3025b4 faction, 13 cards, 6 crews, 10 weapons, items, cartridges, supply defs, AT-rifle check; 142af59 tests on the real
+defs, tag rename, snapshot re-bless; then the smoke override and this log.
+Tests added: sim `sn42_stops_a_ppsh_round_not_a_mosin_round`, `mosin_bayonet_reaches_150_not_190_cm` (real reach 180 cm: a man's
+capsule adds to it, so the miss is tested at 2.4 m), `ptrd_engages_a_halftrack`, `ai_tolerates_an_empty_mix_slot`; content
+`s15_defs_sort_last` (N1, switches 0 and 1: the old entries of the eight setup lists and every other setup field equal the setup
+without the USSR defs), `only_the_assault_group_wears_a_plate`, `roks3_pair_off_is_no_flame_man`, `mosin_has_butt_and_bayonet_blocks`.
+Existing tests changed for the new data: `s11a1_cards_load_at_the_spec_figures` (USSR roster skipped), `variants` (the Guards section
+is veteran), `s15_off_setup_has_no_s15_field` (counts the stand-ins only), `s10a_cards_are_the_build_heavy_and_breach_cards`.
+**Risk 4 (read in the test, not the rules):** a rifle-class crew weapon with a `penetration` table already picks vehicles by itself under
+the S8a rule: the PTR team 80 m from a US half-track (its MGs spent) fires unordered and holes it within a minute; at 600 m it does
+not fire. No rule or key was needed. The PTR card needed a content check change only: an `at` team needed a launcher.
+**Figures verified (read 2026-11-26, Wikipedia):** PPSh-41 (35 / 71-round, 488 m/s, about 1,250 rpm cyclic), PPS-43 (35 rounds,
+500-600 rpm, about 500 m/s), DP-27 (47 rounds, 550 rpm, 840 m/s), Mosin (5 rounds, about 865 m/s), PTRD (16 kg, 1,012 m/s, 40 mm at
+100 m, 30 mm at 500 m: the note's 17.3 kg and 38/33/27 mm rows are replaced), Maxim (250 belt, 600 rpm, 62.66 kg, 740 m/s), SG-43
+(250 belt, 500-700 rpm, 800 m/s, May 1943), TT-33 (8 rounds, 420 m/s), F-1 (600 g, 60 g TNT, fuse 3.5-4.5 s), 82-BM-37 (56 kg, 3.05 kg
+bomb, 15-25 rpm, crew 4). **Unverified (kept, defs say so):** bayonet fixed when zeroed, RG-42 (page not found), RDG smoke, the UZ
+charge and the Soviet satchel (US values), captured German 8 cm bombs, ROKS-3 igniter count, every cartridge weight, DP-27 and Maxim
+burst lengths, all prices, cooldowns and `ai_weight` (S15 starting values, no tuning).
+**Deviations.** (1) Tag `vehicle_riders` for `riders` (above). (2) `modset.rs`: AT-rifle teams. (3) `ai/fort.rs` test list. (4) 82-BM-37
+lowest charge 70 m/s (the check wants a shortest range under `min_range_m` 90). (5) The PTRD table is 42 / 40 / 35 / 30 mm
+(read 40 at 100 m and 30 at 500 m; the 0 and 300 m rows interpolate). (6) PPSh rate 600 (cyclic 1,250 read; the MP 40 is 400 for
+about 500). (7) The sanitary and razvedchik cards copy the US aid and observer cards (pistol with 0 rounds; radio operator). (8)
+The skirmish JSON has no `s15` block, so the smoke reads buys and rounds only. (9) 40 sets: two, as approved.
