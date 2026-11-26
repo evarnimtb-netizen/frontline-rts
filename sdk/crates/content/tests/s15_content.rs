@@ -454,11 +454,9 @@ fn s15_defs_sort_last() {
         list!(cartridges);
         list!(stocks);
         list!(factions);
-        // The vehicles list gains nothing until Build C.
+        // S15 Build C: the vehicles and ammo lists gain their USSR entries too.
         for (name, n) in &seen {
-            if *name != "vehicles" && *name != "ammo" {
-                assert!(*n > 0, "{name}: no USSR entry");
-            }
+            assert!(*n > 0, "{name}: no USSR entry");
         }
         // The tag list is sorted: the one USSR tag (`vehicle_riders`) sorts
         // after every older one, so the list only grows at its end.
@@ -580,4 +578,82 @@ fn mosin_has_butt_and_bayonet_blocks() {
     assert!(on.weapons[sn].foreign_feed.is_some());
     let grw = on.weapons.iter().position(|w| w.id == "ww2:grw34").unwrap();
     assert!(on.weapons[grw].foreign_feed.is_none(), "X3: one way only");
+}
+
+/// S15 Build C (plan 6.3, 6.4) on the real defs: the nine Soviet AP and
+/// APCR rounds carry the S13 slope class (HE rounds none); each gun card
+/// comes with the US6 as its tow; the vehicle cards carry the plan's AI
+/// weights, the IS-2 is the one Soviet heavy card; every Soviet supply
+/// def cooks off with the Soviet HE round. Control: the German and US
+/// lists the S13 test pins are unchanged (that test filters `ussr_`).
+#[test]
+fn s15c_rounds_cards_and_tows() {
+    use frontline_content::vehicle::SlopeClass;
+    let defs = ModDefs::load(&root().join("mods/ww2")).unwrap();
+    let s = defs.resolve(&req("ww2:germany", "ww2:usa")).unwrap();
+    let mut classed: Vec<(&str, SlopeClass)> = s
+        .ammo
+        .iter()
+        .filter(|a| a.id.starts_with("ww2:ussr_"))
+        .filter_map(|a| a.slope_class.map(|c| (a.id.as_str(), c)))
+        .collect();
+    classed.sort_by_key(|&(id, _)| id);
+    assert_eq!(
+        classed,
+        [
+            ("ww2:ussr_122mm_br471", SlopeClass::Apcbc),
+            ("ww2:ussr_45mm_br240", SlopeClass::Apcbc),
+            ("ww2:ussr_45mm_br240p", SlopeClass::Apcr),
+            ("ww2:ussr_57mm_br271", SlopeClass::Apcbc),
+            ("ww2:ussr_57mm_br271p", SlopeClass::Apcr),
+            ("ww2:ussr_76mm_br350a", SlopeClass::Apcbc),
+            ("ww2:ussr_76mm_br350p", SlopeClass::Apcr),
+            ("ww2:ussr_85mm_br365", SlopeClass::Apcbc),
+            ("ww2:ussr_85mm_br365p", SlopeClass::Apcr),
+        ][..]
+    );
+    let card = |id: &str| {
+        let k = s.squad_type_index(id).unwrap_or_else(|| panic!("{id}")) as usize;
+        &s.squad_types[k]
+    };
+    let us6 = s.squad_type_index("ww2:ussr_us6_squad").unwrap();
+    for g in [
+        "ww2:ussr_45mm_m42_squad",
+        "ww2:ussr_57mm_zis2_squad",
+        "ww2:ussr_76mm_zis3_squad",
+        "ww2:ussr_76mm_m1943_squad",
+        "ww2:ussr_122mm_m30_squad",
+    ] {
+        assert_eq!(card(g).tow_card, Some(us6), "{g}: towed by the US6");
+    }
+    for (id, wt) in [
+        ("ww2:ussr_t34_85_squad", 100),
+        ("ww2:ussr_su85_squad", 100),
+        ("ww2:ussr_su76m_squad", 50),
+        ("ww2:ussr_is2_squad", 0),
+        ("ww2:ussr_ba64b_squad", 5),
+        ("ww2:ussr_us6_squad", 5),
+        ("ww2:ussr_m3a1_scout_squad", 100),
+    ] {
+        assert_eq!(card(id).ai_weight, wt, "{id}");
+    }
+    let heavy: Vec<&str> = s
+        .squad_types
+        .iter()
+        .filter(|t| t.ai_heavy && t.id.starts_with("ww2:ussr_"))
+        .map(|t| t.id.as_str())
+        .collect();
+    assert_eq!(heavy, ["ww2:ussr_is2_squad"]);
+    for (id, d) in &defs.supply {
+        if id.starts_with("ww2:ussr_") {
+            if let Some(c) = &d.cookoff {
+                assert_eq!(c, "ww2:ussr_76mm_of350", "{id}");
+            }
+        }
+    }
+    for (id, v) in &defs.vehicles {
+        if !id.starts_with("ww2:ussr_") {
+            assert!(v.riders.is_none() && v.rider_slots.is_empty(), "{id}");
+        }
+    }
 }

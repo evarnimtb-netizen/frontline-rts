@@ -1,0 +1,231 @@
+# IS-2 (1944, straight glacis) (S15 Build C, docs/slices/S15-ussr.md 6.4): the heavy breakthrough tank, the D-25T 122 mm;
+# deck places for tank riders (S15-3 (A)). S13's 3-box armour on the T-34-85 def's pattern (seats, parts and hatches
+# approximate); crew 4: the commander works the radio, so no bow gunner. Every figure not read in a source is an S15
+# starting value (unverified).
+id = "ww2:ussr_is2"
+name = "IS-2"
+short_name = "IS-2"
+faction = "ww2:ussr"
+role = "tank"
+# S15 starting value (S15-ussr.md 6.4; not tuned). Pop and cooldowns as the Tiger I card (a heavy wave card).
+cost = 1100
+pop = 16
+recall_cooldown_s = 300
+initial_cooldown_s = 720
+sight_m = 175
+spot_size_pct = 200
+# 2.73 m high: the commander's cupola (unverified).
+eye_height_cm = 275
+sources = [
+  "Wikipedia, IS-2 (46 t, crew 4; hull front 100 (infobox) / 120 mm (text) at 60 deg, lower glacis 100 at 30, sides 90-130 at 9-25, turret front 100, sides 90 at 20; D-25T, 28 rounds (20 HE, 8 AP), 2-3 rpm; 37 km/h; read 2026-11-26)",
+  "docs/design/roster/vehicles.md 4.3",
+  "docs/slices/S15-research-history.md 6",
+]
+crew_squad = "ww2:ussr_tank_crew"
+# No rare round (BR-471 only in 1944, Wikipedia).
+rare_cap = 0
+
+[mobility]
+type = "tracked"
+# 37 km/h (Wikipedia, read) on the game's scale (Sherman 42 km/h = 650 cm/s).
+speed_cm_s = 570
+reverse_cm_s = 200
+turn_deg_s = 30
+accel_cm_s2 = 150
+brake_cm_s2 = 400
+max_slope_pct = 50
+ditch_block_dm = 19
+bog_pct = 8
+unbog_s = [20, 40]
+moving_spread_pct = 400
+
+[hull]
+# Of box 0 (the lower hull) only, as the S13 defs.
+track_band_pct = 75
+track_mm = 20
+
+[turret]
+pivot = [30, 0, 180]
+# Electric traverse (unverified): an S15 starting value.
+traverse_deg_s = 12
+elevate_deg_s = 6
+
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 75], half = [335, 150, 40] }
+[boxes.armor]
+# Lower glacis 100 at 30 (read), lower side 90 vertical (read 90-130), rear 60 at 49 (unverified), deck 30 (unverified).
+front = { thickness_mm = 100, slope_deg = 30 }
+side = { thickness_mm = 90 }
+rear = { thickness_mm = 60, slope_deg = 49 }
+top = { thickness_mm = 30 }
+
+[[boxes]]
+id = "superstructure"
+frame = "hull"
+box = { center = [0, 0, 150], half = [335, 150, 35] }
+[boxes.armor]
+# Straight glacis 120 at 60 (plan; Wikipedia text, the infobox says 100), upper side 90 at 15 (read 90 at 9-25),
+# rear 60 at 49 (unverified), deck 30 (unverified).
+front = { thickness_mm = 120, slope_deg = 60 }
+side = { thickness_mm = 90, slope_deg = 15 }
+rear = { thickness_mm = 60, slope_deg = 49 }
+top = { thickness_mm = 30 }
+
+[[boxes]]
+id = "turret"
+frame = "turret"
+box = { center = [0, 0, 45], half = [135, 110, 45] }
+[boxes.armor]
+# Cast turret: face 100 (read; rounded), sides 90 at 20 (read), rear 90 at 30 and roof 30 (unverified).
+front = { thickness_mm = 100 }
+side = { thickness_mm = 90, slope_deg = 20 }
+rear = { thickness_mm = 90, slope_deg = 30 }
+top = { thickness_mm = 30 }
+
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [200, 60, 110], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "turret", center = [10, 45, 0], half = [30, 25, 70] }
+in = "turret"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "turret", center = [-60, 40, 22], half = [30, 30, 63] }
+in = "turret"
+
+[[seats]]
+id = "loader"
+role = "loader"
+box = { frame = "turret", center = [10, -45, -25], half = [30, 25, 95] }
+in = "turret"
+
+
+[[weapons]]
+def = "ww2:ussr_d25t"
+mount = "turret_main"
+# From the turret pivot: L/43, about 5.3 m of barrel (unverified).
+muzzle = [520, 0, 45]
+# -3 to +20 deg (unverified).
+elevation_deg = [-3, 20]
+# 28 rounds, the norm 20 HE and 8 AP (Wikipedia, read); separate loading is the slow reload (no rule).
+ammo = [
+  { id = "ww2:ussr_122mm_br471", count = 8 },
+  { id = "ww2:ussr_122mm_of471", count = 20 },
+]
+barrel = { length_cm = 385, radius_cm = 11 }
+
+# The coaxial DT (read: 3 DT and a DShK with 2,079 rounds in all; the hull and turret-rear DT and the DShK are not
+# modelled: no mount kind for them): 1,000 rounds (unverified).
+[[weapons]]
+def = "ww2:ussr_dt"
+mount = "coax"
+muzzle = [130, 25, 45]
+rounds = 1000
+
+# The V-2-34 diesel and the gearbox at the rear (T-34 layout; positions approximate).
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [-200, 0, 95], half = [60, 100, 45] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [290, 135, 45] }, { pos = [0, 135, 45] }, { pos = [-290, 135, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [290, -135, 45] }, { pos = [0, -135, 45] }, { pos = [-290, -135, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "turret", center = [50, 0, 45], half = [45, 20, 20] }
+
+[[components]]
+type = "turret_ring"
+hp = 80
+box = { frame = "hull", center = [30, 0, 178], half = [80, 80, 7] }
+repair = { to_hp = 50, time_s = 40 }
+
+# Most rounds in floor bins under the turret and in the hull sides (T-34 layout; positions approximate).
+[[components]]
+type = "ammo_rack"
+hp = 60
+boxes = [
+  { frame = "hull", center = [40, 60, 55], half = [70, 40, 15] },
+  { frame = "hull", center = [40, -60, 55], half = [70, 40, 15] },
+  { frame = "hull", center = [40, 125, 130], half = [60, 20, 25] },
+]
+
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [-295, 0, 80], half = [30, 60, 35] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+# Hatches: the commander's cupola, the loader's roof hatch, the driver's (no glacis hatch on the IS-2: out by the turret).
+[[hatches]]
+seats = ["commander", "gunner"]
+frame = "turret"
+pos = [-60, 40, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["loader"]
+frame = "turret"
+pos = [10, -45, 90]
+exit_ms = 3000
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [200, 60, 185]
+exit_ms = 4000
+
+
+# S15 R1 (S15-3 (A)): tank riders (tankovy desant) on the engine deck behind the turret, outside every plate;
+# 8 places (S15-ussr.md 6.4). Positions approximate (hull frame, cm); a seated man's box as the half-track's slots.
+# Board time per man an S15 starting value (as the W2 stand-in). Dropped at setup while [riders] enabled is 0.
+[riders]
+capacity = 8
+entry = [-335, 0, 60]
+board_ms = 1000
+
+[[rider_slots]]
+box = { center = [-130, 65, 230], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-130, -65, 230], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-190, 65, 230], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-190, -65, 230], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-250, 65, 230], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-250, -65, 230], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-305, 65, 230], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-305, -65, 230], half = [22, 20, 45] }

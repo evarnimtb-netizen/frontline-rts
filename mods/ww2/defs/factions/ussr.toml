@@ -29,6 +29,13 @@ roster = [
     "ww2:ussr_76mm_zis3_squad",
     "ww2:ussr_76mm_m1943_squad",
     "ww2:ussr_122mm_m30_squad",
+    # S15 Build C: the vehicles (the tank first, as in the German and US rosters).
+    "ww2:ussr_t34_85_squad",
+    "ww2:ussr_su85_squad",
+    "ww2:ussr_su76m_squad",
+    "ww2:ussr_m3a1_scout_squad",
+    "ww2:ussr_ba64b_squad",
+    "ww2:ussr_is2_squad",
 ]
 # Squads on the field at tick 0: two rifle sections and the sappers.
 start_squads = ["ww2:ussr_strelkovoe_otdelenie", "ww2:ussr_strelkovoe_otdelenie", "ww2:ussr_sapyornoe_otdelenie"]

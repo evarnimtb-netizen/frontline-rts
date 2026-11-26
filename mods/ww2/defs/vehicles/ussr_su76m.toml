@@ -1,0 +1,173 @@
+# SU-76M (S15 Build C, docs/slices/S15-ussr.md 6.4): the light assault gun, the 76 mm ZiS-3 in an open-topped, open-rear
+# casemate on a light-tank hull. Two boxes (the hull and the open casemate) on the StuG III G def's pattern (positions
+# approximate). No rider places (plan). Every figure not read in a source is an S15 starting value (unverified).
+id = "ww2:ussr_su76m"
+name = "SU-76M"
+short_name = "SU-76M"
+faction = "ww2:ussr"
+role = "assault_gun"
+# S15 starting value (S15-ussr.md 6.4; not tuned). Pop and cooldowns as the StuG III G card.
+cost = 330
+pop = 10
+recall_cooldown_s = 120
+initial_cooldown_s = 0
+sight_m = 175
+spot_size_pct = 150
+eye_height_cm = 220
+sources = [
+  "Wikipedia, SU-76 (SU-76M: 10.5 t, crew 4, front 25-35 mm, sides 10-15 mm, ZiS-3 mod. 1942, -5 to +15 deg, 15 deg left and right, DT, 45 km/h; read 2026-11-26)",
+  "docs/design/roster/vehicles.md 4.3 (60 rounds; open top and rear; unverified)",
+]
+crew_squad = "ww2:ussr_tank_crew"
+rare_cap = 2
+
+[mobility]
+type = "tracked"
+# 45 km/h (Wikipedia, read) on the game's scale (Sherman 42 km/h = 650 cm/s).
+speed_cm_s = 700
+reverse_cm_s = 200
+turn_deg_s = 32
+accel_cm_s2 = 160
+brake_cm_s2 = 400
+max_slope_pct = 50
+# 19 as every tracked def: the shallowest tracked value sets the block layer of every match.
+ditch_block_dm = 19
+bog_pct = 8
+unbog_s = [20, 40]
+moving_spread_pct = 400
+
+[hull]
+track_band_pct = 45
+track_mm = 15
+
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 80], half = [250, 130, 45] }
+[boxes.armor]
+# Nose 35 at 60 (read 25-35 front; the angle unverified), sides 15 (read 10-15), rear 15, deck 7 (unverified).
+front = { thickness_mm = 35, slope_deg = 60 }
+side = { thickness_mm = 15 }
+rear = { thickness_mm = 15 }
+top = { thickness_mm = 7 }
+
+[[boxes]]
+id = "casemate"
+frame = "hull"
+box = { center = [-60, 0, 165], half = [150, 125, 40] }
+open = ["top", "rear"]
+floor_cm = 125
+[boxes.armor]
+# Casemate front 25 at 30 (read 25), sides 10 (read), open top and rear (vehicles.md).
+front = { thickness_mm = 25, slope_deg = 30 }
+side = { thickness_mm = 10, slope_deg = 10 }
+
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [170, 45, 95], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "hull", center = [10, 50, 165], half = [30, 25, 55] }
+in = "casemate"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "hull", center = [-90, 50, 165], half = [30, 30, 55] }
+in = "casemate"
+
+[[seats]]
+id = "loader"
+role = "loader"
+box = { frame = "hull", center = [-30, -55, 165], half = [30, 30, 55] }
+in = "casemate"
+
+[[weapons]]
+def = "ww2:ussr_zis3"
+mount = "casemate"
+pivot = [60, 0, 175]
+muzzle = [330, 0, 0]
+# 15 deg left and right, -5 to +15 deg (Wikipedia, read).
+traverse_deg = [-15, 15]
+traverse_deg_s = 8
+elevate_deg_s = 5
+elevation_deg = [-5, 15]
+# 60 rounds (vehicles.md, unverified): 38 OF-350, 20 BR-350A, 2 BR-350P (unverified split).
+ammo = [
+  { id = "ww2:ussr_76mm_br350a", count = 20 },
+  { id = "ww2:ussr_76mm_of350", count = 38 },
+  { id = "ww2:ussr_76mm_br350p", count = 2 },
+]
+barrel = { length_cm = 240, radius_cm = 6 }
+
+# The DT (read), fired by the commander over the open casemate; 945 rounds (unverified).
+[[weapons]]
+def = "ww2:ussr_dt"
+mount = "pintle"
+pivot = [-90, 50, 215]
+muzzle = [80, 0, 5]
+traverse_deg = [-180, 180]
+traverse_deg_s = 30
+seat = "commander"
+rounds = 945
+
+[[components]]
+type = "engine"
+hp = 80
+box = { frame = "hull", center = [60, -60, 85], half = [50, 50, 35] }
+repair = { to_hp = 40, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 80
+anchors = [{ pos = [210, 115, 40] }, { pos = [0, 115, 40] }, { pos = [-210, 115, 40] }]
+repair = { to_hp = 80, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 80
+anchors = [{ pos = [210, -115, 40] }, { pos = [0, -115, 40] }, { pos = [-210, -115, 40] }]
+repair = { to_hp = 80, time_s = 30 }
+
+[[components]]
+type = "gun"
+hp = 70
+box = { frame = "hull", center = [30, 0, 170], half = [35, 15, 15] }
+
+[[components]]
+type = "ammo_rack"
+hp = 40
+boxes = [
+  { frame = "hull", center = [-60, 100, 145], half = [55, 20, 20] },
+  { frame = "hull", center = [-60, -100, 145], half = [55, 20, 20] },
+]
+
+[[components]]
+type = "transmission"
+hp = 80
+box = { frame = "hull", center = [200, 0, 75], half = [40, 30, 30] }
+repair = { to_hp = 40, time_s = 60 }
+
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+[[hatches]]
+seats = ["commander", "gunner", "loader"]
+frame = "hull"
+pos = [-200, 0, 165]
+exit_ms = 2500
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [170, 45, 125]
+exit_ms = 3000

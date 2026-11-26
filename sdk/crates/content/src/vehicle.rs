@@ -1833,9 +1833,10 @@ impl VehicleDef {
         }
         let mains = self.weapons.iter().filter(|w| w.mount.is_main()).count();
         // S8a-1: a transport may have a main gun; S8b: a truck has none;
-        // every other role exactly one.
+        // S15 Build C: a recon car may have none (the BA-64B's only weapon
+        // is a DT on a pintle); every other role exactly one.
         let (want_mains, needs) = match self.role {
-            VehicleRole::Transport => (0..=1, "at most one"),
+            VehicleRole::Transport | VehicleRole::Recon => (0..=1, "at most one"),
             VehicleRole::Truck | VehicleRole::Tractor => (0..=0, "no"),
             _ => (1..=1, "exactly one"),
         };
@@ -4168,12 +4169,15 @@ pub(crate) fn check_vehicle(
     let turret_ok = if v.has_turret {
         box_ok(&v.turret) && !casemate && v.gun_arc_deg.is_none()
     } else if v.main_gun().is_none() {
-        // S8a-1: no main gun (a transport).
+        // S8a-1: no main gun (a transport). S15 Build C: or a recon car.
         v.turret == BoxSetup::default()
             && v.gun_arc_deg.is_none()
             && matches!(
                 v.role,
-                VehicleRole::Transport | VehicleRole::Truck | VehicleRole::Tractor
+                VehicleRole::Transport
+                    | VehicleRole::Truck
+                    | VehicleRole::Tractor
+                    | VehicleRole::Recon
             )
     } else {
         v.turret == BoxSetup::default()
