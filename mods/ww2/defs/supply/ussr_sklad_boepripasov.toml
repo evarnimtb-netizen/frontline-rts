@@ -1,0 +1,21 @@
+# S15 Build B: the Soviet copy of usa_ammo_dump.toml, same numbers (S15 starting
+# value; plan 6.2). The cook-off round is the German 7.5 cm HE until the
+# Soviet 76 mm HE exists (Build C).
+# Ammo Dump (S6): an ammunition dump, up to [supply] dump_max per player.
+# Built by the Platoon HQ (tag "hq") or engineers on a dump pit; smaller radius
+# and caps than the HQ, no radio. Fills only by carried crates (Q2 C).
+id = "ww2:ussr_sklad_boepripasov"
+name = "Sklad boepripasov"
+faction = "ww2:ussr"
+kind = "dump"
+cost = 50
+pit = "dump_pit"
+radius_m = 15
+cap_kg = { small_arms = 150, explosives = 100, shells = 300 }
+rebuild_s = 0
+built_by = ["hq", "engineer"]
+cookoff = "ww2:75mm_sprgr34"
+boxes = [
+    { part = "stock", size_cm = [160, 100, 80], offset_cm = [0, 0, 0], hp = 250 },
+]
+sources = ["S15 starting value: the US def's numbers (docs/slices/S15-ussr.md 6.2); Soviet loads not read"]

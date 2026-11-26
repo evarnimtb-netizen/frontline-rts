@@ -209,10 +209,12 @@ fn s15_off_setup_has_no_s15_field() {
     let on = defs.resolve(&r).unwrap();
     assert!(gren(&on), "control: plates with `[body_armour] enabled` 1");
     assert!(on.validate().is_empty(), "{:?}", on.validate());
+    // (The real USSR defs, in every setup since S15 Build B, have their own
+    // feed and bayonet; the stand-ins on the German and US defs are counted.)
     let feeds = |s: &frontline_content::MatchSetup| {
         s.weapons
             .iter()
-            .filter(|w| w.foreign_feed.is_some())
+            .filter(|w| w.foreign_feed.is_some() && !w.id.starts_with("ww2:ussr_"))
             .count()
     };
     assert_eq!(feeds(&on), 0, "foreign feed still off");
@@ -227,7 +229,10 @@ fn s15_off_setup_has_no_s15_field() {
     assert_eq!(feeds(&on), 1, "control: the feed with `foreign_ammo` 1");
     assert!(on.validate().is_empty(), "{:?}", on.validate());
     let bayonets = |s: &frontline_content::MatchSetup| {
-        s.weapons.iter().filter(|w| w.bayonet.is_some()).count()
+        s.weapons
+            .iter()
+            .filter(|w| w.bayonet.is_some() && !w.id.starts_with("ww2:ussr_"))
+            .count()
     };
     assert_eq!(bayonets(&on), 0, "bayonets still off");
     defs.rules

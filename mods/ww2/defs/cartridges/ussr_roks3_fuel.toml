@@ -1,0 +1,11 @@
+# Thickened fuel for the ROKS-3 (S15 Build B, as ww2:fmw41_fuel): one unit
+# is one flame particle, about 0.1 L (10 L over 96 particles). Resupplied
+# and priced as explosives. No calibre: 1 stands for "none".
+id = "ww2:ussr_roks3_fuel"
+name = "Flame fuel (ROKS-3)"
+caliber_mm = 1
+supply = { kind = "explosives", g = 100 }
+sources = [
+    "Wikipedia, ROKS flamethrowers (around 9 litres; read 2026-11-26)",
+    "S15-research-history.md 3: 10 L taken (two sources, 9 L and 10 L; one shot of difference)",
+]

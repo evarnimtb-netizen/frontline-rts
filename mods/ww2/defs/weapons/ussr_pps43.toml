@@ -1,0 +1,22 @@
+# PPS-43 submachine gun (S15 Build B): 7.62x25, 35-round curved box, 500-600
+# rounds a minute cyclic, about 500 m/s (Wikipedia "PPS submachine gun", read
+# 2026-11-26). A def for the SMG platoon's later cards; no card carries it
+# yet. S15 starting values, as the PPSh-41 with a lower rate.
+id = "ww2:ussr_pps43"
+name = "PPS-43"
+class = "smg"
+feed = "ww2:ussr_762x25"
+load = 210
+range_m = 100
+damage = 35
+rounds_per_min = 450
+magazine = 35
+reload_ms = 3000
+spread_mrad = 33
+muzzle_velocity_m_s = 500
+suppression = 6
+sources = [
+    "Wikipedia, PPS submachine gun (35-round box, 500-600 rpm, about 500 m/s; read 2026-11-26)",
+    "docs/design/roster/infantry-structures.md 4.2 (butt); damage per docs/slices/S14-assault-kit.md 4.3",
+]
+melee = { reach_cm = 80, damage = 40, windup_ms = 500, recover_ms = 1000 }

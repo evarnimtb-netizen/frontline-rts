@@ -1,0 +1,27 @@
+# The Soviet Union (S15 Build B, docs/slices/S15-ussr.md 6.1): the third
+# faction. Every USSR id starts `ww2:ussr_` so that it sorts after every
+# older id of its list (N1: no German or US def changes its index). It is
+# not in the rules' `[matchups] factions` until the S15-ai stage, so it
+# cannot be played yet; tests and rows pass an override.
+id = "ww2:ussr"
+name = "USSR"
+color = "#9a5a4a"
+roster = [
+    # The line: the rifle section (9), its field-strength form (6), the
+    # Guards section and the SMG section (S15 starting values).
+    "ww2:ussr_strelkovoe_otdelenie",
+    "ww2:ussr_strelkovoe_otdelenie_6",
+    "ww2:ussr_gvardeyskoe_otdelenie",
+    "ww2:ussr_otdelenie_avtomatchikov",
+    "ww2:ussr_pulemyotny_raschyot",
+    "ww2:ussr_sapyornoe_otdelenie",
+    "ww2:ussr_shturmovaya_gruppa",
+    "ww2:ussr_minomyotny_raschyot",
+    "ww2:ussr_raschyot_ptr",
+    "ww2:ussr_upravlenie_vzvoda",
+    "ww2:ussr_podnoschiki",
+    "ww2:ussr_sanitary",
+    "ww2:ussr_razvedchiki",
+]
+# Squads on the field at tick 0: two rifle sections and the sappers.
+start_squads = ["ww2:ussr_strelkovoe_otdelenie", "ww2:ussr_strelkovoe_otdelenie", "ww2:ussr_sapyornoe_otdelenie"]

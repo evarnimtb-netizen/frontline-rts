@@ -1,0 +1,40 @@
+# Sapyornoe otdelenie (S15 Build B): the engineer section of eight, the US
+# engineer card's capabilities and gear with Soviet arms: the leader (Mosin,
+# satchel), two PPSh men and five Mosin men; wire, mine and demolition work
+# (S15-ussr.md 6.1).
+id = "ww2:ussr_sapyornoe_otdelenie"
+name = "Sapyornoe otdelenie"
+short_name = "Sapyory"
+faction = "ww2:ussr"
+tags = ["engineer"]
+capabilities = ["dig_basic", "dig_full", "recrew", "build_structure", "place_wire", "clear_wire", "place_mines", "clear_mines", "demolish"]
+sources = [
+    "S15-ussr.md 6.1 (the US engineer list; Soviet table not read)",
+]
+ai_weight = 40
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 220
+cooldown_s = 30
+unlock_s = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 200
+
+[[members]]
+slot = "leader"
+weapon = "ww2:ussr_mosin_9130"
+traits = ["leader"]
+items = { "ww2:ussr_f1_grenade" = 2, "ww2:ussr_rdg_smoke" = 1, "ww2:ussr_satchel" = 1 }
+
+[[members]]
+slot = "sapper_smg"
+count = 2
+weapon = "ww2:ussr_ppsh41"
+items = { "ww2:ussr_f1_grenade" = 1 }
+
+[[members]]
+slot = "sapper"
+count = 5
+weapon = "ww2:ussr_mosin_9130"
+items = { "ww2:ussr_f1_grenade" = 1 }

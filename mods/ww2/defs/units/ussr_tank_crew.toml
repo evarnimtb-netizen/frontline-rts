@@ -1,0 +1,26 @@
+# Tank crew (S15 Build B): five (T-34-85), the commander and one man with PPSh-41,
+# three with TT-33. Bails out of a knocked-out tank (S3c).
+id = "ww2:ussr_tank_crew"
+name = "Tankovy ekipazh"
+faction = "ww2:ussr"
+tags = ["crew"]
+capabilities = ["vehicle_crew"]
+cost = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 0
+
+[[members]]
+slot = "commander"
+weapon = "ww2:ussr_ppsh41"
+traits = ["leader"]
+
+[[members]]
+slot = "crewman_smg"
+weapon = "ww2:ussr_ppsh41"
+
+[[members]]
+slot = "crewman"
+count = 3
+weapon = "ww2:ussr_tt33"

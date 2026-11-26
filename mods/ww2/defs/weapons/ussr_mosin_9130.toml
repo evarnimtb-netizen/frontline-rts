@@ -1,0 +1,32 @@
+# Mosin M1891/30 rifle (S15 Build B): the Soviet rifleman's weapon. 7.62x54R,
+# 5-round integral magazine, about 865 m/s, 4 kg. Issued and zeroed with the
+# spike bayonet fixed, so the bayonet carries no aim penalty (S15 plan 4.4);
+# the bayonet strike is `[melee.bayonet]`, used with the rules' [melee]
+# bayonets = 1. Prices, rates and ranges are S15 starting values (owner rule
+# 2026-11-25: no tuning), set as the Kar98k's.
+id = "ww2:ussr_mosin_9130"
+name = "Mosin M91/30"
+short_name = "Mosin"
+class = "rifle"
+feed = "ww2:ussr_762x54r_clip"
+# Rounds carried, the 5 in the rifle included (S15 starting value, as the Kar98k).
+load = 60
+range_m = 300
+damage = 70
+rounds_per_min = 15
+magazine = 5
+reload_ms = 3500
+spread_mrad = 10
+muzzle_velocity_m_s = 865
+# S8a small arms against thin armour: ball, as the Kar98k class (unverified).
+penetration = [[0, 7], [100, 5], [300, 3]]
+core = { damage = 30, length_cm = 30, max_boxes = 1 }
+suppression = 8
+sources = [
+    "Wikipedia, Mosin-Nagant (5-round magazine, about 865 m/s, 4 kg; read 2026-11-26)",
+    "docs/design/roster/infantry-structures.md 4.2 (bayonet reach 1.8 m; butt 1.0 m); damage per docs/slices/S14-assault-kit.md 4.3 (a torso strike wounds, two down a man)",
+    "bayonet fixed when zeroed: S15-research-history.md 2 (unverified: the page read does not say)",
+]
+# S15 starting values. Butt: as the Kar98k. Bayonet: reach 1.8 m
+# (infantry-structures.md 4.2), damage 90 so a torso thrust downs a man.
+melee = { reach_cm = 100, damage = 50, windup_ms = 600, recover_ms = 1000, bayonet = { reach_cm = 180, damage = 90, windup_ms = 500, recover_ms = 1000 } }

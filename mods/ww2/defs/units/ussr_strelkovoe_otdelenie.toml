@@ -1,0 +1,54 @@
+# Strelkovoe otdelenie (S15 Build B): the Soviet rifle section on the shtat
+# 04/550 light-section pattern, nine men: the leader (PPSh), the DP gunner
+# (TT-33) and his assistant (the pans), one PPSh man and five Mosin men,
+# F-1 grenades and a smoke grenade (S15-ussr.md 6.1). The field strength was
+# about six men (the Feldstaerke card, `ussr_strelkovoe_otdelenie_6`).
+id = "ww2:ussr_strelkovoe_otdelenie"
+name = "Strelkovoe otdelenie"
+short_name = "Strelkovoe"
+faction = "ww2:ussr"
+tags = ["line"]
+capabilities = ["dig_basic", "recrew"]
+sources = [
+    "battleorder.org, USSR rifle company 1944 (shtat 04/550, December 1942; read 2026-11-26)",
+]
+ai_weight = 100
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 200
+cooldown_s = 20
+unlock_s = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:ussr_ppsh41"
+traits = ["leader"]
+items = { "ww2:ussr_f1_grenade" = 1, "ww2:ussr_rdg_smoke" = 1 }
+
+[[members]]
+slot = "dp_gunner"
+weapon = "ww2:ussr_dp27"
+sidearm = "ww2:ussr_tt33"
+traits = ["crew_gunner"]
+items = { "ww2:ussr_f1_grenade" = 1 }
+
+[[members]]
+slot = "dp_assistant"
+weapon = "ww2:ussr_mosin_9130"
+rounds = { "ww2:ussr_762x54r_pan" = 94 }
+traits = ["crew_assistant"]
+items = { "ww2:ussr_f1_grenade" = 1 }
+
+[[members]]
+slot = "ppsh_man"
+weapon = "ww2:ussr_ppsh41"
+items = { "ww2:ussr_f1_grenade" = 1 }
+
+[[members]]
+slot = "rifleman"
+count = 5
+weapon = "ww2:ussr_mosin_9130"
+items = { "ww2:ussr_f1_grenade" = 1 }

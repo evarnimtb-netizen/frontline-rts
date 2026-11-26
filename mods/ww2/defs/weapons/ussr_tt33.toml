@@ -1,0 +1,18 @@
+# TT-33 pistol (S15 Build B): 7.62x25, 8-round magazine, about 420 m/s
+# (Wikipedia "Tokarev pistol", read 2026-11-26). Practical combat range, as
+# the P 38. S15 starting values.
+id = "ww2:ussr_tt33"
+name = "TT-33"
+class = "pistol"
+feed = "ww2:ussr_762x25"
+# Two 8-round magazines, one in the pistol.
+load = 16
+range_m = 30
+damage = 35
+rounds_per_min = 60
+magazine = 8
+reload_ms = 2500
+spread_mrad = 30
+muzzle_velocity_m_s = 420
+suppression = 2
+sources = ["Wikipedia, Tokarev pistol (8-round magazine, about 420 m/s; read 2026-11-26)"]

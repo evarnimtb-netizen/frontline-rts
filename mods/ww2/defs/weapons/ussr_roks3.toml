@@ -1,0 +1,33 @@
+# ROKS-3 backpack flamethrower (S15 Build B): fires flame particles
+# (`class = "flame"`) like the FmW 41. Game reading (S15-research-history.md
+# 3): 10 L over about 8 shots of 1 s at 12 particles a second = 96 units of
+# about 0.1 L; `range_m` 35 between the read 45 m maximum and the 15-25 m
+# effective figure. Fuel: 9 L (Wikipedia, read) or 10 L (secondary): 10 L
+# taken, a data point (one shot of difference). S15 starting values, each a
+# lever for the balance pass. With `[flame] enabled` 0 no card spawns it
+# (the `when` pair of the assault group).
+id = "ww2:ussr_roks3"
+name = "ROKS-3"
+short_name = "ROKS-3"
+class = "flame"
+feed = "ww2:ussr_roks3_fuel"
+load = 96
+sources = [
+    "Wikipedia, ROKS flamethrowers (around 9 litres, around 45 m maximum; read 2026-11-26)",
+    "quartermastersection.com ROKS (10 L, 35-40 m thickened, 15-25 m effective; secondary, unverified)",
+]
+range_m = 35
+damage = 20
+rounds_per_min = 720
+magazine = 96
+reload_ms = 0
+spread_mrad = 60
+muzzle_velocity_m_s = 26
+suppression = 35
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+crew_weapon = true
+handover_ms = 5000
+burst_rounds = 12
+burst_pause_ms = 1000
+hold_beyond_pct = 100

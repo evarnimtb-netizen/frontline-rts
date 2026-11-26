@@ -1,0 +1,30 @@
+# Podnoschiki (S15 Build B): ammunition bearers (four with Mosins; the
+# leader is one), as the US bearer card.
+id = "ww2:ussr_podnoschiki"
+name = "Podnoschiki"
+short_name = "Podnoschiki"
+faction = "ww2:ussr"
+tags = ["bearers"]
+capabilities = ["recrew"]
+sources = [
+    "S15-ussr.md 6.1 (as the US card; bearers with the MG and mortar sections)",
+]
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 90
+cooldown_s = 30
+unlock_s = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 0
+
+[[members]]
+slot = "leader"
+weapon = "ww2:ussr_mosin_9130"
+traits = ["leader", "ammo_bearer"]
+
+[[members]]
+slot = "ammo_bearer"
+count = 3
+weapon = "ww2:ussr_mosin_9130"
+traits = ["ammo_bearer"]

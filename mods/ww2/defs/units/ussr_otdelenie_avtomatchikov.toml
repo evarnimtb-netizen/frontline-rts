@@ -1,0 +1,49 @@
+# Otdelenie avtomatchikov (S15 Build B): a nine-man section of the SMG
+# platoon (battleorder.org: the rifle platoon's frame with every rifle
+# replaced by a PPSh-41 / PPS-43, the DP gunners kept): seven PPSh-41 men
+# (the leader one of them), the DP pair, RG-42 grenades. Tag `riders`: the
+# cards the AI seats on tanks first (S15-ussr.md 7, A1).
+id = "ww2:ussr_otdelenie_avtomatchikov"
+name = "Otdelenie avtomatchikov"
+short_name = "Avtomatchiki"
+faction = "ww2:ussr"
+tags = ["line", "riders"]
+capabilities = ["dig_basic", "recrew"]
+sources = [
+    "battleorder.org, USSR rifle company 1944 (shtat 04/550, December 1942; read 2026-11-26)",
+]
+ai_weight = 60
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 240
+cooldown_s = 20
+unlock_s = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:ussr_ppsh41"
+traits = ["leader"]
+items = { "ww2:ussr_rg42_grenade" = 2 }
+
+[[members]]
+slot = "dp_gunner"
+weapon = "ww2:ussr_dp27"
+sidearm = "ww2:ussr_tt33"
+traits = ["crew_gunner"]
+items = { "ww2:ussr_rg42_grenade" = 2 }
+
+[[members]]
+slot = "dp_assistant"
+weapon = "ww2:ussr_ppsh41"
+rounds = { "ww2:ussr_762x54r_pan" = 94 }
+traits = ["crew_assistant"]
+items = { "ww2:ussr_rg42_grenade" = 2 }
+
+[[members]]
+slot = "avtomatchik"
+count = 6
+weapon = "ww2:ussr_ppsh41"
+items = { "ww2:ussr_rg42_grenade" = 2 }

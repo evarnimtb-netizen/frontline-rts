@@ -1,0 +1,7 @@
+# 7.62x25 mm Tokarev for the PPSh-41, PPS-43 and TT-33 (S15 Build B). About
+# 11 g a round, 14 g with its carton: unverified, S15 starting value.
+id = "ww2:ussr_762x25"
+name = "7.62x25 mm Tokarev"
+caliber_mm = 8
+supply = { kind = "small_arms", g = 14 }
+sources = ["S15 starting value: about 11 g a round plus carton (unverified)"]

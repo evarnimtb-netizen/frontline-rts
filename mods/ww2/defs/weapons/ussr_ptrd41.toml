@@ -1,0 +1,32 @@
+# PTRD-41 anti-tank rifle (S15 Build B): 14.5x114, single shot, 8-10 rounds
+# a minute, 1,012 m/s, 16 kg, crew 2; about 40 mm at 100 m and about 30 mm
+# at 500 m (Wikipedia "PTRD-41", read 2026-11-26; angles not given). A
+# rifle-class weapon with a `penetration` table: the S8a small-arms-against-
+# plate rule decides what it holes (half-tracks, armoured cars, the Pz IV's
+# side at short range; never a Panther or Tiger). Fired by the team's gunner,
+# the loader carries the rounds. Game values are S15 starting values.
+id = "ww2:ussr_ptrd41"
+name = "PTRD-41"
+short_name = "PTRD"
+class = "rifle"
+feed = "ww2:ussr_145x114"
+# Rounds the gunner carries; the loader's share is `rounds` on his member.
+load = 15
+crew_weapon = true
+range_m = 400
+damage = 120
+rounds_per_min = 8
+magazine = 1
+reload_ms = 6000
+spread_mrad = 8
+muzzle_velocity_m_s = 1012
+# mm of RHA at 0 deg, [range_m, mm]: 40 at 100 m and 30 at 500 m are read;
+# the 0 m and 300 m rows interpolate (S15 starting values).
+penetration = [[0, 42], [100, 40], [300, 35], [500, 30]]
+core = { damage = 60, length_cm = 40, max_boxes = 1 }
+setup_ms = 1500
+suppression = 14
+handover_ms = 3000
+sources = [
+    "Wikipedia, PTRD-41 (16 kg, 8-10 rpm, 1,012 m/s, about 40 mm at 100 m, 30 mm at 500 m; read 2026-11-26)",
+]

@@ -1,0 +1,33 @@
+# Sanitary (S15 Build B): the company medics (a cut to two of the company's
+# five); unarmed in play, a TT-33 with no rounds as the US aid men. Many were
+# women (presenter note, not a rule).
+id = "ww2:ussr_sanitary"
+name = "Sanitary"
+short_name = "Sanitary"
+faction = "ww2:ussr"
+tags = ["medic"]
+capabilities = ["dig_basic"]
+sources = [
+    "battleorder.org, USSR rifle company 1944 (a medical instructor and 4 medics per company; read 2026-11-26)",
+]
+ai_weight = 10
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 80
+cooldown_s = 30
+unlock_s = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:ussr_tt33"
+rounds = { "ww2:ussr_762x25" = 0 }
+traits = ["leader", "medic"]
+
+[[members]]
+slot = "sanitar"
+weapon = "ww2:ussr_tt33"
+rounds = { "ww2:ussr_762x25" = 0 }
+traits = ["medic"]

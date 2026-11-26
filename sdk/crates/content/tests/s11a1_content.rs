@@ -318,7 +318,8 @@ fn s11a1_cards_load_at_the_spec_figures() {
     // The four cards come last in each roster (after every older card;
     // S11b appends two cards a side after them, S12 one, S13a two German and
     // three US vehicle cards).
-    for f in &s.factions {
+    // (S15 Build B: the USSR roster is its own list, not checked here.)
+    for f in s.factions.iter().filter(|f| f.id != "ww2:ussr") {
         let n = f.roster.len() - 3 - if f.id == "ww2:germany" { 2 } else { 3 };
         let last: Vec<&str> = f.roster[n - 2..n]
             .iter()

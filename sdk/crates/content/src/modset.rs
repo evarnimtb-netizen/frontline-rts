@@ -1938,10 +1938,18 @@ impl ModDefs {
                 );
             }
         }
-        if s.role == SquadRole::AntiTank && !launcher {
+        // S15 Build B: an anti-tank rifle (a crew weapon of class rifle with
+        // a `penetration` table, the PTRD-41) is the team's weapon in place
+        // of a launcher.
+        let at_rifle = s.members.iter().any(|m| {
+            self.weapons.get(&m.weapon).is_some_and(|w| {
+                w.class == WeaponClass::Rifle && w.is_crew_weapon() && !w.penetration.is_empty()
+            })
+        });
+        if s.role == SquadRole::AntiTank && !launcher && !at_rifle {
             out.push(Issue::new(
                 at("members".into()),
-                "an anti-tank team (tag `at`) needs a member with a launcher until S4 Part B",
+                "an anti-tank team (tag `at`) needs a member with a launcher or an anti-tank rifle",
             ));
         }
     }

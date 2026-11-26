@@ -1,0 +1,26 @@
+# S15 Build B: the Soviet copy of usa_aid_station.toml, same numbers (S15 starting
+# value; plan 6.2). The cook-off round is the German 7.5 cm HE until the
+# Soviet 76 mm HE exists (Build C).
+# Aid Station (S12 W8): the forward aid post, a tent on a shallow scrape.
+# Built by the Aid Men (tag "medic"). It works while two own medics stand
+# in its radius with no move order: a stabilised downed man in the radius
+# is evacuated, a detached wounded man not yet treated is treated and
+# returns to the fight; beds fill by ascending id. HE that breaks the tent
+# destroys the post (S6-14). No stock, no cook-off.
+# docs/slices/S12-wounds-medics.md 2, 4 (W8, W9).
+id = "ww2:ussr_medpunkt"
+name = "Medpunkt"
+faction = "ww2:ussr"
+kind = "aid"
+# Plan 2: 40 MP (IS 7.3; the 20 kg tent is not charged, S6-4 precedent).
+cost = 40
+pit = "aid_pit"
+radius_m = 12
+beds = 2
+staff_min = 2
+built_by = ["medic"]
+# The tent: a squad tent pitched over the scrape (verify the size).
+boxes = [
+    { part = "tent", size_cm = [250, 200, 180], offset_cm = [0, 0, 0], hp = 60 },
+]
+sources = ["S15 starting value: the US def's numbers (docs/slices/S15-ussr.md 6.2); Soviet loads not read"]

@@ -1,0 +1,29 @@
+# Gun crew (S15 Build B): 5 men; the gun card is Build C. S15 starting value.
+id = "ww2:ussr_gun_crew_76mm_m1943"
+name = "Raschyot 76 mm polkovoe"
+faction = "ww2:ussr"
+tags = ["gun_crew"]
+capabilities = ["gun_crew", "recrew"]
+cost = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+
+[[members]]
+slot = "gunner"
+weapon = "ww2:ussr_tt33"
+
+[[members]]
+slot = "loader"
+weapon = "ww2:ussr_mosin_9130"
+
+[[members]]
+slot = "commander"
+weapon = "ww2:ussr_ppsh41"
+traits = ["radio"]
+
+[[members]]
+slot = "ammo"
+count = 2
+weapon = "ww2:ussr_mosin_9130"
