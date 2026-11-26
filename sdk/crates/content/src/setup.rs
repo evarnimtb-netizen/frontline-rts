@@ -1500,6 +1500,34 @@ pub struct PlayerSetup {
 
 // -------------------------------------------------------------- resolve --
 
+/// S15 M1-M2: the problems of request `req` under `[matchups]` `m` (a
+/// faction not enabled; two hostile players of a pair that is not allowed).
+pub fn matchup_issues(m: &crate::defs::MatchupsDef, req: &MatchRequest) -> Vec<Issue> {
+    let mut out = Vec::new();
+    for (i, p) in req.players.iter().enumerate() {
+        if !m.enabled(&p.faction) {
+            out.push(Issue::new(
+                format!("players[{i}].faction"),
+                format!("faction `{}` is not enabled in [matchups]", p.faction),
+            ));
+        }
+    }
+    for (i, a) in req.players.iter().enumerate() {
+        for b in &req.players[i + 1..] {
+            if !m.allows(&a.faction, &b.faction) {
+                out.push(Issue::new(
+                    "players",
+                    format!(
+                        "[matchups] allows no match of `{}` against `{}` (pairs; free = 0)",
+                        a.faction, b.faction
+                    ),
+                ));
+            }
+        }
+    }
+    out
+}
+
 impl ModDefs {
     /// Resolves `req` against these defs into a [`MatchSetup`]. Every problem
     /// (unknown ids, too few bases, ...) is reported at once.
@@ -1539,6 +1567,12 @@ impl ModDefs {
                     format!("unknown faction `{}`", p.faction),
                 ));
             }
+        }
+        // S15 M1-M2 (docs/slices/S15-ussr.md 4): a named faction must be
+        // enabled and every two hostile players' factions an allowed pair
+        // (every other player is hostile until teams exist).
+        if let Some(m) = rules.and_then(|r| r.matchups.as_ref()) {
+            issues.extend(matchup_issues(m, req));
         }
         let (Some(rules), Some(map)) = (rules, map) else {
             return Err(invalid(issues));

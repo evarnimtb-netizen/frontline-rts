@@ -910,6 +910,11 @@ fn menu_choice(d: &VarDictionary) -> MenuChoice {
             .get("test_unlock")
             .and_then(|v| v.try_to::<bool>().ok())
             .unwrap_or(false),
+        // S15 M3: an absent or empty "opponent" is the default opponent.
+        opponent: d
+            .get("opponent")
+            .map(|v| v.to_string())
+            .filter(|v| !v.is_empty()),
     }
 }
 

@@ -35,6 +35,10 @@ pub struct MenuChoice {
     /// rules_test_unlock.toml`: vehicles unlocked at once), for scripted
     /// runs. The defs must hold it ([`load_defs`] with `test_unlock`).
     pub test_unlock: bool,
+    /// S15 M3: the AI's faction (short id) in a skirmish; `None`: the
+    /// default opponent of `faction` by the rules' `[matchups]` (the other
+    /// member of the first pair holding it).
+    pub opponent: Option<String>,
 }
 
 /// One player slot of a net match.
@@ -57,6 +61,7 @@ impl Default for MenuChoice {
             start_manpower: None,
             slots: None,
             test_unlock: false,
+            opponent: None,
         }
     }
 }
@@ -130,15 +135,61 @@ pub fn resolve(mods: &Path, choice: &MenuChoice) -> Result<MatchSetup, String> {
     resolve_with(&defs, choice)
 }
 
+/// S15 M: the `[matchups]` of the rules `choice` plays (None: no table).
+fn matchups<'a>(
+    defs: &'a ModDefs,
+    choice: &MenuChoice,
+) -> Option<&'a frontline_content::MatchupsDef> {
+    let rules = if choice.test_unlock {
+        TEST_UNLOCK_RULES.to_owned()
+    } else {
+        format!("{MOD_ID}:skirmish")
+    };
+    defs.rules.get(&rules).and_then(|r| r.matchups.as_ref())
+}
+
+/// S15 M1: the factions the menus offer (short ids, the rules' `[matchups]
+/// factions` order; without the table, [`FACTIONS`]).
+pub fn menu_factions(defs: &ModDefs, choice: &MenuChoice) -> Vec<String> {
+    match matchups(defs, choice) {
+        Some(m) if !m.factions.is_empty() => {
+            m.factions.iter().map(|f| short_id(f).to_owned()).collect()
+        }
+        _ => FACTIONS.iter().map(|f| (*f).to_owned()).collect(),
+    }
+}
+
+/// S15 M2-M3: the opponents faction `f` (short id) may face in the menus,
+/// the default first (empty: no table, the other of [`FACTIONS`]).
+pub fn menu_opponents(defs: &ModDefs, choice: &MenuChoice, f: &str) -> Vec<String> {
+    let all: Vec<String> = defs.factions.keys().cloned().collect();
+    match matchups(defs, choice) {
+        Some(m) => m
+            .opponents(&format!("{MOD_ID}:{f}"), &all)
+            .iter()
+            .map(|o| short_id(o).to_owned())
+            .collect(),
+        None => FACTIONS
+            .iter()
+            .filter(|x| **x != f)
+            .map(|x| (*x).to_owned())
+            .collect(),
+    }
+}
+
 pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, String> {
     let d = difficulty(&choice.difficulty)?;
     let slots = match &choice.slots {
         Some(s) => s.clone(),
         None => {
-            let other = if choice.faction == FACTIONS[0] {
-                FACTIONS[1]
-            } else {
-                FACTIONS[0]
+            // S15 M3: the chosen opponent, else the first pair's partner
+            // (Germany -> USA, USA -> Germany as before).
+            let other = match &choice.opponent {
+                Some(o) => o.clone(),
+                None => menu_opponents(defs, choice, &choice.faction)
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| format!("no opponent for {:?}", choice.faction))?,
             };
             [
                 SlotChoice {
@@ -146,18 +197,21 @@ pub fn resolve_with(defs: &ModDefs, choice: &MenuChoice) -> Result<MatchSetup, S
                     human: !choice.ai_vs_ai,
                 },
                 SlotChoice {
-                    faction: other.into(),
+                    faction: other,
                     human: false,
                 },
             ]
         }
     };
+    let offered = menu_factions(defs, choice);
     for s in &slots {
-        if !FACTIONS.contains(&s.faction.as_str()) {
+        if !offered.contains(&s.faction) {
             return Err(format!("unknown faction {:?}", s.faction));
         }
     }
-    if slots[0].faction == slots[1].faction {
+    // M4: the same faction on both sides only with `[matchups] mirror` 1.
+    let mirror = matchups(defs, choice).is_some_and(|m| m.mirror == 1);
+    if !mirror && slots[0].faction == slots[1].faction {
         return Err(format!("both slots are {:?}", slots[0].faction));
     }
     let req = MatchRequest {
@@ -224,6 +278,36 @@ mod tests {
         );
         assert_eq!(s.players[1].difficulty, Difficulty::Hard);
         assert_eq!(s.map.points.len(), 5);
+    }
+
+    /// S15 M3: a choice without an opponent resolves as before (Germany
+    /// against the USA, the same setup bytes as naming the USA); the menu
+    /// offers today's two factions. Control: an opponent not enabled is
+    /// refused.
+    #[test]
+    fn menu_choice_without_opponent_is_base() {
+        let m = mods();
+        let base = resolve(&m, &MenuChoice::default()).unwrap();
+        assert_eq!(
+            short_id(&base.factions[base.players[1].faction as usize].id),
+            "usa"
+        );
+        let named = MenuChoice {
+            opponent: Some("usa".into()),
+            ..MenuChoice::default()
+        };
+        let named = resolve(&m, &named).unwrap();
+        assert_eq!(named, base);
+        let defs = load_defs(&m, false).unwrap();
+        let c = MenuChoice::default();
+        assert_eq!(menu_factions(&defs, &c), ["germany", "usa"]);
+        assert_eq!(menu_opponents(&defs, &c, "germany"), ["usa"]);
+        assert_eq!(menu_opponents(&defs, &c, "usa"), ["germany"]);
+        let bad = MenuChoice {
+            opponent: Some("ussr".into()),
+            ..MenuChoice::default()
+        };
+        assert!(resolve(&m, &bad).is_err(), "control");
     }
 
     #[test]

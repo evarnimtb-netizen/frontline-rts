@@ -640,6 +640,7 @@ impl NetSession {
                 human: true,
             })),
             test_unlock: self.test_unlock,
+            opponent: None,
         };
         resolve_with(defs, &choice)
     }
