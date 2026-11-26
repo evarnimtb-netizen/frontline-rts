@@ -606,6 +606,51 @@ S14 Fix (2026-11-25, review `docs/slices/S14-review.md`; log `S14-log.md` "S14 F
   `up_cm`): any stance and into a trench from its lip; the enemy nearest the strike point on his body axis is hit. **(A) assumed
   2026-11-25.** (B) Same level only (crouched and prone men hit, no reach into a trench).
 
+## S15 USSR owner questions (asked 2026-11-26 by the Plan stage; each runs on (A): "(A) assumed 2026-11-26")
+
+Plan `docs/slices/S15-ussr.md` 13 (notes `S15-research-history.md`, `S15-research-code-audit.md`). Nothing built. Owner rule
+2026-11-25 applies: no balance run in S15; the proof is a neutral 40 set and one breakage 40 set (Germany against the USSR); the
+USSR's win rates are reported, not judged; the roster card's "inside the win-rate band" waits for a later balance pass. Minor data
+and scope points (every price as a starting value copied from the nearest German or US card, 9 and 6 men, ROKS-3 10 L, T-34-85 55
+rounds, ids with the `ussr_` prefix) are settled in the plan and only reported there.
+
+- S15-1 Who the USSR fights. (A) Germany against the USA stays the default match everywhere; Germany against the USSR is the second
+  pair (pick Germany, then the opponent; pick the USSR and the opponent is Germany); the USSR against the USA only with a "free
+  skirmish" setting, off by default (as `SYSTEM_DESIGN.md` 2.3 decided). **(A) assumed 2026-11-26.** (B) Any two different factions,
+  always. (C) Germany against the USSR only, no free setting.
+- S15-2 How much of the roster the first build ships. (A) The full list: 14 infantry cards, 5 guns (45 mm, 57 mm ZiS-2, ZiS-3, 76 mm
+  regimental, 122 mm M-30), 7 vehicles (T-34-85, SU-85, SU-76M, IS-2, BA-64B, Studebaker truck, M3A1 scout car); the slice is then
+  about 1.3x S3, not the card's 0.6x. **(A) assumed 2026-11-26.** (B) A core first (infantry, T-34-85, ZiS-3, truck), the rest in a
+  later slice.
+- S15-3 Tank riders. (A) Any infantry squad that fits may ride a Soviet tank's deck, fully exposed; the riders jump off by themselves
+  when one of them is suppressed, when the tank is hit, or when its main gun fires; only Soviet tanks have rider places. **(A)
+  assumed 2026-11-26.** (B) Riders stay on until the player orders them off. (C) German and US tanks get rider places too.
+- S15-4 The steel breastplate (SN-42). (A) A real 2 mm plate on the front of the torso of the assault group's men: it stops
+  pistol-calibre bullets (MP 40, M3), light fragments and rifle-butt or bayonet strikes; rifles, MGs, blast and flame ignore it; no
+  speed cost. **(A) assumed 2026-11-26.** (B) As (A), and the men walk 5-10 % slower. (C) No plate rule (a look only).
+- S15-5 Soviet infantry against tanks. The Red Army had no rocket launcher of its own. (A) An AT rifle team (holes half-tracks,
+  armoured cars and thin side plates only), satchels, and three AT guns; the thrown HEAT grenades (RPG-43, RPG-6) wait, because they
+  need a new item kind. **(A) assumed 2026-11-26.** (B) Add the thrown AT grenade in S15. (C) Captured Panzerfausts as a rare item.
+- S15-6 The 50 mm company mortar: **sources disagree.** The design says it had left line companies by 1944; battleorder.org keeps
+  two per rifle company until the December 1944 table. (A) No 50 mm card; the 82 mm is the only Soviet mortar. **(A) assumed
+  2026-11-26.** (B) A 50 mm RM-38 light mortar card (the AI's light mortars are off for every faction, S11b-14).
+- S15-7 Bayonets. (A) Soviet riflemen strike with the fixed bayonet (1.8 m reach) whenever a strike happens; no aim penalty (the
+  rifle was sighted with the bayonet on), no order; Germans and Americans stay without bayonets (S14-4). **(A) assumed 2026-11-26.**
+  (B) With an aim penalty while fixed. (C) No bayonets, rifle butt only.
+- S15-8 Captured mortar bombs. (A) A Soviet 82 mm crew standing at a taken German shells crate fires German 8 cm bombs, less
+  accurately; the German mortar cannot fire Soviet bombs; the AI does not go looking for crates. **(A) assumed 2026-11-26.** (B) Drop
+  the rule (it is rare in play).
+- S15-9 A transport card. (A) The lend-lease M3A1 Scout Car (6 men, open top) as the USSR's carrier beside the tank riders, so the
+  AI's transport habit has a card. **(A) assumed 2026-11-26.** (B) Tank riders only, no carrier.
+- S15-10 The same faction on both sides of a 1v1. (A) Refused in the menu and the online lobby, as today; the command-line tool
+  allows it, as today; team modes follow S17-8. **(A) assumed 2026-11-26.** (B) Offered in the menu and the lobby.
+- S15-11 The MG card. (A) The Maxim M1910/30 on its wheeled mount; the SG-43 is added as data without a card. **(A) assumed
+  2026-11-26.** (B) The SG-43 as the card.
+- S15-12 A map for the Eastern front. (A) None in S15: the USSR plays on the existing maps. **(A) assumed 2026-11-26.** (B) A third
+  map in S15.
+- S15-13 The ZiS-3's second role. (A) Direct fire only (AP at armour, HE at what it sees); firing it as artillery, with the
+  artillery-cap rule, comes later. **(A) assumed 2026-11-26.** (B) Indirect fire in S15.
+
 ## Planned work queue
 
 1. Infra step (done; on main).
@@ -633,6 +678,7 @@ S14 Fix (2026-11-25, review `docs/slices/S14-review.md`; log `S14-log.md` "S14 F
 18. **S11b: done on branch `claude/project-thread-e7nsak` (2026-11-19), waits for the owner's merge OK.** Built in Build A, B and C, with the Fix stage (spec `docs/slices/S11b.md`, stages `S11b-build-A.md`, `-B.md`, `-C.md`, targets `S11b.toml`, log `S11b-log.md`). Measured 480 at `88117de`: Germany 44.17 %, HE share 26.8 / 26.5 / 26.2 (cap 26.3). Owner questions S11b-1..14 above.
 19. **B2 balance pass: done on branch `claude/project-thread-e7nsak` (2026-11-19); NO default changed.** Plan `docs/slices/B2-balance.md` (item 14; stages `B2-run-1.md` and `B2-run-2.md`, targets `B2.toml`, levers `targets/B2-levers/`, log `B2-log.md`). No lever passed the plan's rule. `rg_gap25` was applied (`fc14f52`) and reverted (`63e4b04`) when judge rule J4 failed on T121b. Owner questions B2-1..12 above.
 20. **S14 assault kit: built, reviewed and fixed on `claude/project-thread-aj1tww` (S14 Fix 2026-11-25); Docs/PR next.** Log `docs/slices/S14-log.md`. Owner questions S14-8..13 (above) from the Fix stage, each on (A). Plan `docs/slices/S14-assault-kit.md` (notes `S14-research-history.md`, `S14-research-code-audit.md`). Builds after S13 from a fresh main: S14a mechanics (Build A flame, B clear trench and data, C melee; all switches 0, neutral; the `flame_only` 480 gates the AI half), presenter P, then S14-ai (flame jobs, refuel, flame buy, AI clear trench; 480, ablations). SAVE +1 and PROTOCOL +1 (`ClearTrench`, `Strike`). Targets from T185. Owner questions S14-1..7 above, each on (A).
+21. **S15 USSR (the third faction): planned 2026-11-26 on `claude/project-thread-aj1tww`; nothing built.** Plan `docs/slices/S15-ussr.md` (notes `S15-research-history.md`, `S15-research-code-audit.md`). About 1.3x S3. Stages: S15a Build A (ONE layout commit, SAVE +1, no PROTOCOL change; `[matchups]`, riders, plates, captured bombs, bayonets; all switches 0), Checker, Build B (infantry data), S15b Build C (5 guns, 7 vehicles), presenter P, S15-ai Build D (rider job, AI card table, switches on), proof (neutral 40 with the switches off and on, one Germany-USSR breakage 40; no 480, win rates reported only: owner rule 2026-11-25), Review, Fix, Docs. Targets from T210. Overlaps PR 11 (S16-S18: SAVE and PROTOCOL numbers, `match_setup.rs`, menus, lobby, `batch.sh`): whichever merges second renumbers. The card's win-rate band waits for a balance pass with three factions. Owner questions S15-1..13 above, each on (A).
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 
