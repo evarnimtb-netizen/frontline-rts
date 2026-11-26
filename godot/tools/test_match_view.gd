@@ -102,6 +102,7 @@ func _run() -> void:
 	await _test_s10b()
 	await _test_s12()
 	await _test_s14()
+	await _test_s15()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1231,6 +1232,63 @@ func _test_s14() -> void:
 	_view.update_state(_source.get_state())
 	await _frames(2)
 	_check(fv.particles == 0 and fv.patches == 0, "S14: emptied fields hide the stream and the ground")
+
+
+## S15 presenter: the USSR's look (colour, short name, weapon words, paint,
+## glacis), the mock with three factions, riders seated on a deck's pads, and
+## the squad card's plate mark, all on staged dictionaries.
+func _test_s15() -> void:
+	_check(UiPalette.FACTION_SHORT.ussr == "SOV" and UiPalette.faction_name("ussr") == "USSR", "S15: USSR short name SOV")
+	_check(UiPalette.faction_color("ussr").to_html(false) == "9a5a4a", "S15: USSR colour #9a5a4a")
+	_check(Vehicles.PAINT.has("ussr") and Vehicles.GLACIS_DEG.ussr > Vehicles.GLACIS_DEG.germany, "S15: USSR paint and a sloped glacis")
+	_check(_view.WEAPONS.ussr.rifle == "Mosin-Nagant" and _view.WEAPONS.ussr.at == "PTRD-41", "S15: USSR weapon names")
+	_check(Vehicles.DECK == 2048 and Vehicles.RIDERS_OFF == 4096, "S15: DECK and RIDERS_OFF flag bits")
+	# The mock with three factions: the USSR against Germany by default, against
+	# the USA only when named.
+	var src: Node = load("res://match/mock_match_source.gd").new()
+	src.start({"faction": "ussr", "difficulty": "normal", "map": "kessel_ridge", "seed": 1})
+	_check(src.players[0].faction == "ussr" and src.players[1].faction == "germany", "S15 mock: the USSR's default opponent is Germany")
+	var ids := PackedStringArray()
+	for c in src.catalog(0):
+		ids.append(String(c.id))
+	_check(ids.has("ww2:ussr_rifle") and not ids.has("ww2:usa_rifle"), "S15 mock: a USSR catalog")
+	_check(MockVehicles.TYPES.has(src.veh.faction_tank(0)) and String(MockVehicles.TYPES[src.veh.faction_tank(0)].faction) == "ussr", "S15 mock: the USSR's tank")
+	src.start({"faction": "germany", "opponent": "ussr", "difficulty": "normal", "map": "kessel_ridge", "seed": 1})
+	_check(src.players[1].faction == "ussr", "S15 mock: Germany against the USSR when named")
+	src.start({"faction": "usa", "opponent": "usa", "difficulty": "normal", "map": "kessel_ridge", "seed": 1})
+	_check(src.players[1].faction == "germany", "S15 mock: never the same faction on both sides")
+	src.free()
+	# Riders on a deck: one pad under each rider of a DECK vehicle.
+	var vv: VehicleView = _match.vehicle_view
+	var vt: Dictionary = MockVehicles.TYPES.ussr_t34_85
+	var veh := {
+		"id": 900, "owner": 0, "type": "ussr_t34_85", "pos": Vector3(0, 0, 0), "yaw": 0.0, "pitch": 0.0, "roll": 0.0,
+		"turret_yaw": 0.0, "gun_pitch": 0.0, "flags": Vehicles.DECK, "deck": true, "riders": 2, "capacity": 8,
+	}
+	var men := [{"id": 9001, "riding": 900, "ride_slot": 0}, {"id": 9002, "riding": 900, "ride_slot": 3}, {"id": 9003}]
+	var st := {"local_player": 0, "rules": {"vehicle_types": {"ussr_t34_85": vt}}, "vehicles": [veh], "soldiers": men}
+	vv.update_state(st)
+	_check(vv.deck_pads == 2, "S15: a pad under each of two riders (%d)" % vv.deck_pads)
+	var xf: Transform3D = vv.pad_xf[0]
+	var c: Vector3 = vt.slots[0].center
+	_check(absf(xf.origin.x + c.y) < 0.01 and absf(xf.origin.z + c.x) < 0.01 and xf.origin.y < c.z, "S15: the pad sits at the slot's foot, hull frame")
+	veh.deck = false
+	vv.update_state(st)
+	_check(vv.deck_pads == 0, "S15: no deck, no pads")
+	veh.deck = true
+	veh.riders = 0
+	vv.update_state(st)
+	_check(vv.deck_pads == 0, "S15: an empty deck draws none")
+	# The plate mark: the card counts the men who wear one.
+	var sid: int = _source.squad_ids(0, "rifle")[0]
+	var units: PackedInt32Array = _view.squad_units.get(sid, PackedInt32Array())
+	_check(not units.is_empty() and _view.roster.plates_worn(sid) == 0, "S15: no plate mark without plates")
+	if not units.is_empty():
+		_view.soldiers_by_id[units[0]]["plate"] = true
+		_view.soldiers_by_id[units[units.size() - 1]]["plate"] = true
+		_check(_view.roster.plates_worn(sid) == (2 if units.size() > 1 else 1), "S15: the card counts the plates worn")
+		_view.soldiers_by_id[units[0]].erase("plate")
+		_view.soldiers_by_id[units[units.size() - 1]].erase("plate")
 
 
 func _test_end() -> void:

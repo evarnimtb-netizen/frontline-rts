@@ -148,3 +148,21 @@ job also starts on a tank leaving the base (not retreating; it gets `Stop`), not
 (tests read the shipped table), `cli/src/targets.rs` (`faction0/1`), the content snapshot (switch values), `s6_tests.rs`
 `s15_defs_off` (test worlds resolve with the S15 switches off, the S14-ai pattern). (5) S15.toml's copied S14 rows T190a-c,
 T192 lacked exposure and control (the file did not parse; S14.toml too, untouched). (6) Only the three approved 40 sets ran.
+
+## S15 P (Presenter)
+Bridge: `match_setup::menu_options` / `pair_refusal` (M3 words), `FrontlineNet.match_options`, the lobby takes any enabled faction
+and resolves the pair at Ready (M2, M4, M6); the frame and the state carry `soldiers[].riding / ride_slot / plate` and
+`vehicles[].deck / riders_off` (`rules.vehicle_types[t].deck`). Godot: `Session.menu_options()` (two factions and no opponent picker
+while the USSR is off the matchups table: today's menu), faction buttons and an opponent picker, `--opponent`, lobby refusal text,
+USSR `#9a5a4a` / `USSR` / `SOV`, weapon words, paint, glacis, deck pads under the seated riders, `PLATE` mark on the squad card,
+MockNet and the mock match with three factions. `godot/docs/match_state.md` "S15" is exact.
+Tests added: bridge `menu_options_follow_the_matchups_table`, `frame_carries_riders_and_plates`; `test_net_ui.gd` (three-faction menu,
+picker, lobby refusal; 159 checks), `test_match_view.gd` `_test_s15` (472 checks).
+**Smoke** (scratch script, not committed): a copy of mods/ww2 with the USSR in `[matchups]` and riders and plates on, player USSR
+against Germany on the real bridge: `match_options` lists three factions; a T-34-85 called in and a sapper section boarding it show `riding`, `deck`,
+`riders` and one pad each; the assault group's men carry `plate`. Shipped rules: `match_options` lists two factions.
+**Deviations.** (1) The twelve blockouts need no new mesh code: `meshgen` builds them from the `rules.vehicle_types` boxes as for the
+S13 vehicles; the stage adds the `deck` key, the paint and the pads. (2) "Riders seated on the deck boxes": the sim already puts a
+rider crouched at the foot of his slot box; the presenter adds a thin pad there. (3) Placeholder only: no spark on a plate stop (no
+event), no riders-off animation (`riders_off` is sent, not drawn). (4) `Vehicles.GLACIS_DEG.ussr` is the mock's look; the bridge sends
+`glacis_deg`. (5) The lobby's pair check runs in the client at Ready (relay unchanged); the panel pre-checks with the same options.

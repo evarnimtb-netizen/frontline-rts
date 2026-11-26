@@ -30,7 +30,10 @@ const OPPONENT_READY_S := 0.8
 const DEFAULT_NAME := "Player"
 ## Mirrors Session.FACTIONS / MAPS (no autoload reference: tests load this
 ## class before the autoloads exist).
-const FACTIONS := ["germany", "usa"]
+const FACTIONS := ["germany", "usa", "ussr"]
+## S15 M2: the pairs that may fight (the real rules' `[matchups] pairs`);
+## USA-USSR is refused, as in the shipped plan (free skirmish only).
+const PAIRS := [["germany", "usa"], ["germany", "ussr"]]
 const MAPS := ["kessel_ridge"]
 
 ## Scripted opponent on/off (off: only stage() and explicit calls move it).
@@ -157,7 +160,12 @@ func ready() -> void:
 		_mismatch = "Waiting for a second player."
 		return
 	if _slots[0].faction == _slots[1].faction:
-		_mismatch = "Both players picked %s; factions must differ." % UiPalette.FACTION_NAMES.get(_slots[0].faction, _slots[0].faction)
+		_mismatch = "Both players picked %s; factions must differ." % UiPalette.faction_name(_slots[0].faction)
+		return
+	# S15 M6: the client resolves the pair like the real bridge (the relay
+	# only knows "differ"); the refusal is the lobby's `mismatch` text.
+	if not pair_allowed(_slots[0].faction, _slots[1].faction):
+		_mismatch = "%s cannot fight %s in this ruleset; pick another faction." % [UiPalette.faction_name(_slots[0].faction), UiPalette.faction_name(_slots[1].faction)]
 		return
 	_mismatch = ""
 	_slots[_slot].ready = true
@@ -416,3 +424,11 @@ func _empty_slot() -> Dictionary:
 
 func _other(f: String) -> String:
 	return "usa" if f == "germany" else "germany"
+
+
+## Whether the mock's matchups let `a` fight `b` (PAIRS, either order).
+static func pair_allowed(a: String, b: String) -> bool:
+	for p in PAIRS:
+		if (p[0] == a and p[1] == b) or (p[0] == b and p[1] == a):
+			return true
+	return false

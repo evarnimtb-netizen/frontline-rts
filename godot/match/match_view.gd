@@ -97,6 +97,8 @@ const MAN_NAMES := {
 const WEAPONS := {
 	"germany": {"rifle": "Kar98k", "mg": "MG42", "engineer": "MP40", "mortar": "GrW 34", "at": "Panzerschreck"},
 	"usa": {"rifle": "M1 Garand", "mg": "M1919", "engineer": "M3", "mortar": "M1 mortar", "at": "Bazooka"},
+	# S15 (the mock's weapon words; the bridge sends the real ones).
+	"ussr": {"rifle": "Mosin-Nagant", "mg": "DP-27", "engineer": "PPSh-41", "mortar": "82-BM-37", "at": "PTRD-41"},
 }
 const ORDER_TEXT := {
 	"idle": "Holding", "move": "Moving", "attack_move": "Attacking", "retreat": "Retreating",

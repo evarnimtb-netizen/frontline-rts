@@ -17,6 +17,8 @@ const DIFFICULTY_TEXT := {
 const MP_CAPTURES := ["mp", "mp_errors", "lobby", "lobby_guest", "lobby_same_faction", "lobby_mismatch", "countdown", "mp_disconnected"]
 
 var _faction := "germany"
+## S15 M3: the AI's faction ("" = the rules' default opponent).
+var _opponent := ""
 var _difficulty := "normal"
 var _map := "kessel_ridge"
 
@@ -30,6 +32,9 @@ var _skirmish: Control
 var _settings: SettingsPanel
 var _mp: MultiplayerPanel
 var _faction_btns := {}
+var _opp_section: Label
+var _opp_row: HBoxContainer
+var _opp_btns := {}
 var _diff_btns := {}
 var _diff_note: Label
 var _preview: TextureRect
@@ -37,6 +42,12 @@ var _preview: TextureRect
 
 func _ready() -> void:
 	_faction = Session.setup.faction
+	# S15 M3: the rules' factions; a stored choice they no longer offer
+	# falls back to the first.
+	var ids: Array = Session.faction_ids()
+	if not ids.has(_faction):
+		_faction = ids[0]
+	_opponent = String(Session.setup.get("opponent", ""))
 	_difficulty = Session.setup.difficulty
 	_map = Session.setup.map
 	_skirmish = _build_skirmish()
@@ -150,8 +161,8 @@ func _build_skirmish() -> Control:
 	var fac_row := HBoxContainer.new()
 	fac_row.add_theme_constant_override("separation", 10)
 	var fac_group := ButtonGroup.new()
-	for f in Session.FACTIONS:
-		var b := _choice(UiPalette.FACTION_NAMES[f], fac_group, f == _faction)
+	for f in Session.faction_ids():
+		var b := _choice(UiPalette.faction_name(f), fac_group, f == _faction)
 		b.custom_minimum_size = Vector2(170, 48)
 		b.add_theme_color_override("font_pressed_color", UiPalette.faction_color(f).lightened(0.35))
 		var stripe := ColorRect.new()
@@ -160,10 +171,21 @@ func _build_skirmish() -> Control:
 		stripe.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
 		stripe.offset_right = 5
 		b.add_child(stripe)
-		b.pressed.connect(func() -> void: _faction = f)
+		b.pressed.connect(func() -> void:
+			_faction = f
+			_rebuild_opponents())
 		_faction_btns[f] = b
 		fac_row.add_child(b)
 	box.add_child(fac_row)
+
+	# S15 M3: the opponent picker; hidden while the faction has one
+	# opponent (the shipped rules: today's menu).
+	_opp_section = _section("Opponent")
+	box.add_child(_opp_section)
+	_opp_row = HBoxContainer.new()
+	_opp_row.add_theme_constant_override("separation", 10)
+	box.add_child(_opp_row)
+	_rebuild_opponents()
 
 	box.add_child(_section("AI difficulty"))
 	var diff_row := HBoxContainer.new()
@@ -223,6 +245,36 @@ func _build_skirmish() -> Control:
 	return box
 
 
+## The opponent row for the chosen faction: the rules' opponents, the default
+## first and pressed; one entry or none hides the picker and sends no
+## opponent (the bridge then takes the default, as before S15).
+func _rebuild_opponents() -> void:
+	for c in _opp_row.get_children():
+		_opp_row.remove_child(c)
+		c.queue_free()
+	_opp_btns.clear()
+	var list: Array = Session.opponents_of(_faction)
+	if not list.has(_opponent):
+		_opponent = String(list[0]) if not list.is_empty() else ""
+	var picker := list.size() > 1
+	_opp_section.visible = picker
+	_opp_row.visible = picker
+	var group := ButtonGroup.new()
+	for o in list:
+		var b := _choice(UiPalette.faction_name(o), group, o == _opponent)
+		b.custom_minimum_size = Vector2(170, 40)
+		b.add_theme_color_override("font_pressed_color", UiPalette.faction_color(o).lightened(0.35))
+		var stripe := ColorRect.new()
+		stripe.color = UiPalette.faction_color(o)
+		stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		stripe.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
+		stripe.offset_right = 5
+		b.add_child(stripe)
+		b.pressed.connect(func() -> void: _opponent = o)
+		_opp_btns[o] = b
+		_opp_row.add_child(b)
+
+
 func _draw_preview_marks() -> void:
 	var s := _preview.size
 	var font := get_theme_default_font()
@@ -239,7 +291,9 @@ func _draw_preview_marks() -> void:
 
 func _on_start() -> void:
 	AudioManager.play_ui(&"confirm")
-	Session.start_skirmish({"faction": _faction, "difficulty": _difficulty, "map": _map})
+	# An empty opponent is the default one (the bridge reads "" as absent).
+	var picker := Session.opponents_of(_faction).size() > 1
+	Session.start_skirmish({"faction": _faction, "difficulty": _difficulty, "map": _map, "opponent": _opponent if picker else ""})
 
 
 func _section(text: String) -> Label:

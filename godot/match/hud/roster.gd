@@ -112,6 +112,9 @@ func card_width(sid: int, font: Font, bold: Font) -> float:
 	# S5a: room for a LOW / DRY tag (always, so the card does not twitch).
 	if sq.has("ammo_state"):
 		pips += HudStyle.text_w(bold, "LOW", HudStyle.FONT_SMALL) + 13.0
+	# S15: room for the plate mark of a squad that wears plates.
+	if plates_worn(sid) > 0:
+		pips += HudStyle.text_w(bold, "PLATE×%d" % men_max, HudStyle.FONT_SMALL) + 13.0
 	return maxf(head, pips) + PAD + 8.0
 
 
@@ -310,10 +313,23 @@ func _draw() -> void:
 		# S6: a crate tag ("CRATE" or "CRATE×n") while its men carry any.
 		var n := crates_carried(sid)
 		if n > 0:
-			HudStyle.tag(self, bold, tx, pr.end.y - 1.0, "CRATE" if n == 1 else "CRATE×%d" % n, HudStyle.ACCENT)
+			tx -= HudStyle.tag(self, bold, tx, pr.end.y - 1.0, "CRATE" if n == 1 else "CRATE×%d" % n, HudStyle.ACCENT) + 4.0
+		# S15 P1: a plate mark while any man of the squad wears a body plate.
+		var plates := plates_worn(sid)
+		if plates > 0:
+			HudStyle.tag(self, bold, tx, pr.end.y - 1.0, "PLATE" if plates == 1 else "PLATE×%d" % plates, HudStyle.DIM)
 	if hidden_count > 0:
 		HudStyle.box(self, _more_rect, HudStyle.BG_PANEL, 5)
 		HudStyle.text(self, bold, _more_rect.get_center() + Vector2(0, 5), "+%d" % hidden_count, HudStyle.FONT, HudStyle.TEXT, 0)
+
+
+## S15 P1: men of squad `sid` who wear a body plate (soldiers[].plate).
+func plates_worn(sid: int) -> int:
+	var n := 0
+	for id in view.squad_units.get(sid, PackedInt32Array()):
+		if bool(view.soldiers_by_id.get(id, {}).get("plate", false)):
+			n += 1
+	return n
 
 
 ## S6: crates the men of squad `sid` carry.
