@@ -712,6 +712,45 @@ fn riders_suppressed_by_a_burst() {
     }
 }
 
+/// S15a Build A step 6: the snapshot marks plated men, a rider deck and
+/// the riders' exit under way. Control: both switches 0 (the same plates
+/// and slots left in the setup) mark nothing.
+#[test]
+fn snapshot_shows_plates_and_deck() {
+    use crate::snapshot::vehicle_flags::{DECK, RIDERS_OFF};
+    for on in [1, 0] {
+        let mut w = rider_world(on, |s| plate_all(s, on, 120));
+        let (tank, inf) = ride(&mut w);
+        let flags = |w: &World| {
+            let snap = w.snapshot();
+            snap.vehicles.iter().find(|v| v.id == tank.0).unwrap().flags
+        };
+        let snap = w.snapshot();
+        let plated = members(&w, inf)
+            .iter()
+            .filter(|m| {
+                let k = snap.soldier_ids.iter().position(|x| x == *m).unwrap();
+                snap.soldier_plate[k]
+            })
+            .count();
+        assert_eq!(snap.soldier_plate.len(), snap.soldier_ids.len());
+        let f0 = flags(&w);
+        let m0 = members(&w, inf)[0];
+        let at = w.match_setup().unwrap().rules.combat.crouch_suppression * 1000;
+        assert!(w.edit_soldier(m0, |_, c| c.suppression = at + 1000));
+        steps(&mut w, 1);
+        let f1 = flags(&w);
+        if on == 1 {
+            assert_eq!(plated, members(&w, inf).len(), "every rider is plated");
+            assert!(f0 & DECK != 0 && f0 & RIDERS_OFF == 0);
+            assert!(f1 & RIDERS_OFF != 0, "the exit runs");
+        } else {
+            assert_eq!(plated, 0, "control: no plate shown");
+            assert_eq!((f0 | f1) & (DECK | RIDERS_OFF), 0, "control: no deck");
+        }
+    }
+}
+
 /// R3b: an AT rocket striking the tank gets its riders off. Control:
 /// `off_on_hit` 0 (R3a off in both runs: the strike's suppression alone
 /// does not count here).

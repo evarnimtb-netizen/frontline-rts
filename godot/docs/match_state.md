@@ -1699,3 +1699,38 @@ flame marker stands for it. `V` is also Board's key: with `rules.s14.melee`
 on, men selected and an enemy within 1.5 m of one of them
 (`STRIKE_KEY_M`, the sim's default reach plus a margin) `V` strikes;
 otherwise it arms Board as before (S14-11 (A)).
+
+## S15: riders, plates, captured bombs, bayonets (mechanics A; presenter later)
+
+Design: `docs/slices/S15-ussr.md` (R riders, P plates, X captured bombs,
+B bayonets). Every part is off unless its rules switch is on (`[riders]
+enabled`, `[body_armour] enabled`, `[supply] foreign_ammo`, `[melee]
+bayonets`; all 0 in the shipped rules), and the setup drops the def parts
+while it is off, so the fields below read empty or false. Build A adds
+them to the sim's `RenderSnapshot` only: the bridge does not send them yet
+(it is built, not changed, in Build A), so there are no state keys and no
+mock for them until the presenter stage.
+
+### Snapshot fields (`crates/sim/src/snapshot.rs`)
+
+- `VehicleSnapshot::flags` bit `DECK` (`1 << 11`, public) -- its rider
+  slots are an exposed deck: the riders (`soldier_riding` names the
+  vehicle, `soldier_ride_slot` the slot, `riders`/`capacity` count them)
+  sit on it in the open, not inside. Riders on a deck can be shot (R4).
+- `VehicleSnapshot::flags` bit `RIDERS_OFF` (`1 << 12`, public) -- the
+  riders' exit timer runs (R3a suppressed, R3b the vehicle struck, R3c its
+  gun fired; `[riders] exit_ms`): they jump off over the sides, stunned.
+  A knock-out or fire (R3d) puts them off at once, with no flag.
+- `soldier_plate[]` (per entry of `soldiers`) -- he wears a body plate
+  (P1). A stop is counted on his player (`s15.plate_stops`,
+  `plate_stops_frag`, `plate_stops_melee`); there is no per-hit event, so
+  a spark on the plate needs one (presenter stage).
+- Captured bombs (X) and bayonets (B) need no new field: a foreign bomb
+  is a mortar shell of the firing weapon (`shots[]`, `explosions[]`), and
+  a bayonet strike is the S14 strike (`soldier_strike`).
+
+### Intents
+
+None new: riders board with `Embark` (refused, as before, on a vehicle
+with no slots, which is every vehicle while `[riders] enabled` is 0) and
+get off with `Disembark`.
