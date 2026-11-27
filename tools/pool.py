@@ -16,6 +16,11 @@ S16a: sets are pooled per map (the JSON `map`; a set without one is Kessel
 Ridge, the only map before S16). A DIR whose sets played two maps prints one
 block per map, and the change against the baseline is read against the
 baseline's block of the same map.
+
+S15 (merge): the same holds per faction pair (the JSON `factions`; Germany
+against the USA unless named), so a Germany-USSR set never pools with a
+Germany-USA one. A 2v2 set (S17 `--teams`) has no Germany share to pool; read
+its `teams` block (`tools/batch.sh teams`).
 """
 import json
 import os
@@ -34,11 +39,16 @@ S10B = ("matches_with_mines_pct", "matches_with_obstacle_pct", "matches_with_bun
 # hard >= 60; T8 reads the set's s12_derived.he_share_casualties_pct).
 S12 = ("medic_matches_pct", "stabilised_pct", "bled_out_pct", "downed_per_match",
        "reinforced_men_per_match", "he_share_casualties_pct")
+# S14-ai (Build D): per set from factions.<f>.s14_derived (reports only:
+# owner 2026-11-25, no balance threshold in S14).
+S14 = ("flame_matches_pct", "flame_kills_per_match", "flame_jobs_per_match",
+       "clear_orders_per_match", "strikes_per_match", "refuels_per_match")
 BOUGHT = {"germany": ["ger_sdkfz251_1_squad", "ger_stug3_g_squad", "ger_pz4_h_squad"],
           "usa": ["usa_m3a1_squad", "usa_m10_squad", "usa_m4a3_75_squad"]}
 
 
 DEFAULT_MAP = "ww2:kessel_ridge"
+DEFAULT_PAIR = "germany-usa"
 
 
 def read(d):
@@ -50,14 +60,18 @@ def read(d):
             continue
         j = json.load(open(p))
         m = j.get("map") or DEFAULT_MAP
-        out = groups.get(m)
+        # S15 merge: a set of another faction pair (a matchup) pools apart.
+        pair = "-".join(sorted(j.get("factions", {}))) or DEFAULT_PAIR
+        k = (m, pair)
+        out = groups.get(k)
         if out is None:
-            out = groups[m] = {"dir": d, "map": m, "sets": [], "n": 0, "ger": 0, "nowin": 0,
-                               "he": [], "he_cas": [], "f": {}}
+            out = groups[k] = {"dir": d, "map": m, "pair": pair, "sets": [], "n": 0, "ger": 0,
+                               "nowin": 0, "he": [], "he_cas": [], "f": {}}
         add(out, j)
     if not groups:
-        groups[DEFAULT_MAP] = {"dir": d, "map": DEFAULT_MAP, "sets": [], "n": 0, "ger": 0,
-                               "nowin": 0, "he": [], "he_cas": [], "f": {}}
+        groups[(DEFAULT_MAP, DEFAULT_PAIR)] = {"dir": d, "map": DEFAULT_MAP, "pair": DEFAULT_PAIR,
+                                               "sets": [], "n": 0, "ger": 0, "nowin": 0, "he": [],
+                                               "he_cas": [], "f": {}}
     return list(groups.values())
 
 
@@ -97,6 +111,10 @@ def add(out, j):
         if d12 is not None:
             for k in S12:
                 a.setdefault("s12", {}).setdefault(k, []).append(d12.get(k))
+        d14 = f.get("s14_derived")
+        if d14 is not None:
+            for k in S14:
+                a.setdefault("s14", {}).setdefault(k, []).append(d14.get(k))
         d10b = f.get("s10b_ai_derived")
         if d10b is not None:
             for k in S10B:
@@ -114,7 +132,8 @@ def show(o, base):
         return
     pool = 100.0 * o["ger"] / o["n"]
     delta = f" ({pool - 100.0 * base['ger'] / base['n']:+.1f} against the baseline)" if base and base["n"] else ""
-    label = o["dir"] if o["map"] == DEFAULT_MAP else f"{o['dir']} [{o['map']}]"
+    tags = ([] if o["map"] == DEFAULT_MAP else [o["map"]]) + ([] if o["pair"] == DEFAULT_PAIR else [o["pair"]])
+    label = f"{o['dir']} [{', '.join(tags)}]" if tags else o["dir"]
     print(f"{label}: Germany pooled {pool:.2f} % of {o['n']}{delta}; sets {fmt(o['sets'], 2)}; "
           f"no winner {o['nowin']}; HE share {fmt(o['he'])}"
           + (f"; HE share of casualties {fmt(o['he_cas'])} (T8 cap 26.3)" if o["he_cas"] else ""))
@@ -149,6 +168,12 @@ def show(o, base):
                   f"{fmt(s12['stabilised_pct'])} %, bled out {fmt(s12['bled_out_pct'])} %, downs per match "
                   f"{fmt(s12['downed_per_match'])}, replacements per match {fmt(s12['reinforced_men_per_match'])}, "
                   f"HE share of its casualties {fmt(s12['he_share_casualties_pct'])} %")
+        if a.get("s14"):
+            s14 = a["s14"]
+            print(f"    s14: flame hit a trench or pit in {fmt(s14['flame_matches_pct'], 0)} % of matches, flame kills "
+                  f"{fmt(s14['flame_kills_per_match'])}, flame jobs {fmt(s14['flame_jobs_per_match'])}, AI clears "
+                  f"{fmt(s14['clear_orders_per_match'])}, strikes {fmt(s14['strikes_per_match'])}, refuels "
+                  f"{fmt(s14['refuels_per_match'])} per match (reports)")
     # One line for scripts and stage gates.
     fs = o["f"].values()
     gate = {"pool": round(pool, 2), "nowin": o["nowin"],
@@ -169,8 +194,8 @@ def main():
     base = {}
     for d in dirs:
         for o in read(d):
-            show(o, base.get(o["map"]))
-            base.setdefault(o["map"], o)
+            show(o, base.get((o["map"], o["pair"])))
+            base.setdefault((o["map"], o["pair"]), o)
 
 
 if __name__ == "__main__":

@@ -391,6 +391,9 @@ fn finish_unit(
             has(WeaponClass::Launcher) || single_shot,
             "a launcher or a single-shot AT item",
         ),
+        // S14 (plan 4.2): any member, either side of a `when` pair (the
+        // setup keeps it only when a kept member carries one).
+        ("flame", has(WeaponClass::Flame), "a flame weapon"),
     ];
     for (cap, yes, what) in derived {
         debug_assert!(DERIVED_CAPABILITIES.contains(&cap));
@@ -968,6 +971,27 @@ impl ModDefs {
     /// S4: a rules def's references (the training default).
     fn check_rules_refs(&self, r: &RulesDef) -> Vec<Issue> {
         let mut out = Vec::new();
+        // S15 M1: every faction `[matchups]` names exists.
+        if let Some(m) = &r.matchups {
+            for (k, f) in m.factions.iter().enumerate() {
+                if !self.factions.contains_key(f) {
+                    out.push(Issue::new(
+                        format!("matchups.factions[{k}]"),
+                        format!("unknown faction `{f}`"),
+                    ));
+                }
+            }
+            for (k, pair) in m.pairs.iter().enumerate() {
+                for f in pair {
+                    if !self.factions.contains_key(f) {
+                        out.push(Issue::new(
+                            format!("matchups.pairs[{k}]"),
+                            format!("unknown faction `{f}`"),
+                        ));
+                    }
+                }
+            }
+        }
         if let Some(t) = &r.training
             && !self.training.contains_key(&t.default)
         {
@@ -1322,6 +1346,32 @@ impl ModDefs {
                 ));
             }
         }
+        // S15 Fix: a card's tow seats the gun's crew (the crew rides with
+        // the gun; a tow without seats leaves it to walk, S15 review 2).
+        for (id, s) in &self.squads {
+            let Some(t) = &s.tow else { continue };
+            let crew = s
+                .vehicle
+                .as_ref()
+                .and_then(|v| self.vehicles.get(v))
+                .and_then(|g| g.crew_squad.as_ref())
+                .and_then(|c| self.squads.get(c))
+                .map(|c| c.members.iter().map(|m| u32::from(m.count)).sum::<u32>());
+            let seats = self
+                .squads
+                .get(t)
+                .and_then(|q| q.vehicle.as_ref())
+                .and_then(|v| self.vehicles.get(v))
+                .map(|tv| tv.transport.as_ref().map_or(0, |tr| tr.capacity));
+            if let (Some(crew), Some(seats)) = (crew, seats)
+                && seats < crew
+            {
+                out.push(Issue::new(
+                    format!("squad `{id}`: tow"),
+                    format!("the tow `{t}` seats {seats}, the gun's crew is {crew} men"),
+                ));
+            }
+        }
         // S3c: a vehicle's crew squad is a crew of its faction.
         for (id, v) in &self.vehicles {
             if let Some(c) = &v.crew_squad {
@@ -1512,6 +1562,29 @@ impl ModDefs {
             .map(|(k, _)| k)
             .collect();
         for (id, w) in &self.weapons {
+            // S15 X1: the foreign feed names a cartridge and a faction.
+            if let Some(f) = &w.foreign_feed {
+                if !self.cartridges.contains_key(&f.cartridge) {
+                    out.push(Issue::new(
+                        format!("weapon `{id}`: foreign_feed.cartridge"),
+                        format!(
+                            "unknown cartridge `{}`{}",
+                            f.cartridge,
+                            did_you_mean(&f.cartridge, self.cartridges.keys())
+                        ),
+                    ));
+                }
+                if !self.factions.contains_key(&f.faction) {
+                    out.push(Issue::new(
+                        format!("weapon `{id}`: foreign_feed.faction"),
+                        format!(
+                            "unknown faction `{}`{}",
+                            f.faction,
+                            did_you_mean(&f.faction, self.factions.keys())
+                        ),
+                    ));
+                }
+            }
             if let Some(f) = &w.feed {
                 match feed_ok(f) {
                     Err(e) => out.push(Issue::new(format!("weapon `{id}`: feed"), e)),
@@ -1839,7 +1912,12 @@ impl ModDefs {
         // carrier, and only when the launcher is the main weapon (the first
         // crew weapon among the members, else the leader's weapon).
         if launcher {
-            let crew = |w: &str| self.weapons.get(w).is_some_and(|d| d.is_crew_weapon());
+            // S14: a flamethrower is never the main weapon (setup.rs).
+            let crew = |w: &str| {
+                self.weapons
+                    .get(w)
+                    .is_some_and(|d| d.is_crew_weapon() && d.class != WeaponClass::Flame)
+            };
             let main = s
                 .members
                 .iter()
@@ -1886,10 +1964,18 @@ impl ModDefs {
                 );
             }
         }
-        if s.role == SquadRole::AntiTank && !launcher {
+        // S15 Build B: an anti-tank rifle (a crew weapon of class rifle with
+        // a `penetration` table, the PTRD-41) is the team's weapon in place
+        // of a launcher.
+        let at_rifle = s.members.iter().any(|m| {
+            self.weapons.get(&m.weapon).is_some_and(|w| {
+                w.class == WeaponClass::Rifle && w.is_crew_weapon() && !w.penetration.is_empty()
+            })
+        });
+        if s.role == SquadRole::AntiTank && !launcher && !at_rifle {
             out.push(Issue::new(
                 at("members".into()),
-                "an anti-tank team (tag `at`) needs a member with a launcher until S4 Part B",
+                "an anti-tank team (tag `at`) needs a member with a launcher or an anti-tank rifle",
             ));
         }
     }

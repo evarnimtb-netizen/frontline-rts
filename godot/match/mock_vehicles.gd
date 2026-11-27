@@ -54,6 +54,48 @@ const TYPES := {
 		"seats": ["driver", "gunner", "commander", "loader", "radio_mg"],
 		"ammo": [{"kind": "ap", "name": "3-inch M62 APC", "max": 36}, {"kind": "he", "name": "3-inch M42A1 HE", "max": 18}],
 	},
+	# S15: the USSR's tank (with a rider deck: eight slots on the engine deck
+	# and rear hull, hull frame, sim axes) and tank destroyer (casemate);
+	# dims from the defs `ussr_t34_85` and `ussr_su85`.
+	"ussr_t34_85": {
+		"id": "ww2:ussr_t34_85", "name": "T-34-85", "short": "T-34-85", "faction": "ussr",
+		"role": "tank", "cost": 640, "pop": 12, "recall_s": 120.0, "speed": 7.0, "sight_m": 170.0,
+		"hull_length": 6.0, "hull_width": 3.0, "hull_height": 1.40, "hull_ground": 0.35,
+		"turret_x": 0.40, "turret_base": 1.75, "turret_length": 2.4, "turret_width": 2.0,
+		"turret_height": 0.9, "turret_offset_x": 0.0, "gun_length": 4.6, "gun_height": 0.45,
+		"deck": true,
+		"slots": [
+			{"center": Vector3(-1.1, 0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-1.1, -0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-1.7, 0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-1.7, -0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-2.3, 0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-2.3, -0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-2.7, 0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-2.7, -0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+		],
+		"seats": ["driver", "gunner", "commander", "loader", "radio_mg"],
+		"ammo": [{"kind": "ap", "name": "85 mm BR-365", "max": 30}, {"kind": "he", "name": "85 mm OF-365", "max": 24}],
+	},
+	"ussr_su85": {
+		"id": "ww2:ussr_su85", "name": "SU-85", "short": "SU-85", "faction": "ussr",
+		"role": "tank_destroyer", "cost": 500, "pop": 10, "recall_s": 120.0, "speed": 7.0, "sight_m": 165.0,
+		"hull_length": 6.0, "hull_width": 3.0, "hull_height": 1.4, "hull_ground": 0.35,
+		"turret_x": 1.50, "turret_base": 1.80, "turret_length": 3.4, "turret_width": 3.0,
+		"turret_height": 1.1, "turret_offset_x": -0.2, "gun_length": 2.0, "gun_height": 0.0,
+		"casemate": true, "open_top": false, "turret_floor": -0.1,
+		"deck": true,
+		"slots": [
+			{"center": Vector3(-1.9, 0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-1.9, -0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-2.4, 0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-2.4, -0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-2.8, 0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+			{"center": Vector3(-2.8, -0.65, 2.2), "half": Vector3(0.22, 0.2, 0.45)},
+		],
+		"seats": ["driver", "gunner", "commander", "loader"],
+		"ammo": [{"kind": "ap", "name": "85 mm BR-365", "max": 48}, {"kind": "he", "name": "85 mm OF-365", "max": 20}],
+	},
 }
 ## Mock-only handling numbers (not part of the state).
 const HANDLING := {
@@ -62,13 +104,16 @@ const HANDLING := {
 	# S7: the casemate gun lays only within "arc" (deg) of the nose.
 	"ger_stug3_g": {"turn": 30.0, "traverse": 6.0, "arc": 10.0, "reverse": 2.0, "reload": 6.5, "elev": Vector2(-6, 20), "ap_speed": 790.0, "he_speed": 550.0},
 	"usa_m10": {"turn": 32.0, "traverse": 5.0, "reverse": 2.5, "reload": 6.0, "elev": Vector2(-10, 19), "ap_speed": 792.0, "he_speed": 579.0},
+	"ussr_t34_85": {"turn": 34.0, "traverse": 20.0, "reverse": 2.2, "reload": 5.5, "elev": Vector2(-5, 25), "ap_speed": 792.0, "he_speed": 680.0},
+	"ussr_su85": {"turn": 30.0, "traverse": 6.0, "arc": 10.0, "reverse": 2.0, "reload": 6.0, "elev": Vector2(-4, 15), "ap_speed": 792.0, "he_speed": 680.0},
 }
-const FACTION_TANK := {"germany": "ger_pz4_h", "usa": "usa_m4a3_75"}
+const FACTION_TANK := {"germany": "ger_pz4_h", "usa": "usa_m4a3_75", "ussr": "ussr_t34_85"}
 ## S7: each faction's second vehicle card (a call-in tile of its own).
-const FACTION_TD := {"germany": "ger_stug3_g", "usa": "usa_m10"}
+const FACTION_TD := {"germany": "ger_stug3_g", "usa": "usa_m10", "ussr": "ussr_su85"}
 const AT_TEAM := {
 	"germany": {"name": "Panzerschreck team", "short": "Schreck", "cost": 200, "speed": 110.0, "range": 120.0},
 	"usa": {"name": "Bazooka team", "short": "Bazooka", "cost": 180, "speed": 85.0, "range": 100.0},
+	"ussr": {"name": "PTRD team", "short": "PTRD", "cost": 150, "speed": 100.0, "range": 90.0},
 }
 const UNLOCK_S := 240.0
 const LIMIT := 4

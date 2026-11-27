@@ -1,0 +1,17 @@
+# S15 Build B: the Soviet copy of usa_construction_crate.toml, same numbers (S15 starting
+# value; plan 6.2). The cook-off round is the German 7.5 cm HE until the
+# Soviet 76 mm HE exists (Build C).
+# S10a: a crate of construction material (sandbags, timber, wire; 40 kg,
+# verify). Issued in the own base by IssueCrate { kind: Construction } and
+# paid there ([fortify] construction_mp_per_t); builders within
+# [fortify] material_reach_m draw from it. Never emptied into an HQ or dump
+# stock, never a source of rounds.
+id = "ww2:ussr_construction_crate"
+name = "Stroitelny yashchik"
+faction = "ww2:ussr"
+kind = "crate"
+supply = "construction"
+kg = 40
+carry_speed_pct = 70
+boxes = [{ part = "crate", size_cm = [80, 40, 40], hp = 40 }]
+sources = ["S15 starting value: the US def's numbers (docs/slices/S15-ussr.md 6.2); Soviet loads not read"]

@@ -1,0 +1,154 @@
+# M3A1 Scout Car (S15 Build C, docs/slices/S15-ussr.md 6.4, S15-9 (A)): the lend-lease scout car as the Soviet transport,
+# 2 crew and 6 men in the open rear. On the US M3A1 half-track def's pattern (same armour plate, open body; positions
+# approximate) with the wheeled mobility of the trucks. The .50 M2HB and the .30 M1919 on the skate rail are the US
+# weapon defs. Every figure not read in a source is an S15 starting value (unverified).
+id = "ww2:ussr_m3a1_scout"
+name = "M3A1 Scout Car"
+short_name = "M3A1 SC"
+faction = "ww2:ussr"
+role = "transport"
+# S15 starting value (S15-ussr.md 6.4; not tuned). Pop and cooldowns as the US half-track card.
+cost = 240
+pop = 3
+recall_cooldown_s = 60
+initial_cooldown_s = 0
+sight_m = 175
+spot_size_pct = 150
+eye_height_cm = 220
+sources = [
+  "Wikipedia, M3 Scout Car (driver and commander, six more seats in the rear; at most 13 mm, open top; .50 M2 and one or two .30 M1919; 80 km/h; 3,310 to the USSR, reconnaissance units and command cars; read 2026-11-26)",
+  "the US M3A1 half-track def (plates 12.7 / 6.4 mm face-hardened)",
+]
+crew_squad = "ww2:ussr_tank_crew"
+rare_cap = 0
+
+[mobility]
+type = "wheeled"
+# 80 km/h (read) on the M8's scale (about 90 km/h = 1000 cm/s).
+speed_cm_s = 900
+reverse_cm_s = 250
+turn_radius_cm = 900
+accel_cm_s2 = 130
+brake_cm_s2 = 400
+max_slope_pct = 40
+ditch_block_dm = 10
+bog_pct = 15
+unbog_s = [25, 45]
+woods_speed_pct = 30
+slope_loss_pct = 85
+moving_spread_pct = 400
+
+[hull]
+track_band_pct = 40
+track_mm = 5
+
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 75], half = [280, 100, 35] }
+[boxes.armor]
+front = { thickness_mm = 12.7, slope_deg = 0, material = "face_hardened" }
+side = { thickness_mm = 6.4, slope_deg = 0, material = "face_hardened" }
+rear = { thickness_mm = 6.4, slope_deg = 0, material = "face_hardened" }
+top = { thickness_mm = 6.4, material = "face_hardened" }
+
+[[boxes]]
+id = "body"
+frame = "hull"
+box = { center = [-40, 0, 150], half = [240, 100, 40] }
+open = ["top"]
+[boxes.armor]
+front = { thickness_mm = 12.7, slope_deg = 30, material = "face_hardened" }
+side = { thickness_mm = 6.4, slope_deg = 0, material = "face_hardened" }
+rear = { thickness_mm = 6.4, slope_deg = 0, material = "face_hardened" }
+
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [130, 50, 150], half = [30, 25, 40] }
+in = "body"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "hull", center = [120, -50, 170], half = [25, 25, 60] }
+in = "body"
+
+[[weapons]]
+def = "ww2:m2hb"
+mount = "pintle"
+pivot = [60, -50, 215]
+muzzle = [100, 0, 10]
+traverse_deg = [-180, 180]
+traverse_deg_s = 30
+seat = "commander"
+# Rounds stowed: as the half-track's (unverified).
+rounds = 700
+
+[[weapons]]
+def = "ww2:m1919"
+mount = "pintle"
+pivot = [-150, 0, 215]
+muzzle = [90, 0, 8]
+traverse_deg = [-180, 180]
+traverse_deg_s = 30
+seat = "commander"
+rounds = 1000
+
+[[components]]
+type = "engine"
+hp = 80
+box = { frame = "hull", center = [220, 0, 95], half = [50, 55, 30] }
+repair = { to_hp = 40, time_s = 60 }
+
+[[components]]
+type = "wheels_front"
+hp = 50
+anchors = [{ pos = [190, 90, 40] }, { pos = [190, -90, 40] }]
+repair = { to_hp = 50, time_s = 25 }
+
+[[components]]
+type = "wheels_rear"
+hp = 50
+anchors = [{ pos = [-150, 90, 40] }, { pos = [-150, -90, 40] }]
+repair = { to_hp = 50, time_s = 25 }
+
+[[components]]
+type = "transmission"
+hp = 80
+box = { frame = "hull", center = [130, 0, 80], half = [40, 30, 25] }
+repair = { to_hp = 40, time_s = 60 }
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [130, 100, 190]
+exit_ms = 2500
+
+[[hatches]]
+seats = ["commander"]
+frame = "hull"
+pos = [120, -100, 190]
+exit_ms = 2500
+
+[transport]
+capacity = 6
+entry = [-285, 0, 60]
+board_ms = 1000
+exit_ms = 800
+exit_over_sides_ms = 500
+exit_raise_cm = 50
+
+# Six seated men in the rear body (as the half-track's slots).
+[[passenger_slots]]
+box = { center = [0, 70, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-70, 70, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-140, 70, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [0, -70, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-70, -70, 155], half = [22, 20, 45] }
+[[passenger_slots]]
+box = { center = [-140, -70, 155], half = [22, 20, 45] }

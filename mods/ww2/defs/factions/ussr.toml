@@ -1,0 +1,43 @@
+# The Soviet Union (S15 Build B, docs/slices/S15-ussr.md 6.1): the third
+# faction. Every USSR id starts `ww2:ussr_` so that it sorts after every
+# older id of its list (N1: no German or US def changes its index). It is
+# not in the rules' `[matchups] factions` until the S15-ai stage, so it
+# cannot be played yet; tests and rows pass an override.
+id = "ww2:ussr"
+name = "USSR"
+color = "#9a5a4a"
+roster = [
+    # The line: the rifle section (9), its field-strength form (6), the
+    # Guards section and the SMG section (S15 starting values).
+    "ww2:ussr_strelkovoe_otdelenie",
+    "ww2:ussr_strelkovoe_otdelenie_6",
+    "ww2:ussr_gvardeyskoe_otdelenie",
+    "ww2:ussr_otdelenie_avtomatchikov",
+    "ww2:ussr_pulemyotny_raschyot",
+    "ww2:ussr_sapyornoe_otdelenie",
+    "ww2:ussr_shturmovaya_gruppa",
+    "ww2:ussr_minomyotny_raschyot",
+    "ww2:ussr_raschyot_ptr",
+    "ww2:ussr_upravlenie_vzvoda",
+    "ww2:ussr_podnoschiki",
+    "ww2:ussr_sanitary",
+    "ww2:ussr_razvedchiki",
+    # S15 Build C: guns, the truck; S15 Fix: the AT guns' tow is the US6 gun tractor (seats the crew), the
+    # infantry gun and howitzer come without a tow.
+    "ww2:ussr_us6_squad",
+    "ww2:ussr_us6_tractor_squad",
+    "ww2:ussr_45mm_m42_squad",
+    "ww2:ussr_57mm_zis2_squad",
+    "ww2:ussr_76mm_zis3_squad",
+    "ww2:ussr_76mm_m1943_squad",
+    "ww2:ussr_122mm_m30_squad",
+    # S15 Build C: the vehicles (the tank first, as in the German and US rosters).
+    "ww2:ussr_t34_85_squad",
+    "ww2:ussr_su85_squad",
+    "ww2:ussr_su76m_squad",
+    "ww2:ussr_m3a1_scout_squad",
+    "ww2:ussr_ba64b_squad",
+    "ww2:ussr_is2_squad",
+]
+# Squads on the field at tick 0: two rifle sections and the sappers.
+start_squads = ["ww2:ussr_strelkovoe_otdelenie", "ww2:ussr_strelkovoe_otdelenie", "ww2:ussr_sapyornoe_otdelenie"]

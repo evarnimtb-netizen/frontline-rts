@@ -1,0 +1,38 @@
+# Strelkovoe otdelenie (field strength) (S15 Build B): the section at the
+# six men it commonly stood at in 1944 (battleorder.org: "sections were
+# effectively 6 men"): the leader (PPSh), the DP pair and three Mosin men.
+# Made of `extends` and a member list plus its card keys.
+id = "ww2:ussr_strelkovoe_otdelenie_6"
+extends = "ww2:ussr_strelkovoe_otdelenie"
+name = "Strelkovoe otdelenie (6)"
+short_name = "Strelk. (6)"
+tags = ["line", "understrength"]
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 140
+ai_weight = 50
+
+[[members]]
+slot = "leader"
+weapon = "ww2:ussr_ppsh41"
+traits = ["leader"]
+items = { "ww2:ussr_f1_grenade" = 1, "ww2:ussr_rdg_smoke" = 1 }
+
+[[members]]
+slot = "dp_gunner"
+weapon = "ww2:ussr_dp27"
+sidearm = "ww2:ussr_tt33"
+traits = ["crew_gunner"]
+items = { "ww2:ussr_f1_grenade" = 1 }
+
+[[members]]
+slot = "dp_assistant"
+weapon = "ww2:ussr_mosin_9130"
+rounds = { "ww2:ussr_762x54r_pan" = 94 }
+traits = ["crew_assistant"]
+items = { "ww2:ussr_f1_grenade" = 1 }
+
+[[members]]
+slot = "rifleman"
+count = 3
+weapon = "ww2:ussr_mosin_9130"
+items = { "ww2:ussr_f1_grenade" = 1 }

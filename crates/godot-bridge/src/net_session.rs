@@ -236,6 +236,14 @@ impl NetSession {
     /// The mod content both players must share (its hash goes in `Hello`).
     pub fn set_defs(&mut self, defs: Arc<ModDefs>) {
         self.content_hash = defs.content_hash();
+        // S15 Fix (review 13): a faction picked before the defs loaded is
+        // checked now; one the rules do not enable falls back to the first.
+        let offered = crate::match_setup::menu_factions(&defs, &MenuChoice::default());
+        if !offered.contains(&self.choice.faction)
+            && let Some(f) = offered.first()
+        {
+            self.choice.faction = f.clone();
+        }
         self.defs = Some(defs);
     }
 
@@ -347,7 +355,19 @@ impl NetSession {
     /// Merges `u` into the choice and sends it (the relay clears both
     /// players' Ready on any change).
     pub fn set_choice(&mut self, u: ChoiceUpdate) {
-        if let Some(f) = u.faction.filter(|f| FACTIONS.contains(&f.as_str())) {
+        // S15 M1: any faction the rules enable. Without defs yet (S15 Fix,
+        // review 13) any short id is kept and `set_defs` checks it.
+        let offered: Option<Vec<String>> = self
+            .defs
+            .as_ref()
+            .map(|d| crate::match_setup::menu_factions(d, &MenuChoice::default()));
+        let short = |f: &String| {
+            !f.is_empty() && f.len() <= 32 && f.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+        };
+        if let Some(f) = u
+            .faction
+            .filter(|f| offered.as_ref().map_or(short(f), |o| o.contains(f)))
+        {
             self.choice.faction = f;
         }
         if let Some(s) = u.seed {
@@ -370,8 +390,10 @@ impl NetSession {
             self.choice.ai = ai
                 .into_iter()
                 .filter(|a| {
+                    // S15 M1 (merge): any faction the rules enable.
+                    let f = short_id(&a.faction).to_owned();
                     (1..MAX_SLOTS as u8).contains(&a.slot)
-                        && FACTIONS.contains(&short_id(&a.faction))
+                        && offered.as_ref().map_or(short(&f), |o| o.contains(&f))
                 })
                 .map(|a| AiPick {
                     faction: full(short_id(&a.faction)),
@@ -743,14 +765,27 @@ impl NetSession {
 
     fn resolve(&self, slots: &[SlotChoice], seed: u64, map: &str) -> Result<MatchSetup, String> {
         let defs = self.defs.as_ref().ok_or("no mod content loaded")?;
-        if slots.len() == 2
-            && slots.iter().all(|s| s.team.is_none())
-            && slots[0].faction == slots[1].faction
-        {
-            return Err(format!(
-                "Both players picked {}; factions must differ.",
-                slots[0].faction
-            ));
+        // S15 M2, M4, M6: the rules' pairs (and a mirror) decide, with the
+        // words the lobby shows. A 1v1 (two slots, no teams) asks for the
+        // pair; S18 teams ask for every two hostile slots of different
+        // factions (allies may be any factions, and a faction may meet
+        // itself across teams as before).
+        let team_of = |i: usize, s: &SlotChoice| s.team.unwrap_or(i as u8);
+        let one_v_one = slots.len() == 2 && slots.iter().all(|s| s.team.is_none());
+        for (i, a) in slots.iter().enumerate() {
+            for (j, b) in slots.iter().enumerate().skip(i + 1) {
+                if team_of(i, a) == team_of(j, b) || (!one_v_one && a.faction == b.faction) {
+                    continue;
+                }
+                if let Some(why) = crate::match_setup::pair_refusal(
+                    defs,
+                    &MenuChoice::default(),
+                    &a.faction,
+                    &b.faction,
+                ) {
+                    return Err(why);
+                }
+            }
         }
         let own = (self.slot.unwrap_or(0) as usize).min(slots.len().saturating_sub(1));
         let choice = MenuChoice {
@@ -768,6 +803,7 @@ impl NetSession {
             // S18: the slots decide; four of them are a 2v2.
             mode: if slots.len() == 4 { "2v2" } else { "1v1" }.into(),
             test_unlock: self.test_unlock,
+            opponent: None,
         };
         resolve_with(defs, &choice)
     }
@@ -960,6 +996,27 @@ mod tests {
     }
 
     const FACTION: [&str; 2] = ["usa", "germany"];
+
+    /// S15 Fix (review 13): a faction picked before the defs load is kept
+    /// and checked when they arrive: the USSR stays (the shipped rules
+    /// enable it). Control: a faction no rules enable falls back to the
+    /// first offered (Germany).
+    #[test]
+    fn faction_picked_before_the_defs_is_checked_when_they_load() {
+        let m = crate::match_setup::find_mods_dir(&crate::match_setup::mods_candidates(None, None))
+            .unwrap();
+        let defs = Arc::new(crate::match_setup::load_defs(&m, false).unwrap());
+        for (pick, want) in [("ussr", "ussr"), ("japan", "germany")] {
+            let mut s = NetSession::new();
+            s.set_choice(ChoiceUpdate {
+                faction: Some(pick.into()),
+                ..ChoiceUpdate::default()
+            });
+            assert_eq!(s.choice.faction, pick, "kept until the defs load");
+            s.set_defs(Arc::clone(&defs));
+            assert_eq!(s.choice.faction, want, "{pick}");
+        }
+    }
 
     /// Hosts on a free loopback port and waits for the host's own client
     /// to be in the lobby (slot 0 is whoever's `Hello` arrives first; a

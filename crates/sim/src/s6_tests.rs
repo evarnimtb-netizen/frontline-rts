@@ -17,12 +17,46 @@ pub(super) fn flat_world(threads: usize) -> World {
 }
 
 /// [`flat_world`] with an edit of the setup (after the humans are set).
+/// S15-ai Build D: the S15 switches are on in the mod (and drop their def
+/// parts at the resolve); the tests on these worlds were written with them
+/// off, so they are turned off before the resolve. The S15 tests turn on
+/// what they test.
+pub(super) fn s15_defs_off(defs: &mut frontline_content::ModDefs) {
+    for r in defs.rules.values_mut() {
+        if let Some(x) = r.riders.as_mut() {
+            x.enabled = 0;
+        }
+        if let Some(x) = r.body_armour.as_mut() {
+            x.enabled = 0;
+        }
+        if let Some(x) = r.melee.as_mut() {
+            x.bayonets = 0;
+        }
+        if let Some(x) = r.supply.as_mut() {
+            x.foreign_ammo = 0;
+        }
+        if let Some(x) = r.ai.riders.as_mut() {
+            x.jobs = 0;
+        }
+    }
+}
+
 pub(super) fn flat_world_with(
     threads: usize,
     edit: impl FnOnce(&mut frontline_content::MatchSetup),
 ) -> World {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
-    let defs = frontline_content::ModDefs::load(&root).unwrap();
+    let mut defs = frontline_content::ModDefs::load(&root).unwrap();
+    // S14-ai Build D: the S14 switches are on in the mod; these tests were
+    // written with them off (flame members resolve by `[flame] enabled`,
+    // so it is turned off before the resolve). The S14 tests turn on what
+    // they test.
+    for r in defs.rules.values_mut() {
+        if let Some(f) = r.flame.as_mut() {
+            f.enabled = 0;
+        }
+    }
+    s15_defs_off(&mut defs);
     let req = frontline_content::MatchRequest::skirmish(
         1,
         "ww2:germany",
@@ -40,6 +74,7 @@ pub(super) fn flat_world_with(
     setup.s11b_off();
     setup.s12_off();
     setup.s13_off();
+    setup.s14_off();
     edit(&mut setup);
     World::new_match(setup, threads).unwrap()
 }

@@ -13,8 +13,8 @@
 # (line numbers may move). A new raw owner comparison or sight read makes the
 # step fail until it is classed in the table.
 #
-# Test files (`*_tests.rs`, `scenarios.rs`) and `#[cfg(test)] mod tests`
-# blocks at the end of a file are left out. The patterns are textual: a
+# Test files (`*_tests.rs`, `scenarios.rs`) and inline `#[cfg(test)] mod
+# tests { .. }` blocks at the end of a file are left out. The patterns are textual: a
 # comparison written another way is not listed.
 set -u
 cd "$(dirname "$0")/../crates/sim/src"
@@ -23,9 +23,14 @@ owner_re='(owner|player|\bme\b|\bp\b)[^;]*[!=]= |[!=]= [^;]*(owner|player|\bme\b
 sight_re='seen_by'
 list() { # PATTERN
     for f in $files; do
-        # Stop at the first `#[cfg(test)]` that opens a test module.
+        # Stop at the first `#[cfg(test)]` that opens an inline test module
+        # (`mod x {` on the next line). Merge with S14/S15: a `#[cfg(test)]`
+        # on a helper function or a `#[path]` module no longer hides the
+        # non-test code after it (combat.rs, counter_battery.rs, world.rs).
         awk -v re="$1" -v f="${f#./}" '
-            /^#\[cfg\(test\)\]/ { t = 1 }
+            c == 1 && /^mod [A-Za-z0-9_]+ *\{/ { t = 1 }
+            { c = 0 }
+            /^#\[cfg\(test\)\]/ { c = 1 }
             t == 0 && $0 ~ re && $0 !~ /^[[:space:]]*\/\// { printf "%s:%d: %s\n", f, NR, $0 }
         ' "$f"
     done

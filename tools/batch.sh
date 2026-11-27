@@ -3,7 +3,12 @@
 #
 #   tools/batch.sh OUT.json [-o OVERRIDE.toml]... -- SUBCOMMAND ARGS...
 #   tools/batch.sh sets OUTDIR [--map ID] [-o OVERRIDE.toml]...   # the three 160 sets
-#   tools/batch.sh teams OUTDIR [-o OVERRIDE.toml]...   # S17b: the two 2v2 40 sets
+#   tools/batch.sh teams OUTDIR [-o OVERRIDE.toml]...   # S17b: the three 2v2 40 sets
+#   tools/batch.sh pair OUTDIR F0 F1 [--map ID] [-o OVERRIDE.toml]...
+#       one 40 set of faction F0 (player 0) against F1: seeds 1-20, both
+#       bases, 45 min, into OUTDIR/pair_<f0>_<f1>40.json (ids with or
+#       without the `ww2:` prefix; S15 plan 4, M tools; `--map` as in sets,
+#       the file then pair_<f0>_<f1>_<map>40.json)
 #
 # Runs `target/release/frontline-cli SUBCOMMAND ARGS... --json OUT.json`, text
 # output to OUT.txt, and keeps both under target/batch-cache/KEY. KEY is the
@@ -15,7 +20,9 @@
 # keys as before. S17b: `teams` plays the 2v2 breakage sets on Harrow Cross
 # (plan 9: seeds 1-20, both sides, 45 min), mixed teams (Germany and USA on
 # each side) in skirmish2v2_mixed and same-faction teams (Germany against
-# USA) in skirmish2v2_same; their JSON has an `s17_derived` block.
+# USA) in skirmish2v2_same; their JSON has an `s17_derived` block. Merge
+# with S15: skirmish2v2_ussr puts the USSR on a team (USA and USSR against
+# two Germans; every hostile pair a `[matchups]` pair).
 #
 # Each call runs a snapshot of the binary and of mods/ kept under
 # target/batch-cache/world/KEY, so a rebuild or a TOML edit while a long run
@@ -144,7 +151,8 @@ case "${1:-}" in
         shift 2
         rc=0
         for s in "skirmish2v2_mixed ww2:germany ww2:usa ww2:germany ww2:usa" \
-            "skirmish2v2_same ww2:germany ww2:germany ww2:usa ww2:usa"; do
+            "skirmish2v2_same ww2:germany ww2:germany ww2:usa ww2:usa" \
+            "skirmish2v2_ussr ww2:usa ww2:ussr ww2:germany ww2:germany"; do
             # shellcheck disable=SC2086
             set -- $s "$@"
             name=$1 f0=$2 f1=$3 f2=$4 f3=$5
@@ -155,8 +163,21 @@ case "${1:-}" in
         done
         exit $rc
         ;;
+    pair)
+        dir=${2:?usage: tools/batch.sh pair OUTDIR F0 F1 [-o OVERRIDE]...}
+        f0=${3:?usage: tools/batch.sh pair OUTDIR F0 F1 [-o OVERRIDE]...}
+        f1=${4:?usage: tools/batch.sh pair OUTDIR F0 F1 [-o OVERRIDE]...}
+        shift 4
+        map=() tag=""
+        if [ "${1:-}" = --map ]; then
+            map=(--map "${2:?--map needs an id}")
+            tag="_${2#*:}"
+            shift 2
+        fi
+        run_one "$dir/pair_${f0#*:}_${f1#*:}${tag}40.json" "$@" -- skirmish --ai-vs-ai --faction0 "ww2:${f0#*:}" --faction1 "ww2:${f1#*:}" --seed 1 --seeds 20 --both-bases --summary --minutes 45 ${map[@]+"${map[@]}"}
+        ;;
     "" | -h | --help)
-        sed -n 2,23p "$0"
+        sed -n 2,38p "$0"
         exit 2
         ;;
     *)

@@ -1,0 +1,20 @@
+# M2-2 portable flamethrower (S14 plan 4.1): the roster's US weapon, kept as
+# a def with no card for a later date-filtered variant (its ETO date in June
+# 1944 is not confirmed; the card carries the M1A1). Two tanks of 4 US gal
+# (15 L) at 0.5 gal/s: about 7 s = 84 particles at 135 g; 20 m effective,
+# 40 m max; a cartridge igniter of 5 ignitions a load: bursts of 17. It
+# burns the M1A1's fuel cartridge (130 g a unit; the plan's 135 g would need
+# a third cartridge, left for its card).
+extends = "ww2:m1a1_flamethrower"
+id = "ww2:m2_2_flamethrower"
+name = "M2-2 flamethrower"
+short_name = "M2-2 flamer"
+load = 84
+magazine = 84
+range_m = 40
+burst_rounds = 17
+sources = [
+    "Wikipedia, M2 flamethrower (4 US gal in two tanks, 0.5 gal/s, 20 m effective, 40 m max)",
+    "dday-overlord.com, M2 flamethrower",
+    "TM 3-376A, Portable Flame Thrower M2-2 (5 igniter cartridges a load; verify)",
+]

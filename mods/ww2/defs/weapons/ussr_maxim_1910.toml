@@ -1,0 +1,31 @@
+# Maxim M1910/30 heavy machine gun (S15 Build B): 250-round belt, about 600
+# rounds a minute, 740 m/s, 62.66 kg on the Sokolov wheeled mount (Wikipedia
+# "PM M1910", read 2026-11-26); water-cooled. The MG section's gun (S15-11
+# (A)); the SG-43 is `ww2:ussr_sg43`. S15 starting values, as the M1919A4 on
+# its tripod.
+id = "ww2:ussr_maxim_1910"
+name = "Maxim M1910/30"
+short_name = "Maxim"
+class = "mg"
+feed = "ww2:ussr_762x54r_belt"
+# The gunner's own belt.
+load = 250
+sources = [
+    "Wikipedia, PM M1910 (250-round belt, 600 rpm, 740 m/s, 62.66 kg on the wheeled mount; read 2026-11-26)",
+    "battleorder.org, USSR rifle company 1944 (MG section of 6)",
+]
+range_m = 600
+damage = 45
+rounds_per_min = 600
+magazine = 250
+reload_ms = 7000
+spread_mrad = 12
+penetration = [[0, 7], [100, 5], [300, 3]]
+core = { damage = 30, length_cm = 30, max_boxes = 1 }
+setup_ms = 4000
+suppression = 14
+handover_ms = 3000
+# Water-cooled: bursts of 10 rounds, 1.0 s pause (S15 starting values).
+burst_rounds = 10
+burst_pause_ms = 1000
+muzzle_velocity_m_s = 740

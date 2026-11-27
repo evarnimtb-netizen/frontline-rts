@@ -1,0 +1,25 @@
+# 85 mm D-5S (S15 Build C, S15-ussr.md 6.4): the SU-85's casemate gun, the D-5T's ballistics.
+# Game values not in a source are S15 starting values (no tuning).
+id = "ww2:ussr_d5s"
+name = "85 mm D-5S"
+class = "cannon"
+# Engagement range, m (as every tank and AT gun of the mod).
+range_m = 600
+# A direct hit on a man, HP.
+damage = 300
+# About 8 rounds/min: S15 starting value (unverified).
+rounds_per_min = 8
+magazine = 1
+# Reload, ms: 60000 / rounds_per_min.
+reload_ms = 7500
+# 2.5 mrad stationary, urad (as the German and US guns).
+spread_urad = 2500
+muzzle_velocity_m_s = 792
+suppression = 30
+# Muzzle blast: seen at 300 % of sight (as the other guns).
+fire_reveal_pct = 300
+fire_reveal_ms = 3000
+sources = [
+  "Wikipedia, SU-85: 85 mm D-5 gun (read 2026-11-26)",
+  "Wikipedia, 85 mm air defense gun M1939 (52-K): 792 m/s (read 2026-11-26)",
+]

@@ -1,0 +1,22 @@
+# S15 Build B: the Soviet copy of usa_shells_crate.toml, same numbers (S15 starting
+# value; plan 6.2). The cook-off round is the German 7.5 cm HE until the
+# Soviet 76 mm HE exists (Build C).
+# Ammunition Bundle (S6): a shells crate one man carries (32 kg). Issued in the
+# own base to a man of the squad and paid there: kg x [supply]
+# shell_mp_per_t / 1000 (owner D1: every kg priced once, at base; D2: no distance
+# surcharge; draws from it are free). Set down within crate_feed_m of a
+# mortar, men or a tank it feeds them; set down inside an own HQ or dump
+# radius it empties into the stock.
+id = "ww2:ussr_shells_crate"
+name = "Yashchik min"
+faction = "ww2:ussr"
+kind = "crate"
+supply = "shells"
+kg = 32
+# The carrier's squad walks at this share of its pace (%; a 25-32 kg load,
+# verify).
+carry_speed_pct = 70
+# Cooks off when HE breaks it (bursts of this round).
+cookoff = "ww2:ussr_76mm_of350"
+boxes = [{ part = "crate", size_cm = [70, 40, 35], hp = 60 }]
+sources = ["S15 starting value: the US def's numbers (docs/slices/S15-ussr.md 6.2); Soviet loads not read"]

@@ -102,6 +102,8 @@ func _run() -> void:
 	await _test_s10b()
 	await _test_s12()
 	_test_s17()
+	await _test_s14()
+	await _test_s15()
 	await _test_end()
 
 	print("test_match_view: %d/%d checks passed" % [_checks - _fails, _checks])
@@ -1152,6 +1154,142 @@ func _reasons(ci: Control) -> Array:
 	for i in _view.state.callin.catalog.size():
 		out.append(ci.reason_text(i))
 	return out
+
+
+## S14 presenter (flame view, strike pose, Clear trench, V): everything
+## hidden while the rules and the state carry none of it; staged, one of
+## each is drawn; the buttons, the tool click and the key send the intents.
+func _test_s14() -> void:
+	var grid: Control = _view.orders
+	var fv: Node3D = _match.flame_view
+	var sq := -1
+	for t in ["rifle", "engineer", "mg"]:
+		for sid in _source.squad_ids(0, t):
+			if sq == -1 and _source.unit_ids(sid).size() >= 3:
+				sq = sid
+	_check(sq != -1, "S14: a squad to stage with")
+	if sq == -1:
+		return
+	_sel.select_squads(PackedInt32Array([sq]))
+	_view.update_state(_source.get_state())
+	await _frames(2)
+	grid.update_state(_view.state)
+	_check(not _view.s14_on("melee") and not _view.s14_on("clear") and grid.label_of(&"strike") == "" and grid.label_of(&"clear_trench") == "", "S14: no Clear or Strike button while the switches are off")
+	_check(fv.drawn() == 0, "S14: nothing drawn while off")
+	_key(KEY_V)
+	_check(_last(&"strike_units") == null, "S14: V does not strike while melee is off")
+	var men: PackedInt32Array = _source.unit_ids(sq)
+	var at: Vector3 = _source.squad_pos(sq)
+	_source.stage_s14(men[0], men[1], men[2], at + Vector3(6, 0, -4), 1)
+	_view.update_state(_source.get_state())
+	await _frames(3)
+	_view.update_state(_source.get_state())
+	grid.update_state(_view.state)
+	_check(fv.particles == 6 and fv.patches == 1 and fv.burning == 1 and fv.strikes == 1, "S14: one of each drawn (%d, %d, %d, %d)" % [fv.particles, fv.patches, fv.burning, fv.strikes])
+	_check(int(fv.strike_phase.get(men[2], 0)) == 1, "S14: the wind-up pose")
+	_source.stage_s14(men[0], men[1], men[2], at + Vector3(6, 0, -4), 2)
+	_view.update_state(_source.get_state())
+	await _frames(2)
+	_check(int(fv.strike_phase.get(men[2], 0)) == 2, "S14: the recovery pose")
+	_check(grid.label_of(&"strike") == "Strike" and grid.label_of(&"clear_trench") == "Clear", "S14: Clear and Strike buttons with the switches on")
+	_check(grid.enabled(&"strike"), "S14: Strike is live for men")
+	_intents.clear()
+	grid.press(&"strike")
+	var st: Variant = _last(&"strike_units")
+	_check(st != null and not (st.units as PackedInt32Array).is_empty(), "S14: Strike sends strike_units")
+	# S14 Fix 10 (TODO S14-11 (A)): V strikes only with an enemy within
+	# STRIKE_KEY_M of a selected man; else it boards, as before S14.
+	_intents.clear()
+	_key(KEY_V)
+	_check(_last(&"strike_units") == null, "S14: V boards (no strike) with no enemy near")
+	_sel.cancel_tool()
+	_sel.select_squads(PackedInt32Array([sq]))
+	var foe := -1
+	for t in ["rifle", "engineer", "mg"]:
+		for sid in _source.squad_ids(1, t):
+			if foe == -1 and _source.unit_ids(sid).size() > 0:
+				foe = _source.unit_ids(sid)[0]
+	_check(foe != -1, "S14: an enemy man to stage")
+	if foe != -1:
+		var me: Dictionary = _source._man(men[0])
+		var them: Dictionary = _source._man(foe)
+		them.pos = (me.pos as Vector2) + Vector2(1.0, 0.0)
+		_view.update_state(_source.get_state())
+		await _frames(1)
+		_intents.clear()
+		_key(KEY_V)
+		_check(_last(&"strike_units") != null, "S14: V sends strike_units with an enemy within reach")
+	if grid.enabled(&"clear_trench"):
+		grid.press(&"clear_trench")
+		_check(_sel.tool == &"clear_trench", "S14: Clear arms a tool")
+		_click(_ground_screen(at + Vector3(10, 0, -6)))
+		var ct: Variant = _last(&"clear_trench")
+		_check(ct != null and (ct.squads as PackedInt32Array) == PackedInt32Array([sq]) and ct.target is Vector3, "S14: a click sends clear_trench (%s)" % [ct])
+	else:
+		_check(true, "S14: (the squad holds no frag grenade: Clear grey)")
+	# The fields go quiet when the state empties them.
+	_source.s14_flame.clear()
+	_source.s14_patches.clear()
+	_view.update_state(_source.get_state())
+	await _frames(2)
+	_check(fv.particles == 0 and fv.patches == 0, "S14: emptied fields hide the stream and the ground")
+
+
+## S15 presenter: the USSR's look (colour, short name, weapon words, paint,
+## glacis), the mock with three factions, riders seated on a deck's pads, and
+## the squad card's plate mark, all on staged dictionaries.
+func _test_s15() -> void:
+	_check(UiPalette.FACTION_SHORT.ussr == "SOV" and UiPalette.faction_name("ussr") == "USSR", "S15: USSR short name SOV")
+	_check(UiPalette.faction_color("ussr").to_html(false) == "9a5a4a", "S15: USSR colour #9a5a4a")
+	_check(Vehicles.PAINT.has("ussr") and Vehicles.GLACIS_DEG.ussr > Vehicles.GLACIS_DEG.germany, "S15: USSR paint and a sloped glacis")
+	_check(_view.WEAPONS.ussr.rifle == "Mosin-Nagant" and _view.WEAPONS.ussr.at == "PTRD-41", "S15: USSR weapon names")
+	_check(Vehicles.DECK == 2048 and Vehicles.RIDERS_OFF == 4096, "S15: DECK and RIDERS_OFF flag bits")
+	# The mock with three factions: the USSR against Germany by default, against
+	# the USA only when named.
+	var src: Node = load("res://match/mock_match_source.gd").new()
+	src.start({"faction": "ussr", "difficulty": "normal", "map": "kessel_ridge", "seed": 1})
+	_check(src.players[0].faction == "ussr" and src.players[1].faction == "germany", "S15 mock: the USSR's default opponent is Germany")
+	var ids := PackedStringArray()
+	for c in src.catalog(0):
+		ids.append(String(c.id))
+	_check(ids.has("ww2:ussr_rifle") and not ids.has("ww2:usa_rifle"), "S15 mock: a USSR catalog")
+	_check(MockVehicles.TYPES.has(src.veh.faction_tank(0)) and String(MockVehicles.TYPES[src.veh.faction_tank(0)].faction) == "ussr", "S15 mock: the USSR's tank")
+	src.start({"faction": "germany", "opponent": "ussr", "difficulty": "normal", "map": "kessel_ridge", "seed": 1})
+	_check(src.players[1].faction == "ussr", "S15 mock: Germany against the USSR when named")
+	src.start({"faction": "usa", "opponent": "usa", "difficulty": "normal", "map": "kessel_ridge", "seed": 1})
+	_check(src.players[1].faction == "germany", "S15 mock: never the same faction on both sides")
+	src.free()
+	# Riders on a deck: one pad under each rider of a DECK vehicle.
+	var vv: VehicleView = _match.vehicle_view
+	var vt: Dictionary = MockVehicles.TYPES.ussr_t34_85
+	var veh := {
+		"id": 900, "owner": 0, "type": "ussr_t34_85", "pos": Vector3(0, 0, 0), "yaw": 0.0, "pitch": 0.0, "roll": 0.0,
+		"turret_yaw": 0.0, "gun_pitch": 0.0, "flags": Vehicles.DECK, "deck": true, "riders": 2, "capacity": 8,
+	}
+	var men := [{"id": 9001, "riding": 900, "ride_slot": 0}, {"id": 9002, "riding": 900, "ride_slot": 3}, {"id": 9003}]
+	var st := {"local_player": 0, "rules": {"vehicle_types": {"ussr_t34_85": vt}}, "vehicles": [veh], "soldiers": men}
+	vv.update_state(st)
+	_check(vv.deck_pads == 2, "S15: a pad under each of two riders (%d)" % vv.deck_pads)
+	var xf: Transform3D = vv.pad_xf[0]
+	var c: Vector3 = vt.slots[0].center
+	_check(absf(xf.origin.x + c.y) < 0.01 and absf(xf.origin.z + c.x) < 0.01 and xf.origin.y < c.z, "S15: the pad sits at the slot's foot, hull frame")
+	veh.deck = false
+	vv.update_state(st)
+	_check(vv.deck_pads == 0, "S15: no deck, no pads")
+	veh.deck = true
+	veh.riders = 0
+	vv.update_state(st)
+	_check(vv.deck_pads == 0, "S15: an empty deck draws none")
+	# The plate mark: the card counts the men who wear one.
+	var sid: int = _source.squad_ids(0, "rifle")[0]
+	var units: PackedInt32Array = _view.squad_units.get(sid, PackedInt32Array())
+	_check(not units.is_empty() and _view.roster.plates_worn(sid) == 0, "S15: no plate mark without plates")
+	if not units.is_empty():
+		_view.soldiers_by_id[units[0]]["plate"] = true
+		_view.soldiers_by_id[units[units.size() - 1]]["plate"] = true
+		_check(_view.roster.plates_worn(sid) == (2 if units.size() > 1 else 1), "S15: the card counts the plates worn")
+		_view.soldiers_by_id[units[0]].erase("plate")
+		_view.soldiers_by_id[units[units.size() - 1]].erase("plate")
 
 
 func _test_end() -> void:

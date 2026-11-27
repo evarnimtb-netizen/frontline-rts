@@ -175,7 +175,11 @@ func start(s: Dictionary) -> void:
 	MockMap.use(String(setup.get("map", "kessel_ridge")))
 	rng.seed = int(setup.get("seed", 1)) * 7919 + 17
 	var mine: String = setup.get("faction", "germany")
-	var theirs := "usa" if mine == "germany" else "germany"
+	# S15 M3: the chosen opponent, else the first pair's partner (Germany ->
+	# USA, USA -> Germany, USSR -> Germany); the same faction never.
+	var theirs: String = String(setup.get("opponent", ""))
+	if theirs == "" or theirs == mine:
+		theirs = "usa" if mine == "germany" else "germany"
 	players = [
 		{"id": 0, "faction": mine, "name": "You", "is_ai": false, "tickets": 500.0, "manpower": 260.0, "income": 0.0, "pop": 0, "points_held": 0, "ticket_drain": 0.0},
 		{"id": 1, "faction": theirs, "name": "AI (%s)" % setup.get("difficulty", "normal"), "is_ai": true, "tickets": 500.0, "manpower": 260.0, "income": 0.0, "pop": 0, "points_held": 0, "ticket_drain": 0.0},
@@ -214,6 +218,9 @@ func start(s: Dictionary) -> void:
 	veh.reset()
 	s12_enabled = false
 	s12_casualties.clear()
+	s14_enabled = false
+	s14_flame.clear()
+	s14_patches.clear()
 	_push_event(0, "info", "Skirmish on %s. Hold the points." % MockMap.map_name(), null)
 
 
@@ -859,7 +866,7 @@ func _step(dt: float) -> void:
 ## and its tank (S3), each with a squad type id (`id`).
 func catalog(owner: int) -> Array:
 	var faction: String = players[owner].faction
-	var short := "ger" if faction == "germany" else "usa"
+	var short: String = {"germany": "ger", "ussr": "ussr"}.get(faction, "usa")
 	var out: Array = []
 	for c in CATALOG:
 		var e: Dictionary = c.duplicate()
@@ -1592,6 +1599,8 @@ func _build_state() -> Dictionary:
 	rules.merge(veh.rules())
 	if s12_enabled:
 		rules.wounds = {"enabled": true, "reinforce": true}
+	if s14_enabled:
+		rules.s14 = {"flame": true, "melee": true, "clear": true}
 	var vs := veh.export_state(eyes)
 	var smokes: Array = []
 	for c in _smokes:
@@ -1618,6 +1627,8 @@ func _build_state() -> Dictionary:
 		"casualties": s12_casualties.duplicate(true),
 		"fort": s10_fort.duplicate(true),
 		"crates": _s6_crates_out(),
+		"flame": s14_flame.duplicate(true),
+		"patches": s14_patches.duplicate(true),
 		"shells": vs.shells,
 		"armour_events": vs.armour_events,
 		"events": _events,
@@ -1824,6 +1835,15 @@ func _soldier_state(sq: Dictionary, man: Dictionary, own: bool) -> Dictionary:
 		"pinned": man.supp > PINNED,
 		"suppression": man.supp,
 	}
+	# S14 (mock): burning and the strike phase a test staged.
+	if man.get("burning", false):
+		out.burning = true
+	if int(man.get("strike", 0)) != 0:
+		out.strike = int(man.strike)
+	# S15 (mock): the USSR's engineer squad stands in for the assault
+	# group: its men wear a body plate (the state's `plate`).
+	if sq.type == "engineer" and String(players[int(sq.owner)].faction) == "ussr":
+		out.plate = true
 	# S12 (mock): a wound a test staged ({bandaged, legs, treated, bandaging}).
 	if man.has("wound"):
 		out.wound = man.wound.duplicate()
@@ -1937,6 +1957,34 @@ func at_volley() -> void:
 		if sq.type == "at":
 			sq.rocket_t = 0.0
 			_at_fire(sq, 0.0)
+
+
+# --- S14 (mock) ----------------------------------------------------------------
+
+## The assault kit is staged (rules.s14 on, flame and patches in the state).
+var s14_enabled := false
+var s14_flame: Array = []
+var s14_patches: Array = []
+
+
+## S14 staging: one of each. A short flame stream from man `flamer` toward
+## `at`, a burning patch at `at`, man `burner` burning, man `striker` in
+## the wind-up (`phase` 1) or recovery (2) of a strike.
+func stage_s14(flamer: int, burner: int, striker: int, at: Vector3, phase := 1) -> void:
+	s14_enabled = true
+	var f := _man(flamer)
+	if not f.is_empty():
+		var from := _v3(f.pos) + Vector3(0, 1.2, 0)
+		s14_flame.clear()
+		for i in 6:
+			s14_flame.append({"id": i, "pos": from.lerp(at + Vector3(0, 0.5, 0), float(i + 1) / 7.0), "player": local_player})
+	s14_patches = [{"id": 0, "pos": at, "player": local_player, "seconds_left": 12.0, "radius": 2.0}]
+	var b := _man(burner)
+	if not b.is_empty():
+		b.burning = true
+	var s := _man(striker)
+	if not s.is_empty():
+		s.strike = phase
 
 
 # --- S12 (mock) -----------------------------------------------------------------

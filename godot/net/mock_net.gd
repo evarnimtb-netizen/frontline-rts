@@ -36,7 +36,10 @@ const OPPONENT_READY_S := 0.8
 const DEFAULT_NAME := "Player"
 ## Mirrors Session.FACTIONS / MAPS (no autoload reference: tests load this
 ## class before the autoloads exist).
-const FACTIONS := ["germany", "usa"]
+const FACTIONS := ["germany", "usa", "ussr"]
+## S15 M2: the pairs that may fight (the real rules' `[matchups] pairs`);
+## USA-USSR is refused, as in the shipped plan (free skirmish only).
+const PAIRS := [["germany", "usa"], ["germany", "ussr"]]
 const MAPS := ["kessel_ridge", "linden_brook", "harrow_cross"]
 
 ## Scripted opponent on/off (off: only stage() and explicit calls move it).
@@ -209,7 +212,12 @@ func ready() -> void:
 		_mismatch = "Waiting for a second player."
 		return
 	if _slots[0].faction == _slots[1].faction:
-		_mismatch = "Both players picked %s; factions must differ." % UiPalette.FACTION_NAMES.get(_slots[0].faction, _slots[0].faction)
+		_mismatch = "Both players picked %s; factions must differ." % UiPalette.faction_name(_slots[0].faction)
+		return
+	# S15 M6: the client resolves the pair like the real bridge (the relay
+	# only knows "differ"); the refusal is the lobby's `mismatch` text.
+	if not pair_allowed(_slots[0].faction, _slots[1].faction):
+		_mismatch = "%s cannot fight %s in this ruleset; pick another faction." % [UiPalette.faction_name(_slots[0].faction), UiPalette.faction_name(_slots[1].faction)]
 		return
 	_mismatch = ""
 	_slots[_slot].ready = true
@@ -235,6 +243,18 @@ func _ready_team() -> void:
 	if teams.size() < 2:
 		_mismatch = "the players must be on at least two teams"
 		return
+	# S15 M2 with S18 teams (merge): every two hostile slots of different
+	# factions must be a pair the rules allow (allies may be any two).
+	for i in _slots.size():
+		for j in range(i + 1, _slots.size()):
+			var a: Dictionary = _slots[i]
+			var b: Dictionary = _slots[j]
+			var ta := int(a.team) if int(a.team) >= 0 else 10 + i
+			var tb := int(b.team) if int(b.team) >= 0 else 10 + j
+			if ta == tb or a.faction == b.faction or pair_allowed(a.faction, b.faction):
+				continue
+			_mismatch = "%s cannot fight %s in this ruleset; pick another faction." % [UiPalette.faction_name(a.faction), UiPalette.faction_name(b.faction)]
+			return
 	_mismatch = ""
 	_slots[_slot].ready = true
 	if auto:
@@ -531,3 +551,11 @@ func _ai_slot(faction: String, team: int, difficulty: int) -> Dictionary:
 
 func _other(f: String) -> String:
 	return "usa" if f == "germany" else "germany"
+
+
+## Whether the mock's matchups let `a` fight `b` (PAIRS, either order).
+static func pair_allowed(a: String, b: String) -> bool:
+	for p in PAIRS:
+		if (p[0] == a and p[1] == b) or (p[0] == b and p[1] == a):
+			return true
+	return false

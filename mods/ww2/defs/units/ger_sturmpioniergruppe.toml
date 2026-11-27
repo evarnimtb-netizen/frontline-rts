@@ -35,9 +35,23 @@ count = 2
 weapon = "ww2:stg44"
 items = { "ww2:stielhandgranate" = 2, "ww2:nbhgr39" = 1 }
 
+# S14 (plan 4.2): the fourth man is a `when` pair under one slot name. With
+# `[flame] enabled` 0 (`flame_off`) he is today's StG 44 man; with 1
+# (`flame_on`) the same man is also the flamethrower's assistant, who takes
+# it up when the operator falls (S4 crew pickup). Historical: pioneers alone
+# carried flamethrowers, attached for an assault (US Intelligence Bulletin,
+# April 1944: 2 per 60-man pioneer platoon).
 [[members]]
-slot = "sturmpionier_stg"
+slot = "flammenwerfer_helfer"
+when = "flame_off"
 weapon = "ww2:stg44"
+items = { "ww2:stielhandgranate" = 2 }
+
+[[members]]
+slot = "flammenwerfer_helfer"
+when = "flame_on"
+weapon = "ww2:stg44"
+traits = ["crew_assistant"]
 items = { "ww2:stielhandgranate" = 2 }
 
 [[members]]
@@ -51,7 +65,19 @@ count = 2
 weapon = "ww2:mp40"
 items = { "ww2:stielhandgranate" = 2, "ww2:geballte_ladung" = 1 }
 
+# S14 (plan 4.2): the last man is a `when` pair. `flame_off`: today's MP 40
+# man; `flame_on`: the Flammenwerfer 41 operator (a P 38 when the tank is
+# dry, F1) with the same two stick grenades.
 [[members]]
-slot = "sturmpionier_smg"
+slot = "flammenwerfer"
+when = "flame_off"
 weapon = "ww2:mp40"
+items = { "ww2:stielhandgranate" = 2 }
+
+[[members]]
+slot = "flammenwerfer"
+when = "flame_on"
+weapon = "ww2:fmw41"
+sidearm = "ww2:p38"
+traits = ["crew_gunner"]
 items = { "ww2:stielhandgranate" = 2 }

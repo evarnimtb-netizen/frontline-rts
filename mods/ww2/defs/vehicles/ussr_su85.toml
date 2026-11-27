@@ -1,0 +1,199 @@
+# SU-85 (S15 Build C, docs/slices/S15-ussr.md 6.4): the casemate tank destroyer on the T-34 hull with the 85 mm D-5S;
+# deck places for tank riders (plan: 6). S13's 3-box armour: box 0 the lower hull, box 1 the rear upper hull (engine
+# deck), box 2 the casemate (the upper box: a casemate stays out of the hull body). Seats and parts on the StuG III G
+# and T-34-85 defs' pattern (positions approximate). Every figure not read in a source is an S15 starting value
+# (unverified).
+id = "ww2:ussr_su85"
+name = "SU-85"
+short_name = "SU-85"
+faction = "ww2:ussr"
+role = "tank_destroyer"
+# S15 starting value (S15-ussr.md 6.4; not tuned). Pop and cooldowns as the StuG III G card.
+cost = 500
+pop = 10
+recall_cooldown_s = 120
+initial_cooldown_s = 0
+sight_m = 175
+# A casemate on the T-34 hull, 2.45 m (unverified): as the StuG's low silhouette.
+spot_size_pct = 170
+eye_height_cm = 250
+sources = [
+  "Wikipedia, SU-85 (29.6 t, crew 4, 45 mm armour, 85 mm D-5 gun, 55 km/h, produced 1943-1944; read 2026-11-26)",
+  "docs/design/roster/vehicles.md 4.3 (front 45 mm at 50 deg, sides 45; 48 rounds; unverified)",
+  "docs/slices/S15-research-history.md 6 (48 rounds, about 20 deg traverse; unverified)",
+]
+crew_squad = "ww2:ussr_tank_crew"
+rare_cap = 4
+
+[mobility]
+type = "tracked"
+# 55 km/h road (Wikipedia, read) on the game's scale (Sherman 42 km/h = 650 cm/s).
+speed_cm_s = 850
+reverse_cm_s = 200
+turn_deg_s = 30
+accel_cm_s2 = 150
+brake_cm_s2 = 400
+max_slope_pct = 50
+ditch_block_dm = 19
+bog_pct = 6
+unbog_s = [20, 40]
+moving_spread_pct = 400
+
+[hull]
+track_band_pct = 75
+track_mm = 20
+
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 75], half = [300, 150, 40] }
+[boxes.armor]
+# As the T-34-85's lower hull (unverified).
+front = { thickness_mm = 45, slope_deg = 53 }
+side = { thickness_mm = 45 }
+rear = { thickness_mm = 45, slope_deg = 48 }
+top = { thickness_mm = 20 }
+
+[[boxes]]
+id = "superstructure"
+frame = "hull"
+box = { center = [-170, 0, 145], half = [130, 150, 30] }
+[boxes.armor]
+# The engine deck behind the casemate: upper side 45 at 40, rear 45 at 48, deck 20 (as the T-34-85; unverified).
+front = { thickness_mm = 45 }
+side = { thickness_mm = 45, slope_deg = 40 }
+rear = { thickness_mm = 45, slope_deg = 48 }
+top = { thickness_mm = 20 }
+
+[[boxes]]
+id = "casemate"
+frame = "hull"
+box = { center = [130, 0, 170], half = [170, 150, 55] }
+[boxes.armor]
+# Front 45 at 50 (plan), sides 45 at 20 (unverified angle), rear 45, roof 20 (unverified).
+front = { thickness_mm = 45, slope_deg = 50 }
+side = { thickness_mm = 45, slope_deg = 20 }
+rear = { thickness_mm = 45 }
+top = { thickness_mm = 20 }
+
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [200, 60, 110], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "gunner"
+role = "gunner"
+box = { frame = "hull", center = [110, 55, 150], half = [30, 25, 60] }
+in = "casemate"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "hull", center = [40, 55, 155], half = [30, 30, 60] }
+in = "casemate"
+
+[[seats]]
+id = "loader"
+role = "loader"
+box = { frame = "hull", center = [60, -55, 145], half = [30, 30, 70] }
+in = "casemate"
+
+[[weapons]]
+def = "ww2:ussr_d5s"
+mount = "casemate"
+pivot = [150, 0, 180]
+# From the pivot to the muzzle about 2 m past the casemate front (8.15 m long overall on a 6.1 m hull; unverified).
+# Kept inside the Panther's reach (570 cm): every def's reach pads the vehicle index of every match.
+muzzle = [360, 0, 0]
+# About 20 deg in all (S15-research-history.md 6, unverified).
+traverse_deg = [-10, 10]
+traverse_deg_s = 6
+elevate_deg_s = 4
+elevation_deg = [-5, 25]
+# 48 rounds (plan): 24 O-365, 20 BR-365, 4 BR-365P (unverified split).
+ammo = [
+  { id = "ww2:ussr_85mm_br365", count = 20 },
+  { id = "ww2:ussr_85mm_o365", count = 24 },
+  { id = "ww2:ussr_85mm_br365p", count = 4 },
+]
+barrel = { length_cm = 210, radius_cm = 9 }
+
+[[components]]
+type = "engine"
+hp = 100
+box = { frame = "hull", center = [-170, 0, 95], half = [60, 100, 45] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[components]]
+type = "track_left"
+hp = 100
+anchors = [{ pos = [260, 135, 45] }, { pos = [0, 135, 45] }, { pos = [-260, 135, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "track_right"
+hp = 100
+anchors = [{ pos = [260, -135, 45] }, { pos = [0, -135, 45] }, { pos = [-260, -135, 45] }]
+repair = { to_hp = 100, time_s = 30 }
+
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "hull", center = [110, 0, 175], half = [40, 20, 18] }
+
+[[components]]
+type = "ammo_rack"
+hp = 60
+boxes = [
+  { frame = "hull", center = [60, 110, 120], half = [55, 25, 35] },
+  { frame = "hull", center = [60, -110, 120], half = [55, 25, 35] },
+]
+
+[[components]]
+type = "transmission"
+hp = 100
+box = { frame = "hull", center = [-260, 0, 80], half = [30, 60, 35] }
+repair = { to_hp = 50, time_s = 60 }
+
+[[stations]]
+id = "driver_gunner"
+seats = ["driver", "gunner"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+[[hatches]]
+seats = ["commander", "gunner", "driver"]
+frame = "hull"
+pos = [40, 55, 225]
+exit_ms = 3500
+
+[[hatches]]
+seats = ["loader"]
+frame = "hull"
+pos = [60, -55, 225]
+exit_ms = 3000
+
+# S15 R1 (S15-3 (A)): tank riders (tankovy desant) on the engine deck behind the turret, outside every plate;
+# 6 places (S15-ussr.md 6.4). Positions approximate (hull frame, cm); a seated man's box as the half-track's slots.
+# Board time per man an S15 starting value (as the W2 stand-in). Dropped at setup while [riders] enabled is 0.
+[riders]
+capacity = 6
+entry = [-300, 0, 60]
+board_ms = 1000
+
+[[rider_slots]]
+box = { center = [-150, 65, 220], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-150, -65, 220], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-210, 65, 220], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-210, -65, 220], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-270, 65, 220], half = [22, 20, 45] }
+[[rider_slots]]
+box = { center = [-270, -65, 220], half = [22, 20, 45] }

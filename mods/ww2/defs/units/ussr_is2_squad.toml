@@ -1,0 +1,13 @@
+# The IS-2 as a buyable squad of one (S15 Build C): the heavy wave card (as the Tiger I card); H1 buys it by its own path.
+# Cost, pop, call-in time and sight are on the vehicle def; card values are S15 starting values (no tuning).
+id = "ww2:ussr_is2_squad"
+name = "IS-2"
+short_name = "IS-2"
+faction = "ww2:ussr"
+tags = ["vehicle", "heavy_wave"]
+vehicle = "ww2:ussr_is2"
+# AI weight (S15-ussr.md 6.4).
+ai_weight = 0
+ai_heavy = true
+max_alive = 1
+limit_group = "ww2:heavy"

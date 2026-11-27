@@ -1,0 +1,18 @@
+# S14 ablation (plan 2, 10): no burning ground (S14 Fix 7: the switch
+# `[flame] patches` 0; `patch_hp_per_s` 0 still set men burning), the rest
+# on. Run by the later balance pass.
+[flame]
+enabled = 1
+patches = 0
+
+[melee]
+enabled = 1
+
+[clear]
+enabled = 1
+
+[ai.flame]
+jobs = 1
+refuel = 1
+buy = 1
+clear = 1

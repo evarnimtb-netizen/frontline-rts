@@ -30,14 +30,49 @@ items = { "ww2:mk2_grenade" = 2, "ww2:m15_smoke" = 1 }
 
 [[members]]
 slot = "rifleman_smoke"
-count = 2
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1, "ww2:m15_smoke" = 1 }
+
+# S14 (plan 4.2): the second smoke rifleman is a `when` pair. `flame_off`
+# (`[flame] enabled` 0): today's man; `flame_on`: the same man, also the
+# flamethrower's assistant (he takes it up when the operator falls). Men,
+# order and kit with `flame_off` are exactly the S13 card's.
+[[members]]
+slot = "rifleman_smoke_flame"
+when = "flame_off"
 weapon = "ww2:m1_garand"
 items = { "ww2:mk2_grenade" = 1, "ww2:m15_smoke" = 1 }
 
 [[members]]
-slot = "rifleman"
-count = 3
+slot = "rifleman_smoke_flame"
+when = "flame_on"
 weapon = "ww2:m1_garand"
+traits = ["crew_assistant"]
+items = { "ww2:mk2_grenade" = 1, "ww2:m15_smoke" = 1 }
+
+[[members]]
+slot = "rifleman"
+count = 2
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }
+
+# S14 (plan 4.2): the third rifleman is a `when` pair. `flame_off`: today's
+# man; `flame_on`: the M1A1 flamethrower operator (an M1911A1 when the tank
+# is dry, F1) with the same grenade. The June 1944 assault teams carried the
+# M1A1 (about 150 landed on D-Day; Wikipedia, M1 flamethrower); the roster's
+# M2-2 is a def with no card (S14-research-history.md 2).
+[[members]]
+slot = "rifleman_flame"
+when = "flame_off"
+weapon = "ww2:m1_garand"
+items = { "ww2:mk2_grenade" = 1 }
+
+[[members]]
+slot = "rifleman_flame"
+when = "flame_on"
+weapon = "ww2:m1a1_flamethrower"
+sidearm = "ww2:m1911a1"
+traits = ["crew_gunner"]
 items = { "ww2:mk2_grenade" = 1 }
 
 [[members]]

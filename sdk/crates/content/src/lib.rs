@@ -34,8 +34,8 @@ pub mod vehicle;
 
 pub use defs::{
     CartridgeDef, FactionDef, ITEM_KINDS, ItemDef, ItemKind, MAX_COOLDOWN_S,
-    MAX_INITIAL_COOLDOWN_S, MapFileDef, RulesDef, SquadDef, SquadRole, SupplyDef, SupplyKind,
-    WeaponClass, WeaponDef,
+    MAX_INITIAL_COOLDOWN_S, MapFileDef, MatchupsDef, RulesDef, SquadDef, SquadRole, SupplyDef,
+    SupplyKind, WeaponClass, WeaponDef,
 };
 pub use issue::{ContentError, Issue};
 pub use modset::{ModDefs, ModManifest, OverrideChange};
@@ -46,7 +46,7 @@ pub use scenario::{
 pub use setup::{
     Difficulty, DigProfile, Fixed, FixedVec2, MatchRequest, MatchSetup, PlayerRequest, PlayerSetup,
 };
-pub use variant::{MemberDef, TrainingDef};
+pub use variant::{MemberDef, MemberWhen, TrainingDef};
 pub use vehicle::{
     AmmoDef, AmmoMechanism, COMPONENTS, ComponentKind, Frame, MAX_ARMOUR_BOXES, MAX_ZONES,
     MobilityKind, MountKind, PLATE_GROUPS, PlateGroup, SEAT_ROLES, SeatRole, SlopeClass,

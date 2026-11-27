@@ -592,6 +592,8 @@ pub fn weapon_cue(class: WeaponClass) -> &'static str {
         WeaponClass::Launcher => "rocket",
         // S3c: crew pistols sound like the rifle cue until they get one.
         WeaponClass::Pistol => "rifle",
+        // S14: the MG cue until the presenter stage gives flame its own.
+        WeaponClass::Flame => "mg",
     }
 }
 

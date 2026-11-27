@@ -1,0 +1,27 @@
+# SG-43 Goryunov (S15 Build B): 250-round belt, 500-700 rounds a minute,
+# 800 m/s, 41 kg on its wheeled mount, adopted May 1943 (Wikipedia "SG-43
+# Goryunov", read 2026-11-26). A def without a card (S15-11 (A)): the
+# Maxim stays the MG section's gun. S15 starting values.
+id = "ww2:ussr_sg43"
+name = "SG-43"
+short_name = "SG-43"
+class = "mg"
+feed = "ww2:ussr_762x54r_belt"
+load = 250
+sources = [
+    "Wikipedia, SG-43 Goryunov (250-round belt, 500-700 rpm, 800 m/s, 41 kg on the mount, May 1943; read 2026-11-26)",
+]
+range_m = 600
+damage = 45
+rounds_per_min = 600
+magazine = 250
+reload_ms = 6000
+spread_mrad = 12
+penetration = [[0, 7], [100, 5], [300, 3]]
+core = { damage = 30, length_cm = 30, max_boxes = 1 }
+setup_ms = 3000
+suppression = 14
+handover_ms = 3000
+burst_rounds = 10
+burst_pause_ms = 1000
+muzzle_velocity_m_s = 800

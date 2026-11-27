@@ -11,7 +11,7 @@ use std::sync::Arc;
 use godot::classes::{IRefCounted, Os, ProjectSettings, RefCounted};
 use godot::prelude::*;
 
-use crate::match_setup::{find_mods_dir, load_defs, mods_candidates};
+use crate::match_setup::{MenuChoice, find_mods_dir, load_defs, menu_options, mods_candidates};
 use crate::net_session::{ChoiceUpdate, NetSession};
 use frontline_net::protocol::AiPick;
 
@@ -184,6 +184,43 @@ impl FrontlineNet {
         frontline_net::build_id().as_str().into()
     }
 
+    /// S15 P (M3): what the menus offer, from the rules on disk now (loads
+    /// the mod, no lobby needed): `{ factions: [{id, name, color}],
+    /// opponents: { <id>: [ids, default first] }, mirror: bool }`. Empty
+    /// when the content cannot be loaded (the menu keeps today's two).
+    #[func]
+    fn match_options(&mut self, test_unlock: bool) -> VarDictionary {
+        let Some(defs) = self.read_defs(test_unlock) else {
+            return VarDictionary::new();
+        };
+        let choice = MenuChoice {
+            test_unlock,
+            ..MenuChoice::default()
+        };
+        let o = menu_options(&defs, &choice);
+        let mut factions = VarArray::new();
+        for (id, name, color) in &o.factions {
+            factions.push(
+                &vdict! {
+                    "id" => id.as_str(),
+                    "name" => name.as_str(),
+                    "color" => color.as_str(),
+                }
+                .to_variant(),
+            );
+        }
+        let mut opponents = VarDictionary::new();
+        for (f, list) in &o.opponents {
+            let arr: PackedStringArray = list.iter().map(|x| GString::from(x.as_str())).collect();
+            opponents.set(f.as_str(), &arr);
+        }
+        vdict! {
+            "factions" => &factions,
+            "opponents" => &opponents,
+            "mirror" => o.mirror,
+        }
+    }
+
     /// Lobby snapshot (`godot/docs/net_api.md`): state, slot, slots (name,
     /// faction, ping_ms, ready, team, ai), players, seed, map, input_delay,
     /// suggested_delay, mismatch, countdown_s, error, error_detail,
@@ -229,21 +266,7 @@ impl FrontlineNet {
     /// edited TOML is never stale; a player whose data differs is refused
     /// with `content_mismatch`).
     fn load_defs(&mut self) -> bool {
-        let explicit = self.mods_dir.to_string();
-        let project = ProjectSettings::singleton()
-            .globalize_path("res://")
-            .to_string();
-        let candidates = mods_candidates(
-            (!explicit.is_empty()).then(|| Path::new(&explicit)),
-            Some(Path::new(&project)),
-        );
-        let loaded = find_mods_dir(&candidates)
-            .ok_or_else(|| format!("cannot find mods/ww2 (looked in {candidates:?})"))
-            .and_then(|dir| {
-                load_defs(&dir, self.session.test_unlock())
-                    .map_err(|e| format!("{}: {e}", dir.display()))
-            });
-        match loaded {
+        match self.read_defs_checked(self.session.test_unlock()) {
             Ok(defs) => {
                 self.session.set_defs(Arc::new(defs));
                 true
@@ -254,5 +277,32 @@ impl FrontlineNet {
                 false
             }
         }
+    }
+
+    /// The mod's defs for the menus (an error is logged, not reported).
+    fn read_defs(&self, test_unlock: bool) -> Option<frontline_content::ModDefs> {
+        match self.read_defs_checked(test_unlock) {
+            Ok(d) => Some(d),
+            Err(e) => {
+                godot_error!("FrontlineNet: {e}");
+                None
+            }
+        }
+    }
+
+    fn read_defs_checked(&self, test_unlock: bool) -> Result<frontline_content::ModDefs, String> {
+        let explicit = self.mods_dir.to_string();
+        let project = ProjectSettings::singleton()
+            .globalize_path("res://")
+            .to_string();
+        let candidates = mods_candidates(
+            (!explicit.is_empty()).then(|| Path::new(&explicit)),
+            Some(Path::new(&project)),
+        );
+        find_mods_dir(&candidates)
+            .ok_or_else(|| format!("cannot find mods/ww2 (looked in {candidates:?})"))
+            .and_then(|dir| {
+                load_defs(&dir, test_unlock).map_err(|e| format!("{}: {e}", dir.display()))
+            })
     }
 }

@@ -1,0 +1,12 @@
+# The BA-64B as a buyable squad of one (S15 Build C): the armoured car (its own buy, as the M8).
+# Cost, pop, call-in time and sight are on the vehicle def; card values are S15 starting values (no tuning).
+id = "ww2:ussr_ba64b_squad"
+name = "BA-64B"
+short_name = "BA-64B"
+faction = "ww2:ussr"
+tags = ["vehicle", "recon"]
+vehicle = "ww2:ussr_ba64b"
+# AI weight (S15-ussr.md 6.4).
+ai_weight = 5
+# Most alive per player: 2, as the M8. Outside the vehicle limit.
+max_alive = 2

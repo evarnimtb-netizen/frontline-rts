@@ -1,0 +1,24 @@
+# 45 mm anti-tank gun M1942 (M-42) (S15 Build C, S15-ussr.md 6.3): the light AT gun; rounds are on the vehicle mount.
+# Game values not in a source are S15 starting values (no tuning).
+id = "ww2:ussr_m42_45mm"
+name = "45 mm M-42"
+class = "cannon"
+# Engagement range, m (as every tank and AT gun of the mod).
+range_m = 600
+# A direct hit on a man, HP.
+damage = 300
+# 15-20 rounds/min (Wikipedia, read): the lower figure.
+rounds_per_min = 15
+magazine = 1
+# Reload, ms: 60000 / rounds_per_min.
+reload_ms = 4000
+# 2.5 mrad stationary, urad (as the German and US guns).
+spread_urad = 2500
+muzzle_velocity_m_s = 870
+suppression = 25
+# Muzzle blast: seen at 300 % of sight (as the other guns).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+sources = [
+  "Wikipedia, 45 mm anti-tank gun M1942 (M-42): 625 kg, crew 6, 15-20 rpm, traverse 60 deg, -8 to +25 deg, 870 m/s (read 2026-11-26)",
+]

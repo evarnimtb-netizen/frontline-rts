@@ -1,0 +1,11 @@
+# The Studebaker US6 as a buyable squad of one (S15 Build C): the supply truck and every gun card's tow. Cost, pop,
+# call-in time and sight are in the vehicle def. S15 starting values (the CCKW card).
+id = "ww2:ussr_us6_squad"
+name = "Studebaker US6 truck"
+short_name = "US6"
+faction = "ww2:ussr"
+tags = ["vehicle", "truck"]
+vehicle = "ww2:ussr_us6"
+max_alive = 2
+# S15-ussr.md 6.4: AI weight 5 (its own buy, as the CCKW).
+ai_weight = 5

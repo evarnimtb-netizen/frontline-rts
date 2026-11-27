@@ -152,7 +152,21 @@ kind the relay may not send. Clients cannot send relay messages.
   `DigProfile` 9 aid-post pit and, in S12a Build B (same version, not yet
   shipped), `StockSetup::beds` and `staff_min` (two `u8` after the box
   list). The save version is `-s30`. The one bump for the S12 slice.
-- Version 18 (S18, online teams) opens up to four slots
+- Version 17 (S14) adds two commands at the end of `CommandKind`:
+  `ClearTrench { squad, at }` (a `u32` squad id, a Q16.16 point) and
+  `Strike { units }` (1 to 150 ids). The sim refuses both
+  (`FortRefusal::NotAllowed`) until S14a Builds B and C, and then with
+  `[clear] enabled` 0 / `[melee] enabled` 0. The setup gains the
+  `[flame]`, `[melee]`, `[clear]` and `[ai.flame]` tables, `WeaponClass`
+  7 `Flame`, a member's `when` and (S14a Build C, same version) a
+  weapon's optional `melee` (`reach_cm`, `damage`, `windup_ms`,
+  `recover_ms`: an `Option` of four `u32` after `core`). The save
+  version is `-s33` (S15, no protocol change, moved it to `-s34`).
+  The one bump for the S14 slice.
+- Version 18 (S16 roads, S17 teams, S18 online teams; one bump over S14's
+  17 when the branches merged) carries S16a's setup additions
+  (`MapSetup::roads`, `[vehicles.road]`, `MobilitySetup::road_speed_pct`)
+  and opens up to four slots
   (`MAX_SLOTS`): `LobbySet` gains `team`, and for the host `players` and
   the AI fill `ai`; `Ready` carries the lobby revision `rev`; new
   `Up::TakeSlot(u8)`, `Up::MapPing { x, y }`, `Down::Slot(u8)` and
@@ -161,7 +175,7 @@ kind the relay may not send. Clients cannot send relay messages.
   `Start` names every slot in `players: Vec<StartPlayer>` (replacing
   `factions` and `names`); `Desync.hashes` and `Bundle.peers` have one
   entry per slot. The setup gains `[teams] handover`, `handover_pop` and
-  `ping_gap_s`, and the save version moves to 35 (the hand-over state).
+  `ping_gap_s`, and the save version moves to 35 (over S14/S15's 34).
   A 1v1 plays as before: the lobby holds two slots until the host opens
   more, and a two-slot match closes turns and checks hashes exactly as
   version 17 did.
@@ -194,6 +208,7 @@ Checked on every decode. A datagram that breaks any limit is dropped whole.
 | Men per `PlaceBangalore` (version 13) | 1–150 (`MAX_UNITS`) |
 | `ClearMines` lane length (version 14) | 0–200 m (`MAX_LANE_M`) |
 | Men per `Tend`, `Carry`, `Evacuate` (version 16) | 1–150 (`MAX_UNITS`) |
+| Men per `Strike` (version 17) | 1–150 (`MAX_UNITS`) |
 | Turns per `Input` | 64 |
 | Turns per `Bundle` datagram | 300 |
 | Commands per bundled turn | 68 (4 slots × (16 + 1 relay-injected `Surrender`)) |

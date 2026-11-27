@@ -497,6 +497,10 @@ pub struct PlayerState {
     pub s11b: crate::fire_mission::S11bCounters,
     /// S12: wound, medic and reinforcement counters (report).
     pub s12: crate::wounds::S12Counters,
+    /// S14: flame, strike and clear counters (report).
+    pub s14: crate::flame::S14Counters,
+    /// S15: plate, rider, captured-bomb and bayonet counters (report).
+    pub s15: crate::s15::S15Counters,
     /// S18 H1: the squads handed to this player by a surrendered ally
     /// (ascending, ids never reused; `crate::handover`).
     pub handed: Vec<SquadId>,
@@ -595,7 +599,11 @@ pub mod kill_class {
     pub const OTHER: u16 = 10;
     /// S11b G4: an HE rifle grenade (a launcher round whose ammo is HE).
     pub const RIFLE_GRENADE: u16 = 11;
-    pub const COUNT: usize = 12;
+    /// S14 F8: a flame particle, a burn or burning ground.
+    pub const FLAME: u16 = 12;
+    /// S14 M4: a melee strike.
+    pub const MELEE: u16 = 13;
+    pub const COUNT: usize = 14;
 
     /// S7: a class value may carry the shooting vehicle's type above its
     /// low nibble (`class | (type + 1) << 4`) so per-type kills need no new
@@ -644,6 +652,8 @@ pub mod kill_class {
         "frag",
         "other",
         "rifle_grenade",
+        "flame",
+        "melee",
     ];
 }
 
@@ -792,6 +802,15 @@ pub struct MatchState {
     /// S12 W5: the downed men, by id (at most `wounds::MAX_CASUALTIES`;
     /// saved, hashed, validated).
     pub(crate) casualties: BTreeMap<SimId, crate::wounds::Casualty>,
+    /// S14 F1-F2: flame particles in flight, ascending id (never in the
+    /// projectile pool; at most `[flame] particles_per_player` a player).
+    pub(crate) flame: Vec<crate::flame::Flame>,
+    pub(crate) next_flame: u32,
+    /// S14 F5: burning ground, ascending id (at most `[flame] patches_max`).
+    pub(crate) patches: Vec<crate::flame::Patch>,
+    pub(crate) next_patch: u32,
+    /// S14 C1-C5: squads clearing a trench.
+    pub(crate) clears: crate::flame::Clears,
     /// S17a: the team table (`crate::teams`), derived from the setup: not
     /// saved and not hashed (the setup is); rebuilt by
     /// [`MatchState::rebuild_derived`] after load.
@@ -870,6 +889,8 @@ impl MatchState {
                 cb: Vec::new(),
                 s11b: crate::fire_mission::S11bCounters::default(),
                 s12: crate::wounds::S12Counters::default(),
+                s14: crate::flame::S14Counters::default(),
+                s15: crate::s15::S15Counters::default(),
                 handed: Vec::new(),
                 handed_to: None,
             })
@@ -932,6 +953,11 @@ impl MatchState {
             fort_events: Vec::new(),
             fort_off: false,
             casualties: BTreeMap::new(),
+            flame: Vec::new(),
+            next_flame: 0,
+            patches: Vec::new(),
+            next_patch: 0,
+            clears: BTreeMap::new(),
             teams,
             setup,
         }
@@ -1244,7 +1270,7 @@ impl MatchState {
         }
         // S9: an order that sends men away takes them off their guns first.
         self.crew_ordered_off(ctx, p, &c.kind);
-        match &c.kind {
+        let ok = match &c.kind {
             CommandKind::MoveSoldier { .. }
             | CommandKind::Spawn { .. }
             | CommandKind::Despawn { .. } => false,
@@ -1358,6 +1384,10 @@ impl MatchState {
             }
             CommandKind::Evacuate { units } => self.order_evacuate(ctx, p, units),
             &CommandKind::Reinforce { squad } => self.order_reinforce(ctx, p, squad),
+            // S14 C1 (`crate::flame`; refused with `[clear] enabled` 0).
+            &CommandKind::ClearTrench { squad, at } => self.order_clear(ctx, p, squad, at),
+            // S14 M2 (`crate::flame`; refused with `[melee] enabled` 0).
+            CommandKind::Strike { units } => self.order_strike(ctx, p, units),
             CommandKind::PlaceBangalore { units, target } => {
                 self.place_bangalore(ctx, p, units, *target)
             }
@@ -1372,7 +1402,12 @@ impl MatchState {
             CommandKind::Hitch { guns, tow } => self.order_hitch(ctx, p, guns, *tow),
             CommandKind::Unhitch { guns } => self.order_unhitch(ctx, p, guns),
             CommandKind::SetAmbush { guns, range_m } => self.order_ambush(ctx, p, guns, *range_m),
+        };
+        // S14 C1: any later order to a clearing squad ends its clear.
+        if ok && !self.clears.is_empty() {
+            self.clear_ended_by(ctx, &c.kind);
         }
+        ok
     }
 
     /// Whether `vehicle` is a live vehicle of `player` (an escort's).
@@ -2530,6 +2565,8 @@ impl MatchState {
             self.next_squad,
             self.next_unit_dig,
             self.next_thrown,
+            self.next_flame,
+            self.next_patch,
             self.next_smoke,
             self.next_mission,
             self.supply6.next_structure,
@@ -2548,6 +2585,10 @@ impl MatchState {
         self.fort.validate(s, ents, &self.squads, tick)?;
         // S12.
         self.validate_s12(ents, tick)?;
+        // S14.
+        self.validate_s14(ents, tick)?;
+        // S15.
+        self.validate_s15(ents)?;
         if self.players.len() != np
             || self.path_queue.queues.len() != np
             || self.path_queue.cursor as usize >= np
@@ -2901,6 +2942,8 @@ impl MatchState {
             return Err("spotting cursor out of range");
         }
         let bandage_ticks = s.rules.wounds.bandage_s as u64 * s.tick_hz as u64;
+        let burn_max = crate::bounds::MAX_TICK + self.s14_limits().burn_ticks;
+        let map_side = Fx::from_int(s.map.size_m);
         for (i, c) in ents.combat.iter().enumerate() {
             let kind = ents.kind[i];
             let vehicle = matches!(
@@ -2917,6 +2960,8 @@ impl MatchState {
                 || (kind == EntityKind::Downed
                     && (c.hp == 0 || c.corpse != 0 || ents.squad[i].is_some()))
                 || !crate::wounds::wound_ok(kind, &c.wound, np, s.vehicles.len(), bandage_ticks)
+                // S14.
+                || !crate::flame::close_ok(kind, &c.close, np, s.vehicles.len(), burn_max, map_side)
                 || (vehicle
                     && *c
                         != crate::ecs::Combat {
@@ -3189,7 +3234,7 @@ fn dig_consistent(
 
 /// Stops `sq` where its men stand, facing `facing` (kept if zero).
 /// S8a: the infantry squad a squad-level command addresses, if any.
-fn command_squad(kind: &CommandKind) -> Option<SquadId> {
+pub(crate) fn command_squad(kind: &CommandKind) -> Option<SquadId> {
     match kind {
         CommandKind::Move { squad, .. }
         | CommandKind::AttackMove { squad, .. }

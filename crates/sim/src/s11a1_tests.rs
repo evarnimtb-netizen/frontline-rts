@@ -245,7 +245,9 @@ fn seventeen_vehicle_types_keep_their_kill_rows() {
         // Build B: 15 base defs + the leIG 18 and the M3; S11b Build B:
         // + the leFH 18, the M2A1 and the pack howitzer; S13a Build B: + the
         // Panther, Tiger, 76 mm Sherman, M36 and Jumbo; one clone more.
-        assert_eq!(s.vehicles.len(), 25, "ww2 has 25 vehicle defs with S13a");
+        // S15 Build C: + 12 Soviet defs (five guns, the US6, six vehicles);
+        // S15 Fix: + the US6 gun tractor.
+        assert_eq!(s.vehicles.len(), 38, "ww2 has 38 vehicle defs with S15");
         let v = s.vehicles[pz].clone();
         s.vehicles.push(v);
         let t = s
@@ -253,14 +255,14 @@ fn seventeen_vehicle_types_keep_their_kill_rows() {
             .iter_mut()
             .find(|t| t.id == "ww2:ger_pz4_h_squad")
             .unwrap();
-        t.vehicle = Some(25);
+        t.vehicle = Some(38);
     });
     let sq = spawn(&mut w, 0, "ww2:ger_pz4_h_squad", 300, 300);
     steps(&mut w, 2);
     let g = w.game().unwrap();
     let v = g.squads[&sq].members[0];
-    assert_eq!(g.vehicles()[&v].type_idx, 25);
-    assert_eq!(g.players[1].s7.kills_by_vehicle.len(), 26);
+    assert_eq!(g.vehicles()[&v].type_idx, 38);
+    assert_eq!(g.players[1].s7.kills_by_vehicle.len(), 39);
     let cannon = g
         .setup()
         .weapons
@@ -269,7 +271,7 @@ fn seventeen_vehicle_types_keep_their_kill_rows() {
         .unwrap() as u16;
     let class = g.round_class(&w.state.entities, cannon, u16::MAX, v);
     assert_eq!(kill_class::base(class), kill_class::TANK_AP);
-    assert_eq!(kill_class::vehicle(class), Some(25));
+    assert_eq!(kill_class::vehicle(class), Some(38));
     // Every type up to the cap keeps both parts.
     for t in [0u16, 14, 15, 16, 4094] {
         let k = kill_class::with_vehicle(kill_class::FRAG, t);

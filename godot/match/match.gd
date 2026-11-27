@@ -53,6 +53,8 @@ var supply_view: Node3D
 var fort_view: Node3D
 ## S12: wound pips, groundsheets, stretchers, armbands, cots (`match/wound_view.gd`).
 var wound_view: Node3D
+## S14: flame stream, burning ground and men, strike pose (`match/flame_view.gd`).
+var flame_view: Node3D
 ## Screenshot staging: [seconds before the capture, Callable] still to run.
 var _capture_hooks: Array = []
 
@@ -73,6 +75,9 @@ func _ready() -> void:
 	wound_view = preload("res://match/wound_view.gd").new()
 	wound_view.name = "Wounds"
 	add_child(wound_view)
+	flame_view = preload("res://match/flame_view.gd").new()
+	flame_view.name = "Flame"
+	add_child(flame_view)
 	var h: Callable = source.height_at
 	camera.height_fn = h
 	view.height_fn = h
@@ -189,6 +194,7 @@ func _process(_delta: float) -> void:
 	supply_view.update_state(s)
 	fort_view.update_state(s)
 	wound_view.update_state(s)
+	flame_view.update_state(s)
 	if mock_world != null:
 		mock_world.update_state(s)
 	if world_fx != null:

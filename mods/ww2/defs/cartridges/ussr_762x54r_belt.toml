@@ -1,0 +1,8 @@
+# 7.62x54R in 250-round belts for the Maxim M1910/30 and the SG-43 (S15
+# Build B). About 32 g a round with belt and box: unverified, S15 starting
+# value.
+id = "ww2:ussr_762x54r_belt"
+name = "7.62 mm (belted)"
+caliber_mm = 8
+supply = { kind = "small_arms", g = 32 }
+sources = ["S15 starting value: round about 22 g plus belt and box (unverified)"]

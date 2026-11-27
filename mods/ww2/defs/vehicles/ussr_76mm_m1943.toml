@@ -1,0 +1,174 @@
+# 76 mm regimental gun M1943 (OB-25) (S15 Build C, S15-ussr.md 6.3): the infantry gun, gun missions as the leIG 18.
+# Layout, mobility, parts and service places are the ger_leig18 def's (positions approximate);
+# figures not read in a source are S15 starting values (unverified).
+id = "ww2:ussr_76mm_m1943"
+name = "76 mm regimental gun M1943"
+short_name = "76 mm M1943"
+faction = "ww2:ussr"
+role = "inf_gun"
+crew_model = "served"
+# Mass in firing position, kg (Wikipedia, read).
+mass_kg = 600
+# Card price, MP (artillery-on-map.md 4.7: 320; no German cut for gun cards, S9-4).
+# S15 starting value (copied from the nearest German or US card, not tuned).
+cost = 300
+# The gun's pop is 2 (artillery-on-map.md 4.7 "the crew plus 2 for the gun";
+# the crew are counted as soldiers, S9-5).
+pop = 2
+# Card cooldown 90 s, unlock 3:00 (artillery-on-map.md 4.7).
+recall_cooldown_s = 90
+initial_cooldown_s = 180
+# Sight, m (the crew's eye, as the S9 guns).
+sight_m = 175
+# Silhouette (as the Pak 38; verify).
+spot_size_pct = 85
+# Eye height, cm (kneeling behind the sight; verify).
+eye_height_cm = 110
+crew_squad = "ww2:ussr_gun_crew_76mm_m1943"
+rare_cap = 0
+sources = [
+  "Wikipedia, 76 mm regimental gun M1943: 600 kg, -8 to +25 deg, traverse 60 deg (read 2026-11-26)",
+  "S15-ussr.md 6.3 (cost; BP-350M HEAT left out: no HEAT rule for guns); 12 rounds as the leIG 18 (unverified)",
+]
+
+[mobility]
+type = "towed"
+# Full-crew push speed on flat firm ground, cm/s (guns-artillery.md 7.1 push_cm_s; verify).
+speed_cm_s = 60
+reverse_cm_s = 60
+# Crew turn rate when pushed, deg/s (verify).
+turn_deg_s = 25
+accel_cm_s2 = 50
+brake_cm_s2 = 200
+# Steepest slope the crew push it up, % (push_max_slope_pct).
+max_slope_pct = 15
+# Ground dug this deep blocks the wheels (dm; wheel_block_dm).
+ditch_block_dm = 6
+# A gun does not bog when pushed.
+bog_pct = 0
+unbog_s = [0, 0]
+# Fired only from emplaced, so no moving spread.
+moving_spread_pct = 100
+# Men for full push speed (push_men).
+push_men = 4
+# Seconds to emplace (limbered -> firing), pack, hitch or unhitch.
+emplace_s = 20
+pack_s = 12
+hitch_s = 15
+# Seconds to re-lay the trail for a target outside the arc (verify).
+relay_trail_s = 10
+# Gun origin to the trail tip that goes on the hitch, cm (the rigid bar; matches the trail box).
+tow_bar_cm = 310
+
+[hull]
+# No tracks: no running-gear band.
+track_band_pct = 0
+track_mm = 0
+
+# Armour boxes as the Pak 38 (S9: thin on purpose, a bullet that misses the
+# shield reaches a man). Shield 1.0 m wide, 0.9 m tall (Build B contract;
+# plates as the Pak 38, verify).
+[[boxes]]
+id = "axle"
+frame = "hull"
+box = { center = [0, 0, 45], half = [15, 95, 20] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+[[boxes]]
+id = "shield"
+frame = "hull"
+box = { center = [40, 0, 65], half = [4, 50, 45] }
+[boxes.armor]
+front = { thickness_mm = 8, slope_deg = 18 }
+side = { thickness_mm = 4 }
+rear = { thickness_mm = 4, slope_deg = 18 }
+top = { thickness_mm = 4 }
+
+[[boxes]]
+id = "trail"
+frame = "hull"
+box = { center = [-170, 0, 25], half = [140, 20, 25] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+# The crew's places, priority order (the last listed living man moves up
+# for a dead gunner, then loader). Each slot's capsule must clear the boxes.
+[[service]]
+role = "gunner"
+at = [-60, 55, 0]
+pose = "kneel"
+[[service]]
+role = "loader"
+at = [-60, -55, 0]
+pose = "kneel"
+[[service]]
+role = "commander"
+at = [-300, 80, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, 75, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, -75, 0]
+pose = "kneel"
+
+# The gun optic inside the arc (as the S9 guns, S9-1 (A)): 175 m x 250 % = 437 m.
+[optic]
+sight_pct = 250
+
+[[weapons]]
+def = "ww2:ussr_m1943_76mm"
+mount = "casemate"
+# Gun pivot in the gun frame, cm (a low carriage; verify).
+pivot = [0, 0, 70]
+# Muzzle from the pivot, cm (a short L/11.8 barrel, about 0.9 m; verify).
+muzzle = [90, 0, 5]
+# Traverse arc, deg (artillery-on-map.md / spec C1: -5..+6; verify).
+traverse_deg = [-30, 30]
+# Hand traverse and elevation, deg/s (as the Pak 38; verify).
+traverse_deg_s = 8
+elevate_deg_s = 5
+# Elevation, deg (artillery-on-map.md 2.1 "-10 to +73").
+elevation_deg = [-8, 25]
+# 12 Igr 18 HE (spec C1; verify).
+ammo = [{ id = "ww2:ussr_76mm_of350_rg", count = 12 }]
+barrel = { length_cm = 90, radius_cm = 5 }
+
+# Parts (S9-11 (A)): destroying `gun` knocks the gun out; `sight` and
+# `recoil` can be field-repaired; wheels only stop it moving.
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "hull", center = [-30, 0, 85], half = [30, 15, 15] }
+
+[[components]]
+type = "ammo_rack"
+hp = 40
+box = { frame = "hull", center = [-120, -60, 20], half = [30, 25, 15] }
+
+[[components]]
+type = "wheels_front"
+hp = 60
+anchors = [{ pos = [0, 85, 40] }, { pos = [0, -85, 40] }]
+repair = { to_hp = 60, time_s = 30 }
+
+[[components]]
+type = "sight"
+hp = 30
+anchors = [{ pos = [-15, 30, 110] }]
+repair = { to_hp = 30, time_s = 30 }
+
+[[components]]
+type = "recoil"
+hp = 50
+box = { frame = "hull", center = [10, 0, 75], half = [25, 10, 10] }
+repair = { to_hp = 50, time_s = 45 }

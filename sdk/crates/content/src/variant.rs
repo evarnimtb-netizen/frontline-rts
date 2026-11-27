@@ -62,6 +62,55 @@ pub struct MemberDef {
     /// missions at `fire_mission.observe_observer_m`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub traits: Vec<String>,
+    /// S14 (plan 4.2): `flame_on` or `flame_off`: the slot exists only with
+    /// `[flame] enabled` 1, or only with 0 (absent: always). A `when` slot
+    /// comes as a pair, `flame_off` then `flame_on`, under one slot name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<MemberWhen>,
+    /// S15 P1-P5 (docs/slices/S15-ussr.md 5.2): a plate each man of the
+    /// slot wears, e.g. `armour = { mm = 2.0, zone = "torso", arc_deg =
+    /// 120 }`. Dropped at setup while `[body_armour] enabled` is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub armour: Option<BodyArmourDef>,
+}
+
+/// S15 P1: a member's plate (`MemberDef::armour`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BodyArmourDef {
+    /// Plate thickness (mm, one decimal), 0.5..=10.
+    #[schemars(with = "f64")]
+    pub mm: crate::vehicle::TenthsMm,
+    /// The hit zone it covers: `torso` (the only one in S15a).
+    #[serde(default = "torso")]
+    pub zone: String,
+    /// The front arc it covers (deg, centred on his facing), 1..=360.
+    pub arc_deg: u32,
+}
+
+fn torso() -> String {
+    "torso".into()
+}
+
+/// S14: when a member slot exists (`MemberDef::when`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MemberWhen {
+    /// Only with `[flame] enabled` 1.
+    FlameOn,
+    /// Only with `[flame] enabled` 0.
+    FlameOff,
+}
+
+impl MemberDef {
+    /// Whether this slot exists with `[flame] enabled` = `flame_on`.
+    pub fn active(&self, flame_on: bool) -> bool {
+        match self.when {
+            None => true,
+            Some(MemberWhen::FlameOn) => flame_on,
+            Some(MemberWhen::FlameOff) => !flame_on,
+        }
+    }
 }
 
 fn one() -> u8 {
@@ -84,7 +133,7 @@ pub const TRAITS: [&str; 7] = [
 pub const RESERVED_TRAITS: [&str; 2] = ["officer", "sniper"];
 
 /// Capabilities in S4, in canonical order.
-pub const CAPABILITIES: [&str; 15] = [
+pub const CAPABILITIES: [&str; 16] = [
     "dig_basic",
     "dig_full",
     "fire_mission",
@@ -100,12 +149,15 @@ pub const CAPABILITIES: [&str; 15] = [
     "place_mines",
     "clear_mines",
     "demolish",
+    // S14 (plan 4.2): a member carries a flame weapon (derived from the
+    // members left after the `when` filter).
+    "flame",
 ];
 /// Capabilities the content crate derives from the members' weapons
 /// (setting them is allowed only when the weapons give them).
-pub const DERIVED_CAPABILITIES: [&str; 2] = ["fire_mission", "at_hunt"];
+pub const DERIVED_CAPABILITIES: [&str; 3] = ["fire_mission", "at_hunt", "flame"];
 /// Capabilities reserved for later slices.
-pub const RESERVED_CAPABILITIES: [&str; 5] = ["observe", "radio", "medic", "issue_crates", "flame"];
+pub const RESERVED_CAPABILITIES: [&str; 4] = ["observe", "radio", "medic", "issue_crates"];
 
 /// Tags with an engine meaning: `vehicle` (must equal "has a vehicle"),
 /// `crew` (never in a roster or start squads), `at` (AI gate after the
@@ -220,6 +272,8 @@ pub fn expand_legacy(s: &SquadDef, launcher: bool) -> Vec<MemberDef> {
         rounds: BTreeMap::new(),
         items: items(leader),
         traits: Vec::new(),
+        when: None,
+        armour: None,
     };
     let lead_weapon = if k >= 1 {
         s.weapon.clone()
@@ -337,6 +391,7 @@ pub fn parse_month(s: &str) -> Option<u32> {
 /// `ModDefs::cross_check`).
 pub(crate) fn check_members(out: &mut Vec<Issue>, members: &[MemberDef]) {
     let mut total = 0u32;
+    let mut total_on = 0u32;
     for (i, m) in members.iter().enumerate() {
         let p = format!("members[{i}]");
         if !is_label(&m.slot, MAX_TAG_LEN) {
@@ -351,7 +406,40 @@ pub(crate) fn check_members(out: &mut Vec<Issue>, members: &[MemberDef]) {
                 .with_hint("slot = \"rifleman\""),
             );
         }
-        if members[..i].iter().any(|o| o.slot == m.slot) {
+        // S14: a `flame_off` slot and the `flame_on` slot right after it
+        // share one name (one slot, either way).
+        let pair_ok = i > 0
+            && members[i - 1].slot == m.slot
+            && members[i - 1].when == Some(MemberWhen::FlameOff)
+            && m.when == Some(MemberWhen::FlameOn);
+        if m.when.is_some() {
+            let partner = match m.when {
+                Some(MemberWhen::FlameOff) => members
+                    .get(i + 1)
+                    .is_some_and(|n| n.slot == m.slot && n.when == Some(MemberWhen::FlameOn)),
+                _ => pair_ok,
+            };
+            if !partner {
+                out.push(
+                    Issue::new(
+                        format!("{p}.when"),
+                        format!(
+                            "slot `{}`: a `when` slot comes as a pair, `flame_off` then \
+                             `flame_on`, under the same slot name",
+                            m.slot
+                        ),
+                    )
+                    .with_hint("when = \"flame_off\" (today's man), then the same slot with when = \"flame_on\""),
+                );
+            }
+            if i == 0 {
+                out.push(Issue::new(
+                    format!("{p}.when"),
+                    "the leader's slot has no `when`",
+                ));
+            }
+        }
+        if !pair_ok && members[..i].iter().any(|o| o.slot == m.slot) {
             out.push(Issue::new(
                 format!("{p}.slot"),
                 format!(
@@ -360,13 +448,43 @@ pub(crate) fn check_members(out: &mut Vec<Issue>, members: &[MemberDef]) {
                 ),
             ));
         }
+        // S15 P1: the plate's ranges.
+        if let Some(a) = &m.armour {
+            if !(5..=100).contains(&a.mm.0) {
+                out.push(Issue::new(
+                    format!("{p}.armour.mm"),
+                    format!("must be in 0.5..=10, got {}", a.mm),
+                ));
+            }
+            if a.zone != "torso" {
+                out.push(
+                    Issue::new(
+                        format!("{p}.armour.zone"),
+                        format!("`{}`: a plate covers the torso only", a.zone),
+                    )
+                    .with_hint("zone = \"torso\""),
+                );
+            }
+            if !(1..=360).contains(&a.arc_deg) {
+                out.push(Issue::new(
+                    format!("{p}.armour.arc_deg"),
+                    format!("must be in 1..=360, got {}", a.arc_deg),
+                ));
+            }
+        }
         if !(1..=MAX_SQUAD_MEN).contains(&m.count) {
             out.push(Issue::new(
                 format!("{p}.count"),
                 format!("must be in 1..={MAX_SQUAD_MEN}, got {}", m.count),
             ));
         }
-        total += m.count as u32;
+        // S14: the men of the `flame_off` side (a pair counts once).
+        if m.when != Some(MemberWhen::FlameOn) {
+            total += m.count as u32;
+        }
+        if m.when != Some(MemberWhen::FlameOff) {
+            total_on += m.count as u32;
+        }
         if m.weapon.trim().is_empty() {
             out.push(
                 Issue::new(format!("{p}.weapon"), "required: the weapon id he carries")
@@ -446,6 +564,14 @@ pub(crate) fn check_members(out: &mut Vec<Issue>, members: &[MemberDef]) {
         out.push(Issue::new(
             "members",
             format!("the slots hold {total} men; a squad has 1..={MAX_SQUAD_MEN}"),
+        ));
+    }
+    if !members.is_empty() && total_on != total && !(1..=MAX_SQUAD_MEN as u32).contains(&total_on) {
+        out.push(Issue::new(
+            "members",
+            format!(
+                "with [flame] enabled the slots hold {total_on} men; a squad has 1..={MAX_SQUAD_MEN}"
+            ),
         ));
     }
 }
@@ -615,6 +741,102 @@ mod tests {
         s
     }
 
+    /// S14 plan 4.2: a `when` slot comes as a `flame_off` / `flame_on`
+    /// pair under one name (counted once), never alone, never the leader;
+    /// an unknown `when` value or a weapon `class = "flame"` parses (the
+    /// value) or is refused (the typo). Control: the plain card and the
+    /// well-formed pair have no issue.
+    #[test]
+    fn s14_member_when_pairs_are_checked() {
+        let m = |slot: &str, count: u8, when: Option<MemberWhen>| MemberDef {
+            slot: slot.into(),
+            count,
+            weapon: "t:w".into(),
+            sidearm: None,
+            ammo: None,
+            rounds: BTreeMap::new(),
+            items: BTreeMap::new(),
+            traits: Vec::new(),
+            when,
+            armour: None,
+        };
+        let (off, on) = (Some(MemberWhen::FlameOff), Some(MemberWhen::FlameOn));
+        let issues = |ms: &[MemberDef]| {
+            let mut out = Vec::new();
+            check_members(&mut out, ms);
+            out
+        };
+        assert!(issues(&[m("leader", 1, None), m("rifleman", 3, None)]).is_empty());
+        let pair = [
+            m("leader", 1, None),
+            m("fl", 1, off),
+            m("fl", 1, on),
+            m("rifleman", 14, None),
+        ];
+        assert!(issues(&pair).is_empty(), "{:?}", issues(&pair));
+        assert!(pair[1].active(false) && !pair[1].active(true));
+        assert!(pair[2].active(true) && !pair[2].active(false));
+        assert!(pair[0].active(true) && pair[0].active(false));
+        // 1 + 1 + 15 = 17 men either way.
+        assert!(
+            !issues(&[
+                m("leader", 1, None),
+                m("fl", 1, off),
+                m("fl", 1, on),
+                m("r", 15, None)
+            ])
+            .is_empty()
+        );
+        // The flame_on side alone over 16.
+        assert!(
+            !issues(&[
+                m("leader", 1, None),
+                m("fl", 1, off),
+                m("fl", 3, on),
+                m("r", 13, None)
+            ])
+            .is_empty()
+        );
+        for (name, ms) in [
+            ("flame_on alone", vec![m("leader", 1, None), m("fl", 1, on)]),
+            (
+                "flame_off alone",
+                vec![m("leader", 1, None), m("fl", 1, off)],
+            ),
+            (
+                "pair reversed",
+                vec![m("leader", 1, None), m("fl", 1, on), m("fl", 1, off)],
+            ),
+            (
+                "pair under two names",
+                vec![m("leader", 1, None), m("a", 1, off), m("b", 1, on)],
+            ),
+            (
+                "leader with when",
+                vec![m("leader", 1, off), m("leader", 1, on)],
+            ),
+            (
+                "plain slot twice",
+                vec![m("leader", 1, None), m("r", 1, None), m("r", 1, None)],
+            ),
+        ] {
+            assert!(!issues(&ms).is_empty(), "{name} is accepted");
+        }
+        let parse = |t: &str| toml::from_str::<MemberDef>(t);
+        assert_eq!(
+            parse("slot = \"fl\"\nweapon = \"t:w\"\nwhen = \"flame_on\"")
+                .unwrap()
+                .when,
+            on
+        );
+        assert!(parse("slot = \"fl\"\nweapon = \"t:w\"\nwhen = \"flame\"").is_err());
+        let w: crate::defs::WeaponClass = toml::from_str::<
+            std::collections::BTreeMap<String, crate::defs::WeaponClass>,
+        >("c = \"flame\"")
+        .unwrap()["c"];
+        assert_eq!(w, crate::defs::WeaponClass::Flame);
+    }
+
     #[test]
     fn legacy_expansion_follows_the_spec_table() {
         // An MG team: no sidearm, every man carries the MG (three guns).
@@ -696,6 +918,8 @@ mod tests {
             rounds: BTreeMap::new(),
             items: BTreeMap::new(),
             traits: Vec::new(),
+            when: None,
+            armour: None,
         };
         // Three weapons.
         let e = project_members(&[m("a", 1, "x"), m("b", 2, "y"), m("c", 1, "z")]).unwrap_err();

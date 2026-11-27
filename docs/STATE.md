@@ -44,9 +44,12 @@ in the AI, HE for the 57 mm.
 
 ## Versions
 
-`SAVE_VERSION` **31** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **32** and **16** on the branch
-`claude/project-thread-aj1tww` (B3 code: `[ai.arty] direct_in_budget`, `AiCounters::arty_direct_holds`; no new command). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
-S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16 (branch); S16a 33/17 (branch `claude/project-thread-1d8xx3`); S17a 34/17 (branch `s17-build`, log `docs/slices/S17-log.md`); S17b and its presenter 34/17 (no layout change); S18 35/18 (branch `s18-build`, log `docs/slices/S18-log.md`). A save, hash or command change
+`SAVE_VERSION` **35** and `PROTOCOL_VERSION` **18** on the branch `claude/project-thread-1d8xx3` (PR 11: S16-S18) after
+merging main at `316419b` (S14/S15: SAVE **34**, PROTOCOL **17**); the S16-S18 layout is one bump over main's 34 (`world.rs`,
+`protocol.rs`). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13; S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14;
+S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16; S14/S15 34/17 (S14 alone 33/17; main `316419b`);
+S16-S18 35/18 (branch `claude/project-thread-1d8xx3`, merged over S14/S15; before the merge S16a 33/17, S17a 34/17, S18
+35/18; logs `S16-log.md`, `S17-log.md`, `S18-log.md`). A save, hash or command change
 bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
 BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 
@@ -131,9 +134,25 @@ Jumbo 12.5 / 15.6 %) and applied it at `f4e610b`: `[ai.arty] shell_mp_max_pct` 6
 pooled: T8a and T8c miss, T8b passes), T179a-d pass; 4 hard rows that pass at `s13-on` miss (T50b, T119b, T121d, T122c).
 By the plan's judge rule (J1, J4) the apply is to be reverted: the orchestrator's call.
 
+## S14 assault kit (branch `claude/project-thread-aj1tww`; log `S14-log.md`; Fix done, Docs/PR next)
+
+SAVE 33, PROTOCOL 17. Flamethrowers (particle stream, burning men and ground, step-out), Clear trench (grenades, burst, advance
+along the trench), melee strikes (automatic for a man with nothing to load, `V` with an enemy in reach), flame AI (jobs, buy,
+refuel, AI clears). All switches 1 in the mod; every number a key; no balance run. Review findings 1-16 fixed (S14 Fix). `s14_off`
+40 equals the base 40 (`neutral.py` same 40/40); default 40: no winner 0, length 10.65 / 21.13 / 32.53 min. R1 (slit) report-only
+(S14-8). Owner questions S14-1..13 in `docs/TODO.md`, each on (A).
+
+## S15 USSR (branch `claude/project-thread-aj1tww`; log `S15-log.md`; Fix done, PR next)
+
+SAVE 34, PROTOCOL 17; three factions (`[matchups]`: Germany-USA the default, Germany-USSR; USA-USSR only with `free`). The USSR
+roster (14 infantry cards, 5 guns, 7 vehicles; the AT guns towed by the US6 gun tractor, the infantry gun and howitzer without a
+tow), tank riders on Soviet decks (10 places on the T-34-85 and IS-2), the SN-42 plate, captured German mortar bombs, bayonets, the
+AI's rider job. All switches 1 in the mod; every number a key; no balance run (owner rule). Review findings 1-14 fixed (S15 Fix).
+T213c/d (ROKS-3 hits, bayonet strikes in matches) are reports (S15-15). Owner questions S15-1..16 in `docs/TODO.md`, each on (A).
+
 ## S16 second map and roads (branch `claude/project-thread-1d8xx3`; log `S16-log.md`)
 
-SAVE 33, PROTOCOL 17 (S16a layout). S16a: `[[roads]]` in maps, `[vehicles.road]` (speed by drive type, time-priced path cost,
+SAVE 33, PROTOCOL 17 (S16a layout; 35/18 with S17-S18 after the merge with S14/S15). S16a: `[[roads]]` in maps, `[vehicles.road]` (speed by drive type, time-priced path cost,
 heuristic floor), point-symmetry blend, `skirmish --map`, tools take a map; Kessel Ridge neutral (40 set same 40/40 at Build A
 and Build B). S16b: Linden Brook (`ww2:linden_brook`, point-symmetric, C in a valley, four roads), mirror and path-cap tests,
 road km observer, AI metre audit (report only); woods no longer slow a vehicle on a road node with road factor 100. No balance
@@ -143,7 +162,7 @@ Presenter P (map in menus, roads drawn) not built yet.
 
 ## S17 team play (branch `s17-build`; log `S17-log.md`)
 
-SAVE 34, PROTOCOL 17. S17a: `team` per player, `crates/sim/src/teams.rs` (hostile, allied, sees), the owner-test sweep
+SAVE 34, PROTOCOL 17 before the merge (35/18 after). S17a: `team` per player, `crates/sim/src/teams.rs` (hostile, allied, sees), the owner-test sweep
 (`docs/slices/S17-sites.md`, checked by `tools/owner_sites.sh --check` in `tools/check.sh quick`), rules T1-T9 (`[teams]`),
 AI A1 A2 A5; at most 8 players (mine `known` mask). S17b: AI point sharing (A3) and ally help (A4) under `[ai.team]`
 (on; an AI alone never runs them), Harrow Cross (`ww2:harrow_cross`, 1536 m, four bases with `side`, seven points),
@@ -157,7 +176,7 @@ refused, CLI `--difficulty2`/`--difficulty3`) fixed; O2 (an AI's pieces can bloc
 
 ## S18 online teams (branch `s18-build`; log `S18-log.md`)
 
-SAVE 35, PROTOCOL 18. Four-slot relay (`max_slots` 4, `--max-slots`, `--no-ai`, `--distinct-factions`, `--ping-gap-ms`):
+SAVE 35, PROTOCOL 18 (kept by the merge with S14/S15). Four-slot relay (`max_slots` 4, `--max-slots`, `--no-ai`, `--distinct-factions`, `--ping-gap-ms`):
 the host sets the lobby size (2 or 4), teams and AI fill; joiners take the lowest open slot or move (`TakeSlot`); Ready
 carries the lobby revision. Turns close round-robin over the slots; any two players' hashes differing is a desync, and
 every client dumps all hashes. H1 hand-over (`crates/sim/src/handover.rs`, `[teams] handover` 1): a surrendering or
@@ -165,6 +184,14 @@ dropped player's troops, structures, works and manpower go to his lowest-slot st
 hashed; handed squads free of the pop cap (`handover_pop` 0). Map pings to allies ("." key). Presenter: 2v2 lobby on
 Harrow Cross with AI rows, Add/Remove AI, Move here; MockNet plays four slots. 1v1 unchanged: Kessel Ridge 40 set same
 40/40 against `f58bcbd`. Team loopback (2+2 AI, 4 humans, drops, blackouts, forced desync): 0 mismatches. No balance runs.
+
+## Merge of main (S14/S15) into S16-S18 (branch `claude/project-thread-1d8xx3`; `S18-log.md` "Merge with S14/S15")
+
+SAVE 35, PROTOCOL 18 over main's 34/17. The S14/S15 owner tests are classed in `docs/slices/S17-sites.md` (flame,
+patches, strikes, clears, riders, plates, captured bombs); S15's `hostile_to` now asks `crate::teams`. `[matchups]` checks
+only hostile pairs (players on different teams), so the USSR plays on a team (Harrow Cross 2v2, the lobby, `skirmish
+--teams`); menus list the factions of `[matchups]` in both modes. `tools/batch.sh teams` adds `skirmish2v2_ussr`,
+`pair` takes `--map`; `tools/pool.py` pools per map and faction pair.
 
 ## Known gaps
 

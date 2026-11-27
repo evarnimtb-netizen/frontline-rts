@@ -275,4 +275,14 @@ pub enum CommandKind {
     Evacuate { units: Vec<SimId> },
     /// Fill infantry squad `squad` to its card size from base.
     Reinforce { squad: SquadId },
+    // ---- S14 assault kit (`crate::flame`). Declared with their wire
+    // encoding in S14a Build A, built in Build B (`ClearTrench`) and Build
+    // C (`Strike`); the sim refuses each (`FortRefusal::NotAllowed`) while
+    // its switch (`[clear] enabled`, `[melee] enabled`) is 0.
+    /// C1: squad `squad` clears the trench at `at` (a dug cell within 8 m),
+    /// step by step with grenades and flame.
+    ClearTrench { squad: SquadId, at: FxVec2 },
+    /// M2: each of `units` with no strike running starts one at once at
+    /// the nearest enemy man in reach (refused when none does).
+    Strike { units: Vec<SimId> },
 }

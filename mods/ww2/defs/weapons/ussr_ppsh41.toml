@@ -1,0 +1,25 @@
+# PPSh-41 submachine gun (S15 Build B): 7.62x25, 35-round box (the common
+# magazine from 1943; the 71-round drum was the early one), about 488 m/s,
+# effective to 150-200 m (Wikipedia "PPSh-41", read 2026-11-26). Game
+# values are S15 starting values: range as the MP 40's, a higher rate
+# (cyclic about 1,250). It has no `penetration` table, so a plate stops it
+# (P2 soft round).
+id = "ww2:ussr_ppsh41"
+name = "PPSh-41"
+class = "smg"
+feed = "ww2:ussr_762x25"
+# Six 35-round boxes, one in the gun (S15 starting value, as the MP 40's six).
+load = 210
+range_m = 100
+damage = 35
+rounds_per_min = 600
+magazine = 35
+reload_ms = 3000
+spread_mrad = 35
+muzzle_velocity_m_s = 488
+suppression = 6
+sources = [
+    "Wikipedia, PPSh-41 (35-round box, 71-round drum, 488 m/s, about 1,250 rpm cyclic, 150-200 m; read 2026-11-26)",
+    "docs/design/roster/infantry-structures.md 4.2 (butt); damage per docs/slices/S14-assault-kit.md 4.3",
+]
+melee = { reach_cm = 80, damage = 40, windup_ms = 500, recover_ms = 1000 }

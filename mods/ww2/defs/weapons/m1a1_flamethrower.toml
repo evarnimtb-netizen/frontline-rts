@@ -1,0 +1,36 @@
+# M1A1 portable flamethrower (S14 plan 4.1): the US assault sections' flame
+# weapon of June 1944 (about 150 landed on D-Day). The roster names the
+# M2-2; the sources put the M1A1 with the June 1944 assault teams and do not
+# confirm the M2-2 in France then (S14-research-history.md 2), so the card
+# carries this one and `m2_2_flamethrower` waits for a later variant.
+# Fires flame particles like an MG fires bursts (`class = "flame"`, F1); its
+# tank is its magazine, its feed the fuel. With `[flame] enabled` 0 no card
+# spawns it.
+# Game reading: 17.8 L over about 9 s at 12 particles a second = 108
+# particles; 20 m effective, about 45 m thickened: 35 m; bursts of 12 (1 s),
+# as the German. Every number is a lever for a later balance pass.
+id = "ww2:m1a1_flamethrower"
+name = "M1A1 flamethrower"
+short_name = "M1A1 flamer"
+class = "flame"
+feed = "ww2:m1a1_fuel"
+load = 108
+sources = [
+    "Wikipedia, M1 flamethrower (4.7-5 US gal thickened, about 0.5 gal/s, 20 m effective, 43-45 m max)",
+    "Wikipedia, M1 flamethrower (about 150 landed on D-Day)",
+]
+range_m = 35
+damage = 20
+rounds_per_min = 720
+magazine = 108
+reload_ms = 0
+spread_mrad = 60
+muzzle_velocity_m_s = 27
+suppression = 35
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+crew_weapon = true
+handover_ms = 5000
+burst_rounds = 12
+burst_pause_ms = 1000
+hold_beyond_pct = 100

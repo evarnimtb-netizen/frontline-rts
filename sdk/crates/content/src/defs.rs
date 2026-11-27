@@ -597,6 +597,10 @@ pub enum WeaponClass {
     Launcher,
     /// S3c: a handgun (tank crews' sidearm); fires like a rifle.
     Pistol,
+    /// S14 F1: a flamethrower: fires flame particles (never pool rounds)
+    /// like an MG fires bursts; its feed is the fuel. With `[flame]
+    /// enabled` 0 it does not fire.
+    Flame,
 }
 
 /// A weapon (`defs/weapons/*.toml`).
@@ -709,6 +713,91 @@ pub struct WeaponDef {
     /// S8a: what a penetrating round does inside (needs `penetration`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub core: Option<SmallCoreDef>,
+    /// S14 M1 (docs/slices/S14-assault-kit.md 4.3, 5): the man's own
+    /// strike with this weapon in his hands (a butt stroke). Absent: the
+    /// rules' `[melee]` strike (the entrenching spade).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub melee: Option<WeaponMeleeDef>,
+    /// S15 X1-X3 (docs/slices/S15-ussr.md 5.3): a mortar that also fires
+    /// another faction's bombs drawn at a crate its player holds. Dropped
+    /// at setup while `[supply] foreign_ammo` is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foreign_feed: Option<ForeignFeedDef>,
+}
+
+/// S15 X1: a weapon's `[foreign_feed]` block.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ForeignFeedDef {
+    /// The foreign cartridge (`defs/cartridges`), e.g. `ww2:8cm_wgr34`.
+    pub cartridge: String,
+    /// The faction whose crates carry it, e.g. `ww2:germany`.
+    pub faction: String,
+    /// X2: the weapon's spread for a foreign round (%), 100..=400.
+    pub spread_pct: u32,
+}
+
+/// S14 M1: a weapon's `[melee]` block. Ranges as the rules' `[melee]`:
+/// `reach_cm` 1..=1000, `damage` 0..=1000, `windup_ms` and `recover_ms`
+/// 1..=4000 (a strike phase fits `Close::strike`, a u8 tick count).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MeleeDef {
+    /// The strike segment's length from the chest (cm).
+    pub reach_cm: u32,
+    /// HP dealt to the man it touches (through the W1 zone).
+    pub damage: u32,
+    /// Wind-up before the strike (ms; no fire).
+    pub windup_ms: u32,
+    /// Recovery after it (ms; no fire).
+    pub recover_ms: u32,
+}
+
+/// A weapon's `[melee]` block: its own strike (S14 M1) and (S15 B1) an
+/// optional `[melee.bayonet]` strike, used instead with the rules'
+/// `[melee] bayonets` 1. Same keys and ranges as [`MeleeDef`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WeaponMeleeDef {
+    pub reach_cm: u32,
+    pub damage: u32,
+    pub windup_ms: u32,
+    pub recover_ms: u32,
+    /// S15 B1: the bayonet strike (a longer reach); dropped at setup while
+    /// `[melee] bayonets` is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bayonet: Option<MeleeDef>,
+}
+
+impl WeaponMeleeDef {
+    /// The weapon's own strike (the butt).
+    pub fn strike(&self) -> MeleeDef {
+        MeleeDef {
+            reach_cm: self.reach_cm,
+            damage: self.damage,
+            windup_ms: self.windup_ms,
+            recover_ms: self.recover_ms,
+        }
+    }
+
+    /// Range issues under `at` (e.g. `melee.`), the bayonet's under
+    /// `{at}bayonet.`.
+    pub fn check(&self, at: &str, out: &mut Vec<Issue>) {
+        self.strike().check(at, out);
+        if let Some(b) = &self.bayonet {
+            b.check(&format!("{at}bayonet."), out);
+        }
+    }
+}
+
+impl MeleeDef {
+    /// Range issues under `at` (e.g. `melee.`).
+    pub fn check(&self, at: &str, out: &mut Vec<Issue>) {
+        range(out, &format!("{at}reach_cm"), self.reach_cm, 1, 1000);
+        range(out, &format!("{at}damage"), self.damage, 0, 1000);
+        range(out, &format!("{at}windup_ms"), self.windup_ms, 1, 4000);
+        range(out, &format!("{at}recover_ms"), self.recover_ms, 1, 4000);
+    }
 }
 
 /// S8a: a small-arms round past a plate: it goes on `length_cm` and hits at
@@ -1515,6 +1604,129 @@ pub struct HeDef {
     pub frag_pen_mm: u32,
 }
 
+/// S15 M1-M4 (`[matchups]` in the rules, docs/slices/S15-ussr.md 4): the
+/// factions a match may name and the hostile pairs allowed. The menus,
+/// the lobby and `ModDefs::resolve` read it; absent: no check.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MatchupsDef {
+    /// M1: the factions a match may name (empty: no check).
+    #[serde(default)]
+    pub factions: Vec<String>,
+    /// M2: the hostile pairs allowed, in menu order; the first pair holding
+    /// a faction gives its default opponent (M3).
+    #[serde(default)]
+    pub pairs: Vec<[String; 2]>,
+    /// M2: 1 = any two different enabled factions may fight (0..=1).
+    #[serde(default)]
+    pub free: u32,
+    /// M4: 1 = the menus and lobby offer the same faction on both sides
+    /// of a 1v1 (0..=1).
+    #[serde(default)]
+    pub mirror: u32,
+}
+
+impl MatchupsDef {
+    /// Shape checks (the faction ids are checked against the mod's
+    /// factions in `ModDefs`).
+    pub fn validate(&self, out: &mut Vec<Issue>) {
+        if self.free > 1 {
+            out.push(Issue::new("matchups.free", "must be 0 or 1"));
+        }
+        if self.mirror > 1 {
+            out.push(Issue::new("matchups.mirror", "must be 0 or 1"));
+        }
+        for (k, f) in self.factions.iter().enumerate() {
+            if self.factions[..k].contains(f) {
+                out.push(Issue::new(
+                    format!("matchups.factions[{k}]"),
+                    "listed twice",
+                ));
+            }
+        }
+        for (k, [a, b]) in self.pairs.iter().enumerate() {
+            let at = format!("matchups.pairs[{k}]");
+            if a == b {
+                out.push(Issue::new(
+                    at.clone(),
+                    "a pair names two different factions",
+                ));
+            }
+            if !self.factions.is_empty()
+                && (!self.factions.contains(a) || !self.factions.contains(b))
+            {
+                out.push(Issue::new(
+                    at.clone(),
+                    "a pair names a faction not in `factions`",
+                ));
+            }
+            if self.pairs[..k]
+                .iter()
+                .any(|[c, d]| (c == a && d == b) || (c == b && d == a))
+            {
+                out.push(Issue::new(at, "listed twice"));
+            }
+        }
+    }
+
+    /// M1: whether faction `f` may be named (an empty list: any).
+    pub fn enabled(&self, f: &str) -> bool {
+        self.factions.is_empty() || self.factions.iter().any(|x| x == f)
+    }
+
+    /// M2: whether hostile factions `a` and `b` may fight (the same
+    /// faction always may: a mirror is M4's matter for the menus).
+    pub fn allows(&self, a: &str, b: &str) -> bool {
+        a == b
+            || self.free == 1
+            || self.pairs.is_empty()
+            || self
+                .pairs
+                .iter()
+                .any(|[c, d]| (c == a && d == b) || (c == b && d == a))
+    }
+
+    /// M3: the default opponent of faction `f`: the other member of the
+    /// first pair holding it.
+    pub fn default_opponent(&self, f: &str) -> Option<&str> {
+        self.pairs.iter().find_map(|[a, b]| {
+            if a == f {
+                Some(b.as_str())
+            } else if b == f {
+                Some(a.as_str())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// M2: the opponents faction `f` may face, in menu order (with `free`
+    /// 1: every other enabled faction, pair partners first).
+    pub fn opponents(&self, f: &str, all: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .pairs
+            .iter()
+            .filter_map(|[a, b]| {
+                if a == f {
+                    Some(b.clone())
+                } else if b == f {
+                    Some(a.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if self.free == 1 || self.pairs.is_empty() {
+            for x in all {
+                if x != f && self.enabled(x) && !out.contains(x) {
+                    out.push(x.clone());
+                }
+            }
+        }
+        out
+    }
+}
+
 /// A playable side (`defs/factions/*.toml`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1718,6 +1930,26 @@ pub struct RulesDef {
     /// Without it: the S13 values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub armour: Option<crate::tuning::ArmourTuning>,
+    /// S14: flame particles, burning men and ground (`[flame]`). Without
+    /// it: the S14a values, the switch off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flame: Option<crate::tuning::FlameTuning>,
+    /// S14: the melee strike (`[melee]`). Without it: switch off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub melee: Option<crate::tuning::MeleeTuning>,
+    /// S14: the `ClearTrench` order (`[clear]`). Without it: switch off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear: Option<crate::tuning::ClearTuning>,
+    /// S15: infantry riding on tanks (`[riders]`). Without it: switch off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub riders: Option<crate::tuning::RidersTuning>,
+    /// S15: plates worn by men (`[body_armour]`). Without it: switch off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_armour: Option<crate::tuning::BodyArmourTuning>,
+    /// S15: which factions a match may name and who fights whom
+    /// (`[matchups]`). Without it: no check (old rules files).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matchups: Option<MatchupsDef>,
     /// S17a: team play (`[teams]`). Without it: the S17a values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teams: Option<crate::tuning::TeamsTuning>,
@@ -2168,6 +2400,12 @@ pub struct AiDef {
     /// S12: `[ai.medic]` (default: the S12a values, switches off).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub medic: Option<AiMedicTuning>,
+    /// S14-ai: `[ai.flame]` (default: the S14a values, switches off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flame: Option<crate::tuning::AiFlameTuning>,
+    /// S15-ai: `[ai.riders]` (default: the S15a values, switch off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub riders: Option<crate::tuning::AiRidersTuning>,
     /// S17: `[ai.team]` (default: the S17a values, habits off).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team: Option<crate::tuning::AiTeamTuning>,
@@ -2754,6 +2992,14 @@ impl WeaponDef {
         if let Some(l) = self.load {
             range(&mut out, "load", l, 1, 65_535);
         }
+        // S14 F1, F7 (checker 7): a flamethrower's fuel is its feed; with
+        // none it would never run dry (no resupply, no sidearm).
+        if self.class == WeaponClass::Flame && self.feed.is_none() {
+            out.push(
+                Issue::new("feed", "a flame weapon needs a feed (its fuel cartridge)")
+                    .with_hint("feed = \"ww2:fmw41_fuel\""),
+            );
+        }
         range(&mut out, "burst_rounds", self.burst_rounds, 0, 1000);
         range(&mut out, "burst_pause_ms", self.burst_pause_ms, 0, 10_000);
         if self.hold_beyond_pct != 0 {
@@ -2761,6 +3007,18 @@ impl WeaponDef {
         }
         if let Some(ind) = &self.indirect {
             ind.check(self, &mut out);
+        }
+        if let Some(f) = &self.foreign_feed {
+            range(&mut out, "foreign_feed.spread_pct", f.spread_pct, 100, 400);
+            if self.class != WeaponClass::Mortar || self.he.is_none() || self.feed.is_none() {
+                out.push(Issue::new(
+                    "foreign_feed",
+                    "only a mortar with `[he]` and its own `feed` has a foreign feed",
+                ));
+            }
+        }
+        if let Some(m) = &self.melee {
+            m.check("melee.", &mut out);
         }
         if self.class == WeaponClass::Cannon && self.he.is_some() {
             out.push(Issue::new(
@@ -3138,6 +3396,10 @@ impl RulesDef {
         let mut out = Vec::new();
         check_id(&mut out, "id", &self.id);
         check_name(&mut out, "name", &self.name);
+        // S15 M1-M4.
+        if let Some(m) = &self.matchups {
+            m.validate(&mut out);
+        }
         if !crate::TICK_HZ_ALLOWED.contains(&self.tick_hz) {
             out.push(
                 Issue::new("tick_hz", format!("must be 30 or 20, got {}", self.tick_hz))
@@ -3512,6 +3774,13 @@ impl RulesDef {
                 wounds: &self.wounds.clone().unwrap_or_default(),
                 ai_medic: &a.medic.clone().unwrap_or_default(),
                 armour: &self.armour.clone().unwrap_or_default(),
+                flame: &self.flame.clone().unwrap_or_default(),
+                melee: &self.melee.clone().unwrap_or_default(),
+                clear: &self.clear.clone().unwrap_or_default(),
+                ai_flame: &a.flame.clone().unwrap_or_default(),
+                riders: &self.riders.clone().unwrap_or_default(),
+                body_armour: &self.body_armour.clone().unwrap_or_default(),
+                ai_riders: &a.riders.clone().unwrap_or_default(),
                 teams: &self.teams.clone().unwrap_or_default(),
                 ai_team: &a.team.clone().unwrap_or_default(),
             },
@@ -3622,5 +3891,33 @@ impl AiDef {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod s14_tests {
+    use super::*;
+
+    /// S14 F1, F7 (checker 7): a `class = "flame"` weapon needs a feed (its
+    /// fuel). Control: the same def with a feed validates.
+    #[test]
+    fn flame_weapon_needs_a_feed() {
+        let text = |feed: &str| {
+            format!(
+                "id = \"t:flamer\"\nname = \"Flamer\"\nclass = \"flame\"\nrange_m = 30\n\
+                 damage = 20\nrounds_per_min = 720\nmagazine = 120\nreload_ms = 0\n\
+                 muzzle_velocity_m_s = 25\nsuppression = 35\n{feed}"
+            )
+        };
+        let bad: WeaponDef = toml::from_str(&text("")).unwrap();
+        assert!(
+            bad.validate()
+                .iter()
+                .any(|i| i.to_string().contains("feed")),
+            "{:?}",
+            bad.validate()
+        );
+        let good: WeaponDef = toml::from_str(&text("feed = \"t:fuel\"\n")).unwrap();
+        assert!(good.validate().is_empty(), "{:?}", good.validate());
     }
 }

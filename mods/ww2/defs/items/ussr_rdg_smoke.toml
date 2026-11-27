@@ -1,0 +1,19 @@
+# RDG hand smoke grenade (S15 Build B): about 1-1.5 min of smoke
+# (unverified, S15 starting values: the M15's cloud, a little smaller).
+id = "ww2:ussr_rdg_smoke"
+name = "RDG Smoke Grenade"
+kind = "smoke"
+# Priced refill in the base: about 500 g (unverified).
+supply = { kind = "explosives", g = 500 }
+min_range_m = 5
+range_m = 30
+windup_ms = 1000
+# The cloud starts where it lands.
+fuse_ms = 0
+scatter_pct = 6
+
+[smoke]
+radius_m = 7
+grow_ms = 3000
+hold_ms = 25000
+fade_ms = 5000

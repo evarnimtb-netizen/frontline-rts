@@ -239,6 +239,9 @@ pub struct Combat {
     /// S12: the wound state (`crate::wounds`; default for everything but
     /// soldiers and downed men).
     pub wound: crate::wounds::Wound,
+    /// S14: burning and strike state (`crate::flame::Close`; default for
+    /// everything but soldiers and downed men).
+    pub close: crate::flame::Close,
 }
 
 /// SoA entity store. Columns are public for reading; mutate through

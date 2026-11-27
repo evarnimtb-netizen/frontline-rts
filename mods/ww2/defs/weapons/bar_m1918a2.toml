@@ -13,7 +13,10 @@ feed = "ww2:3006_bar"
 # the squad carried 35 magazines, 700 rounds, with the assistant and bearer).
 load = 220
 crew_weapon = false
-sources = ["Wikipedia, M1918 Browning Automatic Rifle (weight, rates, magazine, velocity)"]
+sources = [
+    "Wikipedia, M1918 Browning Automatic Rifle (weight, rates, magazine, velocity)",
+    "docs/design/roster/infantry-structures.md 4.2 (melee reach and timings: rifle butt 1.0 m, wind-up 0.4-0.8 s, recovery 1 s); damage per docs/slices/S14-assault-kit.md 4.3 (a torso strike wounds, two down a man)",
+]
 # Effective reach on the compressed scale (m): a little over a rifle's.
 range_m = 350
 damage = 65
@@ -38,3 +41,7 @@ suppression = 10
 # values, verify against FM 23-15).
 burst_rounds = 4
 burst_pause_ms = 600
+# S14 M1 (plan 4.3): his own strike with this weapon in his hands, a butt stroke:
+# reach_cm 1..=1000, damage 0..=1000, windup_ms and recover_ms 1..=4000. Used
+# only with the rules' [melee] enabled = 1 (0 in S14a).
+melee = { reach_cm = 100, damage = 50, windup_ms = 600, recover_ms = 1000 }

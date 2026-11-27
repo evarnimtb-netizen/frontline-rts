@@ -5261,7 +5261,9 @@ mod tests {
             [
                 "ww2:ger_baupioniergruppe",
                 "ww2:ger_sturmpioniergruppe",
-                "ww2:usa_assault_section"
+                "ww2:usa_assault_section",
+                // S15 Build B: the Soviet assault group is an assault card.
+                "ww2:ussr_shturmovaya_gruppa"
             ]
         );
         for k in [

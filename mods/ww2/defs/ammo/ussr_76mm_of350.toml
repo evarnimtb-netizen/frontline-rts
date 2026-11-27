@@ -1,0 +1,38 @@
+# 76 mm OF-350: HE-fragmentation for the ZiS-3 and the SU-76M (S15 Build C); [he] as the 7.5 cm Sprgr 34. Also the Soviet supply defs' cook-off round.
+id = "ww2:ussr_76mm_of350"
+name = "76 mm OF-350"
+mechanism = "he"
+# S15: priced refill ([supply] shell_mp_per_t per tonne): complete round about 9.5 kg (unverified: S15 starting value)
+supply = { kind = "shells", g = 9500 }
+caliber_mm = 76
+muzzle_velocity_m_s = 680
+drag_coeff = 0
+# Flat, as every HE round of the mod.
+penetration = [[0, 10]]
+ricochet_angle_deg = 80
+track_damage = 40
+sources = [
+  "Wikipedia, 76 mm divisional gun M1942 (ZiS-3): ammunition and BR-350A penetration table (Soviet method, 75 %), read 2026-11-26: OF-350 6.2 kg, 710 g filler, 680 m/s",
+]
+
+# The S3b physical-contact HE block, scaled from the German or US round of the nearest calibre
+# (named in the head comment); S15 starting values, no tuning.
+[he]
+damage = 150
+suppression = 40
+blast_radius_cm = 120
+frag_count = 80
+frag_reach_cm = 1200
+frag_damage = 70
+frag_far_pct = 30
+frag_elev_deg = [2, 45]
+frag_track_damage = 1
+suppression_radius_m = 12
+crater_radius_cm = 60
+crater_depth_cm = 30
+pen_mm = 10
+frag_pen_mm = 12
+inside_damage = 150
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 40

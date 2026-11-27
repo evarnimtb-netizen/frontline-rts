@@ -1,0 +1,16 @@
+# S14 ablation (plan 10): no ClearTrench (C1-C5 and the AI's A4), the rest
+# on. Run by the later balance pass.
+[flame]
+enabled = 1
+
+[melee]
+enabled = 1
+
+[clear]
+enabled = 0
+
+[ai.flame]
+jobs = 1
+refuel = 1
+buy = 1
+clear = 0

@@ -49,7 +49,7 @@ pub const VOLLEY: u32 = 300;
 
 /// What stands at the site: the bunker, its bare pit, or open ground.
 #[derive(Clone, Copy, PartialEq)]
-enum Site {
+pub(super) enum Site {
     Bunker,
     Pit,
     Open,
@@ -62,7 +62,7 @@ fn bunker(w: &mut World, own: u8, site: Site) -> Result<(Vec<u32>, Vec<SimId>)> 
 }
 
 /// [`bunker`] with the bunker facing `face` (WEST is down the slope).
-fn bunker_facing(
+pub(super) fn bunker_facing(
     w: &mut World,
     own: u8,
     site: Site,
@@ -108,13 +108,13 @@ fn bunker_facing(
 }
 
 /// Steps `secs` holding `men` (living ones) on their spots.
-fn hold(w: &mut World, men: &[SimId], secs: u64) {
+pub(super) fn hold(w: &mut World, men: &[SimId], secs: u64) {
     let hz = w.match_setup().unwrap().tick_hz as u64;
     hold_ticks(w, men, secs * hz);
 }
 
 /// [`hold`] for `ticks` ticks.
-fn hold_ticks(w: &mut World, men: &[SimId], ticks: u64) {
+pub(super) fn hold_ticks(w: &mut World, men: &[SimId], ticks: u64) {
     let spots: Vec<FxVec2> = men.iter().map(|&m| pos(w, m)).collect();
     for _ in 0..ticks {
         for (&m, &p) in men.iter().zip(&spots) {

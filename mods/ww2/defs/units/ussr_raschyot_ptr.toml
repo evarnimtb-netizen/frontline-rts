@@ -1,0 +1,35 @@
+# Raschyot PTR (S15 Build B): the anti-tank rifle team of two on the PTRD-41
+# (the battalion's AT rifle platoon; battleorder.org): the gunner and the
+# loader (PPSh), a satchel charge. A rifle-class weapon: whether it picks
+# vehicles by itself is the test `ptrd_engages_a_halftrack`.
+id = "ww2:ussr_raschyot_ptr"
+name = "Raschyot PTR"
+short_name = "PTR"
+faction = "ww2:ussr"
+tags = ["at"]
+sources = [
+    "Wikipedia, PTRD-41 (crew 2; read 2026-11-26)",
+    "battleorder.org, USSR rifle company 1944 (AT rifles in the battalion platoon)",
+]
+ai_weight = 100
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 110
+cooldown_s = 48
+unlock_s = 0
+speed_cm_s = 280
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "gunner"
+weapon = "ww2:ussr_ptrd41"
+sidearm = "ww2:ussr_tt33"
+traits = ["leader", "crew_gunner"]
+
+[[members]]
+slot = "loader"
+weapon = "ww2:ussr_ppsh41"
+rounds = { "ww2:ussr_762x25" = 210, "ww2:ussr_145x114" = 30 }
+traits = ["crew_assistant"]
+items = { "ww2:ussr_satchel" = 1 }

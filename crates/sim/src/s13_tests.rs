@@ -491,7 +491,14 @@ fn t151h_old_rounds_are_unchanged() {
         }
     }
     assert_eq!(on_old, off);
-    assert_eq!(s.ammo.iter().filter(|a| a.slope_class.is_some()).count(), 9);
+    // S15 Build C: the nine Soviet AP and APCR rounds are classed too.
+    let classed = |soviet: bool| {
+        s.ammo
+            .iter()
+            .filter(|a| a.slope_class.is_some() && a.id.starts_with("ww2:ussr_") == soviet)
+            .count()
+    };
+    assert_eq!((classed(false), classed(true)), (9, 9));
     let mut a = s.ammo[0].clone();
     a.mechanism = AmmoMechanism::Aphe;
     a.slope_class = Some(SlopeClass::Apcbc);
@@ -965,6 +972,18 @@ const S13_VEHICLES: [&str; 5] = [
     "ww2:usa_m4a3e2",
 ];
 
+/// S15 Build C: the Soviet tanks built on the S13 3-box pattern (hull,
+/// superstructure the hull's full length, turret); the data checks of the
+/// S13 defs hold for them too.
+const S15_TANKS: [&str; 2] = ["ww2:ussr_t34_85", "ww2:ussr_is2"];
+
+/// The defs whose hull body is box 0 and the superstructure: the S13 defs,
+/// the S15 tanks and the SU-85 (its superstructure is the engine deck
+/// behind the casemate; the casemate stays out as every casemate's).
+fn three_box(id: &str) -> bool {
+    S13_VEHICLES.contains(&id) || S15_TANKS.contains(&id) || id == "ww2:ussr_su85"
+}
+
 /// Review V3: `hull_body` is box 0 exactly for every pre-S13 def (casemates
 /// included: their upper box stays out); for the S13 defs it spans box 0
 /// and the superstructure (its top is the superstructure's). Control: the
@@ -975,7 +994,7 @@ fn hull_body_is_box_0_before_s13() {
     let s = &w.game().unwrap().setup;
     for v in &s.vehicles {
         let body = v.hull_body();
-        if S13_VEHICLES.contains(&v.id.as_str()) {
+        if three_box(&v.id) {
             assert_ne!(body, v.hull, "{}", v.id);
             let sup = &v.boxes[1].bounds;
             assert_eq!(v.boxes[1].id, "superstructure");
@@ -1008,7 +1027,7 @@ fn presenter_hull_is_the_body_and_its_glacis() {
             .map(|p| p.slope_deg)
     };
     for v in &s.vehicles {
-        if S13_VEHICLES.contains(&v.id.as_str()) {
+        if three_box(&v.id) {
             assert_eq!(v.glacis_box(), 1, "{}", v.id);
             let top = v.hull_body().center.z.0 + v.hull_body().half.z.0;
             assert!(
@@ -1061,7 +1080,7 @@ fn spot_point_is_on_the_hull_body() {
             hull.z,
             want
         );
-        if S13_VEHICLES.contains(&v.id.as_str()) {
+        if three_box(&v.id) {
             let box0 = Fx::from(v.hull.center.z) + Fx::from(v.hull.half.z);
             assert!(hull.z > box0, "control {}", v.id);
         } else {
@@ -1090,7 +1109,7 @@ fn s13_data_has_its_own_hatches_bins_and_anchors() {
     };
     let pz4 = s.vehicles.iter().find(|v| v.id == "ww2:ger_pz4_h").unwrap();
     assert_eq!(side_doors(pz4), 2, "control");
-    for id in S13_VEHICLES {
+    for id in S13_VEHICLES.iter().chain(&S15_TANKS).copied() {
         let v = s.vehicles.iter().find(|v| v.id == id).unwrap();
         assert_eq!(side_doors(v), 0, "{id}");
         let body = v.hull_body();
@@ -1139,7 +1158,7 @@ fn s13_data_has_its_own_hatches_bins_and_anchors() {
 fn s13_track_band_keeps_the_s3_height() {
     let w = flat_world_with(1, |_| {});
     let s = &w.game().unwrap().setup;
-    for id in S13_VEHICLES {
+    for id in S13_VEHICLES.iter().chain(&S15_TANKS).copied() {
         let v = s.vehicles.iter().find(|v| v.id == id).unwrap();
         let cm = |f: frontline_content::Fixed| f.0 as f64 * 100.0 / 65536.0;
         let box0 = 2.0 * cm(v.hull.half.z);
@@ -1160,7 +1179,7 @@ fn s13_track_band_keeps_the_s3_height() {
 fn s13_superstructure_spans_the_hull() {
     let w = flat_world_with(1, |_| {});
     let s = &w.game().unwrap().setup;
-    for id in S13_VEHICLES {
+    for id in S13_VEHICLES.iter().chain(&S15_TANKS).copied() {
         let v = s.vehicles.iter().find(|v| v.id == id).unwrap();
         let sup = &v.boxes[1].bounds;
         assert!(v.hull.half.x.0 > 0);

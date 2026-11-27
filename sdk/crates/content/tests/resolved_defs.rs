@@ -206,6 +206,22 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // values were 0x3c7f492027baa0f3, 0x82dc14c3d6b5a508,
 // 0x45645832ee66f654, 0x3c7f492027baa0f3, 0x10c9494db95d1aee,
 // 0xc9418ead8da4807e.
+// S14a Build A (`[flame]`, `[melee]`, `[clear]`, `[ai.flame]`, every value
+// its default, every switch 0) changed it; the B3 values were
+// 0xeab40cb2122960c1, 0x2a81f7b3b47897ee, 0xc871cc8b8240ceb5,
+// 0xeab40cb2122960c1, 0x4f30ae2d701308a1, 0x2f7da91f46cf2629.
+// S14a Build B (`[flame] base_refill_ms`, default 2000) changed it; the
+// Build A values were 0x3d6d1c3544726b15, 0xcdb1fa4e5d9561e9,
+// 0x3940f6319574da56, 0x3d6d1c3544726b15, 0xa27b97d75d700b55,
+// 0x2dd59afea04f2b9d.
+// S14a Build C (`WeaponSetup::melee`, the weapons' `[melee]` blocks,
+// `[melee] drop_cm` default 0; the switch `[melee] enabled` stays 0)
+// changed it; the Build B values were
+// 0x6ecc7eeea9c3f6b0, 0xaaec0ee881b5f065, 0x702e969a764a6f12,
+// 0x6ecc7eeea9c3f6b0, 0xd61c8badbd467e85, 0x6e581b6585ee642c.
+// S15a Build A: the S15 keys ([matchups], [riders], [body_armour],
+// [ai.riders], [supply] foreign_ammo, [melee] bayonets) and
+// TransportSetup::exposed; no value of an existing key changed.
 // S16a Build A (`MapSetup::roads`, `[vehicles.road]`,
 // `MobilitySetup::road_speed_pct`) changed it; the B3 code values were
 // 0xeab40cb2122960c1, 0x2a81f7b3b47897ee, 0xc871cc8b8240ceb5,
@@ -223,15 +239,21 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // S17 values were 0xf98a18730dcc69d8, 0x9adcb3c9bfc13124,
 // 0xa92afd3f29f2782e, 0xf98a18730dcc69d8, 0x19026291de206f2e,
 // 0xf7d2ea888b7deb7e.
+// The merge of main's S14/S15 (`316419b`) into S16-S18 (PR 11) changed it;
+// main's S15 values were 0x1dfba3885c5c17d4, 0x46202681ac7cc847,
+// 0x93e91970c98371da, 0x1dfba3885c5c17d4, 0x9640916bd92a5f6f,
+// 0x02bc31155454159f; the S18 values 0xdc5b3cfb097da6d4,
+// 0xaea25867b2cddc8e, 0x65d381fb5f11e71b, 0xdc5b3cfb097da6d4,
+// 0x8f02abf66578cecd, 0xbf207ae145c7d539.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0xdc5b3cfb097da6d4),
-    ("skirmish usa-ger seed 7 hard", 0xaea25867b2cddc8e),
-    ("test_unlock ger-usa seed 1 normal", 0x65d381fb5f11e71b),
-    ("example override ger-usa seed 1 normal", 0xdc5b3cfb097da6d4),
-    ("human ger vs ai usa seed 3 easy", 0x8f02abf66578cecd),
+    ("skirmish ger-usa seed 1 normal", 0xfd4cb255318ff14b),
+    ("skirmish usa-ger seed 7 hard", 0x4b86c15c1b14d70e),
+    ("test_unlock ger-usa seed 1 normal", 0x1062569466d3d092),
+    ("example override ger-usa seed 1 normal", 0xfd4cb255318ff14b),
+    ("human ger vs ai usa seed 3 easy", 0x2dc01e1d457558a6),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0xbf207ae145c7d539,
+        0x109f8d8cbaad746c,
     ),
 ];
 
@@ -537,4 +559,97 @@ fn legacy_cards_expand_to_todays_men() {
     assert_eq!(d.training.len(), 4);
     assert!(d.training["ww2:training_regular"].is_regular());
     assert!(!d.training["ww2:training_conscript"].is_regular());
+}
+
+/// One man a member slot of a card, slot names cleared (`count` 1 each).
+fn man_for_man(s: &mut MatchSetup) {
+    for t in &mut s.squad_types {
+        let mut men = Vec::new();
+        for m in &t.members {
+            for _ in 0..m.count {
+                let mut one = m.clone();
+                one.slot.clear();
+                one.count = 1;
+                men.push(one);
+            }
+        }
+        t.members = men;
+    }
+}
+
+/// S14 plan 4.2: with `[flame] enabled` 0 the Sturmpioniergruppe and the
+/// Assault Section spawn exactly the men of `<BASE>` (a27ce63), man for
+/// man (weapon, sidearm, items, traits, rounds), and the whole setup is
+/// otherwise equal: the reference is the live mod with those two cards'
+/// members put back from `fixtures/s14_base/`. With 1 each card has a flame
+/// man and the derived `flame` capability. Control: the flame-on setup
+/// differs from the reference.
+#[test]
+fn flame_off_cards_spawn_todays_men() {
+    use frontline_content::MemberDef;
+    use frontline_content::setup::Capability;
+    let cards = [
+        ("ww2:ger_sturmpioniergruppe", "ger_sturmpioniergruppe.toml"),
+        ("ww2:usa_assault_section", "usa_assault_section.toml"),
+    ];
+    let mut live = live();
+    // S14-ai Build D: the shipped switch is on; the flame-off resolve is
+    // the one compared with the old cards.
+    for r in live.rules.values_mut() {
+        if let Some(f) = r.flame.as_mut() {
+            f.enabled = 0;
+        }
+    }
+    let mut base = live.clone();
+    for (id, file) in cards {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/s14_base")
+            .join(file);
+        let raw: toml::Value = toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let members: Vec<MemberDef> = raw["members"].clone().try_into().unwrap();
+        let d = base.squads.get_mut(id).unwrap();
+        d.members = members;
+        d.capabilities.retain(|c| c != "flame");
+    }
+    let req = MatchRequest::skirmish(1, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    let mut got = live.resolve(&req).unwrap();
+    let mut want = base.resolve(&req).unwrap();
+    assert_eq!(got.rules.flame.enabled, 0, "the switch is off here");
+    for (id, _) in cards {
+        let t = got.squad_type_index(id).unwrap() as usize;
+        assert!(!got.squad_types[t].has(Capability::Flame), "{id}: no flame");
+    }
+    man_for_man(&mut got);
+    man_for_man(&mut want);
+    for (id, _) in cards {
+        let t = got.squad_type_index(id).unwrap() as usize;
+        assert_eq!(got.squad_types[t], want.squad_types[t], "{id} man for man");
+    }
+    assert!(got == want, "the setups differ outside the two cards");
+    // Flame on: a flame man, his assistant, the capability.
+    let mut on = live.clone();
+    on.rules
+        .values_mut()
+        .for_each(|r| r.flame.get_or_insert_with(Default::default).enabled = 1);
+    let mut lit = on.resolve(&req).unwrap();
+    for (id, _) in cards {
+        let t = lit.squad_type_index(id).unwrap() as usize;
+        let ty = &lit.squad_types[t];
+        assert!(ty.has(Capability::Flame), "{id}: flame");
+        let flame = ty
+            .members
+            .iter()
+            .filter(|m| {
+                lit.weapons[m.weapon as usize].class == frontline_content::WeaponClass::Flame
+            })
+            .count();
+        assert_eq!(flame, 1, "{id}: one flame man");
+        assert_eq!(
+            ty.men,
+            if id.contains("sturm") { 8 } else { 12 },
+            "{id}: size kept"
+        );
+    }
+    man_for_man(&mut lit);
+    assert!(lit != want, "control: flame on differs");
 }

@@ -140,6 +140,14 @@ impl StableHash for Combat {
         w.bandaging.put(out);
         w.by.0.put(out);
         w.by.1.put(out);
+        // S14.
+        let c = &self.close;
+        c.burn_until.put(out);
+        c.burn_by.0.put(out);
+        c.burn_by.1.put(out);
+        c.strike.put(out);
+        c.strike_phase.put(out);
+        c.strike_at.put(out);
     }
 }
 
@@ -204,6 +212,8 @@ impl StableHash for Kit {
         }
         self.on_sidearm.put(out);
         self.refill.put(out);
+        // S15.
+        self.foreign.put(out);
     }
 }
 
@@ -426,6 +436,10 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
         put_postcard(&p.s11b, out);
         // S12.
         put_postcard(&p.s12, out);
+        // S14.
+        put_postcard(&p.s14, out);
+        // S15.
+        put_postcard(&p.s15, out);
         // S18 H1.
         put_postcard(&p.handed, out);
         put_postcard(&p.handed_to, out);
@@ -624,6 +638,12 @@ fn put_game(g: &MatchState, out: &mut Vec<u8>) {
     put_postcard(&g.fort, out);
     // S12: the casualties (beds are in `supply6`).
     put_postcard(&g.casualties, out);
+    // S14: particles, patches and clears.
+    g.next_flame.put(out);
+    put_postcard(&g.flame, out);
+    g.next_patch.put(out);
+    put_postcard(&g.patches, out);
+    put_postcard(&g.clears, out);
     // AI commander state: postcard's encoding is explicit and stable (varint
     // integers, fields in declaration order, maps in key order).
     for ai in &g.ai {

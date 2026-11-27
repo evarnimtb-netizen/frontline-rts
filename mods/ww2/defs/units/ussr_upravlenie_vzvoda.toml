@@ -1,0 +1,35 @@
+# Upravlenie vzvoda (S15 Build B): the platoon HQ (three men with PPSh-41);
+# builds the command post (`ww2:ussr_komandny_punkt`). Price as the US HQ
+# card's 200 less the 30 of a smaller squad: S15 starting value 170.
+id = "ww2:ussr_upravlenie_vzvoda"
+name = "Upravlenie vzvoda"
+short_name = "Vzvod HQ"
+faction = "ww2:ussr"
+tags = ["hq"]
+capabilities = ["dig_basic", "recrew"]
+sources = [
+    "battleorder.org, USSR rifle company 1944 (platoon headquarters)",
+]
+max_alive = 1
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 170
+cooldown_s = 60
+unlock_s = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:ussr_ppsh41"
+traits = ["leader"]
+items = { "ww2:ussr_f1_grenade" = 1 }
+
+[[members]]
+slot = "deputy"
+weapon = "ww2:ussr_ppsh41"
+
+[[members]]
+slot = "runner"
+weapon = "ww2:ussr_ppsh41"

@@ -707,10 +707,13 @@ impl MatchState {
                         he: true,
                         ammo,
                         mission: 0,
+                        flame: false,
                     });
                     vs.loaded = None;
                     vs.reload = reload_ticks;
                     vs.since_fire = 0;
+                    // S15 R3c: riders on the deck get off.
+                    crate::s15::rider_cause(&self.setup, vs, crate::s15::rider_exit::GUN_FIRED);
                     vs.ranging = vs.ranging.saturating_add(1);
                     let kind = match k {
                         AP => 1,
@@ -1108,12 +1111,14 @@ impl MatchState {
                 } else {
                     0
                 },
+            flame: false,
         });
         let reload_ticks = reload_of(&self.vehicles[&id], v, setup);
         let vs = self.vehicles.get_mut(&id).expect("listed");
         vs.loaded = None;
         vs.reload = reload_ticks;
         vs.since_fire = 0;
+        crate::s15::rider_cause(&self.setup, vs, crate::s15::rider_exit::GUN_FIRED);
         let ev = ArmourEv::new(ArmourEventKind::Fired, id, sq_owner.0, sq_owner.0)
             .component(2)
             .ammo(ammo)
@@ -1616,6 +1621,7 @@ fn mg_fire(
         he: false,
         ammo: NO_AMMO,
         mission: 0,
+        flame: false,
     });
     st.shots = st.shots.wrapping_add(1);
     if m.rounds.is_some() {

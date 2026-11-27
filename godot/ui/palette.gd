@@ -26,9 +26,11 @@ const NEUTRAL := Color(0.65, 0.66, 0.64)
 const FACTION_COLORS := {
 	"germany": Color(0.50, 0.58, 0.65),
 	"usa": Color(0.64, 0.58, 0.34),
+	# S15: the USSR, #9a5a4a (its faction def's colour).
+	"ussr": Color("9a5a4a"),
 }
-const FACTION_NAMES := {"germany": "Germany", "usa": "USA"}
-const FACTION_SHORT := {"germany": "GER", "usa": "USA"}
+const FACTION_NAMES := {"germany": "Germany", "usa": "USA", "ussr": "USSR"}
+const FACTION_SHORT := {"germany": "GER", "usa": "USA", "ussr": "SOV"}
 
 const SQUAD_NAMES := {
 	"rifle": "Rifle squad",
@@ -62,6 +64,11 @@ static func owner_color(owner: int, local_player: int) -> Color:
 
 static func faction_color(faction: String) -> Color:
 	return FACTION_COLORS.get(faction, NEUTRAL)
+
+
+## Display name of a faction (an unknown id reads capitalised).
+static func faction_name(faction: String) -> String:
+	return FACTION_NAMES.get(faction, faction.capitalize())
 
 
 static func mmss(seconds: float) -> String:

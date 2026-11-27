@@ -68,6 +68,13 @@ pub(crate) struct SpotPass {
     optics: Vec<(SimId, Fx, Fx, Fx, Fx)>,
 }
 
+/// `pct` percent of length `x`, in i64 and saturated (S15-ai: `x · pct`
+/// in Q16.16 saturated above about 327 m at 100 %, so a vehicle sight
+/// over that never reached its range; the same value below it).
+pub(crate) fn pct_of(x: Fx, pct: i64) -> Fx {
+    Fx::from_raw((x.raw() as i64 * pct / 100).clamp(i32::MIN as i64, i32::MAX as i64) as i32)
+}
+
 /// Head point of a soldier: the top of his capsule less the eye drop
 /// (the rules' `combat.body.eye_drop_mm`, as `Fx`).
 #[inline]
@@ -126,10 +133,10 @@ pub(crate) fn spot(
                 Some(_) => 70,
                 None => 100,
             };
-            let sight = Fx::from(v.sight).mul_int(pct).div_int(100);
+            let sight = pct_of(Fx::from(v.sight), pct as i64);
             // S8b (6.9): recon optics: settled, it sees farther.
             let sight = if vs.still_ticks as u32 >= v.settle_ticks {
-                sight.mul_int(v.stationary_sight_pct as i32).div_int(100)
+                pct_of(sight, v.stationary_sight_pct as i64)
             } else {
                 sight
             };
@@ -261,7 +268,7 @@ pub(crate) fn spot(
         };
         near.clear();
         for &(oid, oxy, eye, sight, _) in &out.observers {
-            let range = Fx::from_raw((sight.raw() as i64 * pct as i64 / 100) as i32);
+            let range = pct_of(sight, pct as i64);
             let d = (pos.xy() - oxy).length_sq_raw();
             let r = range.raw() as u64;
             if d > r * r {
@@ -344,8 +351,7 @@ fn spot_vehicle(
             // Engine noise and size: no sight line needed.
             return true;
         }
-        let range =
-            Fx::from_raw((sight.raw() as i64 * pct as i64 / 100).min(i32::MAX as i64) as i32);
+        let range = pct_of(sight, pct as i64);
         // S9-1 (A): a gun's optic inside its arc (no size or moving boost;
         // the woods factor still applies), or the ordinary range if farther.
         let optic = out

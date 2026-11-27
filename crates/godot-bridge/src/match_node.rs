@@ -420,6 +420,11 @@ fn vehicle_types(setup: &MatchSetup) -> VarDictionary {
             "seat_ids" => &seat_ids,
         };
         let mut d = d;
+        // S15 R1: the `slots` are an exposed deck (riders sit on the hull's
+        // top, drawn seated on the slot boxes), not a closed compartment.
+        if v.transport.as_ref().is_some_and(|t| t.exposed) {
+            d.set("deck", true);
+        }
         // S8b: wheels instead of tracks (the blockout: 8 on a long car, 6 on
         // a truck and a short car), the wire screen, and a truck's cargo box.
         if v.mobility.kind == frontline_content::vehicle::MobilityKind::Wheeled {
@@ -911,6 +916,11 @@ fn menu_choice(d: &VarDictionary) -> MenuChoice {
             .get("test_unlock")
             .and_then(|v| v.try_to::<bool>().ok())
             .unwrap_or(false),
+        // S15 M3: an absent or empty "opponent" is the default opponent.
+        opponent: d
+            .get("opponent")
+            .map(|v| v.to_string())
+            .filter(|v| !v.is_empty()),
     }
 }
 
@@ -2027,6 +2037,12 @@ impl MatchRuntime {
                 "enabled" => rules.wounds.enabled != 0,
                 "reinforce" => rules.wounds.reinforce != 0,
             },
+            // S14: the assault kit's switches (`MatchView.s14_on`).
+            "s14" => &vdict! {
+                "flame" => rules.flame.enabled != 0,
+                "melee" => rules.melee.enabled != 0,
+                "clear" => rules.clear.enabled != 0,
+            },
         };
 
         // S17 (Presenter P): who is on the local player's team.
@@ -2268,6 +2284,24 @@ impl MatchRuntime {
                     },
                 );
             }
+            // S14: he burns / his strike phase (1 wind-up, 2 recovery).
+            if f.burning.get(i).copied().unwrap_or(false) {
+                d.set("burning", true);
+            }
+            // S8a / S15 R1: the vehicle he rides and his slot; S15 P1: he
+            // wears a body plate.
+            let ride = f.riding.get(i).copied().unwrap_or(u32::MAX);
+            if ride != u32::MAX {
+                d.set("riding", ride as i64);
+                d.set("ride_slot", f.ride_slot.get(i).copied().unwrap_or(0) as i64);
+            }
+            if f.plate.get(i).copied().unwrap_or(false) {
+                d.set("plate", true);
+            }
+            let st = f.strike.get(i).copied().unwrap_or(0);
+            if st != 0 {
+                d.set("strike", st as i64);
+            }
             // S6: the crate he carries (kind and kg), if any.
             if let Some(c) = f.crates.iter().find(|c| c.carrier == id) {
                 d.set(
@@ -2363,6 +2397,32 @@ impl MatchRuntime {
                     "pos" => self.godot(c.pos),
                     "radius" => c.radius,
                     "density" => c.density,
+                }
+                .to_variant(),
+            );
+        }
+        // S14: flame particles and burning ground the local player sees
+        // (own always; else within sight of an own man).
+        let mut flame = VarArray::new();
+        for c in f.flame.iter().filter(|c| c.visible) {
+            flame.push(
+                &vdict! {
+                    "id" => c.id as i64,
+                    "pos" => self.godot(c.pos),
+                    "player" => c.player as i64,
+                }
+                .to_variant(),
+            );
+        }
+        let mut patches = VarArray::new();
+        for c in f.patches.iter().filter(|c| c.visible) {
+            patches.push(
+                &vdict! {
+                    "id" => c.id as i64,
+                    "pos" => self.godot(c.pos),
+                    "player" => c.player as i64,
+                    "seconds_left" => c.ticks_left as f32 / hz,
+                    "radius" => self.setup.rules.flame.patch_radius_cm as f32 / 100.0,
                 }
                 .to_variant(),
             );
@@ -2637,6 +2697,8 @@ impl MatchRuntime {
             "squads" => &squads,
             "soldiers" => &soldiers,
             "smokes" => &smokes,
+            "flame" => &flame,
+            "patches" => &patches,
             "thrown" => &thrown,
             "callin" => &vdict! {
                 "catalog" => &catalog,
@@ -2884,6 +2946,10 @@ impl MatchRuntime {
                     2 => "sides",
                     _ => "",
                 },
+                // S15 R1, R3: the riders sit on an exposed deck; their exit
+                // timer runs (they jump off over the sides). Public.
+                "deck" => v.flags & vehicle_flags::DECK != 0,
+                "riders_off" => v.flags & vehicle_flags::RIDERS_OFF != 0,
             };
             // S9: a served gun; a vehicle towing one.
             if v.gun_state != 0 {
@@ -3757,6 +3823,17 @@ impl MatchRuntime {
                     kg,
                 ));
             }
+            // S14: the first selected infantry squad clears the trench
+            // nearest `target` (grenades, then the entrance).
+            "clear_trench" => {
+                let Some(t) = target else { return };
+                let squads: Vec<(u32, u16)> = own.iter().map(|s| (s.id, s.type_idx)).collect();
+                out.extend(crate::intents::clear_trench_command(
+                    &self.setup,
+                    &squads,
+                    to_sim(t, self.half),
+                ));
+            }
             // S10a: the first selected `clear_wire` squad cuts the wire
             // section nearest `target`.
             "cut_wire" => {
@@ -4011,7 +4088,8 @@ impl MatchRuntime {
             "move_units" | "attack_move_units" | "stop_units" | "retreat_units" | "dig_units"
             | "set_stance" | "set_fire" | "throw" | "throw_each" | "reverse_units"
             | "face_units" | "attack_unit" | "set_ammo" | "repair_units" | "follow_units"
-            | "suppress_units" | "tend_units" | "carry_units" | "evacuate_units" => {
+            | "suppress_units" | "tend_units" | "carry_units" | "evacuate_units"
+            | "strike_units" => {
                 let raw = data
                     .get("units")
                     .and_then(|v| v.try_to::<PackedInt32Array>().ok())
@@ -4042,6 +4120,7 @@ impl MatchRuntime {
                         | "tend_units"
                         | "carry_units"
                         | "evacuate_units"
+                        | "strike_units"
                 ) {
                     // `attack_unit` names its target vehicle in `target`,
                     // `follow_units` in `vehicle`, S12 `tend_units` and

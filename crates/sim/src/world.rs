@@ -483,14 +483,24 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// the whole slice.
 /// 32: B3 code (`AiCounters::arty_direct_holds`; in the setup `[ai.arty]
 /// direct_in_budget`).
-/// 33: S16a (`FLAG_ROAD` in the terrain flag layer and the point-symmetry
-/// blend; in the setup `MapSetup::roads`, `[vehicles.road]` and
-/// `MobilitySetup::road_speed_pct`). One bump for the slice.
-/// 34: S17a (in the setup `PlayerSetup::team`, `[teams]` and `[ai.team]`;
-/// the team table is derived, not saved). One bump for the slice.
-/// 35: S18 (`PlayerState::{handed, handed_to}`, the H1 hand-over; in the
-/// setup `[teams] handover, handover_pop, ping_gap_s`). One bump for the
-/// slice.
+/// 33: S14 (`MatchState::{flame, next_flame, patches, next_patch,
+/// clears}`, `Combat::close`, `kill_class` FLAME and MELEE (`COUNT` 14),
+/// `fired_class` FLAME (`COUNT` 12), `PlayerState::s14`, six
+/// `AiCounters`; in the setup `[flame]`, `[melee]`, `[clear]`,
+/// `[ai.flame]`, `WeaponClass::Flame` and a member's `when`). One bump for
+/// the whole slice.
+/// 34: S15 (`PlayerState::s15`, `AiCounters::{rider_jobs,
+/// rider_job_ends}`, `AiState::riders`, `Kit::foreign`,
+/// `VehicleState::rider_off`; in the setup `TransportSetup::exposed`, the
+/// `[matchups]`, `[riders]`, `[body_armour]` keys, plates, foreign feeds
+/// and bayonet blocks). One bump for the whole slice.
+/// 35: S16-S18, merged over S14/S15's 34 in one bump (S16a `FLAG_ROAD` in
+/// the terrain flag layer and the point-symmetry blend, `MapSetup::roads`,
+/// `[vehicles.road]`, `MobilitySetup::road_speed_pct`; S17a
+/// `PlayerSetup::team`, `[teams]`, `[ai.team]`, the team table derived, not
+/// saved; S18 `PlayerState::{handed, handed_to}`, the H1 hand-over, `[teams]
+/// handover, handover_pop, ping_gap_s`). On the S16-S18 branch alone these
+/// were 33, 34 and 35.
 const SAVE_VERSION: u32 = 35;
 
 #[derive(Serialize)]
@@ -530,6 +540,9 @@ pub struct World {
     flags: Vec<bool>,
     fire_bufs: Vec<Vec<FireRequest>>,
     fire_merged: Vec<FireRequest>,
+    /// S14 M3: per-chunk strike requests, and merged (ascending id).
+    strike_bufs: Vec<Vec<SimId>>,
+    strikes: Vec<SimId>,
     ended_bufs: Vec<Vec<(u32, ProjectileEnd)>>,
     cmd_order: Vec<usize>,
     /// AI commands due this tick (match mode), merged with the human ones.
@@ -688,6 +701,8 @@ impl World {
             flags: Vec::new(),
             fire_bufs: Vec::new(),
             fire_merged: Vec::new(),
+            strike_bufs: Vec::new(),
+            strikes: Vec::new(),
             ended_bufs: Vec::new(),
             cmd_order: Vec::new(),
             ai_cmds: Vec::new(),
@@ -935,6 +950,11 @@ impl World {
             }
         }
         s.state.terrain.rebuild_derived();
+        if let Some(g) = &s.state.game {
+            // S14: clear cells read the dug layer, derived just above.
+            g.validate_s14_terrain(&s.state.terrain)
+                .map_err(|e| SimError::Save(e.to_string()))?;
+        }
         if let Some(g) = &mut s.state.game {
             g.rebuild_derived();
         }
@@ -1267,6 +1287,8 @@ impl World {
                 flags,
                 fire_bufs,
                 fire_merged,
+                strike_bufs,
+                strikes,
                 marks,
                 mark_of,
                 vmarks,
@@ -1288,6 +1310,7 @@ impl World {
             combat::build_vmarks(entities, vmarks);
             game.update_focus(entities, marks, mark_of);
             fire_bufs.resize_with(entities.chunk_count(), Vec::new);
+            strike_bufs.resize_with(entities.chunk_count(), Vec::new);
             {
                 let Entities {
                     kind,
@@ -1313,6 +1336,7 @@ impl World {
                     vmarks,
                     game: &*game,
                     terrain,
+                    spatial,
                     seed,
                     tick,
                 };
@@ -1322,15 +1346,22 @@ impl World {
                         .zip(weapon.par_chunks_mut(CHUNK_SIZE))
                         .zip(kit.par_chunks_mut(CHUNK_SIZE))
                         .zip(fire_bufs.par_iter_mut())
+                        .zip(strike_bufs.par_iter_mut())
                         .enumerate()
-                        .map(|(c, (((cb, w), k), out))| {
+                        .map(|(c, ((((cb, w), k), out), st))| {
                             out.clear();
-                            combat::aim_and_fire(c, &ctx, cb, w, k, out)
+                            st.clear();
+                            combat::aim_and_fire(c, &ctx, cb, w, k, out, st)
                         })
                         .collect_into_vec(flags)
                 });
             }
             hash.merge_entity_flags(flags);
+            // S14 M3: chunk order is ascending id.
+            strikes.clear();
+            for b in strike_bufs.iter() {
+                strikes.extend_from_slice(b);
+            }
             fire_merged.clear();
             for b in fire_bufs.iter() {
                 fire_merged.extend_from_slice(b);
@@ -1360,6 +1391,8 @@ impl World {
             // the pool drops below included).
             game.count_fired(entities, fire_merged);
             let (fired, dropped) = combat::spawn_rounds(fire_merged, projectiles, hash);
+            // S14 F1: flame requests go to their own list, capped per player.
+            game.spawn_flame(fire_merged);
             stats.shots_fired += fired;
             stats.shots_dropped += dropped;
             shots.clone_from(fire_merged);
@@ -1467,6 +1500,29 @@ impl World {
                 }
             }
         }
+        // S14 F2-F5 (serial, after the pool and `fly_thrown`): particles,
+        // burns and patches; their blows join this tick's for the Damage
+        // stage. Nothing runs with `[flame] enabled` 0 and no particle or
+        // patch left.
+        if self.state.game.as_ref().is_some_and(|g| g.s14_live()) {
+            let World {
+                state,
+                hash,
+                spatial,
+                downed,
+                blows,
+                ..
+            } = self;
+            let SimState {
+                entities,
+                terrain,
+                game,
+                ..
+            } = state;
+            game.as_mut().expect("match world").flame_stage(
+                entities, hash, spatial, downed, terrain, substeps, tick, blows,
+            );
+        }
         let t5 = Instant::now();
 
         // 6. Damage: serial, in projectile slot order.
@@ -1481,6 +1537,7 @@ impl World {
                 explosions,
                 fused,
                 armour_events,
+                strikes,
                 ..
             } = self;
             let SimState {
@@ -1491,6 +1548,7 @@ impl World {
                 ..
             } = state;
             let mut ctx = combat::DamageCtx {
+                strikes,
                 ents: entities,
                 terrain,
                 spatial,
@@ -1597,6 +1655,11 @@ impl World {
                 // S12 W4, W5: bandages, bleeding, bleed-outs (nothing with
                 // `[wounds] enabled` 0).
                 game.wounds_tick(&mut ctx, &mut self.state.stats, seed);
+                // S14 F6: men leave burning ground (nothing with `[flame]
+                // enabled` 0 or no patch).
+                game.step_out_tick(&mut ctx);
+                // S14 C2-C5: trench clears (nothing without a clear).
+                game.clear_tick(&mut ctx);
                 game.update_items(&mut self.state.entities, &mut self.hash);
                 // S5a: crew feed, sharing and the priced base refill.
                 let bombs_before = game.mortar_bombs_by_player(&self.state.entities);
@@ -2640,6 +2703,42 @@ impl World {
         true
     }
 
+    /// S14 staged saves and tests: replaces the flame particles and the
+    /// burning-ground patches (each list in ascending id; the id counters
+    /// move past the highest id). The caller keeps them valid (caps, ticks,
+    /// players). False outside a match.
+    pub fn stage_s14(
+        &mut self,
+        flame: Vec<crate::flame::Flame>,
+        patches: Vec<crate::flame::Patch>,
+    ) -> bool {
+        let Some(g) = self.state.game.as_mut() else {
+            return false;
+        };
+        g.next_flame = g.next_flame.max(flame.last().map_or(0, |f| f.id + 1));
+        g.next_patch = g.next_patch.max(patches.last().map_or(0, |p| p.id + 1));
+        g.flame = flame;
+        g.patches = patches;
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
+    /// Puts squad `sq` mid-clear (staged tests; `ClearTrench` inserts a
+    /// clear the same way). False with no match or no such squad.
+    pub fn stage_clear(&mut self, sq: SquadId, clear: crate::flame::Clear) -> bool {
+        let Some(g) = self.state.game.as_mut() else {
+            return false;
+        };
+        if !g.squads.contains_key(&sq) {
+            return false;
+        }
+        g.clears.insert(sq, clear);
+        self.refresh_hashes();
+        self.fill_snapshot();
+        true
+    }
+
     /// Starts a field repair of vehicle `id` (staged tests; `RepairUnits`
     /// and the AI call `MatchState::start_repair` the same way). False if
     /// nothing is repairable.
@@ -3082,6 +3181,21 @@ mod s12b_tests;
 #[cfg(test)]
 #[path = "s13_tests.rs"]
 mod s13_tests;
+#[cfg(test)]
+#[path = "s14_ai_tests.rs"]
+mod s14_ai_tests;
+#[cfg(test)]
+#[path = "s14_tests.rs"]
+mod s14_tests;
+#[cfg(test)]
+#[path = "s14c_tests.rs"]
+mod s14c_tests;
+#[cfg(test)]
+#[path = "s15_ai_tests.rs"]
+mod s15_ai_tests;
+#[cfg(test)]
+#[path = "s15_tests.rs"]
+mod s15_tests;
 #[cfg(test)]
 #[path = "s17_tests.rs"]
 mod s17_tests;
@@ -4783,6 +4897,7 @@ mod tests {
             door_ticks: _,
             unload: _,
             trip: _,
+            rider_off: _,
             served: _,
             towing: _,
             material_g: _,
@@ -4827,6 +4942,11 @@ mod tests {
             (
                 "trip",
                 Box::new(|v| v.trip = Some(crate::vehicle::Trip::default())),
+            ),
+            // S15.
+            (
+                "rider_off",
+                Box::new(|v| v.rider_off = Some(crate::s15::RiderOff::default())),
             ),
             // S9.
             ("served", Box::new(|v| v.served = Some(Default::default()))),
@@ -5614,6 +5734,7 @@ mod tests {
             ..
         } = state;
         let mut ctx = combat::DamageCtx {
+            strikes: &[],
             ents: entities,
             terrain,
             spatial,
@@ -5734,6 +5855,7 @@ mod tests {
                 ..
             } = &mut w;
             let mut ctx = combat::DamageCtx {
+                strikes: &[],
                 ents: &mut state.entities,
                 terrain: &mut state.terrain,
                 spatial,
@@ -6545,6 +6667,7 @@ mod tests {
             rounds: _,
             on_sidearm: _,
             refill: _,
+            foreign: _,
         } = crate::items::Kit::default();
         type StateEdit = Box<dyn Fn(&mut SimState)>;
         fn acct(s: &mut SimState) -> &mut AmmoAccount {
@@ -6564,6 +6687,11 @@ mod tests {
             (
                 "kit.refill",
                 Box::new(move |s| s.entities.kit[gi].refill += 1),
+            ),
+            // S15.
+            (
+                "kit.foreign",
+                Box::new(move |s| s.entities.kit[gi].foreign += 1),
             ),
             ("ammo.credit", Box::new(|s| acct(s).credit += 1)),
             ("ammo.paid", Box::new(|s| acct(s).paid[2] += 1)),

@@ -1,0 +1,25 @@
+# 122 mm D-25T (S15 Build C, S15-ussr.md 6.4): the IS-2's gun, separate loading; its slow loading is this reload (plan: no rule).
+# Game values not in a source are S15 starting values (no tuning).
+id = "ww2:ussr_d25t"
+name = "122 mm D-25T"
+class = "cannon"
+# Engagement range, m (as every tank and AT gun of the mod).
+range_m = 600
+# A direct hit on a man, HP.
+damage = 300
+# 2-3 rounds/min with the drop breech (Wikipedia IS-2, read): the upper figure.
+rounds_per_min = 3
+magazine = 1
+# Reload, ms: 60000 / rounds_per_min.
+reload_ms = 20000
+# 2.5 mrad stationary, urad (as the German and US guns).
+spread_urad = 2500
+muzzle_velocity_m_s = 780
+suppression = 40
+# Muzzle blast: seen at 300 % of sight (as the other guns).
+fire_reveal_pct = 300
+fire_reveal_ms = 3000
+sources = [
+  "Wikipedia, IS-2: D-25T, 28 rounds, 2-3 rpm (read 2026-11-26)",
+  "losthistory.net: D-25T BR-471 780 m/s (read 2026-11-26)",
+]

@@ -6,7 +6,8 @@ comparison is an Own test (orders, control, services, pop, cards, records of one
 validation or a report. Classes: **Own**; **Hostile (teams)** / **Sees (teams)** / **Own+ally (teams)**:
 converted; **Own bit**: spotting writes and reads the observer's own `seen_by` bit (T2 reads it through
 `sees`); **Carry**: the mask copied into a mark or snapshot; **Presenter (P)**: fog of war, Presenter P;
-**Foe**: the A1 main foe; **Report**. No row is unclassified.
+**Foe**: the A1 main foe; **Report**. No row is unclassified (the S14/S15 rows of the PR 11 merge are at
+the end).
 
 Converted sites (not listed below when the comparison went away): `combat.rs` targets, rounds and
 fragments past allies, blast spares, kill credit; `gunnery.rs` targets and HE clearance; `squad.rs`,
@@ -332,3 +333,28 @@ wire and points, `ai/sweep.rs`, `ai/obstacles.rs`, `ai/supply.rs`, `ai/medic.rs`
 | `snapshot.rs:1410` | Sees (teams) (Presenter P) | `g.teams.visible_mask(owner, ents.combat()[i].seen_by)` |
 | `teams.rs:154` | Teams API | `pub fn visible_mask(&self, owner: u8, seen_by: u16) -> u16 {` |
 | `teams.rs:156` | Teams API | `.filter(\|&q\| self.sees(q, seen_by) \|\| self.allied(q, owner))` |
+
+## Merge with S14/S15 (PR 11)
+
+`tools/owner_sites.sh` now stops only at a `#[cfg(test)]` that opens an inline `mod x {`: before, a
+`#[cfg(test)]` helper function (`combat.rs:2720`, `counter_battery.rs:18`) hid the non-test code after it.
+The sites that showed, and the S14/S15 sites, are converted or classed here. Converted (no raw comparison
+left): `combat.rs` fragments sparing a vehicle (T3, an ally's as an own), the S14 burn's own-fire test and F8
+counter (T3), the S12 wound falls' own-fire flag (T3: an ally's death is no kill, as the no-wounds path's
+`ff_dead`); `flame.rs` the flame stream's flight (`FlightCtx::teams`: it passes allies as own men), the slit aim
+(an ally's roof is not aimed at), patch-hit counter (enemy burns only), strike start and strike target (M2:
+an ally is never struck); `s15.rs` riders' burst suppression (S15's `hostile_to` removed: it asks
+`crate::teams`); `ai/flame.rs` the bunker target (an enemy's, not an ally's).
+
+| Site | Class | Text |
+|---|---|---|
+| `counter_battery.rs:79` | Own (the hearer's own men listen; markers are shared by T2 elsewhere) | `for q in self.squads.values().filter(\|q\| q.owner == p) {` |
+| `flame.rs:1131` | Own (S14 C3: the clearing squad waits for its own patch) | `x.player == p.0` |
+| `s15.rs:203` | Own (S15 AI rider job: own squads) | `let own = \|sq: &SquadId\| g.squads.get(sq).is_none_or(\|q\| q.owner == player);` |
+| `structures.rs:1349` | Own (S15 X1: captured bombs from a crate the player holds, T8) | `c.owner == owner` |
+| `ai/flame.rs:530` | Own (S14 A1: own squads) | `let live = g.squads.get(id).is_some_and(\|q\| q.owner == me);` |
+| `ai/flame.rs:556` | Own (S14 A1: own squads) | `if busy.contains(&id) && g.squads.get(&id).is_some_and(\|q\| q.owner == me) {` |
+| `ai/flame.rs:672` | Own (S14 A1: point taken, as `ai/breach.rs:514`) | `if g.points[job.point as usize].owner == Some(self.me)` |
+| `ai/flame.rs:955` | Own (S14 A1: a point not mine with an Attack task; the planner never attacks an ally point) | `g.points[p].owner != Some(me)` |
+| `ai/riders.rs:160` | Own (S15 A1: own tank, T8) | `&& self.ents.owner[i] == self.me` |
+| `ai/transport.rs:143` | Own (S15-ai: own transports, T8) | `.is_some_and(\|s\| s.owner == me && s.members.first().is_some_and(\|v\| carrier(g, *v)))` |

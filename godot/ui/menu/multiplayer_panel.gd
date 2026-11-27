@@ -347,9 +347,9 @@ func _build_lobby() -> Control:
 	var fac_row := HBoxContainer.new()
 	fac_row.add_theme_constant_override("separation", 10)
 	var group := ButtonGroup.new()
-	for f in Session.FACTIONS:
+	for f in Session.faction_ids():
 		var b := Button.new()
-		b.text = UiPalette.FACTION_NAMES[f]
+		b.text = UiPalette.faction_name(f)
 		b.toggle_mode = true
 		b.button_group = group
 		b.custom_minimum_size = Vector2(150, 40)
@@ -602,7 +602,7 @@ func _refresh_lobby() -> void:
 		else:
 			r.name.text = String(s.name) + ("  (you)" if i == slot else "")
 		r.name.add_theme_color_override("font_color", UiPalette.TEXT)
-		r.faction.text = UiPalette.FACTION_NAMES.get(f, f)
+		r.faction.text = UiPalette.faction_name(f)
 		r.faction.add_theme_color_override("font_color", UiPalette.faction_color(f).lightened(0.35))
 		var ping := float(s.get("ping_ms", -1.0))
 		r.ping.text = "" if (i == slot and ping < 0.0) or ai >= 0 else NetUi.ping_text(ping)
@@ -616,7 +616,7 @@ func _refresh_lobby() -> void:
 	for f in faction_btns:
 		var b: Button = faction_btns[f]
 		b.set_pressed_no_signal(f == my_f)
-		b.text = UiPalette.FACTION_NAMES[f] + ("  (taken)" if f == their_f and f != my_f else "")
+		b.text = UiPalette.faction_name(f) + ("  (taken)" if f == their_f and f != my_f else "")
 	# S18: own team (2v2).
 	team_box.visible = team_mode
 	var my_t := int(mine.get("team", -1))
@@ -662,8 +662,11 @@ func _refresh_lobby() -> void:
 			blocker = "A 2v2 needs a map with four bases: %s." % Session.MAPS.get(TEAM_MAP, {}).get("name", TEAM_MAP)
 	elif theirs.is_empty():
 		blocker = "Waiting for a second player to join."
-	elif my_f == their_f:
-		blocker = "Both players picked %s. Factions must differ: pick the other one." % UiPalette.FACTION_NAMES.get(my_f, my_f)
+	else:
+		# S15 M2, M4, M6: the same faction (no mirror) or a pair the rules
+		# refuse blocks Ready; the relay only knows "differ", the client
+		# resolves the rest (the same words come back in `mismatch`).
+		blocker = Session.pair_refusal(my_f, their_f)
 	var i_ready: bool = mine.get("ready", false)
 	if not msg.is_empty() or not err.is_empty():
 		lobby_msg.text = msg if not msg.is_empty() else err
@@ -769,7 +772,12 @@ func _on_slot_action(i: int) -> void:
 	refresh()
 
 
+## The default opponent of `f` by the rules' `[matchups]` (S15 M3; merge
+## with S18: an AI on the other team plays it), else the other menu faction.
 func _other_faction(f: String) -> String:
+	var opp: Array = Session.opponents_of(f)
+	if not opp.is_empty():
+		return String(opp[0])
 	for g in Session.FACTIONS:
 		if g != f:
 			return g
