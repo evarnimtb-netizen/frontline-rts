@@ -103,3 +103,37 @@ clear Ready, refuse slot 0 and AI slots; version is an exact match, older Hellos
   while others remain (only app exit stops it), or host migration later.
 - Open (low): two slots silent at once wait one full timeout each (sequential `Waiting`); one human + AI fill never
   confirms hashes, so the desync recorder keeps every bundle from tick 0 (small, bounded by match length).
+
+## Merge with S14/S15
+Merge of `origin/main` at `316419b` (S14 assault kit, S15 USSR; SAVE 34, PROTOCOL 17) into this branch (`b044c83`).
+- **Versions:** SAVE **35** (main's 34 plus the S16-S18 layout in one bump), PROTOCOL **18** (main's 17 plus S16-S18).
+  Main's fields come first in `PlayerState`, `MatchState` and the setup, ours after. `setup_hash` baselines
+  (`resolved_defs.rs`) re-blessed; save fuzz mirrors 35. STATE history: S14/S15 34/17, S16-S18 35/18.
+- **Conflicts (24 files):** both sides kept everywhere. Hand-written: `world.rs` SAVE history, `protocol.rs` and
+  `relay-protocol.md` version history, `validate.rs` (map warnings plus every `[matchups]` pair), the bridge's
+  `resolve_with` and `net_session::resolve` (S15 faction list and pair check with S18 slots and teams), STATE,
+  `main_menu.gd` (opponent pick, map pick and 1v1/2v2 mode in one start), `multiplayer_panel.gd`, `mock_net.gd`
+  (three factions, three maps), `batch.sh`, `pool.py`.
+- **Team awareness (S17 T1/T3):** `tools/owner_sites.sh` stopped at the first `#[cfg(test)]`, so a test helper fn hid
+  the rest of `combat.rs` (from line 2720) and all of `counter_battery.rs`. It now stops only at an inline test
+  `mod x {`. Converted: the flame stream's flight (`FlightCtx::teams`, passes allies), slit aim and the AI's bunker
+  target (no allied roofs), strike start and strike target (never an ally), the patch-hit counter, ally burns and
+  S12 wound falls as own fire (no kill credit, as the no-wounds path already did), fragments sparing an ally's
+  vehicle, and rider burst suppression. S15's `hostile_to` is gone; it asks `crate::teams`. 10 Own sites classed
+  (`S17-sites.md`, last table); `--check`: 0 unclassified.
+- **USSR on a team:** `[matchups]` M2 (`matchup_issues`) checks only hostile players (different teams). Allies may be
+  any enabled factions. The bridge checks slots against the `[matchups]` factions (offline 2v2, net slots, lobby AI
+  picks); the 1v1 mirror rule stays. The lobby refuses a hostile pair the rules forbid; the AI's default faction is
+  the host's default opponent. Tests: `the_ussr_plays_on_a_team` (bridge), `matchup_asks_hostile_pairs_only` (content).
+- **Tools:** `batch.sh teams` adds `skirmish2v2_ussr` (USA + USSR vs Germany x2); `pair F0 F1 [--map ID]`; `pool.py`
+  pools per map and faction pair.
+- **Checks (breakage only, no balance runs):** cargo test --release: sim 1144 passed, content, cli, godot-bridge,
+  net (ipv6 skipped) all pass. Save fuzz `--include-ignored` 17 passed, 0 panics. Clippy `-D warnings` and fmt are
+  clean. Godot 4.7.2 headless: `check_project` OK, `test_mock_maps` 25/25, `test_data_reload` 21/21, `test_net_ui`
+  180/180, `test_match_view` 481/481.
+- **Sets (`target/merge`):** Kessel Ridge Germany-USA 40 set: **same 40/40** against main `316419b`'s (built in a
+  temporary worktree; worlds `69118c57…` vs `8927c5b5…`). Harrow Cross 2v2 with USA + USSR against Germany x2: 40/40
+  won (team 0 11, team 1 29), no panic, hashes equal at 1 and 4 threads. Kessel Ridge USSR-vs-Germany 40 set: 40/40
+  won, no panic. The win counts are printouts, not judged.
+- **Unfinished:** none of the merge. The menu's 2v2 gives the human's ally his own faction (no separate ally pick);
+  mixed teams such as USA + USSR are possible in the lobby and the CLI.
