@@ -1,0 +1,87 @@
+# Shturmovaya gruppa (S15 Build B): the assault engineer group of the
+# Assault Engineer-Sapper Brigades (ShISBr): eight men, every one in the
+# SN-42 chest plate (2 mm, front torso; Wikipedia "Stalnoi Nagrudnik", read
+# 2026-11-26), PPSh-41 men with satchels and smoke, a ROKS-3 operator and his
+# assistant as a `when` pair as the S14 assault engineers (with `[flame]
+# enabled` 0 both are PPSh men). The plate only counts with `[body_armour]
+# enabled` 1 (the setup drops it at 0).
+id = "ww2:ussr_shturmovaya_gruppa"
+name = "Shturmovaya gruppa"
+short_name = "Shturmoviki"
+faction = "ww2:ussr"
+tags = ["engineer", "assault"]
+capabilities = ["dig_basic", "clear_wire", "breach", "recrew", "clear_mines", "demolish"]
+sources = [
+    "Wikipedia, Stalnoi Nagrudnik (2 mm, 3.5 kg, 0.2 m2, ShISBr; read 2026-11-26)",
+    "Wikipedia, ROKS flamethrowers (read 2026-11-26)",
+]
+ai_weight = 60
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 270
+cooldown_s = 60
+unlock_s = 0
+speed_cm_s = 300
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:ussr_ppsh41"
+traits = ["leader"]
+items = { "ww2:ussr_f1_grenade" = 1, "ww2:ussr_rdg_smoke" = 1, "ww2:ussr_satchel" = 1 }
+armour = { mm = 2.0, zone = "torso", arc_deg = 120 }
+
+[[members]]
+slot = "shturmovik_smoke"
+count = 2
+weapon = "ww2:ussr_ppsh41"
+items = { "ww2:ussr_f1_grenade" = 1, "ww2:ussr_rdg_smoke" = 1 }
+armour = { mm = 2.0, zone = "torso", arc_deg = 120 }
+
+# S14 4.2 pattern: `flame_off` is a PPSh man, `flame_on` the ROKS-3 assistant
+# who takes it up when the operator falls (S4 crew pickup).
+[[members]]
+slot = "roks_helfer"
+when = "flame_off"
+weapon = "ww2:ussr_ppsh41"
+items = { "ww2:ussr_f1_grenade" = 1 }
+armour = { mm = 2.0, zone = "torso", arc_deg = 120 }
+
+[[members]]
+slot = "roks_helfer"
+when = "flame_on"
+weapon = "ww2:ussr_ppsh41"
+traits = ["crew_assistant"]
+items = { "ww2:ussr_f1_grenade" = 1 }
+armour = { mm = 2.0, zone = "torso", arc_deg = 120 }
+
+[[members]]
+slot = "shturmovik_satchel"
+count = 2
+weapon = "ww2:ussr_ppsh41"
+items = { "ww2:ussr_f1_grenade" = 1, "ww2:ussr_satchel" = 1 }
+armour = { mm = 2.0, zone = "torso", arc_deg = 120 }
+
+[[members]]
+slot = "roks_operator"
+when = "flame_off"
+weapon = "ww2:ussr_ppsh41"
+items = { "ww2:ussr_f1_grenade" = 1 }
+armour = { mm = 2.0, zone = "torso", arc_deg = 120 }
+
+# `flame_on`: the ROKS-3 operator (a TT-33 when the tank is dry).
+[[members]]
+slot = "roks_operator"
+when = "flame_on"
+weapon = "ww2:ussr_roks3"
+sidearm = "ww2:ussr_tt33"
+traits = ["crew_gunner"]
+items = { "ww2:ussr_f1_grenade" = 1 }
+armour = { mm = 2.0, zone = "torso", arc_deg = 120 }
+
+[[members]]
+slot = "shturmovik_uz"
+weapon = "ww2:ussr_ppsh41"
+items = { "ww2:ussr_f1_grenade" = 1, "ww2:ussr_uz_charge" = 1 }
+armour = { mm = 2.0, zone = "torso", arc_deg = 120 }

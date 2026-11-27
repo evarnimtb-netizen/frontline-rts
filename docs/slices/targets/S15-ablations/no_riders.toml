@@ -1,0 +1,16 @@
+# S15 ablation (plan 2, 11): no riders (R1-R6) and so no rider jobs, the rest on (the shipped lists, with the
+# USSR from S15-ai on). Written by S15a Build A; run by the later balance pass.
+[riders]
+enabled = 0
+
+[body_armour]
+enabled = 1
+
+[supply]
+foreign_ammo = 1
+
+[melee]
+bayonets = 1
+
+[ai.riders]
+jobs = 0

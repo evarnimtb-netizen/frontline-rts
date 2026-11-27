@@ -425,6 +425,10 @@ pub struct PlayerReport {
     pub s12: S12Player,
     /// S13: the AI's heavy-wave counters, buys, kills and knock-outs.
     pub s13: S13Player,
+    /// S14: the player's `S14Counters` and the AI's flame counters.
+    pub s14: S14Player,
+    /// S15: the player's `S15Counters` and the AI's rider counters.
+    pub s15: S15Player,
     /// B1-5 `--side-detail`: at [`SQUAD_MINUTES`], own foot squads with a
     /// man alive (no vehicle, not a crew) and own squads on a running
     /// (not parked) AI fort job (`None`: over sooner, or no side detail).
@@ -1120,6 +1124,254 @@ impl S13Player {
             }
         }
         p
+    }
+}
+
+/// S14: `S14Counters` in report order (names of [`S14Player::s`]).
+pub const S14_COUNTERS: [&str; 17] = [
+    "flame_fired",
+    "flame_capped",
+    "flame_hits",
+    "flame_in_trench_hits",
+    "flame_in_bunker_hits",
+    "burn_downs",
+    "burn_kills",
+    "patches_made",
+    "patch_hits",
+    "stepped_out",
+    "strikes",
+    "strike_hits",
+    "strike_kills",
+    "clears",
+    "clears_done",
+    "clear_steps",
+    "patches_dropped",
+];
+
+/// S14-ai: the AI's flame counters in report order (names of
+/// [`S14Player::ai`]; the job ends as `flame_end_<name>`).
+pub const S14_AI: [&str; 10] = [
+    "flame_jobs",
+    "flame_end_done",
+    "flame_end_spent",
+    "flame_end_dead",
+    "flame_end_weak",
+    "flame_end_deadline",
+    "flame_end_stall",
+    "flame_buys",
+    "refuels",
+    "clear_orders",
+];
+
+/// S14 numbers of one player in one match (docs/slices/S14-assault-kit.md
+/// 10): every `S14Counters` field and the AI's flame counters. All 0 with
+/// the S14 switches off.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S14Player {
+    /// [`S14_COUNTERS`] order.
+    pub s: [u32; 17],
+    /// [`S14_AI`] order (zero for a human).
+    pub ai: [u32; 10],
+    /// S14 Fix 9 (T192): the age of the AI's oldest flame job still open
+    /// at the match's end (s; 0 with none).
+    pub oldest_job_s: f64,
+}
+
+impl S14Player {
+    pub fn of(
+        c: &frontline_sim::flame::S14Counters,
+        ai: Option<&frontline_sim::ai::AiCounters>,
+    ) -> S14Player {
+        let s = [
+            c.flame_fired,
+            c.flame_capped,
+            c.flame_hits,
+            c.flame_in_trench_hits,
+            c.flame_in_bunker_hits,
+            c.burn_downs,
+            c.burn_kills,
+            c.patches_made,
+            c.patch_hits,
+            c.stepped_out,
+            c.strikes,
+            c.strike_hits,
+            c.strike_kills,
+            c.clears,
+            c.clears_done,
+            c.clear_steps,
+            c.patches_dropped,
+        ];
+        let ai = ai.map_or([0; 10], |a| {
+            let e = a.flame_job_ends;
+            [
+                a.flame_jobs,
+                e[0],
+                e[1],
+                e[2],
+                e[3],
+                e[4],
+                e[5],
+                a.flame_buys,
+                a.refuels,
+                a.clear_orders,
+            ]
+        });
+        S14Player {
+            s,
+            ai,
+            oldest_job_s: 0.0,
+        }
+    }
+}
+
+/// S15: `S15Counters` in report order (names of [`S15Player::s`]; the
+/// rider exits as `rider_exit_<reason>`).
+pub const S15_COUNTERS: [&str; 15] = [
+    "plate_hits",
+    "plate_stops",
+    "plate_stops_frag",
+    "plate_stops_melee",
+    "rider_boards",
+    "rider_exit_ordered",
+    "rider_exit_suppressed",
+    "rider_exit_vehicle_hit",
+    "rider_exit_gun_fired",
+    "rider_exit_knocked_out",
+    "rider_casualties",
+    "foreign_drawn",
+    "foreign_fired",
+    "bayonet_strikes",
+    "bayonet_hits",
+];
+
+/// S15: the AI's rider counters (names of [`S15Player::ai`]; the job ends
+/// as `rider_job_end_<name>`, `s15::RIDER_END_NAMES` order; S15 Fix,
+/// review 13: named, as `s15_derived.rider_job_ends`).
+pub const S15_AI: [&str; 6] = [
+    "rider_jobs",
+    "rider_job_end_dropped",
+    "rider_job_end_forced_off",
+    "rider_job_end_tank_lost",
+    "rider_job_end_deadline",
+    "rider_job_end_stall",
+];
+
+/// S15 numbers of one player in one match (docs/slices/S15-ussr.md 3):
+/// every `S15Counters` field and the AI's rider counters. All 0 with the
+/// S15 switches off.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S15Player {
+    /// [`S15_COUNTERS`] order.
+    pub s: [u32; 15],
+    /// [`S15_AI`] order (zero for a human).
+    pub ai: [u32; 6],
+    /// S15-ai (T213f): the age of the AI's oldest rider job still open at
+    /// the match's end (s; a boarding or riding job from its start, a
+    /// dropping one from the drop order; 0 with none).
+    pub oldest_job_s: f64,
+}
+
+impl S15Player {
+    pub fn of(
+        c: &frontline_sim::s15::S15Counters,
+        ai: Option<&frontline_sim::ai::AiCounters>,
+    ) -> S15Player {
+        let x = c.rider_exits;
+        let s = [
+            c.plate_hits,
+            c.plate_stops,
+            c.plate_stops_frag,
+            c.plate_stops_melee,
+            c.rider_boards,
+            x[0],
+            x[1],
+            x[2],
+            x[3],
+            x[4],
+            c.rider_casualties,
+            c.foreign_drawn,
+            c.foreign_fired,
+            c.bayonet_strikes,
+            c.bayonet_hits,
+        ];
+        let ai = ai.map_or([0; 6], |a| {
+            let e = a.rider_job_ends;
+            [a.rider_jobs, e[0], e[1], e[2], e[3], e[4]]
+        });
+        S15Player {
+            s,
+            ai,
+            oldest_job_s: 0.0,
+        }
+    }
+}
+
+/// S15 sums of one faction over a `--seeds` run (the JSON block `s15`,
+/// [`crate::json_out::s15_blocks`]).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S15Faction {
+    pub matches: u64,
+    /// [`S15_COUNTERS`] order.
+    pub s: [u64; 15],
+    /// [`S15_AI`] order.
+    pub ai: [u64; 6],
+    /// S15-ai (`s15_derived`): matches in which the faction's men rode a
+    /// deck (`rider_boards` over 0), and the oldest rider job open at any
+    /// match's end (s, T213f).
+    pub rider_matches: u64,
+    pub oldest_job_s: f64,
+}
+
+impl S15Faction {
+    pub fn add(&mut self, p: &S15Player) {
+        self.matches += 1;
+        self.rider_matches += u64::from(p.s[4] > 0);
+        self.oldest_job_s = self.oldest_job_s.max(p.oldest_job_s);
+        for (a, b) in self.s.iter_mut().zip(p.s) {
+            *a += b as u64;
+        }
+        for (a, b) in self.ai.iter_mut().zip(p.ai) {
+            *a += b as u64;
+        }
+    }
+}
+
+/// S14 sums of one faction over a `--seeds` run (the JSON block `s14`,
+/// [`crate::json_out::s14_blocks`]).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct S14Faction {
+    /// [`S14_COUNTERS`] order.
+    pub s: [u64; 17],
+    /// [`S14_AI`] order.
+    pub ai: [u64; 10],
+    /// S14-ai (`s14_derived`): matches, and matches in which the faction's
+    /// flame hit a man in a dug cell or a pit (`flame_in_trench_hits` or
+    /// `flame_in_bunker_hits` over 0; in an AI skirmish every flame man is
+    /// an AI's).
+    pub matches: u64,
+    pub flame_matches: u64,
+    /// T192: the oldest flame job open at a match's end, over the matches
+    /// (s).
+    pub oldest_job_s: f64,
+}
+
+impl S14Faction {
+    pub fn add(&mut self, p: &S14Player) {
+        let k = |name: &str| {
+            S14_COUNTERS
+                .iter()
+                .position(|x| *x == name)
+                .map_or(0, |i| p.s[i])
+        };
+        self.matches += 1;
+        self.flame_matches += u64::from(k("flame_in_trench_hits") + k("flame_in_bunker_hits") > 0);
+        self.oldest_job_s = self.oldest_job_s.max(p.oldest_job_s);
+        for (a, b) in self.s.iter_mut().zip(p.s) {
+            *a += b as u64;
+        }
+        for (a, b) in self.ai.iter_mut().zip(p.ai) {
+            *a += b as u64;
+        }
     }
 }
 
@@ -1888,7 +2140,9 @@ struct ArmourTally {
 }
 
 /// S3c abandonment trigger names, by `bail::AB_*` (index 0 unused).
-pub const ABANDON_CAUSES: [&str; 7] = [
+/// By `bail::AB_*` (S15 Fix, review 2: `AB_GUN` 7, a gun left with no man
+/// at it, is named; it was counted as "none").
+pub const ABANDON_CAUSES: [&str; 8] = [
     "none",
     "ammo_fire",
     "engine_fire",
@@ -1896,6 +2150,7 @@ pub const ABANDON_CAUSES: [&str; 7] = [
     "useless",
     "under_fire",
     "order",
+    "gun",
 ];
 
 impl ArmourTally {
@@ -2236,7 +2491,18 @@ pub fn mods_dir(arg: Option<&Path>) -> Result<PathBuf> {
 /// Loads the mod (with `--rules-override`) and resolves an AI-vs-AI match
 /// from `args`.
 pub fn match_setup(args: &SkirmishArgs) -> Result<MatchSetup> {
-    let (defs, _) = crate::overrides::load_defs(args.mods.as_deref(), &args.rules_override)?;
+    match_setup_with(args, |_| {})
+}
+
+/// [`match_setup`] with `edit` applied to the loaded defs before they
+/// resolve (S14 rows: `[flame] enabled` 1 picks the cards' `flame_on`
+/// members).
+pub fn match_setup_with(
+    args: &SkirmishArgs,
+    edit: impl FnOnce(&mut frontline_content::ModDefs),
+) -> Result<MatchSetup> {
+    let (mut defs, _) = crate::overrides::load_defs(args.mods.as_deref(), &args.rules_override)?;
+    edit(&mut defs);
     let d0: Difficulty = args.difficulty.into();
     let d1: Difficulty = args.difficulty1.unwrap_or(args.difficulty).into();
     let req = MatchRequest {
@@ -2701,6 +2967,34 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
                     seconds: world.tick() as f64 / hz as f64,
                 },
                 s13: S13Player::of(s, s.players[p].faction, ai, &pl.s7),
+                s14: {
+                    let mut x = S14Player::of(&pl.s14, ai.map(|a| &a.counters));
+                    x.oldest_job_s = ai.map_or(0.0, |a| {
+                        let t = world.tick();
+                        let age = a
+                            .flame
+                            .jobs
+                            .values()
+                            .map(|j| t.saturating_sub(j.since))
+                            .max();
+                        age.unwrap_or(0) as f64 / hz as f64
+                    });
+                    x
+                },
+                s15: {
+                    let mut x = S15Player::of(&pl.s15, ai.map(|a| &a.counters));
+                    x.oldest_job_s = ai.map_or(0.0, |a| {
+                        let t = world.tick();
+                        let age = a
+                            .riders
+                            .jobs
+                            .iter()
+                            .map(|j| t.saturating_sub(j.phase_at))
+                            .max();
+                        age.unwrap_or(0) as f64 / hz as f64
+                    });
+                    x
+                },
                 s11b: {
                     let bought_tagged = |tag: &str| -> u32 {
                         ai.map_or(0, |a| {
@@ -3372,6 +3666,10 @@ pub struct FactionSummary {
     pub s12: S12Faction,
     /// S13 sums (the JSON block `s13`).
     pub s13: S13Faction,
+    /// S14 sums (the JSON block `s14`).
+    pub s14: S14Faction,
+    /// S15 sums (the JSON block `s15`).
+    pub s15: S15Faction,
 }
 
 /// S10b: the twelve `FortAccount` counters in report order.
@@ -4268,6 +4566,8 @@ pub(crate) fn summarise(matches: &[ManyMatch], jobs: usize) -> ManySummary {
             f.s11b.add(&p.s11b, p.kills, r.game_seconds, p.s11a2.ai[2]);
             f.s12.add(&p.s12);
             f.s13.add(&p.s13);
+            f.s14.add(&p.s14);
+            f.s15.add(&p.s15);
             let e = &mut f.s8a;
             let c = &p.s8a;
             e.matches += 1;
@@ -4889,6 +5189,26 @@ mod tests {
             players: vec![PlayerArmour::default(); 2],
             ..ArmourTally::default()
         }
+    }
+
+    /// S15 Fix (review 13): the JSON's rider job ends carry the sim's
+    /// names, in its order. Control: the first entry is the job count.
+    #[test]
+    fn s15_ai_names_follow_the_sim() {
+        assert_eq!(S15_AI[0], "rider_jobs");
+        for (k, n) in frontline_sim::s15::RIDER_END_NAMES.iter().enumerate() {
+            assert_eq!(S15_AI[k + 1], format!("rider_job_end_{n}"));
+        }
+    }
+
+    /// S15 Fix (review 2): every `bail::AB_*` has a name; a gun left with no
+    /// man at it is "gun". Control: the last name is the sim's last cause.
+    #[test]
+    fn abandon_causes_name_every_cause() {
+        use frontline_sim::bail;
+        assert_eq!(ABANDON_CAUSES[bail::AB_GUN as usize], "gun");
+        assert_eq!(ABANDON_CAUSES[bail::AB_ORDER as usize], "order");
+        assert_eq!(ABANDON_CAUSES.len(), bail::AB_GUN as usize + 1);
     }
 
     /// The trace and `gun_armour_out` agree: a vehicle bailed out, recrewed

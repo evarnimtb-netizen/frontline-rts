@@ -412,6 +412,11 @@ impl MatchState {
         }
         // S8a: a round striking a passenger over the rim is not a hit on
         // the vehicle (its bail-out rule).
+        // S15 R3b: a shell or rocket striking the vehicle (not a rider)
+        // gets its riders off.
+        if !small && !matches!(hit.via, armour::HitVia::Rider(_)) {
+            crate::s15::rider_cause(&self.setup, vs, crate::s15::rider_exit::HIT);
+        }
         if r.result == PenResult::Penetration
             && !matches!(hit.via, armour::HitVia::Rider(_))
             && vs.last_pen != Some(ctx.tick)
@@ -1060,6 +1065,8 @@ impl MatchState {
             vs.repairing = None;
             vs.repair_progress = 0;
             vs.last_attacker = Some(player);
+            // S15 R3b: a blast (a mine, a shell) striking the tracks.
+            crate::s15::rider_cause(&self.setup, vs, crate::s15::rider_exit::HIT);
             ctx.stats.blast_track_hits += dealt.len() as u64;
             // Tracks never start a fire or set off the rack: no knock-out.
             self.deal(
@@ -1825,6 +1832,19 @@ mod tests {
             // bins and no turret ring, four crew.
             let (seats, bins, others) = match v.id.as_str() {
                 "ww2:ger_stug3_g" => (4, 2, 3),
+                // S15 Build C: the Soviet casemates as the StuG; the IS-2 has
+                // no bow gunner; the BA-64B (no main gun) as a half-track.
+                "ww2:ussr_su85" | "ww2:ussr_su76m" => (4, 2, 3),
+                "ww2:ussr_is2" => (4, 3, 4),
+                "ww2:ussr_ba64b" | "ww2:ussr_m3a1_scout" => (2, 0, 2),
+                "ww2:ussr_us6" => (2, 0, 3),
+                // S15 Fix: the gun tractor has no cargo box.
+                "ww2:ussr_us6_tractor" => (2, 0, 2),
+                "ww2:ussr_45mm_m42"
+                | "ww2:ussr_57mm_zis2"
+                | "ww2:ussr_76mm_zis3"
+                | "ww2:ussr_76mm_m1943"
+                | "ww2:ussr_122mm_m30" => (0, 1, 2),
                 // S8a half-tracks: two crew, no gun or rack; engine and
                 // transmission (passenger slots are Build B's).
                 "ww2:ger_sdkfz251_1" | "ww2:usa_m3a1" => (2, 0, 2),

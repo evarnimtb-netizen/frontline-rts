@@ -1,0 +1,19 @@
+# S15a Build B smoke override: the USSR enabled against Germany (the S15-ai
+# stage's lists) with every S15 data switch on. Used by the 4-seed
+# Germany-USSR smoke only; no balance meaning. Run with
+#   skirmish --ai-vs-ai --faction0 ww2:germany --faction1 ww2:ussr --seed 1 --seeds 2 --both-bases --summary --minutes 45 -o docs/slices/targets/S15-smoke.toml
+[matchups]
+factions = ["ww2:germany", "ww2:usa", "ww2:ussr"]
+pairs = [["ww2:germany", "ww2:usa"], ["ww2:germany", "ww2:ussr"]]
+
+[riders]
+enabled = 1
+
+[body_armour]
+enabled = 1
+
+[supply]
+foreign_ammo = 1
+
+[melee]
+bayonets = 1

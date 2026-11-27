@@ -29,6 +29,10 @@ S10B = ("matches_with_mines_pct", "matches_with_obstacle_pct", "matches_with_bun
 # hard >= 60; T8 reads the set's s12_derived.he_share_casualties_pct).
 S12 = ("medic_matches_pct", "stabilised_pct", "bled_out_pct", "downed_per_match",
        "reinforced_men_per_match", "he_share_casualties_pct")
+# S14-ai (Build D): per set from factions.<f>.s14_derived (reports only:
+# owner 2026-11-25, no balance threshold in S14).
+S14 = ("flame_matches_pct", "flame_kills_per_match", "flame_jobs_per_match",
+       "clear_orders_per_match", "strikes_per_match", "refuels_per_match")
 BOUGHT = {"germany": ["ger_sdkfz251_1_squad", "ger_stug3_g_squad", "ger_pz4_h_squad"],
           "usa": ["usa_m3a1_squad", "usa_m10_squad", "usa_m4a3_75_squad"]}
 
@@ -74,6 +78,10 @@ def read(d):
             if d12 is not None:
                 for k in S12:
                     a.setdefault("s12", {}).setdefault(k, []).append(d12.get(k))
+            d14 = f.get("s14_derived")
+            if d14 is not None:
+                for k in S14:
+                    a.setdefault("s14", {}).setdefault(k, []).append(d14.get(k))
             d10b = f.get("s10b_ai_derived")
             if d10b is not None:
                 for k in S10B:
@@ -126,6 +134,12 @@ def show(o, base):
                   f"{fmt(s12['stabilised_pct'])} %, bled out {fmt(s12['bled_out_pct'])} %, downs per match "
                   f"{fmt(s12['downed_per_match'])}, replacements per match {fmt(s12['reinforced_men_per_match'])}, "
                   f"HE share of its casualties {fmt(s12['he_share_casualties_pct'])} %")
+        if a.get("s14"):
+            s14 = a["s14"]
+            print(f"    s14: flame hit a trench or pit in {fmt(s14['flame_matches_pct'], 0)} % of matches, flame kills "
+                  f"{fmt(s14['flame_kills_per_match'])}, flame jobs {fmt(s14['flame_jobs_per_match'])}, AI clears "
+                  f"{fmt(s14['clear_orders_per_match'])}, strikes {fmt(s14['strikes_per_match'])}, refuels "
+                  f"{fmt(s14['refuels_per_match'])} per match (reports)")
     # One line for scripts and stage gates.
     fs = o["f"].values()
     gate = {"pool": round(pool, 2), "nowin": o["nowin"],

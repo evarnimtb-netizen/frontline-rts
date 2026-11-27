@@ -1,0 +1,14 @@
+# The M-30 card (S15 Build C): the field howitzer, as the leFH 18 card (cap 1, unlock 8:00).
+# Price, pop, cooldown and unlock are on the vehicle def; card values are S15 starting values (the German card's).
+id = "ww2:ussr_122mm_m30_squad"
+name = "122 mm M-30"
+short_name = "M-30"
+faction = "ww2:ussr"
+tags = ["vehicle", "field_howitzer"]
+vehicle = "ww2:ussr_122mm_m30"
+ai_weight = 5
+max_alive = 1
+# No tow (S15 Fix, review finding 1): as the leIG 18 / leFH 18 cards, it arrives limbered with its crew, so `[ai.arty]`
+# emplaces it (plan 6.3 gave every Soviet gun card a tow; no habit unhitches an infantry gun).
+# One of the gun cards of the artillery group.
+limit_group = "ww2:artillery"

@@ -1,0 +1,7 @@
+# 7.62x54R in the DP-27's 47-round pan (S15 Build B). About 30 g a round
+# with the pan's share: unverified, S15 starting value.
+id = "ww2:ussr_762x54r_pan"
+name = "7.62 mm (DP pans)"
+caliber_mm = 8
+supply = { kind = "small_arms", g = 30 }
+sources = ["S15 starting value: round about 22 g plus a share of the pan (unverified)"]

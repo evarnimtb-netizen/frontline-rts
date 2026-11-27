@@ -1,0 +1,7 @@
+# 14.5x114 mm for the PTRD-41 (S15 Build B). About 0.13 kg a round with
+# carton: unverified, S15 starting value.
+id = "ww2:ussr_145x114"
+name = "14.5 mm"
+caliber_mm = 15
+supply = { kind = "small_arms", g = 130 }
+sources = ["S15 starting value: about 0.13 kg a round (unverified)"]

@@ -1,0 +1,38 @@
+# 85 mm O-365: fragmentation for the ZiS-S-53 and D-5S (S15 Build C); [he] as the 8.8 cm Sprgr.
+id = "ww2:ussr_85mm_o365"
+name = "85 mm O-365"
+mechanism = "he"
+# S15: priced refill ([supply] shell_mp_per_t per tonne): complete round about 15 kg (unverified: S15 starting value)
+supply = { kind = "shells", g = 15000 }
+caliber_mm = 85
+muzzle_velocity_m_s = 785
+drag_coeff = 0
+# Flat, as every HE round of the mod.
+penetration = [[0, 10]]
+ricochet_angle_deg = 80
+track_damage = 40
+sources = [
+  "S15-research-history.md 6: O-365 9.5 kg (unverified); velocity 785 m/s unverified",
+]
+
+# The S3b physical-contact HE block, scaled from the German or US round of the nearest calibre
+# (named in the head comment); S15 starting values, no tuning.
+[he]
+damage = 150
+suppression = 40
+blast_radius_cm = 130
+frag_count = 90
+frag_reach_cm = 1200
+frag_damage = 70
+frag_far_pct = 30
+frag_elev_deg = [2, 45]
+frag_track_damage = 1
+suppression_radius_m = 12
+crater_radius_cm = 60
+crater_depth_cm = 30
+pen_mm = 10
+frag_pen_mm = 12
+inside_damage = 150
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 40

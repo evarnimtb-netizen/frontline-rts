@@ -1,0 +1,138 @@
+# BA-64B (S15 Build C, docs/slices/S15-ussr.md 6.4): the light armoured car, one DT in an open-topped turret. Two boxes:
+# the sloped hull and the open turret, which turns by hand with the gun: modelled as a hull-frame open box and the DT
+# on a full-circle pintle (the def schema's main gun is a cannon with shells; the DT is not one), so the car has no
+# main gun, as a half-track. Seats and parts on the M8 def's pattern (positions approximate). Every figure not read
+# in a source is an S15 starting value (unverified).
+id = "ww2:ussr_ba64b"
+name = "BA-64B"
+short_name = "BA-64B"
+faction = "ww2:ussr"
+role = "recon"
+# S15 starting value (S15-ussr.md 6.4; not tuned). Pop and cooldowns as the M8 card.
+cost = 170
+pop = 4
+recall_cooldown_s = 60
+initial_cooldown_s = 90
+sight_m = 220
+spot_size_pct = 110
+eye_height_cm = 190
+sources = [
+  "Wikipedia, BA-64 (2.4 t, crew 2, 15 mm hull front to 6 mm sides, most plates at about 30 deg, DT with 1,070 rounds, 80 km/h, BA-64B 1943-1946; read 2026-11-26)",
+]
+crew_squad = "ww2:ussr_tank_crew"
+rare_cap = 0
+
+[mobility]
+type = "wheeled"
+# 80 km/h (read) on the M8's scale (about 90 km/h = 1000 cm/s).
+speed_cm_s = 900
+reverse_cm_s = 280
+turn_radius_cm = 700
+accel_cm_s2 = 170
+brake_cm_s2 = 450
+max_slope_pct = 45
+# 10 as every wheeled def: the shallowest wheeled value sets the wheeled block layer of every match.
+ditch_block_dm = 10
+bog_pct = 14
+unbog_s = [20, 40]
+woods_speed_pct = 30
+slope_loss_pct = 85
+moving_spread_pct = 400
+
+[optics]
+settle_s = 4
+stationary_sight_pct = 140
+
+[hull]
+track_band_pct = 45
+track_mm = 6
+
+[[boxes]]
+id = "hull"
+frame = "hull"
+box = { center = [0, 0, 95], half = [180, 85, 50] }
+[boxes.armor]
+# 15 mm front, 6 mm sides and rear at about 30 deg (read), roof 6 (unverified).
+front = { thickness_mm = 15, slope_deg = 30 }
+side = { thickness_mm = 6, slope_deg = 30 }
+rear = { thickness_mm = 6, slope_deg = 30 }
+top = { thickness_mm = 6 }
+
+[[boxes]]
+id = "cupola"
+frame = "hull"
+box = { center = [-10, 0, 165], half = [45, 45, 20] }
+open = ["top"]
+floor_cm = 145
+[boxes.armor]
+# The open turret: 10 mm (unverified).
+front = { thickness_mm = 10, slope_deg = 30 }
+side = { thickness_mm = 10, slope_deg = 30 }
+rear = { thickness_mm = 10, slope_deg = 30 }
+
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [70, 0, 100], half = [35, 30, 40] }
+in = "hull"
+
+[[seats]]
+id = "commander"
+role = "commander"
+box = { frame = "hull", center = [-10, 0, 140], half = [28, 25, 50] }
+in = "cupola"
+
+[[weapons]]
+def = "ww2:ussr_dt"
+mount = "pintle"
+pivot = [-10, 0, 185]
+muzzle = [80, 0, 5]
+traverse_deg = [-180, 180]
+traverse_deg_s = 30
+seat = "commander"
+# 1,070 rounds (Wikipedia, read).
+rounds = 1070
+
+[[components]]
+type = "engine"
+hp = 60
+box = { frame = "hull", center = [130, 0, 95], half = [40, 50, 35] }
+repair = { to_hp = 30, time_s = 60 }
+
+[[components]]
+type = "wheels_front"
+hp = 50
+anchors = [{ pos = [120, 70, 40] }, { pos = [120, -70, 40] }]
+repair = { to_hp = 50, time_s = 25 }
+
+[[components]]
+type = "wheels_rear"
+hp = 50
+anchors = [{ pos = [-110, 70, 40] }, { pos = [-110, -70, 40] }]
+repair = { to_hp = 50, time_s = 25 }
+
+[[components]]
+type = "transmission"
+hp = 60
+box = { frame = "hull", center = [40, 0, 70], half = [40, 25, 20] }
+repair = { to_hp = 30, time_s = 60 }
+
+[[stations]]
+id = "driver"
+seats = ["driver"]
+
+[[stations]]
+id = "commander"
+seats = ["commander"]
+
+[[hatches]]
+seats = ["commander"]
+frame = "hull"
+pos = [-10, 0, 185]
+exit_ms = 2000
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [70, 85, 110]
+exit_ms = 2500

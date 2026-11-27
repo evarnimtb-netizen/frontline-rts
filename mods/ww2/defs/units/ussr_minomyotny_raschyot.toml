@@ -1,0 +1,47 @@
+# Minomyotny raschyot (S15 Build B): the battalion mortar crew of five on the
+# 82-BM-37 (crew 4-5; the 5-man rule): the leader, the gunner, his assistant
+# and two bearers. The mortar also fires German 8 cm bombs drawn at a taken
+# crate (S15 X1-X3).
+id = "ww2:ussr_minomyotny_raschyot"
+name = "Minomyotny raschyot"
+short_name = "82mm Mortar"
+faction = "ww2:ussr"
+tags = ["mortar"]
+capabilities = ["recrew"]
+sources = [
+    "Wikipedia, 82-PM-41 (crew 4; read 2026-11-26)",
+]
+ai_weight = 100
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 250
+cooldown_s = 60
+unlock_s = 0
+speed_cm_s = 240
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+
+[[members]]
+slot = "leader"
+weapon = "ww2:ussr_mosin_9130"
+traits = ["leader"]
+
+[[members]]
+slot = "mortar_gunner"
+weapon = "ww2:ussr_82mm_bm37"
+sidearm = "ww2:ussr_tt33"
+rounds = { "ww2:ussr_82mm_o832" = 2 }
+traits = ["crew_gunner"]
+
+[[members]]
+slot = "mortar_assistant"
+weapon = "ww2:ussr_mosin_9130"
+rounds = { "ww2:ussr_82mm_o832" = 4 }
+traits = ["crew_assistant"]
+
+[[members]]
+slot = "ammo_bearer"
+count = 2
+weapon = "ww2:ussr_mosin_9130"
+rounds = { "ww2:ussr_82mm_o832" = 7 }
+traits = ["ammo_bearer"]

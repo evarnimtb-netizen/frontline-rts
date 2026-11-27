@@ -180,6 +180,12 @@ pub fn add_sides(doc: &mut Value, r: &ManyReport) {
                     let mut s13 = crate::skirmish::S13Faction::default();
                     s13.add(&p.s13);
                     o.insert("s13".into(), s13_blocks(&s13));
+                    let mut s14 = crate::skirmish::S14Faction::default();
+                    s14.add(&p.s14);
+                    o.insert("s14".into(), s14_blocks(&s14));
+                    let mut s15 = crate::skirmish::S15Faction::default();
+                    s15.add(&p.s15);
+                    o.insert("s15".into(), s15_blocks(&s15));
                 }
                 side
             })
@@ -681,6 +687,15 @@ fn faction(f: &crate::skirmish::FactionSummary, matches: f64) -> Value {
     // S13 (docs/slices/S13-heavy-wave.md 7): the AI's heavy-wave counters
     // and the heavy-wave cards' buys, match shares, kills and knock-outs.
     o.insert("s13".into(), s13_blocks(&f.s13));
+    // S14 (docs/slices/S14-assault-kit.md 10): the S14 counters and the
+    // AI's flame counters by name (T195-T200 read
+    // `factions.<f>.s14.<counter>`).
+    o.insert("s14".into(), s14_blocks(&f.s14));
+    o.insert("s14_derived".into(), s14_derived(&f.s14));
+    // S15 (docs/slices/S15-ussr.md 3): the S15 counters and the AI's rider
+    // counters by name (all 0 with the S15 switches off).
+    o.insert("s15".into(), s15_blocks(&f.s15));
+    o.insert("s15_derived".into(), s15_derived(&f.s15));
     o.insert(
         "s6_derived".into(),
         json!({
@@ -801,10 +816,91 @@ fn row(id: &str, name: &str, value: Value) -> Value {
     json!({ "id": id, "name": name, "value": value })
 }
 
+/// The S14 hard checks (R2; R1 only while `SLIT_HARD`, else a report
+/// row): a failing one raises the document's `hard_failed`. A row not run
+/// (no verdict) is no check.
+fn s14_checks(s14: &crate::fortify::s14::S14Report) -> Vec<Value> {
+    let (slit, pool, melee) = (&s14.slit, &s14.pool, &s14.melee);
+    let mut checks = Vec::new();
+    // S14a Build C: R5 (T188).
+    if let Some(pass) = melee.pass {
+        checks.push(check(
+            "s14_melee",
+            "S14 R5: a strike hits only a touched capsule",
+            melee.ahead_hits,
+            "100 strikes 0.9 m ahead hit 100; 0.9 m aside hit 0".into(),
+            pass,
+        ));
+    }
+    if let Some(pass) = pool.pass {
+        checks.push(check(
+            "s14_pool",
+            "S14 R2: flame never takes a pool slot",
+            pool.drop_diff,
+            "drop_diff, pool_diff_ticks, over_cap 0; saturated, fired".into(),
+            pass,
+        ));
+    }
+    if slit.hard
+        && let Some(pass) = slit.pass
+    {
+        checks.push(check(
+            "s14_slit",
+            "S14 R1: flame at the bunker slit",
+            slit.out_pct,
+            "out >= 80 %, 8 of 10 runs >= 4 out; closed, back <= 10 %".into(),
+            pass,
+        ));
+    }
+    checks
+}
+
+/// The S15 hard checks (W1-W4): a failing one raises the document's
+/// `hard_failed`. A row not run (no verdict) is no check.
+fn s15_checks(s15: &crate::fortify::s15::S15Report) -> Vec<Value> {
+    let mut checks = Vec::new();
+    let rows = [
+        (
+            "s15_plate",
+            "S15 W1: a torso plate stops MP 40 rounds from the front only",
+            s15.plate.survive_ratio_pct,
+            "stops > 0, control 0; ratio >= 200 %; rifle and back diff 0",
+            s15.plate.pass,
+        ),
+        (
+            "s15_riders",
+            "S15 W2: riders get off a deck under a burst and a knock-out",
+            s15.riders.off_ms,
+            "off <= 3000 ms; 0 on the deck after the KO; switch 0 refused",
+            s15.riders.pass,
+        ),
+        (
+            "s15_foreign",
+            "S15 W3: a mortar fires captured bombs, wider",
+            s15.foreign.fired,
+            "fired >= 20, wider 1; the German crew draws 0",
+            s15.foreign.pass,
+        ),
+        (
+            "s15_bayonet",
+            "S15 W4: a bayonet reaches 1.5 m, not 1.9 m",
+            s15.bayonet.hits_150,
+            "100 of 100 at 1.5 m; 0 at 1.9 m; switch 0: 0",
+            s15.bayonet.pass,
+        ),
+    ];
+    for (id, name, value, limit, pass) in rows {
+        if let Some(pass) = pass {
+            checks.push(check(id, name, value, limit.into(), pass));
+        }
+    }
+    checks
+}
+
 /// The fortify-test document: hard checks (rifles, mortar, smoke) and the
 /// report rows (ranged mortar, grenades, MG suppression).
 pub fn fortify(r: &FortifyReport) -> Value {
-    let checks = vec![
+    let mut checks = vec![
         check(
             "rifles_trench_vs_open",
             r.rifles.name,
@@ -827,6 +923,9 @@ pub fn fortify(r: &FortifyReport) -> Value {
             r.smoke.pass,
         ),
     ];
+    checks.extend(s14_checks(&r.s14));
+    checks.extend(s15_checks(&r.s15));
+    let slit = &r.s14.slit;
     let exp = |e: &crate::fortify::Experiment| {
         json!({
             "trench_losses": e.trench_losses,
@@ -894,6 +993,11 @@ pub fn fortify(r: &FortifyReport) -> Value {
             "T10 / T11 thresholds met",
             json!({ "t10": r.suppress.supported_met, "t11": r.suppress.unsupported_met }),
         ),
+        row(
+            "s14_slit",
+            "S14 R1: flame at the bunker slit (report while not hard)",
+            json!({ "hard": slit.hard, "pass": slit.pass, "out_pct": slit.out_pct }),
+        ),
     ];
     // S10a (spec 7): the wire, roof and breach rows, at `s10a.*`.
     let x = &r.s10a;
@@ -953,6 +1057,11 @@ pub fn fortify(r: &FortifyReport) -> Value {
         "s11a2": serde_json::to_value(&r.s11a2).unwrap_or_default(),
         // S11b Build C (M2): `fortify10.s11b.{how_mask,how_barrage}.*`.
         "s11b": serde_json::to_value(&r.s11b).unwrap_or_default(),
+        // S14 Builds A, B (R1-R4, R6):
+        // `fortify10.s14.{slit,pool,trench,clear,under_fire}.*`.
+        "s14": serde_json::to_value(&r.s14).unwrap_or_default(),
+        // S15a Build A (W1-W4): `fortify10.s15.{plate,riders,foreign,bayonet}.*`.
+        "s15": serde_json::to_value(&r.s15).unwrap_or_default(),
         "hard_failed": checks.iter().filter(|c| c["pass"] == json!(false)).count(),
         "checks": checks,
         "rows": rows,
@@ -1318,6 +1427,141 @@ pub fn s13_blocks(c: &crate::skirmish::S13Faction) -> Value {
     Value::Object(raw)
 }
 
+/// The `s15` block of one faction (or one side of one match): every
+/// `S15Counters` field and the AI's rider counters by name. Every value
+/// is 0 with the S15 switches off (`tools/neutral.py` reads a new block
+/// so).
+pub fn s15_blocks(c: &crate::skirmish::S15Faction) -> Value {
+    let mut raw = Map::new();
+    for (k, v) in crate::skirmish::S15_COUNTERS.iter().zip(c.s) {
+        raw.insert((*k).into(), json!(v));
+    }
+    for (k, v) in crate::skirmish::S15_AI.iter().zip(c.ai) {
+        raw.insert((*k).into(), json!(v));
+    }
+    Value::Object(raw)
+}
+
+/// S15-ai Build D (docs/slices/S15-ussr.md 11, T213 and T218 as reads):
+/// a faction's `s15_derived`. `rider_matches_pct` (matches in which its
+/// men rode a deck); per match: `rider_boards_per_match`,
+/// `rider_exits_per_match` (all reasons), `rider_casualties_per_match`
+/// (T218), `plate_stops_per_match`, `bayonet_strikes_per_match`,
+/// `foreign_fired_per_match`, `rider_jobs_per_match`,
+/// `rider_jobs_open_per_match` (started less ended); `rider_job_ends`
+/// (totals by `RIDER_END_NAMES`) and `rider_job_oldest_s` (T213f: the
+/// oldest job open at any match's end, s). No `matches` key: every value
+/// is 0 (or null) with the S15 switches off.
+pub fn s15_derived(c: &crate::skirmish::S15Faction) -> Value {
+    let n = c.matches.max(1) as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let s = |name: &str| {
+        crate::skirmish::S15_COUNTERS
+            .iter()
+            .position(|x| *x == name)
+            .map_or(0, |i| c.s[i])
+    };
+    let exits: u64 = crate::skirmish::S15_COUNTERS
+        .iter()
+        .zip(c.s)
+        .filter(|(k, _)| k.starts_with("rider_exit_"))
+        .map(|(_, v)| v)
+        .sum();
+    let ends: Map<String, Value> = frontline_sim::s15::RIDER_END_NAMES
+        .iter()
+        .zip(&c.ai[1..])
+        .map(|(e, v)| ((*e).to_string(), json!(v)))
+        .collect();
+    let ended: u64 = c.ai[1..].iter().sum();
+    json!({
+        "rider_matches_pct": pct_or_null(c.rider_matches as f64, c.matches as f64),
+        "rider_boards_per_match": per(s("rider_boards")),
+        "rider_exits_per_match": per(exits),
+        "rider_casualties_per_match": per(s("rider_casualties")),
+        "plate_stops_per_match": per(s("plate_stops")),
+        "bayonet_strikes_per_match": per(s("bayonet_strikes")),
+        "foreign_fired_per_match": per(s("foreign_fired")),
+        "rider_jobs_per_match": per(c.ai[0]),
+        "rider_jobs_open_per_match": per(c.ai[0].saturating_sub(ended)),
+        "rider_job_ends": ends,
+        "rider_job_oldest_s": round3(c.oldest_job_s),
+    })
+}
+
+/// The `s14` block of one faction (or one side of one match): every
+/// `S14Counters` field and the AI's flame counters by name. Every value is
+/// 0 with the S14 switches off (`tools/neutral.py` reads a new block so).
+pub fn s14_blocks(c: &crate::skirmish::S14Faction) -> Value {
+    let mut raw = Map::new();
+    for (k, v) in crate::skirmish::S14_COUNTERS.iter().zip(c.s) {
+        raw.insert((*k).into(), json!(v));
+    }
+    for (k, v) in crate::skirmish::S14_AI.iter().zip(c.ai) {
+        raw.insert((*k).into(), json!(v));
+    }
+    Value::Object(raw)
+}
+
+/// S14-ai Build D (docs/slices/S14-assault-kit.md 10, T191-T200 as
+/// reports): a faction's `s14_derived`. `flame_matches_pct` (matches in
+/// which its flame hit a man in a dug cell or a pit, T191); per match:
+/// `flame_downs_per_match`, `flame_kills_per_match` (F3, F5: enemy men
+/// downed and killed by fire, T195), `strikes_per_match`,
+/// `strike_hits_per_match`, `strike_kills_per_match` (T197),
+/// `clear_orders_per_match` (the AI's), `clear_steps_per_match`,
+/// `clears_done_per_match` (T198), `refuels_per_match` (T199),
+/// `flame_capped_per_match`, `patches_dropped_per_match` (T200),
+/// `flame_jobs_per_match`, `flame_jobs_open_per_match` (started less
+/// ended: the jobs still running at the matches' ends),
+/// `flame_job_ends` (totals by end) and `flame_job_oldest_s` (S14 Fix 9,
+/// T192: the oldest job open at any match's end, s).
+/// Null where a denominator is 0.
+pub fn s14_derived(c: &crate::skirmish::S14Faction) -> Value {
+    let n = c.matches.max(1) as f64;
+    let per = |v: u64| round3(v as f64 / n);
+    let s = |name: &str| {
+        crate::skirmish::S14_COUNTERS
+            .iter()
+            .position(|x| *x == name)
+            .map_or(0, |i| c.s[i])
+    };
+    let a = |name: &str| {
+        crate::skirmish::S14_AI
+            .iter()
+            .position(|x| *x == name)
+            .map_or(0, |i| c.ai[i])
+    };
+    let ends: Map<String, Value> = frontline_sim::ai::FLAME_END_NAMES
+        .iter()
+        .map(|e| ((*e).to_string(), json!(a(&format!("flame_end_{e}")))))
+        .collect();
+    // No `matches` key: every value is 0 with the S14 switches off, so
+    // `tools/neutral.py` reads the new block as zero counters.
+    json!({
+        "flame_matches_pct": pct_or_null(c.flame_matches as f64, c.matches as f64),
+        "flame_downs_per_match": per(s("burn_downs")),
+        "flame_kills_per_match": per(s("burn_kills")),
+        "strikes_per_match": per(s("strikes")),
+        "strike_hits_per_match": per(s("strike_hits")),
+        "strike_kills_per_match": per(s("strike_kills")),
+        "clear_orders_per_match": per(a("clear_orders")),
+        "clear_steps_per_match": per(s("clear_steps")),
+        "clears_done_per_match": per(s("clears_done")),
+        "refuels_per_match": per(a("refuels")),
+        "flame_capped_per_match": per(s("flame_capped")),
+        "patches_dropped_per_match": per(s("patches_dropped")),
+        "flame_jobs_per_match": per(a("flame_jobs")),
+        "flame_jobs_open_per_match": per(a("flame_jobs").saturating_sub(
+            frontline_sim::ai::FLAME_END_NAMES
+                .iter()
+                .map(|e| a(&format!("flame_end_{e}")))
+                .sum()
+        )),
+        "flame_job_ends": ends,
+        "flame_job_oldest_s": round3(c.oldest_job_s),
+    })
+}
+
 /// The `s12` block of one faction (or one side of one match): the
 /// `S12Counters` and the AI's medic counters by name. Every value is 0
 /// with the S12 switches off (`tools/neutral.py` reads a new block so).
@@ -1561,6 +1805,52 @@ pub fn s10c_blocks(c: &crate::skirmish::S10cFaction) -> (Value, Value) {
 
 #[cfg(test)]
 mod tests {
+    /// S14 Build B: a failing R2 is a hard check; R1 is one only when
+    /// `hard` (report only now); rows not run add none.
+    #[test]
+    fn s14_rows_feed_the_hard_checks() {
+        use crate::fortify::s14::S14Report;
+        assert!(s14_checks(&S14Report::default()).is_empty());
+        let mut r = S14Report::default();
+        r.pool.pass = Some(false);
+        r.slit.pass = Some(false);
+        let c = s14_checks(&r);
+        assert_eq!(c.len(), 1);
+        assert_eq!(
+            (c[0]["id"].as_str(), &c[0]["pass"]),
+            (Some("s14_pool"), &json!(false))
+        );
+        r.slit.hard = true;
+        let c = s14_checks(&r);
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[1]["id"], json!("s14_slit"));
+        // S14a Build C: R5 is hard.
+        r.melee.pass = Some(false);
+        let c = s14_checks(&r);
+        assert_eq!(c.len(), 3);
+        assert_eq!(
+            (c[0]["id"].as_str(), &c[0]["pass"]),
+            (Some("s14_melee"), &json!(false))
+        );
+    }
+
+    /// S15a Build A: W1-W4 are hard checks; rows not run add none.
+    #[test]
+    fn s15_rows_feed_the_hard_checks() {
+        use crate::fortify::s15::S15Report;
+        assert!(s15_checks(&S15Report::default()).is_empty());
+        let mut r = S15Report::default();
+        r.riders.pass = Some(false);
+        r.bayonet.pass = Some(true);
+        let c = s15_checks(&r);
+        assert_eq!(c.len(), 2);
+        assert_eq!(
+            (c[0]["id"].as_str(), &c[0]["pass"]),
+            (Some("s15_riders"), &json!(false))
+        );
+        assert_eq!(c[1]["id"], json!("s15_bayonet"));
+    }
+
     use super::*;
 
     /// Review finding 8 (T113): `matches_with_bunker_pct` is over all the
@@ -1622,5 +1912,146 @@ mod tests {
     fn median_of_even_and_odd() {
         assert_eq!(median(&mut [3.0, 1.0, 2.0]), 2.0);
         assert_eq!(median(&mut [4.0, 1.0, 2.0, 3.0]), 2.5);
+    }
+
+    /// S15: the `s15` block names every `S15Counters` field and AI rider
+    /// counter, each with its own value, and reads all 0 with the
+    /// switches off. Control: only the set counters are non-zero.
+    #[test]
+    fn s15_block_names_every_counter() {
+        use crate::skirmish::{S15_AI, S15_COUNTERS, S15Faction, S15Player};
+        let off = s15_blocks(&S15Faction::default());
+        let m = off.as_object().unwrap();
+        assert_eq!(m.len(), S15_COUNTERS.len() + S15_AI.len());
+        assert!(m.values().all(|v| v == &json!(0)), "{off}");
+        let mut c = frontline_sim::s15::S15Counters {
+            plate_stops: 3,
+            bayonet_hits: 5,
+            ..Default::default()
+        };
+        c.rider_exits[frontline_sim::s15::rider_exit::HIT as usize] = 7;
+        let mut f = S15Faction::default();
+        f.add(&S15Player::of(&c, None));
+        let on = s15_blocks(&f);
+        assert_eq!(on["plate_stops"], json!(3));
+        assert_eq!(on["bayonet_hits"], json!(5));
+        assert_eq!(on["rider_exit_vehicle_hit"], json!(7));
+        let set = on.as_object().unwrap().values().filter(|v| *v != &json!(0));
+        assert_eq!(set.count(), 3, "control: only the set counters: {on}");
+    }
+
+    /// S15-ai: `s15_derived` reads per match and the rider job ends by
+    /// name, the oldest open job over the matches, and all 0 (or null)
+    /// with the switches off. Control: a second, empty match halves the
+    /// per-match values.
+    #[test]
+    fn s15_derived_reads_per_match_and_job_ends() {
+        use crate::skirmish::{S15Faction, S15Player};
+        let off = s15_derived(&S15Faction::default());
+        assert_eq!(off["rider_matches_pct"], Value::Null, "{off}");
+        assert_eq!(off["rider_jobs_per_match"], json!(0.0));
+        let c = frontline_sim::s15::S15Counters {
+            rider_boards: 8,
+            plate_stops: 4,
+            ..Default::default()
+        };
+        let ai = frontline_sim::ai::AiCounters {
+            rider_jobs: 3,
+            rider_job_ends: [1, 0, 1, 0, 0],
+            ..Default::default()
+        };
+        let mut one = S15Player::of(&c, Some(&ai));
+        one.oldest_job_s = 12.5;
+        let mut f = S15Faction::default();
+        f.add(&one);
+        let d = s15_derived(&f);
+        assert_eq!(d["rider_boards_per_match"], json!(8.0));
+        assert_eq!(d["rider_jobs_open_per_match"], json!(1.0));
+        assert_eq!(d["rider_job_ends"]["dropped"], json!(1));
+        assert_eq!(d["rider_job_ends"]["tank_lost"], json!(1));
+        assert_eq!(d["rider_job_oldest_s"], json!(12.5));
+        assert_eq!(d["rider_matches_pct"], json!(100.0));
+        f.add(&S15Player::of(&Default::default(), None));
+        let d = s15_derived(&f);
+        assert_eq!(d["rider_boards_per_match"], json!(4.0));
+        assert_eq!(d["plate_stops_per_match"], json!(2.0));
+        assert_eq!(d["rider_matches_pct"], json!(50.0));
+    }
+
+    /// S14 step 8: the `s14` block names every `S14Counters` field and AI
+    /// flame counter, each with its own value (a player's counters reach
+    /// the right key), and reads all 0 with the switches off. Control: a
+    /// counter set on one player shows only under its name.
+    #[test]
+    fn s14_block_names_every_counter() {
+        use crate::skirmish::{S14_AI, S14_COUNTERS, S14Faction, S14Player};
+        let off = s14_blocks(&S14Faction::default());
+        let m = off.as_object().unwrap();
+        assert_eq!(m.len(), S14_COUNTERS.len() + S14_AI.len());
+        assert!(m.values().all(|v| v == &json!(0)), "{off}");
+        let c = frontline_sim::flame::S14Counters {
+            burn_kills: 3,
+            clears_done: 5,
+            ..Default::default()
+        };
+        let mut f = S14Faction::default();
+        f.add(&S14Player::of(&c, None));
+        f.add(&S14Player::of(&c, None));
+        let on = s14_blocks(&f);
+        assert_eq!(on["burn_kills"], json!(6));
+        assert_eq!(on["clears_done"], json!(10));
+        assert_eq!(on["clear_steps"], json!(0));
+        let nonzero = on
+            .as_object()
+            .unwrap()
+            .values()
+            .filter(|v| *v != &json!(0))
+            .count();
+        assert_eq!(nonzero, 2);
+    }
+
+    /// S14-ai: `s14_derived` is all zero for matches with the switches off
+    /// (neutral.py reads it as new zero counters) and per match otherwise;
+    /// `flame_matches_pct` counts matches with a hit in a trench or pit.
+    #[test]
+    fn s14_derived_reads_per_match() {
+        use crate::skirmish::{S14Faction, S14Player};
+        let mut off = S14Faction::default();
+        off.add(&S14Player::of(&Default::default(), None));
+        let d = s14_derived(&off);
+        fn zero(v: &Value) -> bool {
+            match v {
+                Value::Object(m) => m.values().all(zero),
+                Value::Number(n) => n.as_f64() == Some(0.0),
+                _ => false,
+            }
+        }
+        assert!(zero(&d), "{d}");
+        let hit = frontline_sim::flame::S14Counters {
+            flame_in_bunker_hits: 1,
+            burn_kills: 4,
+            strikes: 2,
+            ..Default::default()
+        };
+        let ai = frontline_sim::ai::AiCounters {
+            flame_jobs: 2,
+            flame_job_ends: [0, 0, 0, 0, 0, 1],
+            refuels: 1,
+            ..Default::default()
+        };
+        let mut f = S14Faction::default();
+        let mut one = S14Player::of(&hit, Some(&ai));
+        one.oldest_job_s = 42.5;
+        f.add(&one);
+        f.add(&S14Player::of(&Default::default(), None));
+        let d = s14_derived(&f);
+        // S14 Fix 9 (T192): the oldest open job over the matches.
+        assert_eq!(d["flame_job_oldest_s"], json!(42.5));
+        assert_eq!(d["flame_matches_pct"], json!(50.0));
+        assert_eq!(d["flame_kills_per_match"], json!(2.0));
+        assert_eq!(d["strikes_per_match"], json!(1.0));
+        assert_eq!(d["refuels_per_match"], json!(0.5));
+        assert_eq!(d["flame_jobs_per_match"], json!(1.0));
+        assert_eq!(d["flame_job_ends"]["stall"], json!(1));
     }
 }

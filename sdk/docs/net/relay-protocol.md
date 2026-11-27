@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **16** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **17** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -152,6 +152,17 @@ kind the relay may not send. Clients cannot send relay messages.
   `DigProfile` 9 aid-post pit and, in S12a Build B (same version, not yet
   shipped), `StockSetup::beds` and `staff_min` (two `u8` after the box
   list). The save version is `-s30`. The one bump for the S12 slice.
+- Version 17 (S14) adds two commands at the end of `CommandKind`:
+  `ClearTrench { squad, at }` (a `u32` squad id, a Q16.16 point) and
+  `Strike { units }` (1 to 150 ids). The sim refuses both
+  (`FortRefusal::NotAllowed`) until S14a Builds B and C, and then with
+  `[clear] enabled` 0 / `[melee] enabled` 0. The setup gains the
+  `[flame]`, `[melee]`, `[clear]` and `[ai.flame]` tables, `WeaponClass`
+  7 `Flame`, a member's `when` and (S14a Build C, same version) a
+  weapon's optional `melee` (`reach_cm`, `damage`, `windup_ms`,
+  `recover_ms`: an `Option` of four `u32` after `core`). The save
+  version is `-s33`.
+  The one bump for the S14 slice.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -181,6 +192,7 @@ Checked on every decode. A datagram that breaks any limit is dropped whole.
 | Men per `PlaceBangalore` (version 13) | 1–150 (`MAX_UNITS`) |
 | `ClearMines` lane length (version 14) | 0–200 m (`MAX_LANE_M`) |
 | Men per `Tend`, `Carry`, `Evacuate` (version 16) | 1–150 (`MAX_UNITS`) |
+| Men per `Strike` (version 17) | 1–150 (`MAX_UNITS`) |
 | Turns per `Input` | 64 |
 | Turns per `Bundle` datagram | 300 |
 | Commands per bundled turn | 34 (2 × (16 + 1 relay-injected `Surrender`)) |

@@ -424,6 +424,9 @@ pub(crate) struct FireRequest {
     pub ammo: u16,
     /// S5b: the fire mission of a mortar bomb (0: none).
     pub mission: u32,
+    /// S14 F1: a flame particle: goes to `MatchState::flame`, never to
+    /// the projectile pool.
+    pub flame: bool,
 }
 
 /// Counts down weapon cooldowns and fires seeded shots when ready.
@@ -471,6 +474,7 @@ pub(crate) fn fire_weapons(
             ttl: 0,
             he: false,
             mission: 0,
+            flame: false,
         });
         w.shots = w.shots.wrapping_add(1);
         let mut rc = RngStream::new(seed, tick, id, Purpose::WEAPON_COOLDOWN);

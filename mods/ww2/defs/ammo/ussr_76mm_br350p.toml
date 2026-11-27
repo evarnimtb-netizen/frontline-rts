@@ -1,0 +1,37 @@
+# 76 mm BR-350P: APCR (from April 1943) for the ZiS-3 and the SU-76M (S15 Build C); rare.
+id = "ww2:ussr_76mm_br350p"
+name = "76 mm BR-350P"
+mechanism = "ap"
+# S15: priced refill ([supply] shell_mp_per_t per tonne): complete round about 6.3 kg (unverified: S15 starting value)
+supply = { kind = "shells", g = 6300 }
+caliber_mm = 76
+muzzle_velocity_m_s = 950
+drag_coeff = 0
+# Penetration convention (S15 Build C): the mod's tables are [range_m, mm] at pen_reference_angle_deg
+# (here 0, the normal). Soviet tables give the 'meet angle 90 deg' column (the normal) at a 75 %
+# success criterion (Soviet method); that column is taken as the 0-degree row, mm unchanged: no
+# criterion factor was read in a source, so the rows sit slightly low against the 50 % tables.
+# Read: BR-350P, 90 deg CP rows of the F-34 (losthistory.net); the ZiS-3 fires the same round (no ZiS-3 row read).
+penetration = [[100, 102], [300, 98], [500, 92]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# S13 O1: the slope penalty beyond 1/cos, class "apcr".
+slope_class = "apcr"
+nonpen_damage = 40
+track_damage = 60
+sources = [
+  "Wikipedia, 76 mm divisional gun M1942 (ZiS-3): ammunition and BR-350A penetration table (Soviet method, 75 %), read 2026-11-26: BR-350P 3.02 kg, up to 950 m/s",
+  "losthistory.net, Specification and Armor Penetration Values for the Soviet Tank Cannons (ARTKOM method, CP 80 %), read 2026-11-26",
+]
+# S5a (D3): a rare round: refilled one per supply.rare_rearm_base_s up to the vehicle's rare_cap, never a weapon's only feed.
+rare = true
+
+[core]
+damage = 100
+length_cm = 120
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25

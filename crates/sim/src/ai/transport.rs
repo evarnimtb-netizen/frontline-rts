@@ -117,6 +117,12 @@ pub struct AiTransport {
     pub point: FxVec2,
 }
 
+/// Whether vehicle `id` carries passengers inside (S8a; S15: rider slots
+/// on a tank's deck are not this habit's).
+fn carrier(g: &crate::game::MatchState, id: SimId) -> bool {
+    g.transport_of(id).is_some_and(|t| !t.exposed)
+}
+
 impl super::Planner<'_> {
     /// Step A of the plan (before the vehicles' upkeep): runs every own
     /// transport's job and takes the transports that are not supporting out
@@ -132,17 +138,16 @@ impl super::Planner<'_> {
         let g = self.g;
         let me = self.me;
         self.ai.transports.retain(|id, _| {
-            g.squads.get(id).is_some_and(|s| {
-                s.owner == me
-                    && s.members
-                        .first()
-                        .is_some_and(|v| g.transport_of(*v).is_some())
-            })
+            g.squads
+                .get(id)
+                .is_some_and(|s| s.owner == me && s.members.first().is_some_and(|v| carrier(g, *v)))
         });
         let mut keep = Vec::with_capacity(tanks.len());
         let mut waiting = Vec::new();
         for t in tanks.drain(..) {
-            if g.transport_of(t.id).is_none() {
+            // S15-ai: a tank's rider deck is not a half-track
+            // (`ai::riders` rides it).
+            if !carrier(g, t.id) {
                 keep.push(t);
                 continue;
             }

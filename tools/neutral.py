@@ -55,7 +55,10 @@ HEADER_NOTED = {"overrides"}
 S11A1_DENOMS = {"matches", "kills", "income_mp", "gun_kills_in_tank_he"}
 # S11a1 (review B-3): the only lists that may grow with a zero tail.
 # S11b (Build B): `s5a.kills_by` grew 11 -> 12 (the rifle-grenade class).
-GROWN_LISTS = {"refused", "kills_by"}
+# S14a (Build A): `s5a.kills_by` grew 12 -> 14 (flame, melee) and
+# `s5a.fired` 11 -> 12 (flame). `downed_by` and `finished_by` are named
+# maps (new zero keys), not lists.
+GROWN_LISTS = {"refused", "kills_by", "fired"}
 
 
 def ignored(key):

@@ -3,6 +3,10 @@
 #
 #   tools/batch.sh OUT.json [-o OVERRIDE.toml]... -- SUBCOMMAND ARGS...
 #   tools/batch.sh sets OUTDIR [-o OVERRIDE.toml]...   # the three 160 sets
+#   tools/batch.sh pair OUTDIR F0 F1 [-o OVERRIDE.toml]...
+#       one 40 set of faction F0 (player 0) against F1: seeds 1-20, both
+#       bases, 45 min, into OUTDIR/pair_<f0>_<f1>40.json (ids without the
+#       `ww2:` prefix; S15 plan 4, M tools)
 #
 # Runs `target/release/frontline-cli SUBCOMMAND ARGS... --json OUT.json`, text
 # output to OUT.txt, and keeps both under target/batch-cache/KEY. KEY is the
@@ -128,8 +132,15 @@ case "${1:-}" in
         done
         exit $rc
         ;;
+    pair)
+        dir=${2:?usage: tools/batch.sh pair OUTDIR F0 F1 [-o OVERRIDE]...}
+        f0=${3:?usage: tools/batch.sh pair OUTDIR F0 F1 [-o OVERRIDE]...}
+        f1=${4:?usage: tools/batch.sh pair OUTDIR F0 F1 [-o OVERRIDE]...}
+        shift 4
+        run_one "$dir/pair_${f0#*:}_${f1#*:}40.json" "$@" -- skirmish --ai-vs-ai --faction0 "$f0" --faction1 "$f1" --seed 1 --seeds 20 --both-bases --summary --minutes 45
+        ;;
     "" | -h | --help)
-        sed -n 2,18p "$0"
+        sed -n 2,22p "$0"
         exit 2
         ;;
     *)

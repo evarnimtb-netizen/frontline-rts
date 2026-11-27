@@ -558,6 +558,108 @@ Plan `docs/slices/B3-balance.md` 9; stage contract `B3-run-1.md`; levers `docs/s
   B3 run 2 (`f4e610b`, B3-3 (A)): M36 `ai_heavy`; the 480 judge reads T179a-d pass (Panther 28.75, M36 41.25, Tiger 14.4,
   Jumbo 16.25 % of skirmish160 matches); the 76 W stays at 0 (T179e floor 0).
 
+## S14 assault kit owner questions (asked 2026-11-22 by the Plan stage; each runs on (A): "(A) assumed 2026-11-22")
+
+Plan `docs/slices/S14-assault-kit.md` 12 (notes `S14-research-history.md`, `S14-research-code-audit.md`). Nothing built; S14
+builds after S13. Minor data and scope points (the US weapon is the M1A1 for the 1944-06 card, fuel figures, unchanged prices,
+strike numbers) are settled in the plan and only reported there.
+
+- S14-1 Fire and own men. (A) The flame stream passes own men like every direct round, but burning ground burns everyone standing in
+  it, own men included (own burns count as own fire, not kills). **(A) assumed 2026-11-22.** (B) Burning ground harms enemies only.
+  (C) The stream hits own men too.
+- S14-2 Hits on the fuel tank. (A) No rupture rule: a hit on the operator is an ordinary hit (sources: rare in fact; no new random
+  draw). **(A) assumed 2026-11-22.** (B) A hit in the back ruptures the tank 1 time in 10: he burns and leaves a 2 m fire.
+- S14-3 Where the flamethrowers go. (A) Into the Sturmpioniergruppe and the Assault Section as the roster says, one man's weapon
+  swapped; squad size, price, cooldown and AI weights unchanged. **(A) assumed 2026-11-22.** (B) A separate two-man flamethrower
+  team card per side. (C) Both.
+- S14-4 Melee scope. (A) An automatic strike only when the man's weapon is not ready (reloading, empty, crew weapon), plus a Strike
+  key (`V`); rifle butt 1.0 m and spade 0.6 m, no bayonets. **(A) assumed 2026-11-22.** (B) Also a Fix bayonets order (1.8 m reach,
+  worse aim while fixed). (C) Automatic only, no key.
+- S14-5 Who may use Clear trench. (A) Any infantry squad with grenades, players and AI. **(A) assumed 2026-11-22.** (B) The two
+  assault cards only (Sturmpioniergruppe, Assault Section).
+- S14-6 Flame on vehicles and works. (A) Flame hurts men only: it stops on vehicles, fortification pieces, crates and wire with no
+  effect; open-top crews are safe in S14. **(A) assumed 2026-11-22.** (B) Open-top crews and exposed seats burn.
+- S14-7 Burning ground and movement. (A) Paths ignore fire; men standing in it step out on their own, and Clear trench waits for its
+  own fire to die. **(A) assumed 2026-11-22.** (B) Paths route around burning ground (a new navigation layer; costs tick time).
+
+S14 Fix (2026-11-25, review `docs/slices/S14-review.md`; log `S14-log.md` "S14 Fix"). Each runs on (A) until answered:
+
+- S14-8 R1, flame through a bunker slit. With the aim fixed (finding 1) the real M1A1 man puts 6 hits into the bunker over 10 runs
+  (fortify10 row: 22 % of the men out, 0 runs with 4 of 5 out; closed control 8 %, back control 0 %); in 5 of 10 runs the
+  defenders kill him first. Where he empties his tank, 0-2 of 5 are out: a flat 27 m/s stream through a 0.4 m slit passes over
+  men crouched on a pit floor 1.5 m down and ends on the back wall's side with no effect (S14-6 (A)). (A) R1 (T186) stays
+  report-only; the slit is a balance-pass matter. **(A) assumed 2026-11-25.** (B) A particle ending on a fort piece's inner side
+  splashes (burns men within `near_cm` of it). (C) Lower the R1 target (e.g. 2 of 5 out in half the runs).
+- S14-9 The `V` key (review finding 10). (A) With `[melee]` on, `V` strikes only when an enemy is within 1.5 m of a selected man,
+  otherwise it boards as before. **(A) assumed 2026-11-25.** (B) A new key for Strike, `V` stays Board.
+- S14-10 A lone flame job's end (finding 13). The job's own Attack task counts in "point attacked", so "the point is no longer
+  attacked" ends a job only with the point taken; counting only other squads' tasks ended every lone job at once. (A) Keep it: a
+  lone job is bounded by `[ai.flame] job_max_s` (T192 now gates the oldest open job at the match end, <= 185 s). **(A) assumed
+  2026-11-25.** (B) End a lone job when the AI's plan for that point is dropped (needs the plan's id in the job).
+- S14-11 The AI's bunker target (finding 2). (A) A bunker counts as a flame target when seen, remembered, or on the AI's record of
+  enemy works (`known_by_record`); men in a trench are remembered `[ai.flame] memory_s` (60) after they were last seen. **(A)
+  assumed 2026-11-25.** (B) Seen only (the plan's text), with the trench memory alone.
+- S14-12 Where the flame man stands at a trench (finding 2). A flat stream enters a 1.8 m trench only from its lip. (A) `[ai.flame]
+  stand_trench_m` 2 (bunkers keep `stand_m` 20); a default chosen so the rule fires, not tuned. **(A) assumed 2026-11-25.**
+  (B) A lobbed stream (aim higher, longer range) so he can stand off.
+- S14-13 Melee reach in height (finding 3). (A) A strike reaches feet up to 2 m below or above the striker's (`[melee] down_cm`,
+  `up_cm`): any stance and into a trench from its lip; the enemy nearest the strike point on his body axis is hit. **(A) assumed
+  2026-11-25.** (B) Same level only (crouched and prone men hit, no reach into a trench).
+
+## S15 USSR owner questions (asked 2026-11-26 by the Plan stage; each runs on (A): "(A) assumed 2026-11-26")
+
+Plan `docs/slices/S15-ussr.md` 13 (notes `S15-research-history.md`, `S15-research-code-audit.md`). Built, reviewed and fixed on the
+branch (log `S15-log.md`; S15-14 and S15-15 added by the Fix; T212c met in the Fix's 40 set, max 28.4 min). Owner rule
+2026-11-25 applies: no balance run in S15; the proof is a neutral 40 set and one breakage 40 set (Germany against the USSR); the
+USSR's win rates are reported, not judged; the roster card's "inside the win-rate band" waits for a later balance pass. Minor data
+and scope points (every price as a starting value copied from the nearest German or US card, 9 and 6 men, ROKS-3 10 L, T-34-85 55
+rounds, ids with the `ussr_` prefix) are settled in the plan and only reported there.
+
+- S15-1 Who the USSR fights. (A) Germany against the USA stays the default match everywhere; Germany against the USSR is the second
+  pair (pick Germany, then the opponent; pick the USSR and the opponent is Germany); the USSR against the USA only with a "free
+  skirmish" setting, off by default (as `SYSTEM_DESIGN.md` 2.3 decided). **(A) assumed 2026-11-26.** (B) Any two different factions,
+  always. (C) Germany against the USSR only, no free setting.
+- S15-2 How much of the roster the first build ships. (A) The full list: 14 infantry cards, 5 guns (45 mm, 57 mm ZiS-2, ZiS-3, 76 mm
+  regimental, 122 mm M-30), 7 vehicles (T-34-85, SU-85, SU-76M, IS-2, BA-64B, Studebaker truck, M3A1 scout car); the slice is then
+  about 1.3x S3, not the card's 0.6x. **(A) assumed 2026-11-26.** (B) A core first (infantry, T-34-85, ZiS-3, truck), the rest in a
+  later slice.
+- S15-3 Tank riders. (A) Any infantry squad that fits may ride a Soviet tank's deck, fully exposed; the riders jump off by themselves
+  when one of them is suppressed, when the tank is hit, or when its main gun fires; only Soviet tanks have rider places. **(A)
+  assumed 2026-11-26.** (B) Riders stay on until the player orders them off. (C) German and US tanks get rider places too.
+- S15-4 The steel breastplate (SN-42). (A) A real 2 mm plate on the front of the torso of the assault group's men: it stops
+  pistol-calibre bullets (MP 40, M3), light fragments and rifle-butt or bayonet strikes; rifles, MGs, blast and flame ignore it; no
+  speed cost. **(A) assumed 2026-11-26.** (B) As (A), and the men walk 5-10 % slower. (C) No plate rule (a look only).
+- S15-5 Soviet infantry against tanks. The Red Army had no rocket launcher of its own. (A) An AT rifle team (holes half-tracks,
+  armoured cars and thin side plates only), satchels, and three AT guns; the thrown HEAT grenades (RPG-43, RPG-6) wait, because they
+  need a new item kind. **(A) assumed 2026-11-26.** (B) Add the thrown AT grenade in S15. (C) Captured Panzerfausts as a rare item.
+- S15-6 The 50 mm company mortar: **sources disagree.** The design says it had left line companies by 1944; battleorder.org keeps
+  two per rifle company until the December 1944 table. (A) No 50 mm card; the 82 mm is the only Soviet mortar. **(A) assumed
+  2026-11-26.** (B) A 50 mm RM-38 light mortar card (the AI's light mortars are off for every faction, S11b-14).
+- S15-7 Bayonets. (A) Soviet riflemen strike with the fixed bayonet (1.8 m reach) whenever a strike happens; no aim penalty (the
+  rifle was sighted with the bayonet on), no order; Germans and Americans stay without bayonets (S14-4). **(A) assumed 2026-11-26.**
+  (B) With an aim penalty while fixed. (C) No bayonets, rifle butt only.
+- S15-8 Captured mortar bombs. (A) A Soviet 82 mm crew standing at a taken German shells crate fires German 8 cm bombs, less
+  accurately; the German mortar cannot fire Soviet bombs; the AI does not go looking for crates. **(A) assumed 2026-11-26.** (B) Drop
+  the rule (it is rare in play).
+- S15-9 A transport card. (A) The lend-lease M3A1 Scout Car (6 men, open top) as the USSR's carrier beside the tank riders, so the
+  AI's transport habit has a card. **(A) assumed 2026-11-26.** (B) Tank riders only, no carrier.
+- S15-10 The same faction on both sides of a 1v1. (A) Refused in the menu and the online lobby, as today; the command-line tool
+  allows it, as today; team modes follow S17-8. **(A) assumed 2026-11-26.** (B) Offered in the menu and the lobby.
+- S15-11 The MG card. (A) The Maxim M1910/30 on its wheeled mount; the SG-43 is added as data without a card. **(A) assumed
+  2026-11-26.** (B) The SG-43 as the card.
+- S15-12 A map for the Eastern front. (A) None in S15: the USSR plays on the existing maps. **(A) assumed 2026-11-26.** (B) A third
+  map in S15.
+- S15-13 The ZiS-3's second role. (A) Direct fire only (AP at armour, HE at what it sees); firing it as artillery, with the
+  artillery-cap rule, comes later. **(A) assumed 2026-11-26.** (B) Indirect fire in S15.
+- S15-14 Rider places on the T-34-85 and IS-2 (review finding 5; plan 6.1 sends the 9-man sections as riders, plan 6.4 gave 8
+  places, so only the 6-man card and weakened squads fit). (A) 10 places on both decks (two on the centre line), a consistency fix,
+  not a tuned value; no source counts the men on a deck. **(A) assumed 2026-11-26.** (B) Keep 8 and leave the riders to the balance
+  pass. (C) 9-man sections lose the `vehicle_riders` tag.
+- S15-15 T213c (ROKS-3 hits) and T213d (bayonet strikes) in the Germany-USSR 40 set (both 0 in Build D). (A) Reports, not hard
+  rows: the S14 flame habit is rare for every faction and no AI habit closes to melee reach; sim tests prove both rules
+  (`roks3_hits_a_man_at_20_m`, `bayonet_reaches_150_cm`, W4). **(A) assumed 2026-11-26: reports; a close-assault habit is later
+  work.** (B) Build a close-assault habit now.
+
 ## Planned work queue
 
 1. Infra step (done; on main).
@@ -584,6 +686,8 @@ Plan `docs/slices/B3-balance.md` 9; stage contract `B3-run-1.md`; levers `docs/s
 17. **S11a2: done on branch `claude/project-thread-e7nsak` (2026-11-17), merged to main 2026-11-19 with the owner's OK.** Built in Build A and B, with the Fix of Build B (B-1..B-7). Verified: `check.sh quick 730e67f` all ok, 982 tests at the head `e149258`. GitHub CI on `affb26e` (S11a1 complete plus S11a2 stage A): Linux build, release and debug sim tests, simulate, clippy, rustfmt and cargo-deny passed; Windows and THIRD_PARTY_NOTICES fail as on main (fixed by PR 1); macOS cancelled; cross-platform hash check skipped. CI on `e149258` was still running when written. Measured 480 at `e149258`: Germany 41.67 % (sets 46.25 / 38.12 / 40.62; S10c-ai 40.00 %), no winner 0; 318 targets pass, 82 miss (44 hard). New hard misses: T9b, T54a, T54c, T81a, T81b, T119b; gone: T8a, T115d, T121d. `tools/verify.sh` not run. Spec `docs/slices/S11a2.md`, log `S11a2-log.md`, targets `S11a2.toml`. Owner questions S11a2-1..12 above. Next: the merge decisions for S10c-ai, S11a1, S11a2 and PR 1; then the open items in STATE.md; then S11b.
 18. **S11b: done on branch `claude/project-thread-e7nsak` (2026-11-19), waits for the owner's merge OK.** Built in Build A, B and C, with the Fix stage (spec `docs/slices/S11b.md`, stages `S11b-build-A.md`, `-B.md`, `-C.md`, targets `S11b.toml`, log `S11b-log.md`). Measured 480 at `88117de`: Germany 44.17 %, HE share 26.8 / 26.5 / 26.2 (cap 26.3). Owner questions S11b-1..14 above.
 19. **B2 balance pass: done on branch `claude/project-thread-e7nsak` (2026-11-19); NO default changed.** Plan `docs/slices/B2-balance.md` (item 14; stages `B2-run-1.md` and `B2-run-2.md`, targets `B2.toml`, levers `targets/B2-levers/`, log `B2-log.md`). No lever passed the plan's rule. `rg_gap25` was applied (`fc14f52`) and reverted (`63e4b04`) when judge rule J4 failed on T121b. Owner questions B2-1..12 above.
+20. **S14 assault kit: built, reviewed and fixed on `claude/project-thread-aj1tww` (S14 Fix 2026-11-25); Docs/PR next.** Log `docs/slices/S14-log.md`. Owner questions S14-8..13 (above) from the Fix stage, each on (A). Plan `docs/slices/S14-assault-kit.md` (notes `S14-research-history.md`, `S14-research-code-audit.md`). Builds after S13 from a fresh main: S14a mechanics (Build A flame, B clear trench and data, C melee; all switches 0, neutral; the `flame_only` 480 gates the AI half), presenter P, then S14-ai (flame jobs, refuel, flame buy, AI clear trench; 480, ablations). SAVE +1 and PROTOCOL +1 (`ClearTrench`, `Strike`). Targets from T185. Owner questions S14-1..7 above, each on (A).
+21. **S15 USSR (the third faction): planned 2026-11-26 on `claude/project-thread-aj1tww`; nothing built.** Plan `docs/slices/S15-ussr.md` (notes `S15-research-history.md`, `S15-research-code-audit.md`). About 1.3x S3. Stages: S15a Build A (ONE layout commit, SAVE +1, no PROTOCOL change; `[matchups]`, riders, plates, captured bombs, bayonets; all switches 0), Checker, Build B (infantry data), S15b Build C (5 guns, 7 vehicles), presenter P, S15-ai Build D (rider job, AI card table, switches on), proof (neutral 40 with the switches off and on, one Germany-USSR breakage 40; no 480, win rates reported only: owner rule 2026-11-25), Review, Fix, Docs. Targets from T210. Overlaps PR 11 (S16-S18: SAVE and PROTOCOL numbers, `match_setup.rs`, menus, lobby, `batch.sh`): whichever merges second renumbers. The card's win-rate band waits for a balance pass with three factions. Owner questions S15-1..13 above, each on (A).
 
 ## S10a open items (after the mechanics half; S10a-ai spec 3.5 says where each goes)
 

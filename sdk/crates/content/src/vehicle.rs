@@ -660,6 +660,15 @@ pub struct VehicleDef {
     /// man's hit volume.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub passenger_slots: Vec<PassengerSlotDef>,
+    /// S15 R1: infantry riding on the deck (tank, assault gun or tank
+    /// destroyer only); its seats are `rider_slots`. Dropped at setup while
+    /// the rules' `[riders] enabled` is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub riders: Option<RidersDef>,
+    /// S15 R1, R4: one per rider (hull frame, cm, on the deck: outside
+    /// every hull box); the box is the man's hit volume.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rider_slots: Vec<PassengerSlotDef>,
     /// S8b (6.9): stationary observation; absent: no effect.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub optics: Option<OpticsDef>,
@@ -792,6 +801,35 @@ pub struct TransportDef {
     /// time (cm).
     #[serde(default)]
     pub exit_raise_cm: u32,
+}
+
+/// S15 R1-R2: men riding on the deck. They get off over the sides (the
+/// rules' `[riders] exit_ms`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RidersDef {
+    /// Riders (equals the number of `rider_slots`; 1..=`MAX_PASSENGERS`).
+    pub capacity: u32,
+    /// Where men climb on, hull frame, cm (the hull's rear).
+    pub entry: [i32; 3],
+    /// Time per man climbing on (100..=30000 ms).
+    pub board_ms: u32,
+}
+
+/// S15 R1: the setup of a vehicle def's rider slots (`exit_ms`: the rules'
+/// `[riders] exit_ms`), or `None` without them.
+pub fn lower_riders(v: &VehicleDef, hz: u32, exit_ms: u32) -> Option<TransportSetup> {
+    let r = v.riders.as_ref()?;
+    let ticks = |ms: u32| (ms as u64 * hz as u64).div_ceil(1000) as u32;
+    Some(TransportSetup {
+        entry: FixedVec3::from_cm(r.entry),
+        board_ticks: ticks(r.board_ms),
+        exit_ticks: ticks(exit_ms),
+        exit_over_sides_ticks: Some(ticks(exit_ms)),
+        exit_raise: Fixed::ZERO,
+        slots: v.rider_slots.iter().map(|sl| (&sl.bounds).into()).collect(),
+        exposed: true,
+    })
 }
 
 /// S8a: one passenger seat; the box (hull frame, cm) is the man's hit
@@ -1795,9 +1833,10 @@ impl VehicleDef {
         }
         let mains = self.weapons.iter().filter(|w| w.mount.is_main()).count();
         // S8a-1: a transport may have a main gun; S8b: a truck has none;
-        // every other role exactly one.
+        // S15 Build C: a recon car may have none (the BA-64B's only weapon
+        // is a DT on a pintle); every other role exactly one.
         let (want_mains, needs) = match self.role {
-            VehicleRole::Transport => (0..=1, "at most one"),
+            VehicleRole::Transport | VehicleRole::Recon => (0..=1, "at most one"),
             VehicleRole::Truck | VehicleRole::Tractor => (0..=0, "no"),
             _ => (1..=1, "exactly one"),
         };
@@ -2574,6 +2613,7 @@ impl VehicleDef {
                 "only role = \"transport\" has passenger slots",
             ));
         }
+        self.check_riders(out);
         let Some(t) = &self.transport else {
             return;
         };
@@ -2622,6 +2662,70 @@ impl VehicleDef {
                 half: sl.bounds.half,
             };
             check_part(out, &format!("passenger_slots[{i}].box"), &part, frames);
+        }
+    }
+
+    /// S15 R1: `[riders]` only on a tank, assault gun or tank destroyer
+    /// without `[transport]`, one deck box per rider, each outside every
+    /// hull box.
+    fn check_riders(&self, out: &mut Vec<Issue>) {
+        let deck = matches!(
+            self.role,
+            VehicleRole::Tank | VehicleRole::AssaultGun | VehicleRole::TankDestroyer
+        );
+        let Some(r) = &self.riders else {
+            if !self.rider_slots.is_empty() {
+                out.push(Issue::new("rider_slots", "rider slots need [riders]"));
+            }
+            return;
+        };
+        if !deck || self.transport.is_some() {
+            out.push(Issue::new(
+                "riders",
+                "only a tank, assault gun or tank destroyer without [transport] has [riders]",
+            ));
+        }
+        range(
+            out,
+            "riders.capacity",
+            r.capacity as i64,
+            1,
+            MAX_PASSENGERS as i64,
+        );
+        if r.capacity as usize != self.rider_slots.len() {
+            out.push(Issue::new(
+                "rider_slots",
+                format!(
+                    "needs one slot per rider ({}), got {}",
+                    r.capacity,
+                    self.rider_slots.len()
+                ),
+            ));
+        }
+        for (a, c) in r.entry.iter().enumerate() {
+            range(out, &format!("riders.entry[{a}]"), *c as i64, -2000, 2000);
+        }
+        range(out, "riders.board_ms", r.board_ms as i64, 100, 30_000);
+        for (i, sl) in self.rider_slots.iter().enumerate() {
+            let (c, h) = (sl.bounds.center, sl.bounds.half);
+            if h.iter().any(|&x| x == 0 || x > 200) {
+                out.push(Issue::new(
+                    format!("rider_slots[{i}].box"),
+                    "half extents 1..=200 cm",
+                ));
+            }
+            let inside = self.boxes.iter().any(|b| {
+                b.frame == Frame::Hull
+                    && (0..3).all(|a| {
+                        (c[a] as i64 - b.bounds.center[a] as i64).abs() < b.bounds.half[a] as i64
+                    })
+            });
+            if inside {
+                out.push(Issue::new(
+                    format!("rider_slots[{i}].box"),
+                    "a rider box's centre lies inside a hull box (it must sit on the deck)",
+                ));
+            }
         }
     }
 
@@ -3107,6 +3211,9 @@ pub struct TransportSetup {
     pub exit_raise: Fixed,
     /// Passenger slot boxes (hull frame, m); `len()` is the capacity.
     pub slots: Vec<BoxSetup>,
+    /// S15 R1: rider slots on the deck of a tank, assault gun or tank
+    /// destroyer (`[riders]` and `[[rider_slots]]`), outside every plate.
+    pub exposed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -3830,6 +3937,7 @@ pub(crate) fn lower_vehicle(
                 .iter()
                 .map(|sl| (&sl.bounds).into())
                 .collect(),
+            exposed: false,
         }),
         mounts: mounts.into_iter().map(mount).collect(),
         components: ComponentKind::ALL.into_iter().map(component).collect(),
@@ -4061,12 +4169,15 @@ pub(crate) fn check_vehicle(
     let turret_ok = if v.has_turret {
         box_ok(&v.turret) && !casemate && v.gun_arc_deg.is_none()
     } else if v.main_gun().is_none() {
-        // S8a-1: no main gun (a transport).
+        // S8a-1: no main gun (a transport). S15 Build C: or a recon car.
         v.turret == BoxSetup::default()
             && v.gun_arc_deg.is_none()
             && matches!(
                 v.role,
-                VehicleRole::Transport | VehicleRole::Truck | VehicleRole::Tractor
+                VehicleRole::Transport
+                    | VehicleRole::Truck
+                    | VehicleRole::Tractor
+                    | VehicleRole::Recon
             )
     } else {
         v.turret == BoxSetup::default()
@@ -4346,19 +4457,57 @@ pub(crate) fn check_vehicle(
     {
         return Some("vehicles.shields: out of range");
     }
-    // S9: a gun tractor may carry the crew.
-    if (v.role == VehicleRole::Transport)
-        != (v.transport.is_some() && v.role != VehicleRole::Tractor)
-    {
-        return Some("vehicles.transport: exactly on a transport");
+    // S9: a gun tractor may carry the crew. S15 R1: rider slots (exposed)
+    // only on a tank, assault gun or tank destroyer.
+    let deck = matches!(
+        v.role,
+        VehicleRole::Tank | VehicleRole::AssaultGun | VehicleRole::TankDestroyer
+    );
+    match &v.transport {
+        Some(t) if t.exposed => {
+            if !deck {
+                return Some("vehicles.transport: rider slots only on a tank, assault gun or TD");
+            }
+            // R4: a rider box sits outside every hull box.
+            let inside_hull = |c: FixedVec3| {
+                v.boxes.iter().any(|b| {
+                    let (bc, bh) = (b.bounds.center, b.bounds.half);
+                    b.frame == Frame::Hull
+                        && (c.x.0 - bc.x.0).abs() < bh.x.0
+                        && (c.y.0 - bc.y.0).abs() < bh.y.0
+                        && (c.z.0 - bc.z.0).abs() < bh.z.0
+                })
+            };
+            if t.slots.iter().any(|b| inside_hull(b.center)) {
+                return Some("vehicles.transport: a rider box inside the hull");
+            }
+        }
+        _ => {
+            if (v.role == VehicleRole::Transport)
+                != (v.transport.is_some() && v.role != VehicleRole::Tractor)
+            {
+                return Some("vehicles.transport: exactly on a transport");
+            }
+        }
     }
     if let Some(t) = &v.transport {
+        // S15 R1: a rider box stands on the deck, over the hull: inside the
+        // hull frame's plan, at most 3 m over its top.
+        let slot_inside = |exposed: bool, f: &BoxSetup, b: &BoxSetup| {
+            if !exposed {
+                return inside(f, b);
+            }
+            let mut up = *f;
+            up.half.z = Fixed(f.half.z.0 + Fixed::from_int(3).0 / 2);
+            up.center.z = Fixed(f.center.z.0 + Fixed::from_int(3).0 / 2);
+            inside(&up, b)
+        };
         let tick_ok = |n: u32| (1..=30 * 30).contains(&n);
         if t.slots.is_empty()
             || t.slots.len() > MAX_PASSENGERS
             || t.slots
                 .iter()
-                .any(|b| !box_ok(b) || !inside(frame(Frame::Hull), b))
+                .any(|b| !box_ok(b) || !slot_inside(t.exposed, frame(Frame::Hull), b))
             || !tick_ok(t.board_ticks)
             || !tick_ok(t.exit_ticks)
             || t.exit_over_sides_ticks.is_some_and(|n| !tick_ok(n))

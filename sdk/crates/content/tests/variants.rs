@@ -190,7 +190,11 @@ fn the_s4_content_resolves_with_historical_squads() {
     assert!(
         s.squad_types
             .iter()
-            .filter(|t| t.id != "ww2:ger_vg_sturmgruppe" && t.id != "ww2:ger_baupioniergruppe")
+            .filter(|t| {
+                t.id != "ww2:ger_vg_sturmgruppe"
+                    && t.id != "ww2:ger_baupioniergruppe"
+                    && t.id != "ww2:ussr_gvardeyskoe_otdelenie"
+            })
             .all(|t| s.training[t.training as usize].is_regular())
     );
     // The two-BAR card is dated; skirmish has no date filter.

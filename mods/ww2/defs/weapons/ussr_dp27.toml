@@ -1,0 +1,32 @@
+# DP-27 light machine gun (S15 Build B): 47-round top pan, 550 rounds a
+# minute cyclic, about 840 m/s, 11.5 kg loaded (Wikipedia "DP-27", read
+# 2026-11-26). Fired off its bipod by the section's gunner, his assistant
+# carries the spare pans. Game values are S15 starting values, set between
+# the MG 42 bipod and the BAR.
+id = "ww2:ussr_dp27"
+name = "DP-27"
+short_name = "DP-27"
+class = "mg"
+feed = "ww2:ussr_762x54r_pan"
+# The gunner's own load: the pan on the gun and two spares in the box.
+load = 141
+sources = [
+    "Wikipedia, DP-27 (47-round pan, 550 rpm cyclic, 840 m/s, 11.5 kg; read 2026-11-26)",
+    "battleorder.org, USSR rifle company 1944 (gunner and assistant with 3 pans in a box)",
+]
+range_m = 450
+damage = 45
+rounds_per_min = 550
+magazine = 47
+reload_ms = 4500
+spread_mrad = 22
+# S8a: ball ammunition table (unverified), as the rifles'.
+penetration = [[0, 7], [100, 5], [300, 3]]
+core = { damage = 30, length_cm = 30, max_boxes = 1 }
+setup_ms = 1000
+suppression = 12
+handover_ms = 3000
+# Short bursts of 5 rounds, 0.9 s pause (S15 starting values, unverified).
+burst_rounds = 5
+burst_pause_ms = 900
+muzzle_velocity_m_s = 840

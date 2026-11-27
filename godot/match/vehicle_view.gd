@@ -26,6 +26,10 @@ const POSE_RATE := 6.0
 const WRECK_TINT := Color(0.20, 0.18, 0.16)
 const WRECK_SHADE := 0.55
 const POSE_STRIDE := 12
+## S15: at most this many riders' pads, their height (m) and colour.
+const DECK_CAP := 64
+const DECK_PAD_H := 0.06
+const DECK_PAD := Color(0.20, 0.19, 0.16)
 
 ## type key -> {dims, batches: [MultiMeshInstance3D ×3], poses}
 var _types := {}
@@ -35,6 +39,11 @@ var _mat: ShaderMaterial
 var _rust := false
 var _local := 0
 var _seen_ids := {}
+## S15: rider pads drawn last frame (tests).
+var deck_pads := 0
+## Their transforms (a headless render server keeps none).
+var pad_xf: Array[Transform3D] = []
+var _deck_pads: MultiMeshInstance3D
 ## Instances drawn last frame per type key (tests, stats).
 var counts := {}
 ## CPU time of the last update in microseconds (tests).
@@ -120,6 +129,59 @@ func update_state(s: Dictionary) -> void:
 		tp.shown = n
 		_upload(tp)
 	last_us = Time.get_ticks_usec() - t0
+	_update_deck(s, vtypes)
+
+
+## S15 R1: a rider on an exposed deck (vehicles[].deck) sits on a pad at the
+## bottom of his slot box: one thin plate per rider, hull-frame placed (sim
+## x forward, y left, z up -> Godot -X..., see meshgen `boxes_blockout`),
+## so the men read as seated on the deck, not floating over it. One
+## MultiMesh for every deck; the pads follow the hull's drawn pose.
+func _update_deck(s: Dictionary, vtypes: Dictionary) -> void:
+	if _deck_pads == null:
+		_deck_pads = MultiMeshInstance3D.new()
+		_deck_pads.name = "DeckPads"
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = BoxMesh.new()
+		mm.instance_count = DECK_CAP
+		mm.visible_instance_count = 0
+		_deck_pads.multimesh = mm
+		var st := StandardMaterial3D.new()
+		st.albedo_color = DECK_PAD
+		st.roughness = 0.9
+		_deck_pads.material_override = st
+		_deck_pads.custom_aabb = AABB(Vector3(-2048, -256, -2048), Vector3(4096, 1024, 4096))
+		add_child(_deck_pads)
+	var by_id := {}
+	pad_xf.clear()
+	for v in s.get("vehicles", []):
+		if bool(v.get("deck", false)) and int(v.get("riders", 0)) > 0:
+			by_id[int(v.id)] = v
+	var n := 0
+	if not by_id.is_empty():
+		for so in s.get("soldiers", []):
+			var vid := int(so.get("riding", -1))
+			if vid < 0 or not by_id.has(vid) or n >= DECK_CAP:
+				continue
+			var v: Dictionary = by_id[vid]
+			var slots: Array = vtypes.get(String(v.type), {}).get("slots", [])
+			var k := int(so.get("ride_slot", 0))
+			if k < 0 or k >= slots.size():
+				continue
+			var d: Array = _drawn.get(vid, [0.0, float(v.get("pitch", 0.0)), float(v.get("roll", 0.0)), 0.0])
+			var hull := Basis(Vector3.UP, float(v.yaw)) * Basis(Vector3.RIGHT, d[1]) * Basis(Vector3.BACK, -d[2])
+			var c: Vector3 = slots[k].center
+			var h: Vector3 = slots[k].half
+			# Sim frame (x fwd, y left, z up) to the hull's Godot frame.
+			var local := Vector3(-c.y, c.z - h.z + DECK_PAD_H * 0.5, -c.x)
+			var pad := Basis.from_scale(Vector3(maxf(h.y * 2.0, 0.3), DECK_PAD_H, maxf(h.x * 2.0, 0.3)))
+			var xf := Transform3D(hull * pad, (v.pos as Vector3) + hull * local)
+			_deck_pads.multimesh.set_instance_transform(n, xf)
+			pad_xf.append(xf)
+			n += 1
+	_deck_pads.multimesh.visible_instance_count = n
+	deck_pads = n
 
 
 ## Team tint: the faction's paint mixed toward the side colour.

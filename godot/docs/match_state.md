@@ -1642,3 +1642,142 @@ state).
 The bridge does not yet send `rules.wounds {enabled, reinforce}`; until it
 does the medic card stays hidden and the Aid button appears once the first
 wound, casualty or medic squad is in the state.
+
+## S14: flamethrowers, burning ground, strikes (mechanics A-C, presenter P)
+
+Design: `docs/slices/S14-assault-kit.md` 3, 5, 6. Everything is off unless
+the rules switch it on (`[flame] enabled`, `[melee] enabled`, `[clear]
+enabled`; all 1 in the shipped rules since S14 C), and every field below is
+empty or absent while it is off. The bridge sends them; the mock shows one of each
+once `stage_s14` is called (`rules.s14` on).
+
+### State keys
+
+- `rules.s14: {flame, melee, clear}: bool` -- the three switches
+  (`MatchView.s14_on(key)`; the Clear trench and Strike buttons show with
+  their switch on).
+- `flame[]: {id, pos: Vector3, player}` -- flame particles in flight,
+  ascending id (own always; the enemy's within sight of an own man). They
+  live in their own list, never in `projectiles`.
+- `patches[]: {id, pos: Vector3, player, seconds_left, radius}` -- burning
+  ground (same sight rule, plus 6 m); it burns within `radius` m of `pos`
+  (`[flame] patch_radius_cm`) until `seconds_left` runs out.
+- `soldiers[].burning: bool` -- only when true (a flame hit or burning
+  ground). A downed man (in `casualties[]`, S12) who burns carries no
+  flag: `burning` is sent per standing soldier only.
+- `soldiers[].strike: int` -- only when not 0: 1 wind-up, 2 recovery (the
+  strike pose).
+- Weapons: `WeaponClass::Flame` (`class` "flame" in defs); the bridge's
+  sound cue for its shots is the MG's (`"mg"`).
+
+### Intents
+
+- `strike_units {units}` (direct control `V` while `rules.s14.melee` is
+  on and an enemy is within 1.5 m of a selected man, else `V` boards; the
+  Strike button) -- each of the own `units` with no strike running
+  starts one at the nearest enemy within reach. Refused (`fort_refused`,
+  `not_allowed`) with `[melee] enabled` 0 or when nobody is in reach. The
+  bridge maps it to `Strike`; the mock does not handle it.
+- `clear_trench {squads, target}` (the Clear button arms a click tool) --
+  the first selected infantry squad clears the trench cell nearest
+  `target` (`ClearTrench {squad, at}`): grenades, then the entrance.
+  Refused (`fort_refused`) `not_allowed` (switch off, vehicle or gun squad,
+  no frag grenade) or `bad_spot` (no trench near). The mock does not handle
+  it.
+
+### Presenter (`match/flame_view.gd`)
+
+One MultiMesh of short bright boxes for the stream (at most 512: the rules
+allow 256 per player, `MAX_FLAME_PER_PLAYER`, so a 1v1 never overflows it), a
+flickering disc for each patch with a light under the first 3, a small
+flame over each burning man, and the strike pose as a pale bar over the
+striker (raised in the wind-up, thrust toward the nearest enemy in the
+recovery; the soldiers are instanced meshes without a rig, so there is no
+arm to move). Nothing is drawn while the fields are empty. Burning men are
+not tinted (the instanced bodies take no per-man tint from GDScript); the
+flame marker stands for it. `V` is also Board's key: with `rules.s14.melee`
+on, men selected and an enemy within 1.5 m of one of them
+(`STRIKE_KEY_M`, the sim's default reach plus a margin) `V` strikes;
+otherwise it arms Board as before (S14-11 (A)).
+
+## S15: riders, plates, captured bombs, bayonets, the third faction
+
+Design: `docs/slices/S15-ussr.md` (R riders, P plates, X captured bombs,
+B bayonets, M matchups). Every part is off unless its rules switch is on
+(`[riders] enabled`, `[body_armour] enabled`, `[supply] foreign_ammo`,
+`[melee] bayonets`, `[ai.riders] jobs`): S15-ai Build D ships all of them at
+1 and enables `ww2:ussr` in `[matchups]` (pairs Germany-USA, the default,
+and Germany-USSR), so the menu has three factions. With a switch at 0 the
+setup drops the def parts (a deck or a foreign feed left in a setup with its
+switch 0 is refused, S15 Fix), so the keys below are absent or false. Build A put
+the fields in the sim's `RenderSnapshot`; the presenter stage (P) sends
+them, see "State keys (P)" and "Menus and lobby (P)".
+
+### Snapshot fields (`crates/sim/src/snapshot.rs`)
+
+- `VehicleSnapshot::flags` bit `DECK` (`1 << 11`, public) -- its rider
+  slots are an exposed deck: the riders (`soldier_riding` names the
+  vehicle, `soldier_ride_slot` the slot, `riders`/`capacity` count them)
+  sit on it in the open, not inside. Riders on a deck can be shot (R4).
+- `VehicleSnapshot::flags` bit `RIDERS_OFF` (`1 << 12`, public) -- the
+  riders' exit timer runs (R3a suppressed, R3b the vehicle struck, R3c its
+  gun fired; `[riders] exit_ms`): they jump off over the sides, stunned.
+  A knock-out or fire (R3d) puts them off at once, with no flag.
+- `soldier_plate[]` (per entry of `soldiers`) -- he wears a body plate
+  (P1). A stop is counted on his player (`s15.plate_stops`,
+  `plate_stops_frag`, `plate_stops_melee`); there is no per-hit event, so
+  a spark on the plate needs one (presenter stage).
+- Captured bombs (X) and bayonets (B) need no new field: a foreign bomb
+  is a mortar shell of the firing weapon (`shots[]`, `explosions[]`), and
+  a bayonet strike is the S14 strike (`soldier_strike`).
+
+### State keys (P)
+
+- `vehicles[].deck: bool` (public) -- the `DECK` flag; `vehicles[].riders_off:
+  bool` (public) -- the `RIDERS_OFF` flag. `vehicles[].flags` carries the
+  bits as before (`Vehicles.DECK` 2048, `Vehicles.RIDERS_OFF` 4096).
+  `riders`/`capacity` count the men, as for any transport.
+- `rules.vehicle_types[t].deck: true` -- the type's `slots` (hull-frame
+  boxes, sim axes) are an exposed deck, not a closed compartment. `slots`
+  is sent for every vehicle with rider slots as for a half-track.
+- `soldiers[].riding: int` (the vehicle id) and `soldiers[].ride_slot: int`
+  -- present only while he rides (S8a transports too). His `stance` is
+  `crouch` (seated) and his position is the bottom of his slot box.
+- `soldiers[].plate: true` -- present only for a man wearing a body plate
+  (P1). No per-hit event: a spark on the plate needs one.
+- Weapon words: a soldier's `weapon` comes from the sim as before; the
+  mock's fallback table `MatchView.WEAPONS` has a `ussr` row.
+
+### Menus and lobby (P)
+
+- `FrontlineNet.match_options(test_unlock: bool) -> Dictionary` (loads the mod,
+  no lobby needed): `{ factions: [{ id, name, color }], opponents: { id:
+  [ids, the default first] }, mirror: bool }`, from the rules' `[matchups]`
+  (M1-M4). Empty when the content cannot be loaded. `Session.menu_options()`
+  reads it once; without the bridge, or with the USSR off, it is today's two
+  factions, so the menu is today's menu (the opponent picker is hidden while
+  a faction has one opponent).
+- Skirmish choice: `Session.setup.opponent` (short id; `""` or absent: the
+  default opponent). `--opponent ussr` sets it from the command line.
+- Lobby: `FrontlineNet.set_choice({faction})` takes any faction the rules
+  enable. At `ready()` the client resolves the pair; a refused one (or the
+  same faction without `mirror`) puts the words in `status().mismatch`:
+  "<A> cannot fight <B> in this ruleset; pick another faction." The panel
+  shows the same words before Ready (`Session.pair_refusal`). MockNet has
+  three factions and the pairs Germany-USA, Germany-USSR (`MockNet.PAIRS`).
+- USSR look: `UiPalette` colour `#9a5a4a`, name `USSR`, short `SOV`;
+  `Vehicles.PAINT` / `GLACIS_DEG` have a `ussr` row (the glacis row is the
+  mock's: the bridge sends `glacis_deg` from the def). The twelve Soviet
+  blockouts (T-34-85, IS-2, SU-85, SU-76M, BA-64B, M3A1 scout car, US6 and
+  five guns) are built by `meshgen` from `rules.vehicle_types` as the S13
+  vehicles are: no new mesh code.
+- Presenter: `VehicleView` draws a thin pad at the foot of each rider's slot
+  box on a `deck` vehicle (`deck_pads`, `pad_xf`), so the seated men sit on
+  the deck; the squad card shows `PLATE` / `PLATE×n` while men wear plates
+  (`Roster.plates_worn`).
+
+### Intents
+
+None new: riders board with `Embark` (refused, as before, on a vehicle
+with no slots, which is every vehicle while `[riders] enabled` is 0) and
+get off with `Disembark`.

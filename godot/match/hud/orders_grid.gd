@@ -163,7 +163,10 @@ const ROW_SUPPLY := [
 ]
 const PLACE := [&"place_crate", "Place", &"", "Click the ground: the squad carries its crates there and sets them down. Inside an own HQ or dump ring they go into its stock; within 5 m of a mortar or tank they feed it."]
 const PICK_UP := [&"pick_up", "Pick up", &"", "Click an own crate on the ground: the squad walks to it and a free man takes it."]
-const TOOLS := [&"tend", &"carry", &"build_aid", &"emplace", &"hitch", &"push_gun", &"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up", &"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq", &"cut_wire", &"bangalore", &"lay_ap_mines", &"lay_at_mines", &"build_hedgehog", &"build_log_barrier", &"build_bunker", &"clear_mines", &"demolish"]
+const TOOLS := [&"tend", &"carry", &"build_aid", &"emplace", &"hitch", &"push_gun", &"drop_crates", &"move", &"attack_move", &"dig", &"barrage", &"face", &"reverse", &"suppress", &"crew", &"embark", &"panzerfaust", &"build_hq", &"build_dump", &"place_crate", &"pick_up", &"build_sandbags", &"build_wire", &"build_mg_nest", &"build_dugout", &"roof_hq", &"cut_wire", &"bangalore", &"lay_ap_mines", &"lay_at_mines", &"build_hedgehog", &"build_log_barrier", &"build_bunker", &"clear_mines", &"demolish", &"clear_trench"]
+## S14: the fourth row's two small buttons (shown with their switch on).
+const CLEAR_TRENCH := [&"clear_trench", "Clear", &"", "Click a trench: the squad throws grenades into it, then goes in after them (a man with a frag grenade is needed). Refused when no trench is there."]
+const STRIKE := [&"strike", "Strike", &"order_embark", "V: the selected men strike the nearest enemy in reach (a rifle butt, a spade): a wind-up, then the blow."]
 const AMMO_IDS := [&"ammo_auto", &"ammo_ap", &"ammo_apcr", &"ammo_he"]
 const ITEMS := [&"frag", &"smoke", &"satchel"]
 ## S4: item buttons with a count badge (the Panzerfaust is a tool, not a
@@ -189,6 +192,8 @@ var _truck := false
 ## S10a: the Build button shows in the Mission slot.
 var _build := false
 var _s10b := ""
+## S14: which of the two small buttons the rules turn on.
+var _s14 := ""
 ## S12: the Aid button shows in the Mission slot.
 var _aid_slot := false
 
@@ -232,6 +237,10 @@ func update_state(_s: Dictionary) -> void:
 		for id in ROW_FORT_S10B + ROW_FORT_S12:
 			if sel.can(id):
 				s10b += String(id) + ","
+	var s14 := "%d%d" % [int(view.s14_on("clear")), int(view.s14_on("melee"))]
+	if s14 != _s14:
+		_s14 = s14
+		_size = Vector2.ZERO
 	if size != _size or buttons.is_empty() or want != grid_mode or pzf != _pzf_slot or truck != _truck or mounted != _mounted or gun != _gun or build != _build or s10b != _s10b or aid_slot != _aid_slot:
 		_aid_slot = aid_slot
 		_size = size
@@ -341,6 +350,14 @@ func _layout() -> void:
 	var fseg := sw / 3.0
 	for i in ROW_FIRE.size():
 		_add(ROW_FIRE[i], Rect2(i * fseg, 3.0 * (bh + g), fseg, fh), "fire")
+	# S14: Clear trench and Strike, in the fire strip's free columns.
+	if grid_mode == "soldier":
+		var col := 3
+		if view.s14_on("clear"):
+			_add(CLEAR_TRENCH, Rect2(col * (bw + g), 3.0 * (bh + g), bw, fh), "order")
+			col += 1
+		if view.s14_on("melee"):
+			_add(STRIKE, Rect2(col * (bw + g), 3.0 * (bh + g), bw, fh), "order")
 
 
 ## S10a: a blueprint button with its kg, time, men and capability from

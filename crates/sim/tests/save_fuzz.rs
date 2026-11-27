@@ -319,6 +319,10 @@ fn holds(w: &World) -> Vec<&'static str> {
     put((0..2).any(|p| !ai(p).forts.is_empty()), "ai_forts");
     put((0..2).any(|p| !ai(p).breaches.is_empty()), "ai_breaches");
     put(
+        (0..2).any(|p| !ai(p).flame.jobs.is_empty()),
+        "ai_flame_jobs",
+    );
+    put(
         (0..2).any(|p| ai(p).material_run.is_some()),
         "ai_material_run",
     );
@@ -346,7 +350,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 32,
+        version: 34,
         state: w.state(),
     });
     assert!(
@@ -740,6 +744,18 @@ fn s10b_path(path: &str) -> bool {
         // S12 Build B: aid-post beds.
         || path.contains(".beds")
         || path.contains(".s12.")
+        // S14: particles, patches, burning men, the counters.
+        || path.starts_with("state.game.flame")
+        || path.starts_with("state.game.patches")
+        || path.starts_with("state.game.clears")
+        || path.contains(".close")
+        || path.contains(".s14.")
+        // S15: riders, their timers, rider jobs, foreign rounds, counters.
+        || path.contains(".riders")
+        || path.contains(".rider_off")
+        || path.contains(".foreign")
+        || path.contains(".s15.")
+        || path.contains("rider_job")
         || path.contains("Order.ClearMines")
         || path.contains("Order.Demolish")
         // Fuzz stage `staged_s10b_ai`.
@@ -1034,6 +1050,14 @@ fn staged_s10b() -> World {
     let rifles = arm_rifle_grenades(&mut s, "ww2:usa_rifle_squad", "rifleman", 3);
     // S12: wounds on, so the staged wounded and downed men play on.
     s.rules.wounds.enabled = 1;
+    // S15: the Panzer IV takes test-made rider slots (no def has them yet).
+    rider_tank(&mut s);
+    // S15-ai: the rider rules and jobs on, so the staged jobs run (Build D).
+    s.rules.riders.enabled = 1;
+    s.rules.ai.riders.jobs = 1;
+    // S15 X1: the US 81 mm mortar takes the GrW 34 bomb as a German
+    // foreign feed (no def has one yet), the switch on.
+    foreign_mortar(&mut s);
     let mut w = World::new_match(s, 1).unwrap();
     staged_s11a2_gun(&mut w, leig);
     staged_s11b(&mut w, rifles);
@@ -1087,7 +1111,153 @@ fn staged_s10b() -> World {
         }
     });
     staged_s10b_ai(&mut w, ap, piece);
+    staged_s15(&mut w);
     w
+}
+
+/// S15 R1 stand-in (no def has rider slots before Build C): the Panzer IV
+/// gets ten deck slots outside its armour.
+fn rider_tank(s: &mut MatchSetup) {
+    use frontline_content::setup::Fixed;
+    use frontline_content::vehicle::{BoxSetup, FixedVec3, TransportSetup};
+    let hz = s.tick_hz as u64;
+    let v = s
+        .vehicles
+        .iter_mut()
+        .find(|v| v.id == "ww2:ger_pz4_h")
+        .unwrap();
+    let ticks = |ms: u64| (ms * hz).div_ceil(1000) as u32;
+    v.transport = Some(TransportSetup {
+        entry: FixedVec3::from_cm([-300, 0, 60]),
+        board_ticks: ticks(1000),
+        exit_ticks: ticks(600),
+        exit_over_sides_ticks: Some(ticks(600)),
+        exit_raise: Fixed(0),
+        slots: [-120, -170, -220, -265]
+            .into_iter()
+            .flat_map(|x| [(x, 60), (x, -60)])
+            .chain([(-145, 0), (-245, 0)])
+            .map(|(x, y)| BoxSetup {
+                center: FixedVec3::from_cm([x, y, 221]),
+                half: FixedVec3::from_cm([22, 20, 45]),
+            })
+            .collect(),
+        exposed: true,
+    });
+}
+
+/// Fuzz stage S15 (plan 3 N3): men riding a Panzer IV with rider slots,
+/// its riders getting off (R3 timer), player 0's AI with a rider job in
+/// each phase and a failed pairing, S15 counters.
+fn foreign_mortar(s: &mut MatchSetup) {
+    if let Some(sp) = s.rules.supply.as_mut() {
+        sp.foreign_ammo = 1;
+    }
+    let grw = s.weapons.iter().position(|w| w.id == "ww2:grw34").unwrap();
+    let bomb = s.weapons[grw].feed.unwrap();
+    let ger = s
+        .factions
+        .iter()
+        .position(|f| f.id == "ww2:germany")
+        .unwrap() as u16;
+    let m1 = s
+        .weapons
+        .iter()
+        .position(|w| w.id == "ww2:m1_mortar")
+        .unwrap();
+    s.weapons[m1].foreign_feed = Some(frontline_content::setup::ForeignFeedSetup {
+        feed: bomb,
+        faction: ger,
+        spread_pct: 130,
+    });
+}
+
+fn staged_s15(w: &mut World) {
+    use frontline_sim::fx::{Fx, FxVec2};
+    use frontline_sim::s15::{AiRiders, RiderJob, RiderOff, RiderRefused, rider_exit};
+    let c = |x: i32, y: i32| FxVec2::from_int(x, y);
+    let east = FxVec2::new(Fx::ONE, Fx::ZERO);
+    let s = w.match_setup().unwrap();
+    let tank = s.squad_type_index("ww2:ger_pz4_h_squad").unwrap();
+    let rifles = s.squad_type_index("ww2:ger_grenadiergruppe").unwrap();
+    let mut tanks = Vec::new();
+    let mut squads = Vec::new();
+    for k in 0..4 {
+        let t = w
+            .spawn_squad_at(PlayerId(0), tank, c(440 + 25 * k, 640), east)
+            .unwrap();
+        tanks.push(w.game().unwrap().squads()[&t].members[0]);
+        squads.push(
+            w.spawn_squad_at(PlayerId(0), rifles, c(440 + 25 * k, 620), east)
+                .unwrap(),
+        );
+    }
+    // The first tank carries its squad and is getting it off (R3b).
+    assert!(w.seat_now(squads[0], tanks[0]), "the staged riders board");
+    assert!(w.edit_vehicle(tanks[0], |v| {
+        v.rider_off = Some(RiderOff {
+            ticks: 15,
+            why: rider_exit::HIT,
+        })
+    }));
+    let tick = w.tick();
+    assert!(w.with_ai_state(0, |ai| {
+        ai.riders = AiRiders {
+            jobs: (1..4)
+                .map(|k| RiderJob {
+                    tank: tanks[k],
+                    squad: squads[k],
+                    point: 0,
+                    phase: (k - 1) as u8,
+                    phase_at: tick,
+                })
+                .collect(),
+            refused: vec![RiderRefused {
+                tank: tanks[1],
+                squad: squads[0],
+                at: tick,
+            }],
+        };
+        ai.counters.rider_jobs = 3;
+        ai.counters.rider_job_ends[1] = 1;
+    }));
+    // X1: a US mortar squad of player 1 whose tube man carries foreign
+    // bombs.
+    let mortar = s15_mortar(w);
+    assert!(w.edit_soldier(mortar, |k, _| k.foreign = 3));
+    assert!(w.edit_player(PlayerId(1), |p| {
+        p.s15.foreign_drawn = 3;
+        p.s15.foreign_fired = 1;
+    }));
+    assert!(w.edit_player(PlayerId(0), |p| {
+        p.s15.rider_boards = 10;
+        p.s15.rider_exits[rider_exit::HIT as usize] = 2;
+        p.s15.plate_hits = 1;
+    }));
+}
+
+/// The tube man of a fresh US mortar squad of player 1 (S15 X1 staging).
+fn s15_mortar(w: &mut World) -> frontline_sim::ecs::SimId {
+    use frontline_sim::fx::{Fx, FxVec2};
+    let s = w.match_setup().unwrap();
+    let t = s.squad_type_index("ww2:usa_mortar_team").unwrap();
+    let wi = s.squad_types[t as usize].weapon;
+    let q = w
+        .spawn_squad_at(
+            PlayerId(1),
+            t,
+            FxVec2::from_int(520, 700),
+            FxVec2::new(Fx::ONE, Fx::ZERO),
+        )
+        .unwrap();
+    // The n-th man spawns into slot `slot_of(n)` with its weapon.
+    let s = w.match_setup().unwrap();
+    let ty = &s.squad_types[t as usize];
+    let ms = &w.game().unwrap().squads()[&q].members;
+    let n = (0..ms.len())
+        .find(|&n| ty.members[ty.slot_of(n) as usize].weapon == wi)
+        .unwrap();
+    ms[n]
 }
 
 /// S11b: issues rifle grenades (`[items] rifle_grenades` 1) and gives the
@@ -1242,6 +1412,79 @@ fn staged_s12(w: &mut World) {
         p.s12.downed = 1;
         p.s12.bandaged = 2;
         p.s12.torso_hits = [3, 4];
+    }));
+    // S14a Build A: two flame particles in flight, a burning patch, a
+    // burning man (Build C: a man mid-strike, below).
+    use frontline_sim::fx::FxVec3;
+    let p3 =
+        |x: i32, y: i32, z: i32| FxVec3::new(Fx::from_int(x), Fx::from_int(y), Fx::from_int(z));
+    // A Flame-class weapon (S14 Fix 16: the load check asks for one).
+    let fwi = w
+        .match_setup()
+        .unwrap()
+        .weapons
+        .iter()
+        .position(|x| x.class == frontline_content::WeaponClass::Flame)
+        .unwrap() as u16;
+    let flame = |id, x| frontline_sim::flame::Flame {
+        id,
+        pos: p3(x, 705, 1),
+        vel: p3(-25, 0, 1),
+        ttl: 60,
+        player: 1,
+        shooter: frontline_sim::SimId(0),
+        weapon: fwi,
+    };
+    let patch = frontline_sim::flame::Patch {
+        id: 0,
+        pos: p3(210, 705, 0),
+        ends_at: tick + 600,
+        player: 1,
+        by: (1, frontline_sim::kill_class::FLAME),
+    };
+    assert!(w.stage_s14(vec![flame(0, 220), flame(2, 222)], vec![patch]));
+    assert!(w.edit_soldier(ms[7], |_, c| {
+        c.close.burn_until = tick + 120;
+        c.close.burn_by = (1, frontline_sim::kill_class::FLAME);
+    }));
+    assert!(w.edit_player(PlayerId(1), |p| {
+        p.s14.flame_fired = 2;
+        p.s14.patches_made = 1;
+    }));
+    // S14a Build C: a man winding up a strike and one recovering from one
+    // (long phases, so the staged save still holds both).
+    use frontline_sim::flame::{STRIKE_RECOVER, STRIKE_WINDUP};
+    for (m, ph) in [(ms[8], STRIKE_WINDUP), (ms[9], STRIKE_RECOVER)] {
+        assert!(w.edit_soldier(m, |_, c| {
+            c.close.strike_phase = ph;
+            c.close.strike = 250;
+            c.close.strike_at = FxVec2::from_int(202, 700);
+        }));
+    }
+    assert!(w.edit_player(PlayerId(0), |p| {
+        p.s14.strikes = 1;
+        p.s14.strike_hits = 1;
+    }));
+    // S14a Build B: a squad mid-clear (phase 1, its second step) in a
+    // short trench north of the S12 men.
+    assert!(w.dig_trench_now(&[FxVec2::from_int(300, 740), FxVec2::from_int(300, 780)], 1));
+    let cq = w
+        .spawn_squad_at(PlayerId(0), t, FxVec2::from_int(300, 744), east)
+        .unwrap();
+    assert!(w.stage_clear(
+        cq,
+        frontline_sim::flame::Clear {
+            at: FxVec2::from_int(300, 741),
+            cell: (75, 189),
+            from: (75, 185),
+            step: 1,
+            phase: 1,
+            phase_at: tick,
+        }
+    ));
+    assert!(w.edit_player(PlayerId(0), |p| {
+        p.s14.clears = 1;
+        p.s14.clear_steps = 1;
     }));
 }
 
@@ -1830,6 +2073,41 @@ fn staged_s10b_ai(w: &mut World, ap: u16, piece: u32) {
             },
         );
     }));
+    // S14-ai Build D: a flame job in each phase (Close to Burn in player 0's
+    // AI, at most four; Clear in player 1's), a failed flame target and a
+    // dated AI clear order.
+    use frontline_sim::ai::{AiFlame, FlamePhase};
+    let man = w.game().unwrap().squads()[&builder].members[0];
+    let job = |phase, k: i32| AiFlame {
+        point: 0,
+        target: c(500 + k, 500),
+        aim: c(500 + k, 501),
+        stage: c(540 + k, 500),
+        stand: c(520 + k, 500),
+        bunker: k == 1,
+        man,
+        phase,
+        since: tick,
+        phase_at: tick,
+        best: 100,
+        best_at: tick,
+    };
+    let phases = [
+        (builder, FlamePhase::Close),
+        (veh_sq, FlamePhase::Smoke),
+        (sweep, FlamePhase::Go),
+        (demo, FlamePhase::Burn),
+    ];
+    assert!(w.with_ai_state(0, |ai| {
+        for (k, (sq, ph)) in phases.into_iter().enumerate() {
+            ai.flame.jobs.insert(sq, job(ph, k as i32));
+        }
+        ai.flame.failed.push((c(600, 600), tick));
+        ai.flame.cleared.insert(belt_sq, tick);
+    }));
+    assert!(w.with_ai_state(1, |ai| {
+        ai.flame.jobs.insert(belt_sq, job(FlamePhase::Clear, 4));
+    }));
     // Just before the save: the second sweeper squad is wiped out and the
     // second demolition's tank wrecked (the next plan drops both jobs).
     for m in w.game().unwrap().squads()[&gone_sq].members.clone() {
@@ -1879,6 +2157,20 @@ fn staged_s10b_save_holds_its_state() {
     assert!(ai.demolitions.values().any(|d| d.done == 1));
     assert_eq!((ai.sweeps.len(), ai.demolitions.len()), (3, 3));
     assert_eq!(ai.refused.len(), frontline_sim::ai::MAX_REFUSED);
+    // S14-ai: a flame job in each phase across the two AIs.
+    let mut phases: Vec<u8> = (0..2)
+        .flat_map(|p| {
+            g.ai(frontline_sim::PlayerId(p))
+                .unwrap()
+                .flame
+                .jobs
+                .values()
+        })
+        .map(|j| j.phase as u8)
+        .collect();
+    phases.sort_unstable();
+    assert_eq!(phases, [0, 1, 2, 3, 4]);
+    assert!(!ai.flame.failed.is_empty() && !ai.flame.cleared.is_empty());
     for k in [
         frontline_sim::ai::JobKind::Sweep,
         frontline_sim::ai::JobKind::Demolish,
@@ -1893,6 +2185,24 @@ fn staged_s10b_save_holds_its_state() {
         .position(|f| f.id == "ww2:ap_minefield")
         .unwrap() as u16;
     assert!(ai.forts.values().any(|j| j.fort == ap_fort));
+    // S14a Build A: particles in flight, a patch, a burning man.
+    assert_eq!((g.flame().len(), g.patches().len()), (2, 1));
+    assert!(w.entities().combat().iter().any(|c| c.close.burn_until > 0));
+    // S14a Build B: a squad mid-clear.
+    assert!(g.clears().values().any(|c| c.phase == 1 && c.step == 1));
+    // S14a Build C: a man mid-wind-up and one recovering.
+    for ph in [
+        frontline_sim::flame::STRIKE_WINDUP,
+        frontline_sim::flame::STRIKE_RECOVER,
+    ] {
+        assert!(
+            w.entities()
+                .combat()
+                .iter()
+                .any(|c| c.close.strike_phase == ph && c.close.strike > 0),
+            "strike phase {ph} staged"
+        );
+    }
     let h = holds(&w);
     let miss: Vec<_> = STAGED_MUST_HOLD.iter().filter(|m| !h.contains(m)).collect();
     assert!(miss.is_empty(), "the staged save lacks {miss:?}");

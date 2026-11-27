@@ -1,0 +1,13 @@
+# Flammöl 19 for the Flammenwerfer 41 (S14 plan 4.1, F7): one unit is one
+# flame particle, about 0.1 L (11.8 L over 120 particles, density about
+# 0.9: 100 g). Fuel is resupplied at the base like explosives (one unit per
+# `[flame] base_refill_ms`) and priced as explosives (D1). No calibre: 1
+# stands for "none" (the field is for the docs and the HUD).
+id = "ww2:fmw41_fuel"
+name = "Flammöl 19 (FmW 41)"
+caliber_mm = 1
+supply = { kind = "explosives", g = 100 }
+sources = [
+    "Wikipedia, Flammenwerfer 41 (11.8 L of Flammöl 19, tar and petrol)",
+    "dday-overlord.com, Flammenwerfer 41 (11.8 L, about 10 s of fire)",
+]

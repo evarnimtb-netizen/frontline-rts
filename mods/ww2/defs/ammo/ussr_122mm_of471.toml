@@ -1,0 +1,38 @@
+# 122 mm OF-471: HE-fragmentation for the D-25T (S15 Build C); 25 kg, 800 m/s, 3.8 kg TNT (Wikipedia IS-2, read); [he] as the OF-462.
+id = "ww2:ussr_122mm_of471"
+name = "122 mm OF-471"
+mechanism = "he"
+# S15: priced refill ([supply] shell_mp_per_t per tonne): projectile 25 kg plus the separate charge, about 40 kg (unverified: S15 starting value)
+supply = { kind = "shells", g = 40000 }
+caliber_mm = 122
+muzzle_velocity_m_s = 800
+drag_coeff = 0
+# Flat, as every HE round of the mod.
+penetration = [[0, 10]]
+ricochet_angle_deg = 80
+track_damage = 60
+sources = [
+  "Wikipedia, IS-2: OF-471 25 kg, 800 m/s, 3.8 kg TNT; BR-471 the only AP round of 1944, read 2026-11-26",
+]
+
+# The S3b physical-contact HE block, scaled from the German or US round of the nearest calibre
+# (named in the head comment); S15 starting values, no tuning.
+[he]
+damage = 150
+suppression = 40
+blast_radius_cm = 190
+frag_count = 180
+frag_reach_cm = 1900
+frag_damage = 70
+frag_far_pct = 30
+frag_elev_deg = [2, 45]
+frag_track_damage = 1
+suppression_radius_m = 19
+crater_radius_cm = 95
+crater_depth_cm = 48
+pen_mm = 10
+frag_pen_mm = 12
+inside_damage = 200
+inside_rays = 16
+inside_reach_cm = 150
+vs_vehicle_pct = 40

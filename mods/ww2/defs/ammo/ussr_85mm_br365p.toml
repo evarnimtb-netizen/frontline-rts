@@ -1,0 +1,37 @@
+# 85 mm BR-365P: APCR for the ZiS-S-53 and D-5S (S15 Build C); rare, a few a tank from 1944 (rare_cap 4 on the T-34-85).
+id = "ww2:ussr_85mm_br365p"
+name = "85 mm BR-365P"
+mechanism = "ap"
+# S15: priced refill ([supply] shell_mp_per_t per tonne): complete round about 11.5 kg (unverified: S15 starting value)
+supply = { kind = "shells", g = 11500 }
+caliber_mm = 85
+muzzle_velocity_m_s = 1050
+drag_coeff = 0
+# Penetration convention (S15 Build C): the mod's tables are [range_m, mm] at pen_reference_angle_deg
+# (here 0, the normal). Soviet tables give the 'meet angle 90 deg' column (the normal) at a 75 %
+# success criterion (Soviet method); that column is taken as the 0-degree row, mm unchanged: no
+# criterion factor was read in a source, so the rows sit slightly low against the 50 % tables.
+# Read: the D-5T APCR row at 90 deg (the normal), 50 % criterion (Wikipedia 52-K): already the mod's convention.
+penetration = [[100, 175], [250, 159], [500, 136], [750, 117], [1000, 100], [1500, 73], [2000, 54]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# S13 O1: the slope penalty beyond 1/cos, class "apcr".
+slope_class = "apcr"
+nonpen_damage = 40
+track_damage = 60
+sources = [
+  "Wikipedia, 85 mm air defense gun M1939 (52-K): D-5T calculated penetration at 90 deg (normal), 50 % criterion (US/UK), read 2026-11-26",
+  "losthistory.net, Specification and Armor Penetration Values for the Soviet Tank Cannons (ARTKOM method, CP 80 %), read 2026-11-26: BR-365P CP 140 mm at 500 m at 90 deg",
+]
+# S5a (D3): a rare round: refilled one per supply.rare_rearm_base_s up to the vehicle's rare_cap, never a weapon's only feed.
+rare = true
+
+[core]
+damage = 100
+length_cm = 120
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25

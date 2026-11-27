@@ -22,3 +22,10 @@ penetration = [[0, 7], [100, 5], [300, 3]]
 # Past the plate: on length_cm, at most max_boxes boxes, damage HP each.
 core = { damage = 30, length_cm = 30, max_boxes = 1 }
 suppression = 8
+sources = [
+    "docs/design/roster/infantry-structures.md 4.2 (melee reach and timings: rifle butt 1.0 m, wind-up 0.4-0.8 s, recovery 1 s); damage per docs/slices/S14-assault-kit.md 4.3 (a torso strike wounds, two down a man)",
+]
+# S14 M1 (plan 4.3): his own strike with this weapon in his hands, a butt stroke:
+# reach_cm 1..=1000, damage 0..=1000, windup_ms and recover_ms 1..=4000. Used
+# only with the rules' [melee] enabled = 1 (0 in S14a).
+melee = { reach_cm = 100, damage = 50, windup_ms = 600, recover_ms = 1000 }

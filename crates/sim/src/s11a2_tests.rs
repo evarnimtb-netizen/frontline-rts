@@ -317,6 +317,7 @@ pub(super) fn burst_now(
     } = state;
     let pos = at.extend(terrain.height_at(at));
     let mut ctx = DamageCtx {
+        strikes: &[],
         ents: entities,
         terrain,
         spatial,
@@ -338,6 +339,7 @@ pub(super) fn burst_now(
         shooter: SimId(u32::MAX),
         blow: Blow::Burst(pos),
         mission,
+        origin: None,
     }];
     game.as_mut().unwrap().apply_blows(
         &mut ctx,

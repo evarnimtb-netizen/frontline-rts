@@ -1,0 +1,155 @@
+# Studebaker US6 2.5-ton 6x6 (S15 Build C, S15-ussr.md 6.4): the lend-lease truck as the Soviet supply truck and the
+# tow of every Soviet gun card. Built on the GMC CCKW def (S8b; same class of 2.5-ton 6x6); unarmed.
+id = "ww2:ussr_us6"
+name = "Studebaker US6 2.5-ton truck"
+short_name = "US6"
+faction = "ww2:ussr"
+role = "truck"
+# S15 starting value (the CCKW card, not tuned).
+cost = 200
+# Population (8.4).
+pop = 2
+recall_cooldown_s = 45
+# Card unlock (8.4): from the start, s.
+initial_cooldown_s = 0
+# Sight of a truck crew, m (no optics; a starting value).
+sight_m = 150
+# Seen at this % of an observer's sight (a large unarmoured truck).
+spot_size_pct = 150
+# The driver's eye, cm.
+eye_height_cm = 230
+sources = [
+  "Wikipedia, Studebaker US6: a 2.5-short-ton cargo load; most exported to the USSR; towed artillery and AT guns (read 2026-11-26)",
+  "docs/design/roster/vehicles.md 4.3",
+  "the GMC CCKW def's dimensions, speeds and plates (unverified for the US6)",
+]
+crew_squad = "ww2:ussr_tank_crew"
+# No gun, so no rare rounds.
+rare_cap = 0
+# Unarmed (S8b-7).
+weapons = []
+
+# S9: what it can tow (kg; unverified): the M-30 (2,450 kg) fits; towed speed = 80 % of its own.
+[tow]
+max_kg = 3000
+towed_speed_pct = 80
+
+[mobility]
+type = "wheeled"
+# Practical cross-country speed, cm/s (6.8: no roads on our maps).
+speed_cm_s = 800
+# Backing up, cm/s.
+reverse_cm_s = 200
+# Full-lock radius, cm (verify).
+turn_radius_cm = 900
+accel_cm_s2 = 120
+brake_cm_s2 = 350
+max_slope_pct = 40
+# Any ground dug this deep (dm) is a wall (6.8).
+ditch_block_dm = 10
+# Chance (%) to bog per crossing.
+bog_pct = 15
+unbog_s = [25, 45]
+# Poor cross-country factors (6.8): % of speed in woods; % lost at max slope.
+woods_speed_pct = 30
+slope_loss_pct = 85
+# No gun; the schema's value.
+moving_spread_pct = 100
+
+[hull]
+# The band a hit reaches the wheels in (%); wheel plate mm.
+track_band_pct = 40
+track_mm = 3
+
+# Boxes are thin unarmoured skins (S8a small-arms core goes through them).
+[[boxes]]
+id = "cab"
+frame = "hull"
+box = { center = [170, 0, 150], half = [130, 115, 60] }
+[boxes.armor]
+front = { thickness_mm = 2 }
+side = { thickness_mm = 1 }
+rear = { thickness_mm = 1 }
+top = { thickness_mm = 1 }
+
+[[boxes]]
+id = "bed"
+frame = "hull"
+box = { center = [-130, 0, 145], half = [170, 115, 55] }
+open = ["top"]
+# The bed floor, cm.
+floor_cm = 100
+[boxes.armor]
+front = { thickness_mm = 2 }
+side = { thickness_mm = 1 }
+rear = { thickness_mm = 1 }
+
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [120, 60, 150], half = [35, 30, 45] }
+in = "cab"
+
+[[seats]]
+id = "co_driver"
+role = "commander"
+box = { frame = "hull", center = [120, -60, 150], half = [35, 30, 45] }
+in = "cab"
+
+[[components]]
+type = "engine"
+hp = 60
+box = { frame = "hull", center = [250, 0, 135], half = [40, 45, 35] }
+repair = { to_hp = 30, time_s = 60 }
+
+[[components]]
+type = "transmission"
+hp = 60
+box = { frame = "hull", center = [130, 0, 110], half = [40, 25, 18] }
+repair = { to_hp = 30, time_s = 60 }
+
+[[components]]
+type = "wheels_front"
+hp = 40
+anchors = [{ pos = [235, 95, 40] }, { pos = [235, -95, 40] }]
+repair = { to_hp = 40, time_s = 25 }
+
+[[components]]
+type = "wheels_rear"
+hp = 40
+anchors = [{ pos = [-120, 95, 40] }, { pos = [-120, -95, 40] }, { pos = [-220, 95, 40] }, { pos = [-220, -95, 40] }]
+repair = { to_hp = 40, time_s = 25 }
+
+# The load: a box in the bed. A penetrating hit or a fire detonates it like
+# an ammo rack (physical-contact rule, 7.3).
+[[components]]
+type = "cargo"
+hp = 60
+box = { frame = "hull", center = [-130, 0, 147], half = [150, 100, 45] }
+
+[[stations]]
+id = "cab"
+seats = ["driver", "commander"]
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [120, 115, 150]
+exit_ms = 2000
+
+[[hatches]]
+seats = ["commander"]
+frame = "hull"
+pos = [120, -115, 150]
+exit_ms = 2000
+
+# 7.3: the truck's stock. Each kg is paid at its kind's price as it loads
+# in base (D1, no surcharge D2); shells share the base crate queue.
+[supply]
+cap_kg_total = 2270          # kg per kind, at most (2.5 short tons off-road; Wikipedia GMC CCKW, warhistory.org US Army trucks)
+load_kg = { shells = 320, small_arms = 120, explosives = 40 }  # kg it takes on while stopped in base (S8b-3)
+radius_m = 8                  # m: men are served within this
+vehicle_radius_m = 15         # m: vehicles rearm within this
+round_interval_s = 4          # s per standard main-gun round (= rules fwd_rearm_s; rare rounds at rare_rearm_fwd_s)
+crates = ["ww2:ussr_shells_crate", "ww2:ussr_small_arms_crate", "ww2:ussr_explosives_crate"]   # what DropCrates sets down
+cookoff = "ww2:ussr_76mm_of350"   # the bursts a detonating cargo throws (S6 CookOff)

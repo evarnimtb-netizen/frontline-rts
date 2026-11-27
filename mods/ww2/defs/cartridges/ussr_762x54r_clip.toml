@@ -1,0 +1,8 @@
+# 7.62x54R ball on 5-round stripper clips for the Mosin (S15 Build B). One
+# id per cartridge and packaging (S5a-2 (A)). About 24 g a round with clip
+# and carton: unverified, S15 starting value.
+id = "ww2:ussr_762x54r_clip"
+name = "7.62 mm (clips)"
+caliber_mm = 8
+supply = { kind = "small_arms", g = 24 }
+sources = ["S15 starting value: about 22 g a round plus clip and carton (unverified)"]

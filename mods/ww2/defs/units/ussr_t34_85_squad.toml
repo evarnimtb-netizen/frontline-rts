@@ -1,0 +1,10 @@
+# The T-34-85 as a buyable squad of one (S15 Build C): the Soviet medium tank, 8 rider places.
+# Cost, pop, call-in time and sight are on the vehicle def; card values are S15 starting values (no tuning).
+id = "ww2:ussr_t34_85_squad"
+name = "T-34-85"
+short_name = "T-34-85"
+faction = "ww2:ussr"
+tags = ["vehicle"]
+vehicle = "ww2:ussr_t34_85"
+# AI weight (S15-ussr.md 6.4).
+ai_weight = 100

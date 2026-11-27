@@ -1,0 +1,43 @@
+# 85 mm BR-365: blunt-nosed APHE with a ballistic cap for the ZiS-S-53 (T-34-85) and D-5S (SU-85) (S15 Build C); 9.2 kg, 792 m/s.
+id = "ww2:ussr_85mm_br365"
+name = "85 mm BR-365"
+mechanism = "aphe"
+# S15: priced refill ([supply] shell_mp_per_t per tonne): complete round about 15.9 kg (unverified: S15 starting value)
+supply = { kind = "shells", g = 15900 }
+caliber_mm = 85
+muzzle_velocity_m_s = 792
+drag_coeff = 0
+# Penetration convention (S15 Build C): the mod's tables are [range_m, mm] at pen_reference_angle_deg
+# (here 0, the normal). Soviet tables give the 'meet angle 90 deg' column (the normal) at a 75 %
+# success criterion (Soviet method); that column is taken as the 0-degree row, mm unchanged: no
+# criterion factor was read in a source, so the rows sit slightly low against the 50 % tables.
+# Read: the D-5T APBC row at 90 deg (the normal), 50 % criterion (Wikipedia 52-K): already the mod's convention, no conversion.
+penetration = [[100, 139], [250, 133], [500, 123], [750, 114], [1000, 105], [1500, 91], [2000, 81]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# S13 O1: the slope penalty beyond 1/cos, class "apcbc".
+slope_class = "apcbc"
+nonpen_damage = 40
+track_damage = 60
+sources = [
+  "Wikipedia, 85 mm air defense gun M1939 (52-K): D-5T calculated penetration at 90 deg (normal), 50 % criterion (US/UK), read 2026-11-26",
+  "losthistory.net, Specification and Armor Penetration Values for the Soviet Tank Cannons (ARTKOM method, CP 80 %), read 2026-11-26: BR-365 CP 105 mm at 500 m at 90 deg (the stricter Soviet figure)",
+]
+
+[core]
+damage = 100
+length_cm = 160
+max_boxes = 3
+
+[spall]
+rays = 6
+damage = 35
+cone_deg = 25
+
+# Filler rays and damage: S15 starting values on the S13 pattern (the round's filler in its comment).
+[filler]
+offset_cm = 100
+rays = 10
+cone_deg = 60
+damage = 60
+reach_cm = 300

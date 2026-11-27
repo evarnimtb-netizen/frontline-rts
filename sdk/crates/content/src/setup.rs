@@ -396,6 +396,46 @@ impl MatchSetup {
         (a.heavy_buy, a.heavy_overwatch, a.push_limit) = (0, 0, 0);
     }
 
+    /// S14: every S14 switch 0 on a resolved setup (`[flame] enabled`,
+    /// `[melee] enabled`, `[clear] enabled`, `[ai.flame]` jobs, refuel,
+    /// buy, clear). Flame members are chosen at resolve time by `when`, so
+    /// a setup resolved with `[flame] enabled` 1 keeps its flame men; this
+    /// turns the rules off only.
+    pub fn s14_off(&mut self) {
+        let r = &mut self.rules;
+        (r.flame.enabled, r.melee.enabled, r.clear.enabled) = (0, 0, 0);
+        let a = &mut r.ai.flame;
+        (a.jobs, a.refuel, a.buy, a.clear) = (0, 0, 0, 0);
+    }
+
+    /// S15: every S15 switch 0 on a resolved setup (`[riders] enabled`,
+    /// `[body_armour] enabled`, `[supply] foreign_ammo`, `[melee]
+    /// bayonets`, `[ai.riders] jobs`) and the S15 def parts the setup build
+    /// keeps only with their switch on (rider slots, plates, foreign feeds,
+    /// bayonet blocks) dropped (plan N2).
+    pub fn s15_off(&mut self) {
+        let r = &mut self.rules;
+        (r.riders.enabled, r.body_armour.enabled, r.melee.bayonets) = (0, 0, 0);
+        if let Some(sp) = r.supply.as_mut() {
+            sp.foreign_ammo = 0;
+        }
+        r.ai.riders.jobs = 0;
+        for v in &mut self.vehicles {
+            if v.transport.as_ref().is_some_and(|t| t.exposed) {
+                v.transport = None;
+            }
+        }
+        for t in &mut self.squad_types {
+            for m in &mut t.members {
+                m.plate = None;
+            }
+        }
+        for w in &mut self.weapons {
+            w.foreign_feed = None;
+            w.bayonet = None;
+        }
+    }
+
     /// S11b G1: `[items] rifle_grenades` 0 on a resolved setup (the kind
     /// dropped from every squad type: `items[kind]` None, member counts 0).
     pub fn rifle_grenades_off(&mut self) {
@@ -505,6 +545,16 @@ pub struct RulesSetup {
     pub wounds: WoundsTuning,
     /// S13: `[armour]` (rule O1; or the S13 values).
     pub armour: crate::tuning::ArmourTuning,
+    /// S14: `[flame]` (or the S14a values, the switch off).
+    pub flame: crate::tuning::FlameTuning,
+    /// S14: `[melee]` (or the S14a values, the switch off).
+    pub melee: crate::tuning::MeleeTuning,
+    /// S14: `[clear]` (or the S14a values, the switch off).
+    pub clear: crate::tuning::ClearTuning,
+    /// S15: `[riders]` (or the S15a values, the switch off).
+    pub riders: crate::tuning::RidersTuning,
+    /// S15: `[body_armour]` (or the S15a values, the switch off).
+    pub body_armour: crate::tuning::BodyArmourTuning,
 }
 
 impl RulesSetup {
@@ -699,6 +749,10 @@ pub struct AiSetup {
     pub arty: AiArtyTuning,
     /// S12: `[ai.medic]` (or the S12a values, switches off).
     pub medic: AiMedicTuning,
+    /// S14-ai: `[ai.flame]` (or the S14a values, switches off).
+    pub flame: crate::tuning::AiFlameTuning,
+    /// S15-ai: `[ai.riders]` (or the S15a values, the switch off).
+    pub riders: crate::tuning::AiRidersTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -945,6 +999,27 @@ pub struct WeaponSetup {
     /// range (rows rising; empty: never), and the core past the plate.
     pub pen: Vec<crate::vehicle::PenRowSetup>,
     pub core: Option<crate::vehicle::CoreSetup>,
+    /// S14 M1: the weapon's own strike (`[melee]` block, def units: cm,
+    /// HP, ms); `None`: the rules' `[melee]` strike.
+    pub melee: Option<crate::defs::MeleeDef>,
+    /// S15 B1: the weapon's bayonet strike (`[melee.bayonet]`), used
+    /// instead of `melee`; `None` without one or while `[melee] bayonets`
+    /// is 0 (N2).
+    pub bayonet: Option<crate::defs::MeleeDef>,
+    /// S15 X1-X3: the foreign round this mortar also fires; `None`
+    /// without one or while `[supply] foreign_ammo` is 0 (N2).
+    pub foreign_feed: Option<ForeignFeedSetup>,
+}
+
+/// S15 X1: a weapon's foreign feed, lowered.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForeignFeedSetup {
+    /// The foreign cartridge.
+    pub feed: Feed,
+    /// Index into [`MatchSetup::factions`]: whose crates carry it.
+    pub faction: u16,
+    /// X2: spread for a foreign round (%, 100..=400).
+    pub spread_pct: u16,
 }
 
 /// S5b: a mortar's charges and laying limits, lowered. The tangents are
@@ -1169,10 +1244,13 @@ pub enum Capability {
     ClearMines = 13,
     /// S10b: demolish obstacles and pieces with a satchel.
     Demolish = 14,
+    /// S14 (plan 4.2): a member carries a flame weapon (derived from the
+    /// members the `when` filter keeps: never with `[flame] enabled` 0).
+    Flame = 15,
 }
 
 impl Capability {
-    pub const ALL: [Capability; 15] = [
+    pub const ALL: [Capability; 16] = [
         Capability::DigBasic,
         Capability::DigFull,
         Capability::FireMission,
@@ -1188,6 +1266,7 @@ impl Capability {
         Capability::PlaceMines,
         Capability::ClearMines,
         Capability::Demolish,
+        Capability::Flame,
     ];
 
     #[inline]
@@ -1201,7 +1280,7 @@ impl Capability {
     }
 
     /// Every capability bit.
-    pub const MASK: u32 = (1 << 15) - 1;
+    pub const MASK: u32 = (1 << 16) - 1;
 }
 
 /// S4: one `[[members]]` slot, lowered.
@@ -1225,6 +1304,20 @@ pub struct MemberSetup {
     /// in his weapon, by the squad type's feed slot
     /// ([`SquadTypeSetup::feeds`]).
     pub rounds: [u16; MAX_FEEDS],
+    /// S15 P1-P5: the plate each man of the slot wears; `None` without
+    /// one or while `[body_armour] enabled` is 0 (N2).
+    pub plate: Option<PlateSetup>,
+}
+
+/// S15 P1: a member's plate, lowered.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlateSetup {
+    /// Thickness, tenths of a mm (5..=100).
+    pub tenths_mm: u16,
+    /// The wound zone it covers (0: torso, `sim::wounds::ZONE_TORSO`).
+    pub zone: u8,
+    /// The front arc it covers (deg, 1..=360).
+    pub arc_deg: u16,
 }
 
 /// S4: a training profile, percent multipliers (100 = regular; see
@@ -1292,7 +1385,8 @@ pub struct SquadTypeSetup {
     pub men: u8,
     /// The squad's main weapon (index into [`MatchSetup::weapons`]): a
     /// vehicle's main gun; else the first crew weapon among the members
-    /// (launcher, mortar, MG), else the leader's weapon.
+    /// (launcher, mortar, MG; S14: never a flamethrower), else the leader's
+    /// weapon.
     pub weapon: u16,
     /// S4: the focus weapon (squad focus range): the longest-reaching
     /// non-crew weapon among the members (ties: the earlier slot), else
@@ -1447,6 +1541,34 @@ pub struct PlayerSetup {
 
 // -------------------------------------------------------------- resolve --
 
+/// S15 M1-M2: the problems of request `req` under `[matchups]` `m` (a
+/// faction not enabled; two hostile players of a pair that is not allowed).
+pub fn matchup_issues(m: &crate::defs::MatchupsDef, req: &MatchRequest) -> Vec<Issue> {
+    let mut out = Vec::new();
+    for (i, p) in req.players.iter().enumerate() {
+        if !m.enabled(&p.faction) {
+            out.push(Issue::new(
+                format!("players[{i}].faction"),
+                format!("faction `{}` is not enabled in [matchups]", p.faction),
+            ));
+        }
+    }
+    for (i, a) in req.players.iter().enumerate() {
+        for b in &req.players[i + 1..] {
+            if !m.allows(&a.faction, &b.faction) {
+                out.push(Issue::new(
+                    "players",
+                    format!(
+                        "[matchups] allows no match of `{}` against `{}` (pairs; free = 0)",
+                        a.faction, b.faction
+                    ),
+                ));
+            }
+        }
+    }
+    out
+}
+
 impl ModDefs {
     /// Resolves `req` against these defs into a [`MatchSetup`]. Every problem
     /// (unknown ids, too few bases, ...) is reported at once.
@@ -1486,6 +1608,12 @@ impl ModDefs {
                     format!("unknown faction `{}`", p.faction),
                 ));
             }
+        }
+        // S15 M1-M2 (docs/slices/S15-ussr.md 4): a named faction must be
+        // enabled and every two hostile players' factions an allowed pair
+        // (every other player is hostile until teams exist).
+        if let Some(m) = rules.and_then(|r| r.matchups.as_ref()) {
+            issues.extend(matchup_issues(m, req));
         }
         let (Some(rules), Some(map)) = (rules, map) else {
             return Err(invalid(issues));
@@ -1577,6 +1705,24 @@ impl ModDefs {
                     length: Fixed::from_cm(c.length_cm),
                     max_boxes: c.max_boxes as u8,
                 }),
+                melee: w.melee.map(|m| m.strike()),
+                // S15 N2: no bayonet while the switch is 0.
+                bayonet: w
+                    .melee
+                    .and_then(|m| m.bayonet)
+                    .filter(|_| rules.melee.as_ref().is_some_and(|m| m.bayonets == 1)),
+                // S15 N2: no foreign feed while the switch is 0.
+                foreign_feed: w
+                    .foreign_feed
+                    .as_ref()
+                    .filter(|_| rules.supply.as_ref().is_some_and(|s| s.foreign_ammo == 1))
+                    .and_then(|f| {
+                        Some(ForeignFeedSetup {
+                            feed: self.feed_of(&f.cartridge)?,
+                            faction: index_of(self.factions.keys(), &f.faction)?,
+                            spread_pct: f.spread_pct.min(400) as u16,
+                        })
+                    }),
             })
             .collect();
         let cartridge_ids: Vec<&String> = self.cartridges.keys().collect();
@@ -1630,6 +1776,16 @@ impl ModDefs {
         }
         let ammo: Vec<AmmoSetup> = self.ammo.values().map(lower_ammo).collect();
         let mut vehicles = self.lower_vehicles(hz);
+        // S15 N2 (plan 3): rider slots only with `[riders] enabled` 1.
+        if let Some(rd) = rules.riders.as_ref().filter(|r| r.enabled == 1) {
+            for v in &mut vehicles {
+                if let Some(d) = self.vehicles.get(&v.id)
+                    && let Some(t) = crate::vehicle::lower_riders(d, hz, rd.exit_ms)
+                {
+                    v.transport = Some(t);
+                }
+            }
+        }
         // S5a: rare rounds, `rare_cap` and the rack price factor (D3, D4).
         for v in &mut vehicles {
             for m in &mut v.mounts {
@@ -1755,7 +1911,29 @@ impl ModDefs {
             .squads
             .values()
             .filter(|s| !s.is_abstract)
-            .map(|s| {
+            .map(|s0| {
+                // S14 (plan 4.2): the members whose `when` does not match
+                // `[flame] enabled` are dropped before anything reads the
+                // card (no `when` anywhere: the card as it is).
+                let flame_on = rules.flame.as_ref().is_some_and(|f| f.enabled == 1);
+                let filtered;
+                let s = if s0.members.iter().any(|m| m.when.is_some()) {
+                    let mut c = s0.clone();
+                    c.members.retain(|m| m.active(flame_on));
+                    // The derived `flame` from the members kept only.
+                    c.capabilities.retain(|x| x != "flame");
+                    if c.members.iter().any(|m| {
+                        self.weapons
+                            .get(&m.weapon)
+                            .is_some_and(|w| w.class == crate::WeaponClass::Flame)
+                    }) {
+                        c.capabilities.push("flame".into());
+                    }
+                    filtered = c;
+                    &filtered
+                } else {
+                    s0
+                };
                 let faction = index_of(self.factions.keys(), &s.faction).unwrap_or(0);
                 let cooldown_group = group_of(s);
                 let vehicle = s
@@ -1852,6 +2030,18 @@ impl ModDefs {
                             items,
                             traits,
                             rounds: [0; MAX_FEEDS],
+                            // S15 N2: no plate while the switch is 0.
+                            plate: m
+                                .armour
+                                .as_ref()
+                                .filter(|_| {
+                                    rules.body_armour.as_ref().is_some_and(|b| b.enabled == 1)
+                                })
+                                .map(|a| PlateSetup {
+                                    tenths_mm: a.mm.0.min(u16::MAX as u32) as u16,
+                                    zone: 0,
+                                    arc_deg: a.arc_deg.min(360) as u16,
+                                }),
                         }
                     })
                     .collect();
@@ -1860,10 +2050,18 @@ impl ModDefs {
                     self.lower_member_rounds(s, &weapons, &cartridge_ids, members);
                 let men: u32 = members.iter().map(|m| m.count as u32).sum();
                 let crew_w = |w: u16| weapons.get(w as usize).is_some_and(|w| w.crew);
+                // S14 (plan 4.2): a flamethrower is never the squad's main
+                // weapon (an assault squad's launcher keeps firing).
+                let main_w = |w: u16| {
+                    crew_w(w)
+                        && weapons
+                            .get(w as usize)
+                            .is_some_and(|w| w.class != crate::WeaponClass::Flame)
+                };
                 let main = members
                     .iter()
                     .map(|m| m.weapon)
-                    .find(|&w| crew_w(w))
+                    .find(|&w| main_w(w))
                     .or_else(|| members.first().map(|m| m.weapon))
                     .unwrap_or(0);
                 // The focus weapon: the longest-reaching non-crew weapon
@@ -2182,6 +2380,8 @@ impl ModDefs {
                         obstacles: a.obstacles.clone().unwrap_or_default(),
                         arty: a.arty.clone().unwrap_or_default(),
                         medic: a.medic.clone().unwrap_or_default(),
+                        flame: a.flame.clone().unwrap_or_default(),
+                        riders: a.riders.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2199,6 +2399,11 @@ impl ModDefs {
                 fortify: rules.fortify.clone(),
                 wounds: rules.wounds.clone().unwrap_or_default(),
                 armour: rules.armour.clone().unwrap_or_default(),
+                flame: rules.flame.clone().unwrap_or_default(),
+                melee: rules.melee.clone().unwrap_or_default(),
+                clear: rules.clear.clone().unwrap_or_default(),
+                riders: rules.riders.clone().unwrap_or_default(),
+                body_armour: rules.body_armour.clone().unwrap_or_default(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -3049,6 +3254,13 @@ impl MatchSetup {
                 wounds: &r.wounds,
                 ai_medic: &a.medic,
                 armour: &r.armour,
+                flame: &r.flame,
+                melee: &r.melee,
+                clear: &r.clear,
+                ai_flame: &a.flame,
+                riders: &r.riders,
+                body_armour: &r.body_armour,
+                ai_riders: &a.riders,
             },
         );
         r.at_ditch
@@ -3187,6 +3399,30 @@ impl MatchSetup {
                 "weapons.pen",
                 "penetration rows or core out of range",
             );
+            // S15 X1: a foreign feed on a mortar with its own feed; S15 Fix
+            // (review 8): only with `[supply] foreign_ammo` 1.
+            check(
+                w.foreign_feed.is_none()
+                    || self
+                        .rules
+                        .supply
+                        .as_ref()
+                        .is_some_and(|sp| sp.foreign_ammo == 1),
+                "weapons.foreign_feed",
+                "a foreign feed while [supply] foreign_ammo is 0",
+            );
+            check(
+                w.foreign_feed.is_none_or(|f| {
+                    matches!(f.feed, Feed::Cartridge(_))
+                        && self.feed_ok(f.feed)
+                        && (f.faction as usize) < self.factions.len()
+                        && (100..=400).contains(&f.spread_pct)
+                        && w.he.is_some()
+                        && w.feed.is_some()
+                }),
+                "weapons.foreign_feed",
+                "foreign feed out of range",
+            );
             if let Some(ind) = &w.indirect {
                 check(
                     ind.ok()
@@ -3227,6 +3463,16 @@ impl MatchSetup {
                     && w.hold_beyond_pct <= 100,
                 "weapons.feed",
                 "unknown feed, or load, bursts or hold_beyond_pct out of range",
+            );
+            // S14 M1: a weapon's strike in the rules' `[melee]` ranges.
+            check(
+                w.melee.iter().chain(w.bayonet.iter()).all(|m| {
+                    let mut v = Vec::new();
+                    m.check("", &mut v);
+                    v.is_empty()
+                }),
+                "weapons.melee",
+                "melee reach, damage, wind-up or recovery out of range",
             );
         }
         for c in &self.cartridges {
@@ -3313,6 +3559,13 @@ impl MatchSetup {
             if let Some(m) = check_vehicle(v, &self.weapons, &self.ammo, nf) {
                 check(false, "vehicles", m);
             }
+            // S15 Fix (review 8): a rider deck only with `[riders] enabled`
+            // 1 (the sim reads the deck, not the switch; N2 for any setup).
+            check(
+                self.rules.riders.enabled == 1 || v.transport.as_ref().is_none_or(|t| !t.exposed),
+                "vehicles.transport",
+                "rider slots while [riders] enabled is 0",
+            );
             // S8b: a truck's crate defs are crates of its kind and faction.
             if let Some(t) = &v.supply {
                 let ok = t.crates.iter().enumerate().all(|(k, c)| {
@@ -3379,9 +3632,14 @@ impl MatchSetup {
                             && m.items
                                 .iter()
                                 .zip(&s.items)
-                                .all(|(&n, it)| n == 0 || it.is_some()),
+                                .all(|(&n, it)| n == 0 || it.is_some())
+                            && m.plate.is_none_or(|p| {
+                                (5..=100).contains(&p.tenths_mm)
+                                    && p.zone == 0
+                                    && (1..=360).contains(&p.arc_deg)
+                            }),
                         "squad_types.members",
-                        "a member's count, weapon, traits or items are out of range",
+                        "a member's count, weapon, traits, items or plate are out of range",
                     );
                 }
                 let nf = s.feeds.len();

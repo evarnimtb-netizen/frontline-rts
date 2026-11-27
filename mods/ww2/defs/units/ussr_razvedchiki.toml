@@ -1,0 +1,32 @@
+# Razvedchiki (S15 Build B): the observer team of two with a radio (radios
+# were scarce below the battalion: the team keeps the set). ai_weight 0: the
+# `[ai.arty] fo` habit buys it.
+id = "ww2:ussr_razvedchiki"
+name = "Razvedchiki"
+short_name = "Razvedchiki"
+faction = "ww2:ussr"
+tags = ["observer"]
+capabilities = ["dig_basic", "recrew"]
+sources = [
+    "artillery-on-map.md 4.1 (observers); infantry-structures.md 2.3 (radios scarce)",
+]
+ai_weight = 0
+max_alive = 2
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 110
+cooldown_s = 60
+unlock_s = 0
+speed_cm_s = 290
+sight_m = 150
+spacing_dm = 30
+dig_rate_pct = 100
+
+[[members]]
+slot = "leader"
+weapon = "ww2:ussr_ppsh41"
+traits = ["leader", "observer"]
+
+[[members]]
+slot = "radio_operator"
+weapon = "ww2:ussr_ppsh41"
+traits = ["radio", "observer"]

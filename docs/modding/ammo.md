@@ -42,6 +42,10 @@ load = 60                  # rounds he carries by default, the magazine included
 burst_rounds = 7           # bursts: after every 7th shot ...
 burst_pause_ms = 1000      # ... this pause on top of the interval (0 = none)
 hold_beyond_pct = 0        # own fire-discipline share of range (0: the rules')
+# S14 M1: his strike with this weapon in his hands (absent: the rules' [melee],
+# the spade); reach_cm 1..=1000, damage 0..=1000, windup_ms and recover_ms
+# 1..=4000. Only with the rules' [melee] enabled = 1.
+melee = { reach_cm = 100, damage = 50, windup_ms = 600, recover_ms = 1000 }
 ```
 
 Bursts count on the man's (or vehicle MG's) shot counter, so they need no

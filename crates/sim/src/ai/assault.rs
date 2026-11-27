@@ -242,7 +242,9 @@ impl Planner<'_> {
                 .breaches
                 .values()
                 .filter(|b| b.point as usize == i)
-                .count();
+                .count()
+                // S14-ai: and so does a flame squad on its job.
+                + self.flame_jobs_at(i);
             let n_here = here.len() + breaching;
             if n_here < 2 || free.is_empty() {
                 continue;
@@ -272,12 +274,16 @@ impl Planner<'_> {
             };
             // S10a-ai: during a breach the base aims at the defender
             // nearest the crossing (`ai::breach`), not the point's middle.
-            let focus = self.breach_focus(i, known).map(|at| {
-                let len = cfg.trench_line_m as i32;
-                let half =
-                    (at - base.lead).normalize_or_zero().perp() * Fx::from_int(len).div_int(2);
-                [self.terrain.clamp(at - half), self.terrain.clamp(at + half)]
-            });
+            // S14-ai: while a flame job closes, at its target.
+            let focus = self
+                .breach_focus(i, known)
+                .or_else(|| self.flame_focus(i))
+                .map(|at| {
+                    let len = cfg.trench_line_m as i32;
+                    let half =
+                        (at - base.lead).normalize_or_zero().perp() * Fx::from_int(len).div_int(2);
+                    [self.terrain.clamp(at - half), self.terrain.clamp(at + half)]
+                });
             let Some(line) = focus.or_else(|| self.assault_line(base.lead, i, points, known))
             else {
                 continue;

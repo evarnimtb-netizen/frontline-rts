@@ -108,6 +108,9 @@ pub struct Kit {
     /// S5a: small-arms refill in the own base, in rounds × tick rate
     /// (one round per `tick_hz` gathered; stays due while unpaid).
     pub refill: u16,
+    /// S15 X1-X2: foreign rounds carried (a weapon's `foreign_feed`),
+    /// fired after his own rounds; 0 for everyone else.
+    pub foreign: u16,
 }
 
 /// An item in flight, or landed and waiting for its fuse.
@@ -285,7 +288,7 @@ impl MatchState {
     }
 
     /// Detaches `m` where he stands and starts his wind-up.
-    fn start_throw(&mut self, ctx: &mut Ctx, m: SimId, kind: ItemKind, target: FxVec2) {
+    pub(crate) fn start_throw(&mut self, ctx: &mut Ctx, m: SimId, kind: ItemKind, target: FxVec2) {
         let i = m.index();
         let t = ctx.ents.transform[i];
         let mut facing = (target - t.pos.xy()).normalize_or_zero();

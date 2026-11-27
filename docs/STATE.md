@@ -44,9 +44,12 @@ in the AI, HE for the 57 mm.
 
 ## Versions
 
-`SAVE_VERSION` **31** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **32** and **16** on the branch
-`claude/project-thread-aj1tww` (B3 code: `[ai.arty] direct_in_budget`, `AiCounters::arty_direct_holds`; no new command). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
-S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16 (branch). A save, hash or command change
+`SAVE_VERSION` **32** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **33** and **17** on the branch
+`claude/project-thread-aj1tww` (S14: flame particles, patches, clears, `Combat::close`, `AiState::flame`; commands
+`ClearTrench` and `Strike`). SAVE 33 / PROTOCOL 17 also after S14 Fix (no layout change). S15a Build A: SAVE **34**,
+PROTOCOL 17 (no new command; `PlayerState::s15`, rider jobs, `Kit::foreign`, `VehicleState::rider_off`, `TransportSetup::exposed`);
+SAVE 34 / PROTOCOL 17 also after S15 Fix (no layout change), with three factions in the shipped `[matchups]`. History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
+S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16; S14 33/17 (branch); S15a 34/17 (branch). A save, hash or command change
 bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
 BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 
@@ -130,6 +133,22 @@ Jumbo 12.5 / 15.6 %) and applied it at `f4e610b`: `[ai.arty] shell_mp_max_pct` 6
 (50.62 / 41.25 / 50.00; +5.2 on `target/s13-on`), no winner 0, HE share of casualties 27.40 / 24.96 / 26.70 (about 26.35
 pooled: T8a and T8c miss, T8b passes), T179a-d pass; 4 hard rows that pass at `s13-on` miss (T50b, T119b, T121d, T122c).
 By the plan's judge rule (J1, J4) the apply is to be reverted: the orchestrator's call.
+
+## S14 assault kit (branch `claude/project-thread-aj1tww`; log `S14-log.md`; Fix done, Docs/PR next)
+
+SAVE 33, PROTOCOL 17. Flamethrowers (particle stream, burning men and ground, step-out), Clear trench (grenades, burst, advance
+along the trench), melee strikes (automatic for a man with nothing to load, `V` with an enemy in reach), flame AI (jobs, buy,
+refuel, AI clears). All switches 1 in the mod; every number a key; no balance run. Review findings 1-16 fixed (S14 Fix). `s14_off`
+40 equals the base 40 (`neutral.py` same 40/40); default 40: no winner 0, length 10.65 / 21.13 / 32.53 min. R1 (slit) report-only
+(S14-8). Owner questions S14-1..13 in `docs/TODO.md`, each on (A).
+
+## S15 USSR (branch `claude/project-thread-aj1tww`; log `S15-log.md`; Fix done, PR next)
+
+SAVE 34, PROTOCOL 17; three factions (`[matchups]`: Germany-USA the default, Germany-USSR; USA-USSR only with `free`). The USSR
+roster (14 infantry cards, 5 guns, 7 vehicles; the AT guns towed by the US6 gun tractor, the infantry gun and howitzer without a
+tow), tank riders on Soviet decks (10 places on the T-34-85 and IS-2), the SN-42 plate, captured German mortar bombs, bayonets, the
+AI's rider job. All switches 1 in the mod; every number a key; no balance run (owner rule). Review findings 1-14 fixed (S15 Fix).
+T213c/d (ROKS-3 hits, bayonet strikes in matches) are reports (S15-15). Owner questions S15-1..16 in `docs/TODO.md`, each on (A).
 
 ## Known gaps
 

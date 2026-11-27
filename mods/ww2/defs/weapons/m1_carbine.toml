@@ -9,7 +9,10 @@ class = "rifle"
 feed = "ww2:30_carbine"
 # Five 15-round magazines (battleorder.org).
 load = 75
-sources = ["Wikipedia, M1 carbine (velocity, practical range, magazine)"]
+sources = [
+    "Wikipedia, M1 carbine (velocity, practical range, magazine)",
+    "docs/design/roster/infantry-structures.md 4.2 (melee reach and timings: rifle butt 1.0 m, wind-up 0.4-0.8 s, recovery 1 s); damage per docs/slices/S14-assault-kit.md 4.3 (a torso strike wounds, two down a man)",
+]
 # Practical range (m).
 range_m = 180
 damage = 45
@@ -20,3 +23,7 @@ reload_ms = 2500
 spread_mrad = 14
 muzzle_velocity_m_s = 607
 suppression = 6
+# S14 M1 (plan 4.3): his own strike with this weapon in his hands, a butt stroke:
+# reach_cm 1..=1000, damage 0..=1000, windup_ms and recover_ms 1..=4000. Used
+# only with the rules' [melee] enabled = 1 (0 in S14a).
+melee = { reach_cm = 100, damage = 50, windup_ms = 600, recover_ms = 1000 }

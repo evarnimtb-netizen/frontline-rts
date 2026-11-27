@@ -1,0 +1,8 @@
+# 82 mm O-832D bomb for the 82-BM-37 (S15 Build B): 3.05 kg (Wikipedia
+# "82-PM-41", read 2026-11-26), 3.1 kg taken. Kind "shells". Its burst
+# stays on the weapon's [he] table (as the German bomb).
+id = "ww2:ussr_82mm_o832"
+name = "82 mm O-832D"
+caliber_mm = 82
+supply = { kind = "shells", g = 3100 }
+sources = ["Wikipedia, 82-PM-41 (bomb 3.05 kg)"]

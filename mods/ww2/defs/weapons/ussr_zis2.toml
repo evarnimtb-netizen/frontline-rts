@@ -1,0 +1,24 @@
+# 57 mm anti-tank gun M1943 (ZiS-2) (S15 Build C, S15-ussr.md 6.3): the 1944 tank killer.
+# Game values not in a source are S15 starting values (no tuning).
+id = "ww2:ussr_zis2"
+name = "57 mm ZiS-2"
+class = "cannon"
+# Engagement range, m (as every tank and AT gun of the mod).
+range_m = 600
+# A direct hit on a man, HP.
+damage = 300
+# 10 rounds/min practical, 25 cyclic (Wikipedia, read).
+rounds_per_min = 10
+magazine = 1
+# Reload, ms: 60000 / rounds_per_min.
+reload_ms = 6000
+# 2.5 mrad stationary, urad (as the German and US guns).
+spread_urad = 2500
+muzzle_velocity_m_s = 990
+suppression = 25
+# Muzzle blast: seen at 300 % of sight (as the other guns).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+sources = [
+  "Wikipedia, 57 mm anti-tank gun M1943 (ZiS-2): 1,250 kg, crew 7, 10 rpm practical, traverse 56 deg, -5 to +25 deg (read 2026-11-26)",
+]

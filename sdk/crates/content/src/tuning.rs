@@ -1217,6 +1217,9 @@ tuning_table! {
         /// S8b (S8b-9): kg of shells and explosives in the cargo for a hit
         /// to detonate it; below this it only burns.
         cargo_detonate_min_kg: 0..=5000 = "d_cargo_detonate_min_kg",
+        /// S15 X1-X3 switch: a weapon's `[foreign_feed]` draws rounds from
+        /// a held enemy crate (0: every foreign feed is dropped at setup).
+        foreign_ammo: 0..=1 = "d_fl_zero",
     }
 }
 
@@ -3287,6 +3290,538 @@ impl Default for ArmourTuning {
     }
 }
 
+tuning_table! {
+    /// `[flame]` (S14, docs/slices/S14-assault-kit.md 2, rules F1-F9):
+    /// flame particles, burning men, burning ground, step-out. The switch
+    /// `enabled` is 0 in S14a (absent: these values). Every number is a
+    /// balance lever: change it here, not in code.
+    pub struct FlameTuning {
+        /// F1-F9 switch (0: flame members resolve to today's men, no
+        /// particle).
+        enabled: 0..=1 = "d_fl_zero",
+        /// F1: particles in flight per player (hard ceiling 256).
+        particles_per_player: 1..=256 = "d_fl_particles_per_player",
+        /// F2: a particle's life (ms).
+        ttl_ms: 50..=10000 = "d_fl_ttl_ms",
+        /// F4: a particle passing this close to a man's capsule axis is a
+        /// near miss (cm).
+        near_cm: 1..=1000 = "d_fl_near_cm",
+        /// F3: a struck man burns this long, refreshed by each hit (s) ...
+        burn_s: 1..=3600 = "d_fl_burn_s",
+        /// ... losing this much HP a second while burning ...
+        burn_hp_per_s: 0..=1000 = "d_fl_burn_hp_per_s",
+        /// ... dealt every this often (ms; also the patch pulse).
+        pulse_ms: 50..=10000 = "d_fl_pulse_ms",
+        /// F3: suppression points a burning man takes each pulse.
+        burn_suppression: 0..=100 = "d_fl_burn_suppression",
+        /// F5: burning ground reaches this far around its point (cm) ...
+        patch_radius_cm: 1..=1000 = "d_fl_patch_radius_cm",
+        /// ... burns this long (s) ...
+        patch_s: 1..=3600 = "d_fl_patch_s",
+        /// ... hurts a man in it this much HP a second ...
+        patch_hp_per_s: 0..=1000 = "d_fl_patch_hp_per_s",
+        /// ... whose feet are within this height of it (cm).
+        patch_z_cm: 1..=1000 = "d_fl_patch_z_cm",
+        /// F5: a landing this close to a patch refreshes it (cm).
+        patch_merge_cm: 1..=1000 = "d_fl_patch_merge_cm",
+        /// F5: patches at most (hard ceiling 256); one over is dropped.
+        patches_max: 1..=256 = "d_fl_patches_max",
+        /// F5 switch (S14 Fix 7): landings make burning ground (0: none;
+        /// the `no_patches` ablation).
+        patches: 0..=1 = "d_fl_one",
+        /// F6 switch: men leave burning ground ...
+        step_out: 0..=1 = "d_fl_one",
+        /// ... to this far beyond its edge (m).
+        step_out_m: 1..=50 = "d_fl_step_out_m",
+        /// F7: the own base refills a flamethrower's fuel one unit per
+        /// this long (ms; plan 3.2 F7, design 6.5 "one unit per 2 s").
+        base_refill_ms: 100..=60000 = "d_fl_base_refill_ms",
+        /// F2 (S14 Fix 1): a flame man's `Suppress` aims this high over
+        /// the ground at his line (a trench's floor where dug; cm) ...
+        aim_cm: 0..=500 = "d_fl_aim_cm",
+        /// ... but a point within this of an enemy bunker roof's
+        /// footprint is aimed at the middle of the slit under it (cm).
+        slit_near_cm: 0..=1000 = "d_fl_slit_near_cm",
+    }
+}
+
+fn d_fl_aim_cm() -> u32 {
+    80
+}
+fn d_fl_slit_near_cm() -> u32 {
+    50
+}
+
+fn d_fl_zero() -> u32 {
+    0
+}
+fn d_fl_one() -> u32 {
+    1
+}
+fn d_fl_particles_per_player() -> u32 {
+    64
+}
+fn d_fl_ttl_ms() -> u32 {
+    2500
+}
+fn d_fl_near_cm() -> u32 {
+    300
+}
+fn d_fl_burn_s() -> u32 {
+    4
+}
+fn d_fl_burn_hp_per_s() -> u32 {
+    15
+}
+fn d_fl_pulse_ms() -> u32 {
+    500
+}
+fn d_fl_burn_suppression() -> u32 {
+    40
+}
+fn d_fl_patch_radius_cm() -> u32 {
+    100
+}
+fn d_fl_patch_s() -> u32 {
+    15
+}
+fn d_fl_patch_hp_per_s() -> u32 {
+    20
+}
+fn d_fl_patch_z_cm() -> u32 {
+    100
+}
+fn d_fl_patch_merge_cm() -> u32 {
+    50
+}
+fn d_fl_patches_max() -> u32 {
+    128
+}
+fn d_fl_step_out_m() -> u32 {
+    2
+}
+fn d_fl_base_refill_ms() -> u32 {
+    2000
+}
+
+impl FlameTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for FlameTuning {
+    /// The S14a values (a rules def without `[flame]`): switch off.
+    fn default() -> FlameTuning {
+        FlameTuning {
+            enabled: 0,
+            particles_per_player: 64,
+            ttl_ms: 2500,
+            near_cm: 300,
+            burn_s: 4,
+            burn_hp_per_s: 15,
+            pulse_ms: 500,
+            burn_suppression: 40,
+            patch_radius_cm: 100,
+            patch_s: 15,
+            patch_hp_per_s: 20,
+            patch_z_cm: 100,
+            patch_merge_cm: 50,
+            patches_max: 128,
+            patches: 1,
+            step_out: 1,
+            step_out_m: 2,
+            base_refill_ms: 2000,
+            aim_cm: 80,
+            slit_near_cm: 50,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[melee]` (S14, docs/slices/S14-assault-kit.md 2, 5, rules M1-M5):
+    /// the default strike (entrenching spade) of a weapon with no `[melee]`
+    /// block. The switch `enabled` is 0 in S14a (absent: these values).
+    pub struct MeleeTuning {
+        /// M1-M5 switch (0: no strike; `Strike` refused).
+        enabled: 0..=1 = "d_fl_zero",
+        /// M1: the strike segment's length (cm) ...
+        reach_cm: 1..=1000 = "d_ml_reach_cm",
+        /// ... its damage (HP) ...
+        damage: 0..=1000 = "d_ml_damage",
+        /// ... wind-up (ms) ...
+        windup_ms: 1..=4000 = "d_ml_windup_ms",
+        /// ... and recovery with no fire (ms).
+        recover_ms: 1..=4000 = "d_ml_recover_ms",
+        /// M2: a strike starts with an enemy capsule within reach plus this
+        /// (cm).
+        start_pad_cm: 0..=1000 = "d_ml_start_pad_cm",
+        /// M1 (S14 Fix 3): a strike reaches a target whose feet are up to
+        /// this far below the striker's (a man in a trench struck from its
+        /// lip; cm) ...
+        down_cm: 0..=1000 = "d_ml_reach_z_cm",
+        /// ... or up to this far above them (cm).
+        up_cm: 0..=1000 = "d_ml_reach_z_cm",
+        /// S15 B1 switch: a weapon's `[melee.bayonet]` block replaces its
+        /// `[melee]` block (0: every bayonet block is dropped at setup).
+        bayonets: 0..=1 = "d_fl_zero",
+    }
+}
+
+fn d_ml_reach_cm() -> u32 {
+    60
+}
+fn d_ml_damage() -> u32 {
+    60
+}
+fn d_ml_windup_ms() -> u32 {
+    500
+}
+fn d_ml_recover_ms() -> u32 {
+    1000
+}
+fn d_ml_start_pad_cm() -> u32 {
+    0
+}
+fn d_ml_reach_z_cm() -> u32 {
+    200
+}
+
+impl MeleeTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for MeleeTuning {
+    /// The S14a values (a rules def without `[melee]`): switch off.
+    fn default() -> MeleeTuning {
+        MeleeTuning {
+            enabled: 0,
+            reach_cm: 60,
+            damage: 60,
+            windup_ms: 500,
+            recover_ms: 1000,
+            start_pad_cm: 0,
+            down_cm: 200,
+            up_cm: 200,
+            bayonets: 0,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[clear]` (S14, docs/slices/S14-assault-kit.md 2, 6, rules C1-C5):
+    /// the `ClearTrench` order. The switch `enabled` is 0 in S14a (absent:
+    /// these values).
+    pub struct ClearTuning {
+        /// C1-C5 switch (0: `ClearTrench` refused).
+        enabled: 0..=1 = "d_fl_zero",
+        /// C3: a step goes at least this far along the trench (m) ...
+        step_m: 1..=100 = "d_cl_step_m",
+        /// ... at most this many steps (C5) ...
+        steps_max: 1..=50 = "d_cl_steps_max",
+        /// ... this many men throw at each step point ...
+        throwers: 1..=8 = "d_cl_throwers",
+        /// ... and the squad waits this long after the fuse (s).
+        settle_s: 0..=3600 = "d_cl_settle_s",
+        /// C3: the trench walk visits at most this many 4 m cells.
+        walk_cells: 1..=1024 = "d_cl_walk_cells",
+    }
+}
+
+fn d_cl_step_m() -> u32 {
+    8
+}
+fn d_cl_steps_max() -> u32 {
+    6
+}
+fn d_cl_throwers() -> u32 {
+    2
+}
+fn d_cl_settle_s() -> u32 {
+    2
+}
+fn d_cl_walk_cells() -> u32 {
+    64
+}
+
+impl ClearTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for ClearTuning {
+    /// The S14a values (a rules def without `[clear]`): switch off.
+    fn default() -> ClearTuning {
+        ClearTuning {
+            enabled: 0,
+            step_m: 8,
+            steps_max: 6,
+            throwers: 2,
+            settle_s: 2,
+            walk_cells: 64,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[ai.flame]` (S14-ai, docs/slices/S14-assault-kit.md 2, 7, rules
+    /// A1-A4): the AI's flame jobs, refuel, flame buys and trench clears.
+    /// Every switch 0 in S14a (absent: these values).
+    pub struct AiFlameTuning {
+        /// A1 switch: flame jobs.
+        jobs: 0..=1 = "d_fl_zero",
+        /// A2 switch: refuel a dry flame man.
+        refuel: 0..=1 = "d_fl_zero",
+        /// A3 switch: buy the faction's flame card.
+        buy: 0..=1 = "d_fl_zero",
+        /// A4 switch: order `ClearTrench`.
+        clear: 0..=1 = "d_fl_zero",
+        /// A1: a target is a known enemy this close to the point (m) ...
+        target_m: 1..=1000 = "d_af_target_m",
+        /// ... the squad closes to this far short of it (m) ...
+        stage_m: 1..=1000 = "d_af_stage_m",
+        /// ... and the flame man to this far from it (m).
+        stand_m: 1..=1000 = "d_af_stand_m",
+        /// A1, A2: fuel kept in reserve (% of a full tank).
+        reserve_pct: 0..=100 = "d_af_reserve_pct",
+        /// A1 L1: a job ends after this long (s) ...
+        job_max_s: 1..=3600 = "d_af_job_max_s",
+        /// ... L2: or with no phase progress for this long (s).
+        stall_s: 1..=3600 = "d_af_stall_s",
+        /// A3: flame cards alive at most.
+        cards_max: 0..=8 = "d_af_cards_max",
+        /// A4: clear a trench with a known enemy this close to the point
+        /// (m).
+        clear_near_m: 1..=1000 = "d_af_clear_near_m",
+        /// A1 L3, A4: a failed target or squad waits this long (s).
+        recheck_s: 1..=3600 = "d_af_recheck_s",
+        /// A1, A3, A4 (S14 Fix 2): an enemy seen in a dug cell is
+        /// remembered there this long (s; a target while remembered).
+        memory_s: 1..=3600 = "d_af_memory_s",
+        /// A1 (S14 Fix 2): Burn runs at least this long before the "nobody
+        /// left" test (s).
+        burn_min_s: 0..=600 = "d_af_burn_min_s",
+        /// A4 (S14 Fix 4): an AI clear running this long is ended (s).
+        clear_max_s: 1..=3600 = "d_af_clear_max_s",
+        /// A1 (S14 Fix 2): the flame man burns a trench target from this
+        /// far (m; `stand_m` is a bunker's): a flat stream from farther
+        /// ends on the near parapet.
+        stand_trench_m: 1..=1000 = "d_af_stand_trench_m",
+    }
+}
+
+fn d_af_memory_s() -> u32 {
+    60
+}
+fn d_af_burn_min_s() -> u32 {
+    10
+}
+fn d_af_clear_max_s() -> u32 {
+    300
+}
+fn d_af_stand_trench_m() -> u32 {
+    2
+}
+
+fn d_af_target_m() -> u32 {
+    40
+}
+fn d_af_stage_m() -> u32 {
+    40
+}
+fn d_af_stand_m() -> u32 {
+    20
+}
+fn d_af_reserve_pct() -> u32 {
+    10
+}
+fn d_af_job_max_s() -> u32 {
+    180
+}
+fn d_af_stall_s() -> u32 {
+    45
+}
+fn d_af_cards_max() -> u32 {
+    2
+}
+fn d_af_clear_near_m() -> u32 {
+    15
+}
+fn d_af_recheck_s() -> u32 {
+    60
+}
+
+impl AiFlameTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for AiFlameTuning {
+    /// The S14a values (a rules def without `[ai.flame]`): switches off.
+    fn default() -> AiFlameTuning {
+        AiFlameTuning {
+            jobs: 0,
+            refuel: 0,
+            buy: 0,
+            clear: 0,
+            target_m: 40,
+            stage_m: 40,
+            stand_m: 20,
+            reserve_pct: 10,
+            job_max_s: 180,
+            stall_s: 45,
+            cards_max: 2,
+            clear_near_m: 15,
+            recheck_s: 60,
+            memory_s: 60,
+            burn_min_s: 10,
+            clear_max_s: 300,
+            stand_trench_m: 2,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[riders]` (S15, docs/slices/S15-ussr.md 2, rules R1-R6): infantry
+    /// riding on the deck of a tank, assault gun or tank destroyer. The
+    /// switch `enabled` is 0 in S15a (absent: these values). Every number
+    /// is a balance lever: change it here, not in code.
+    pub struct RidersTuning {
+        /// R1-R6 switch (0: every `[[rider_slots]]` is dropped at setup).
+        enabled: 0..=1 = "d_fl_zero",
+        /// R3a switch: a suppressed rider gets everyone off ...
+        off_on_suppression: 0..=1 = "d_fl_one",
+        /// ... past this share of `[suppression] crouch_suppression` (%).
+        suppression_pct: 0..=400 = "d_rd_suppression_pct",
+        /// R3b switch: a shell, rocket or mine striking the vehicle.
+        off_on_hit: 0..=1 = "d_fl_one",
+        /// R3c switch: its main gun firing.
+        off_on_fire: 0..=1 = "d_fl_one",
+        /// R3: all riders are off this long after the cause (ms) ...
+        exit_ms: 100..=30000 = "d_rd_exit_ms",
+        /// ... and cannot fire for this long after (ms).
+        stun_ms: 100..=30000 = "d_rd_stun_ms",
+    }
+}
+
+fn d_rd_suppression_pct() -> u32 {
+    100
+}
+fn d_rd_exit_ms() -> u32 {
+    600
+}
+fn d_rd_stun_ms() -> u32 {
+    1000
+}
+
+impl RidersTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for RidersTuning {
+    /// The S15a values (a rules def without `[riders]`): switch off.
+    fn default() -> RidersTuning {
+        RidersTuning {
+            enabled: 0,
+            off_on_suppression: 1,
+            suppression_pct: 100,
+            off_on_hit: 1,
+            off_on_fire: 1,
+            exit_ms: 600,
+            stun_ms: 1000,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[body_armour]` (S15, docs/slices/S15-ussr.md 2, rules P1-P5): a
+    /// member's steel plate (`armour = { mm, zone, arc_deg }`). The switch
+    /// `enabled` is 0 in S15a (absent: these values).
+    pub struct BodyArmourTuning {
+        /// P1-P5 switch (0: every member `armour` is dropped at setup).
+        enabled: 0..=1 = "d_fl_zero",
+        /// P2: the strength of a bullet whose weapon has no `penetration`
+        /// table (pistol calibres; tenths of a mm).
+        soft_pen_tenths_mm: 0..=1000 = "d_ba_soft_pen",
+        /// P3: a stopped hit deals this share of its damage (%).
+        stopped_damage_pct: 0..=400 = "d_fl_zero",
+        /// P4 switch: the plate stops a butt or bayonet strike.
+        stops_melee: 0..=1 = "d_fl_one",
+        /// P1 switch: a prone man's plate counts.
+        prone: 0..=1 = "d_fl_zero",
+    }
+}
+
+fn d_ba_soft_pen() -> u32 {
+    10
+}
+
+impl BodyArmourTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for BodyArmourTuning {
+    /// The S15a values (a rules def without `[body_armour]`): switch off.
+    fn default() -> BodyArmourTuning {
+        BodyArmourTuning {
+            enabled: 0,
+            soft_pen_tenths_mm: 10,
+            stopped_damage_pct: 0,
+            stops_melee: 1,
+            prone: 0,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[ai.riders]` (S15-ai, docs/slices/S15-ussr.md 2, 7 A1): the AI's
+    /// rider jobs. Switch 0 in S15a (absent: these values).
+    pub struct AiRidersTuning {
+        /// A1 switch: rider jobs.
+        jobs: 0..=1 = "d_fl_zero",
+        /// A1: rider jobs at once (hard ceiling 8).
+        squads_max: 1..=8 = "d_ar_squads_max",
+        /// A1: the riders get off this far short of the point (m).
+        drop_m: 1..=1000 = "d_ar_drop_m",
+        /// L1: a job ends after this long (s) ...
+        job_max_s: 1..=3600 = "d_ar_job_max_s",
+        /// ... L2: or with no progress for this long (s).
+        stall_s: 1..=3600 = "d_ar_stall_s",
+        /// L3: a failed pairing is not tried again for this long (s).
+        recheck_s: 1..=3600 = "d_ar_recheck_s",
+    }
+}
+
+fn d_ar_squads_max() -> u32 {
+    2
+}
+fn d_ar_drop_m() -> u32 {
+    150
+}
+fn d_ar_job_max_s() -> u32 {
+    240
+}
+fn d_ar_stall_s() -> u32 {
+    45
+}
+fn d_ar_recheck_s() -> u32 {
+    60
+}
+
+impl AiRidersTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for AiRidersTuning {
+    /// The S15a values (a rules def without `[ai.riders]`): switch off.
+    fn default() -> AiRidersTuning {
+        AiRidersTuning {
+            jobs: 0,
+            squads_max: 2,
+            drop_m: 150,
+            job_max_s: 240,
+            stall_s: 45,
+            recheck_s: 60,
+        }
+    }
+}
+
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
 pub const TABLES: &[(&str, &[TuningKey])] = &[
@@ -3307,6 +3842,13 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("wounds", WoundsTuning::KEYS),
     ("ai.medic", AiMedicTuning::KEYS),
     ("armour", ArmourTuning::KEYS),
+    ("flame", FlameTuning::KEYS),
+    ("melee", MeleeTuning::KEYS),
+    ("riders", RidersTuning::KEYS),
+    ("body_armour", BodyArmourTuning::KEYS),
+    ("ai.riders", AiRidersTuning::KEYS),
+    ("clear", ClearTuning::KEYS),
+    ("ai.flame", AiFlameTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -3377,6 +3919,13 @@ pub(crate) struct TuningRefs<'a> {
     pub wounds: &'a WoundsTuning,
     pub ai_medic: &'a AiMedicTuning,
     pub armour: &'a ArmourTuning,
+    pub flame: &'a FlameTuning,
+    pub melee: &'a MeleeTuning,
+    pub clear: &'a ClearTuning,
+    pub ai_flame: &'a AiFlameTuning,
+    pub riders: &'a RidersTuning,
+    pub body_armour: &'a BodyArmourTuning,
+    pub ai_riders: &'a AiRidersTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -3444,6 +3993,13 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.wounds.check(&p("wounds"), out);
     t.ai_medic.check(&p("ai.medic"), out);
     t.armour.check(&p("armour"), out);
+    t.flame.check(&p("flame"), out);
+    t.melee.check(&p("melee"), out);
+    t.clear.check(&p("clear"), out);
+    t.ai_flame.check(&p("ai.flame"), out);
+    t.riders.check(&p("riders"), out);
+    t.body_armour.check(&p("body_armour"), out);
+    t.ai_riders.check(&p("ai.riders"), out);
 }
 
 #[cfg(test)]

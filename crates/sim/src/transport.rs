@@ -53,6 +53,9 @@ enum Exit {
     Side,
     /// Everyone at once (knock-out, abandon, fire): his own side, stunned.
     Forced,
+    /// S15 R3: riders jumping off a tank by themselves (suppressed, the
+    /// vehicle hit, its gun fired): his own side, `[riders] stun_ms`.
+    Jump,
 }
 
 /// The slot of the man getting out over the side now (his box is raised),
@@ -329,11 +332,53 @@ impl MatchState {
                 let vs = self.vehicles.get_mut(&id).expect("listed");
                 vs.unload = None;
                 vs.door_ticks = 0;
-            } else {
+                vs.rider_off = None;
+            } else if !self.riders_jump(ctx, id) {
                 self.door(ctx, id);
             }
             self.end_trip(ctx, id);
         }
+    }
+
+    /// S15 R3: riders on the deck of live vehicle `id` (rider slots only)
+    /// start getting off when one is suppressed past the threshold (R3a;
+    /// R3b and R3c start the timer where the hit and the shot happen); when
+    /// the timer runs out all of them are off over the sides at once,
+    /// stunned. The vehicle keeps its order and need not stop. True while a
+    /// timer ran this tick (the door waits).
+    fn riders_jump(&mut self, ctx: &mut Ctx, id: SimId) -> bool {
+        if self.setup.rules.riders.enabled == 0 || !self.rider_slots_of(id) {
+            return false;
+        }
+        let vs = &self.vehicles[&id];
+        if vs.rider_off.is_none() && crate::s15::riders_suppressed(&self.setup, ctx.ents, vs) {
+            let vs = self.vehicles.get_mut(&id).expect("listed");
+            crate::s15::rider_cause(&self.setup, vs, crate::s15::rider_exit::SUPPRESSED);
+        }
+        let vs = self.vehicles.get_mut(&id).expect("listed");
+        let Some(mut off) = vs.rider_off else {
+            return false;
+        };
+        off.ticks -= 1;
+        if off.ticks > 0 {
+            vs.rider_off = Some(off);
+            return true;
+        }
+        vs.rider_off = None;
+        vs.unload = None;
+        vs.door_ticks = 0;
+        let slots: Vec<usize> = (0..vs.riders.len())
+            .filter(|&k| vs.riders[k].is_some())
+            .collect();
+        let owner = ctx.ents.owner[id.index()].0 as usize;
+        if let Some(p) = self.players.get_mut(owner) {
+            let e = &mut p.s15.rider_exits[off.why as usize];
+            *e = e.saturating_add(slots.len() as u32);
+        }
+        for k in slots {
+            self.rider_out(ctx, id, k, Exit::Jump);
+        }
+        true
     }
 
     /// Drops slots that no longer hold their rider (a man killed: his
@@ -508,6 +553,13 @@ impl MatchState {
         ctx.hash.mark_entity_chunk(m.chunk());
         let vpos = ctx.ents.transform[id.index()].pos.xy();
         let tick = ctx.tick;
+        // S15 R2: a man on a deck.
+        if self.rider_slots_of(id) {
+            let owner = ctx.ents.owner[id.index()].0 as usize;
+            if let Some(p) = self.players.get_mut(owner) {
+                p.s15.rider_boards = p.s15.rider_boards.saturating_add(1);
+            }
+        }
         let vs = self.vehicles.get_mut(&id).expect("listed");
         vs.riders[slot] = Some(m);
         vs.door_ticks = board_ticks.min(u16::MAX as u32) as u16;
@@ -565,7 +617,7 @@ impl MatchState {
                 };
                 (side_of(sign), left * sign)
             }
-            Exit::Forced => {
+            Exit::Forced | Exit::Jump => {
                 let sign = if slot_c.y < Fx::ZERO {
                     -Fx::ONE
                 } else {
@@ -583,6 +635,30 @@ impl MatchState {
         ctx.ents.transform[i].yaw = Fx::atan2(facing.y, facing.x);
         ctx.ents.velocity[i] = Default::default();
         ctx.ents.mover[i].waypoint = spot;
+        if how == Exit::Jump {
+            let stun = s.rules.riders.stun_ms as u64 * hz / 1000;
+            let w = &mut ctx.ents.weapon[i];
+            w.cooldown = w.cooldown.max(stun.min(u16::MAX as u64) as u16);
+        }
+        // S15: riders off a deck, by reason (R3 counts its own at once).
+        if s.vehicles[vs.type_idx as usize]
+            .transport
+            .as_ref()
+            .is_some_and(|t| t.exposed)
+            && how != Exit::Jump
+        {
+            let why = if how == Exit::Forced {
+                crate::s15::rider_exit::KNOCKED_OUT
+            } else {
+                crate::s15::rider_exit::ORDERED
+            };
+            let owner = ctx.ents.owner[id.index()].0 as usize;
+            if let Some(p) = self.players.get_mut(owner) {
+                let e = &mut p.s15.rider_exits[why as usize];
+                *e = e.saturating_add(1);
+            }
+        }
+        let s = &self.setup;
         if how == Exit::Forced {
             let stun = s.rules.vehicles.transport.stun_ms as u64 * hz / 1000;
             let w = &mut ctx.ents.weapon[i];
@@ -593,8 +669,8 @@ impl MatchState {
                 .max((s.rules.vehicles.bail.bail_suppression * 1000).min(100_000));
         }
         ctx.hash.mark_entity_chunk(m.chunk());
-        let under_fire =
-            how == Exit::Forced || self.vehicles[&id].unload.is_some_and(|u| u.under_fire);
+        let under_fire = matches!(how, Exit::Forced | Exit::Jump)
+            || self.vehicles[&id].unload.is_some_and(|u| u.under_fire);
         let vs = self.vehicles.get_mut(&id).expect("listed");
         vs.riders[k] = None;
         // His squad: he stands where he got out; with its last rider out it

@@ -1,0 +1,24 @@
+# 76 mm divisional gun M1942 (ZiS-3) (S15 Build C, S15-ussr.md 6.3): direct fire only (S15-13 (A)); also the SU-76M's gun (ZiS-3Sh).
+# Game values not in a source are S15 starting values (no tuning).
+id = "ww2:ussr_zis3"
+name = "76 mm ZiS-3"
+class = "cannon"
+# Engagement range, m (as every tank and AT gun of the mod).
+range_m = 600
+# A direct hit on a man, HP.
+damage = 300
+# 'up to 25 rounds per minute' (Wikipedia, read); 15 aimed is an S15 starting value (unverified).
+rounds_per_min = 15
+magazine = 1
+# Reload, ms: 60000 / rounds_per_min.
+reload_ms = 4000
+# 2.5 mrad stationary, urad (as the German and US guns).
+spread_urad = 2500
+muzzle_velocity_m_s = 680
+suppression = 30
+# Muzzle blast: seen at 300 % of sight (as the other guns).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+sources = [
+  "Wikipedia, 76 mm divisional gun M1942 (ZiS-3): 1,116 kg, crew 7, up to 25 rpm, traverse 54 deg, -5 to +37 deg (read 2026-11-26)",
+]

@@ -78,6 +78,9 @@ pub mod s11a2;
 pub mod s11b;
 /// S12: wounds under rifles in a trench and under an MG prone (R7, R8).
 pub mod s12;
+/// S14: flame at the bunker slit (R1) and the pool kept from flame (R2).
+pub mod s14;
+pub mod s15;
 
 /// Longest rifle fight, in game seconds.
 pub const RIFLE_FIGHT_S: u64 = 180;
@@ -227,6 +230,14 @@ pub struct FortifyReport {
     /// (R8), with the base as control (left out with `--no-s10b-ai`, as
     /// the S10b-ai rows).
     pub s12: s12::S12Report,
+    /// S14: the slit (R1) and pool (R2) rows, flame on in the row only
+    /// with test-made flame defs (left out with `--no-s10b-ai`, as the
+    /// S10b-ai rows).
+    pub s14: s14::S14Report,
+    /// S15: rows W1-W4 (plate, riders, captured bombs, bayonet), the S15
+    /// switches on in the row only with test-made stand-in defs (left out
+    /// with `--no-s10b-ai`, as the S10b-ai rows).
+    pub s15: s15::S15Report,
     /// Rifles, mortar and smoke pass (the grenade assault has no threshold
     /// yet).
     pub pass: bool,
@@ -1102,6 +1113,16 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
     } else {
         s12::s12_rows(args, seeds.clone())?
     };
+    let s14 = if args.no_s10b_ai {
+        s14::S14Report::default()
+    } else {
+        s14::s14_rows(args, seeds.clone())?
+    };
+    let s15 = if args.no_s10b_ai {
+        s15::S15Report::default()
+    } else {
+        s15::s15_rows(args, seeds.clone())?
+    };
     let mut rifles = Vec::new();
     let mut mortar = Vec::new();
     let mut mortar_ranged = Vec::new();
@@ -1275,6 +1296,8 @@ pub fn fortify_test(args: &FortifyArgs) -> Result<FortifyReport> {
         s11a2,
         s11b,
         s12,
+        s14,
+        s15,
     })
 }
 
@@ -1482,6 +1505,8 @@ pub fn summary_text(r: &FortifyReport) -> String {
     out += &s11a2::summary_text(&r.s11a2);
     out += &s11b::summary_text(&r.s11b);
     out += &s12::summary_text(&r.s12);
+    out += &s14::summary_text(&r.s14);
+    out += &s15::summary_text(&r.s15);
     out += &format!("fortify-test: {}", if r.pass { "PASS" } else { "FAIL" });
     out
 }

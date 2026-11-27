@@ -1,0 +1,17 @@
+# S14 flame mechanics only (plan 2, 10): [flame] on, every other S14 switch
+# 0 (the AI blind to flame: flame men fire only by auto-targeting). Run by
+# the later balance pass (owner 2026-11-25: no balance runs in S14).
+[flame]
+enabled = 1
+
+[melee]
+enabled = 0
+
+[clear]
+enabled = 0
+
+[ai.flame]
+jobs = 0
+refuel = 0
+buy = 0
+clear = 0

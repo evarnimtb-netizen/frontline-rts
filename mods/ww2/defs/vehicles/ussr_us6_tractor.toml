@@ -1,0 +1,163 @@
+# Studebaker US6 as the Soviet gun tractor (S15 Fix, review findings 2-3): the US6 with the gun crew in the bed, the
+# Sd.Kfz. 11 pattern (role `tractor`, a `[transport]` with seats): the crew rides with its AT gun, and the AI can re-site
+# the gun with it. The truck def `ww2:ussr_us6` stays the supply truck. Same chassis values as that def.
+id = "ww2:ussr_us6_tractor"
+name = "Studebaker US6 (gun tractor)"
+short_name = "US6 tractor"
+faction = "ww2:ussr"
+role = "tractor"
+# S15 starting value (the US6 truck's, not tuned).
+cost = 200
+# Population (8.4).
+pop = 2
+recall_cooldown_s = 45
+# Card unlock (8.4): from the start, s.
+initial_cooldown_s = 0
+# Sight of a truck crew, m (no optics; a starting value).
+sight_m = 150
+# Seen at this % of an observer's sight (a large unarmoured truck).
+spot_size_pct = 150
+# The driver's eye, cm.
+eye_height_cm = 230
+sources = [
+  "Wikipedia, Studebaker US6: most exported to the USSR; used as the prime mover of artillery and AT guns, crew in the bed (read 2026-11-26)",
+  "docs/design/roster/vehicles.md 4.3",
+  "the GMC CCKW def's dimensions, speeds and plates (unverified for the US6)",
+  "seats: the Sd.Kfz. 11 def's 8 (a gun crew of up to 6 plus room; unverified for the US6 bed)",
+]
+crew_squad = "ww2:ussr_tank_crew"
+# No gun, so no rare rounds.
+rare_cap = 0
+# Unarmed (S8b-7).
+weapons = []
+
+# S9: what it can tow (kg; unverified): the M-30 (2,450 kg) fits; towed speed = 80 % of its own.
+[tow]
+max_kg = 3000
+towed_speed_pct = 80
+
+[mobility]
+type = "wheeled"
+# Practical cross-country speed, cm/s (6.8: no roads on our maps).
+speed_cm_s = 800
+# Backing up, cm/s.
+reverse_cm_s = 200
+# Full-lock radius, cm (verify).
+turn_radius_cm = 900
+accel_cm_s2 = 120
+brake_cm_s2 = 350
+max_slope_pct = 40
+# Any ground dug this deep (dm) is a wall (6.8).
+ditch_block_dm = 10
+# Chance (%) to bog per crossing.
+bog_pct = 15
+unbog_s = [25, 45]
+# Poor cross-country factors (6.8): % of speed in woods; % lost at max slope.
+woods_speed_pct = 30
+slope_loss_pct = 85
+# No gun; the schema's value.
+moving_spread_pct = 100
+
+[hull]
+# The band a hit reaches the wheels in (%); wheel plate mm.
+track_band_pct = 40
+track_mm = 3
+
+# Boxes are thin unarmoured skins (S8a small-arms core goes through them).
+[[boxes]]
+id = "cab"
+frame = "hull"
+box = { center = [170, 0, 150], half = [130, 115, 60] }
+[boxes.armor]
+front = { thickness_mm = 2 }
+side = { thickness_mm = 1 }
+rear = { thickness_mm = 1 }
+top = { thickness_mm = 1 }
+
+[[boxes]]
+id = "bed"
+frame = "hull"
+box = { center = [-130, 0, 145], half = [170, 115, 55] }
+open = ["top"]
+# The bed floor, cm.
+floor_cm = 100
+[boxes.armor]
+front = { thickness_mm = 2 }
+side = { thickness_mm = 1 }
+rear = { thickness_mm = 1 }
+
+[[seats]]
+id = "driver"
+role = "driver"
+box = { frame = "hull", center = [120, 60, 150], half = [35, 30, 45] }
+in = "cab"
+
+[[seats]]
+id = "co_driver"
+role = "commander"
+box = { frame = "hull", center = [120, -60, 150], half = [35, 30, 45] }
+in = "cab"
+
+[[components]]
+type = "engine"
+hp = 60
+box = { frame = "hull", center = [250, 0, 135], half = [40, 45, 35] }
+repair = { to_hp = 30, time_s = 60 }
+
+[[components]]
+type = "transmission"
+hp = 60
+box = { frame = "hull", center = [130, 0, 110], half = [40, 25, 18] }
+repair = { to_hp = 30, time_s = 60 }
+
+[[components]]
+type = "wheels_front"
+hp = 40
+anchors = [{ pos = [235, 95, 40] }, { pos = [235, -95, 40] }]
+repair = { to_hp = 40, time_s = 25 }
+
+[[components]]
+type = "wheels_rear"
+hp = 40
+anchors = [{ pos = [-120, 95, 40] }, { pos = [-120, -95, 40] }, { pos = [-220, 95, 40] }, { pos = [-220, -95, 40] }]
+repair = { to_hp = 40, time_s = 25 }
+
+[[stations]]
+id = "cab"
+seats = ["driver", "commander"]
+
+[[hatches]]
+seats = ["driver"]
+frame = "hull"
+pos = [120, 115, 150]
+exit_ms = 2000
+
+[[hatches]]
+seats = ["commander"]
+frame = "hull"
+pos = [120, -115, 150]
+exit_ms = 2000
+
+# S15 Fix: the gun crew rides in the bed (8 seats, the Sd.Kfz. 11's count; unverified), door at the tailgate.
+[transport]
+capacity = 8
+entry = [-310, 0, 60]
+board_ms = 1000
+exit_ms = 800
+
+[[passenger_slots]]
+box = { center = [-30, 70, 145], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-90, 70, 145], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-150, 70, 145], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-210, 70, 145], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-30, -70, 145], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-90, -70, 145], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-150, -70, 145], half = [22, 18, 40] }
+[[passenger_slots]]
+box = { center = [-210, -70, 145], half = [22, 18, 40] }

@@ -1,0 +1,33 @@
+# 122 mm howitzer M1938 (M-30) (S15 Build C, S15-ussr.md 6.3): the field howitzer, as the leFH 18 card.
+# Game values not in a source are S15 starting values (no tuning).
+id = "ww2:ussr_m30_122mm"
+name = "122 mm M-30"
+class = "cannon"
+# Engagement range, m (as every tank and AT gun of the mod).
+range_m = 600
+# A direct hit on a man, HP.
+damage = 300
+# 5-6 rounds/min (Wikipedia, read): the lower figure.
+rounds_per_min = 5
+magazine = 1
+# Reload, ms: 60000 / rounds_per_min.
+reload_ms = 12000
+# 2.5 mrad stationary, urad (as the German and US guns).
+spread_urad = 2500
+muzzle_velocity_m_s = 341
+suppression = 25
+# Muzzle blast: seen at 300 % of sight (as the other guns).
+fire_reveal_pct = 300
+fire_reveal_ms = 5000
+sources = [
+  "Wikipedia, 122 mm howitzer M1938 (M-30): 2,450 kg, crew 8, 5-6 rpm, -3 to +63.5 deg, traverse 49 deg, 11.8 km (read 2026-11-26)",
+]
+
+# Fire missions as the leFH 18: top charge 341 m/s, the drag-free speed that reaches the read 11.8 km at 45 deg
+# (the leFH 18 uses 325 m/s for its 10.7 km); the lower charge is an S15 starting value.
+[indirect]
+charges_m_s = [200, 280, 341]
+elevation_deg = [0, 63]
+low_angle = true
+range_m = 11800
+spread_mrad = 6

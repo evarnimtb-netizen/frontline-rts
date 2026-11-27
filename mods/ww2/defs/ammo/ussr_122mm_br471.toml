@@ -1,0 +1,43 @@
+# 122 mm BR-471: sharp-nosed APHE for the D-25T (IS-2) (S15 Build C); 780 m/s (losthistory, read).
+id = "ww2:ussr_122mm_br471"
+name = "122 mm BR-471"
+mechanism = "aphe"
+# S15: priced refill ([supply] shell_mp_per_t per tonne): projectile 25 kg plus the separate charge, about 40 kg (unverified: S15 starting value)
+supply = { kind = "shells", g = 40000 }
+caliber_mm = 122
+muzzle_velocity_m_s = 780
+drag_coeff = 0
+# Penetration convention (S15 Build C): the mod's tables are [range_m, mm] at pen_reference_angle_deg
+# (here 0, the normal). Soviet tables give the 'meet angle 90 deg' column (the normal) at a 75 %
+# success criterion (Soviet method); that column is taken as the 0-degree row, mm unchanged: no
+# criterion factor was read in a source, so the rows sit slightly low against the 50 % tables.
+# Read: BR-471 CP (80 %) at 90 deg (losthistory.net, ARTKOM); a stricter criterion than the mod's 50 %, taken unchanged.
+penetration = [[500, 152], [1000, 142], [1500, 133], [2000, 122]]
+pen_reference_angle_deg = 0
+ricochet_angle_deg = 70
+# S13 O1: the slope penalty beyond 1/cos, class "apcbc".
+slope_class = "apcbc"
+nonpen_damage = 60
+track_damage = 80
+sources = [
+  "losthistory.net, Specification and Armor Penetration Values for the Soviet Tank Cannons (ARTKOM method, CP 80 %), read 2026-11-26",
+  "Wikipedia, IS-2: OF-471 25 kg, 800 m/s, 3.8 kg TNT; BR-471 the only AP round of 1944, read 2026-11-26",
+]
+
+[core]
+damage = 120
+length_cm = 200
+max_boxes = 3
+
+[spall]
+rays = 7
+damage = 40
+cone_deg = 25
+
+# Filler rays and damage: S15 starting values on the S13 pattern (the round's filler in its comment).
+[filler]
+offset_cm = 100
+rays = 14
+cone_deg = 60
+damage = 60
+reach_cm = 300

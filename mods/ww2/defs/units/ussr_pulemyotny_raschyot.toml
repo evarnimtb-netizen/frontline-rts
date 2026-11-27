@@ -1,0 +1,47 @@
+# Pulemyotny raschyot (S15 Build B): the MG section of six (battleorder.org):
+# the leader, the gunner on the Maxim M1910/30 (S15-11 (A); the SG-43 is a
+# def without a card), three bearers with Mosins and belts. The cart driver
+# is not modelled (a seventh man would be a bearer).
+id = "ww2:ussr_pulemyotny_raschyot"
+name = "Pulemyotny raschyot"
+short_name = "Maxim"
+faction = "ww2:ussr"
+tags = ["mg"]
+capabilities = ["recrew"]
+sources = [
+    "battleorder.org, USSR rifle company 1944 (shtat 04/550, December 1942; read 2026-11-26)",
+    "Wikipedia, PM M1910 (read 2026-11-26)",
+]
+ai_weight = 100
+# S15 starting value (docs/slices/S15-ussr.md 6.1; owner rule 2026-11-25: no tuning)
+cost = 160
+cooldown_s = 30
+unlock_s = 0
+speed_cm_s = 260
+sight_m = 150
+spacing_dm = 25
+dig_rate_pct = 0
+
+[[members]]
+slot = "leader"
+weapon = "ww2:ussr_mosin_9130"
+traits = ["leader"]
+
+[[members]]
+slot = "mg_gunner"
+weapon = "ww2:ussr_maxim_1910"
+sidearm = "ww2:ussr_tt33"
+traits = ["crew_gunner"]
+
+[[members]]
+slot = "mg_assistant"
+weapon = "ww2:ussr_tt33"
+rounds = { "ww2:ussr_762x54r_belt" = 500 }
+traits = ["crew_assistant"]
+
+[[members]]
+slot = "ammo_bearer"
+count = 3
+weapon = "ww2:ussr_mosin_9130"
+rounds = { "ww2:ussr_762x54r_belt" = 500 }
+traits = ["ammo_bearer"]

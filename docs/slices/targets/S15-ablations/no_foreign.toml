@@ -1,0 +1,16 @@
+# S15 ablation (plan 2, 11): no captured bombs (X1-X3), the rest on (the shipped lists, with the
+# USSR from S15-ai on). Written by S15a Build A; run by the later balance pass.
+[riders]
+enabled = 1
+
+[body_armour]
+enabled = 1
+
+[supply]
+foreign_ammo = 0
+
+[melee]
+bayonets = 1
+
+[ai.riders]
+jobs = 1

@@ -400,7 +400,7 @@ pub(crate) fn build_marks(
 }
 
 #[inline]
-fn range_sq(range: Fx) -> u64 {
+pub(crate) fn range_sq(range: Fx) -> u64 {
     let r = range.raw().max(0) as u64;
     r * r
 }
@@ -477,6 +477,8 @@ pub(crate) struct FireCtx<'a> {
     pub vmarks: &'a [VMark],
     pub game: &'a MatchState,
     pub terrain: &'a Heightfield,
+    /// S14 M2: live soldiers on foot (this tick's movement hash).
+    pub spatial: &'a SpatialHash,
     pub seed: u64,
     pub tick: u64,
 }
@@ -674,6 +676,7 @@ pub(crate) fn aim_and_fire(
     weapon: &mut [Weapon],
     kits: &mut [Kit],
     out: &mut Vec<FireRequest>,
+    strikes: &mut Vec<SimId>,
 ) -> bool {
     let base = chunk * crate::ecs::CHUNK_SIZE;
     let setup = ctx.game.setup();
@@ -718,13 +721,24 @@ pub(crate) fn aim_and_fire(
         let ty = &setup.squad_types[sq.type_idx as usize];
         let wi = crate::supply::active_weapon(ty, kit);
         let w = &setup.weapons[wi as usize];
+        let feed = ty.feed_slot(w);
+        // S14 M2-M3: a strike running or starting takes his turn (no aim,
+        // no fire; nothing with `[melee] enabled` 0 and no strike).
+        if crate::flame::strike_tick(ctx, i, c, ws, kit, ty, wi, feed.is_some(), strikes) {
+            continue;
+        }
         // A launcher carrier fires in `fire_launchers` (S3).
         if w.class == WeaponClass::Launcher {
             continue;
         }
+        // S14 F1: a flamethrower fires only with `[flame] enabled` (0: he
+        // holds it, as before S14 no def carried one).
+        if w.class == WeaponClass::Flame && setup.rules.flame.enabled == 0 {
+            c.target = None;
+            continue;
+        }
         // S5a: counted rounds. A dry weapon reloads from his pouches once
         // it may, else he draws his sidearm, else he holds fire.
-        let feed = ty.feed_slot(w);
         if feed.is_some() && w.he.is_none() && c.mag == 0 {
             if ws.cooldown > 0 || !crate::supply::reload_dry(setup, ty, kit, c, ws) {
                 c.target = None;
@@ -782,7 +796,21 @@ pub(crate) fn aim_and_fire(
             let range: Fx = w.range_max.into();
             let t = RngStream::new(ctx.seed, ctx.tick, id, Purpose::SUPPRESS)
                 .range_fx(Fx::ZERO, Fx::ONE);
-            let Some((aim, probe)) = suppress_aim(ctx.terrain, rules, &line, t, from, range) else {
+            // S14 Fix 1: a flame man aims his stream at the target's height.
+            let aimed = if w.class == WeaponClass::Flame {
+                crate::flame::flame_suppress_aim(
+                    ctx.game,
+                    ctx.terrain,
+                    owner,
+                    &line,
+                    t,
+                    from,
+                    range,
+                )
+            } else {
+                suppress_aim(ctx.terrain, rules, &line, t, from, range)
+            };
+            let Some((aim, probe)) = aimed else {
                 continue;
             };
             if !ctx.terrain.line_of_sight(from, probe) {
@@ -820,7 +848,8 @@ pub(crate) fn aim_and_fire(
         }
         if c.target.is_none() || c.retarget == 0 {
             let before = c.target;
-            let man = if w.class == WeaponClass::Mg {
+            // S14 F1: a flamethrower searches like an MG.
+            let man = if matches!(w.class, WeaponClass::Mg | WeaponClass::Flame) {
                 let roll =
                     RngStream::new(ctx.seed, ctx.tick, SimId(i as u32), Purpose::SWEEP).next_u64();
                 search(ctx, i, from, r, None, SWEEP_POOL, (roll >> 32) as usize)
@@ -973,6 +1002,8 @@ fn fire_round(
         he: false,
         ammo: crate::projectile::NO_AMMO,
         mission: 0,
+        // S14 F1: a particle, routed to `MatchState::flame`.
+        flame: w.class == WeaponClass::Flame,
     });
     ws.shots = ws.shots.wrapping_add(1);
     c.since_shot = 0;
@@ -1152,6 +1183,11 @@ impl MatchState {
         let c = &ents.combat[i];
         let mut rng = RngStream::new(seed, tick, gunner, Purpose::SHELL_AIM);
         let pct = 100 + (c.suppression / 1000) as i64 * per_point / 100;
+        // S15 X2: no own bomb left, a foreign one flies at `spread_pct`.
+        let foreign = w.foreign_feed.filter(|_| {
+            !crate::supply::own_bomb_left(&self.setup, ents, &sq.members, sq.type_idx, gunner, wi)
+        });
+        let pct = foreign.map_or(pct, |f| pct * f.spread_pct as i64 / 100);
         let sp = d.mul(w.spread.into()).raw() as i64 * pct / 100;
         let sp = Fx::from_raw(sp.min(i32::MAX as i64) as i32);
         let aim_xy =
@@ -1192,9 +1228,21 @@ impl MatchState {
         // `crew_feed_m`); none left: the mission ends.
         let owner = sq.owner;
         let (members, type_idx) = (sq.members.clone(), sq.type_idx);
-        if !crate::supply::take_bomb(&self.setup, ents, &members, type_idx, gunner, wi) {
+        if foreign.is_some() {
+            if !crate::supply::take_foreign(&self.setup, ents, &members, gunner) {
+                self.end_mission(id, ents, tick);
+                return None;
+            }
+            let c = &mut self.players[owner.0 as usize].s15;
+            c.foreign_fired = c.foreign_fired.saturating_add(1);
+        } else if !crate::supply::take_bomb(&self.setup, ents, &members, type_idx, gunner, wi) {
             self.end_mission(id, ents, tick);
             return None;
+        }
+        // S15 Fix (review 9): the bomb may come from a crew giver's kit in
+        // another hash chunk than the gunner's.
+        for g in &members {
+            hash.mark_entity_chunk(g.chunk());
         }
         let ttl = (flight + Fx::from_int(4)).mul_int(SUBSTEP_HZ).floor_int();
         out.push(FireRequest {
@@ -1208,6 +1256,7 @@ impl MatchState {
             he: true,
             ammo: crate::projectile::NO_AMMO,
             mission: m.id,
+            flame: false,
         });
         let w = &self.setup.weapons[wi as usize];
         let ws = &mut ents.weapon[i];
@@ -1465,6 +1514,7 @@ impl MatchState {
                                 he: true,
                                 ammo,
                                 mission: 0,
+                                flame: false,
                             });
                             ents.kit[i].items[k] -= 1;
                             ents.combat[i].since_shot = 0;
@@ -1662,6 +1712,7 @@ impl MatchState {
                             he: true,
                             ammo,
                             mission: 0,
+                            flame: false,
                         });
                         *rockets += 1;
                         ents.kit[i].items[k] -= 1;
@@ -1993,6 +2044,7 @@ impl MatchState {
                 he: true,
                 ammo,
                 mission: 0,
+                flame: false,
             });
             l.rounds -= 1;
             *rockets += 1;
@@ -2018,7 +2070,9 @@ pub(crate) fn spawn_rounds(
 ) -> (u64, u64) {
     let (mut fired, mut dropped) = (0u64, 0u64);
     for he in [true, false] {
-        for r in reqs.iter().filter(|r| r.he == he) {
+        // S14 F1: flame particles never enter the pool
+        // (`MatchState::spawn_flame`).
+        for r in reqs.iter().filter(|r| r.he == he && !r.flame) {
             fired += 1;
             if !he && pool.free_count() <= crate::projectile::SHELL_RESERVE {
                 dropped += 1;
@@ -2077,6 +2131,15 @@ pub(crate) enum Blow {
     /// arms) or `shell_box_damage` (a main-gun round). S10a: the second
     /// field is the range from the muzzle (a piece's armour gate).
     Static(u32, Fx),
+    /// S14 F3, F5: a burn pulse on soldier or downed man `id` (a burning
+    /// man, or one in burning ground): `dmg` HP with no zone, credited to
+    /// `by` (player, kill class), and `supp` suppression points.
+    Burn {
+        id: SimId,
+        dmg: u32,
+        by: (u8, u16),
+        supp: u32,
+    },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -2091,6 +2154,10 @@ pub(crate) struct BallisticEvent {
     pub blow: Blow,
     /// S5b: the round's fire mission (0: none).
     pub mission: u32,
+    /// S15 P1-P2: where the round was fired from (its flown range and
+    /// direction at a plate); `None` for events with no round (burns,
+    /// tests).
+    pub origin: Option<FxVec3>,
 }
 
 /// Hit capsule `(a, b, radius)` of a soldier: a vertical segment standing or
@@ -2287,8 +2354,8 @@ pub(crate) fn fly(
                 .weapons
                 .get(p.weapon as usize)
                 .is_some_and(|w| !w.pen.is_empty());
-        let (weapon, player, shooter, ammo, mission) =
-            (p.weapon, p.player, p.owner, p.ammo, p.mission);
+        let (weapon, player, shooter, ammo, mission, origin) =
+            (p.weapon, p.player, p.owner, p.ammo, p.mission, p.origin);
         let ev = |blow| BallisticEvent {
             weapon,
             player,
@@ -2297,6 +2364,7 @@ pub(crate) fn fly(
             shooter,
             blow,
             mission,
+            origin: Some(origin),
         };
         for _ in 0..substeps {
             let from = p.pos;
@@ -2552,6 +2620,9 @@ pub(crate) struct DamageCtx<'a> {
     pub wounds: Option<frontline_content::tuning::WoundsTuning>,
     /// S12: the downed men's spatial hash (`None` without any).
     pub downed: Option<&'a SpatialHash>,
+    /// S14 M3: strikers whose wind-up ended this tick, ascending id
+    /// (resolved after the blows, `MatchState::resolve_strikes`).
+    pub strikes: &'a [SimId],
 }
 
 /// A soldier at 0 HP this tick: `(victim, killer's player, kill class,
@@ -2565,7 +2636,7 @@ pub(crate) type Fallen = (SimId, u8, u16, crate::wounds::Hit);
 /// already at 0 this tick who is hit again joins `dead` once more (with
 /// `wounds` only: a down then a kill in one tick).
 #[allow(clippy::too_many_arguments)]
-fn hurt(
+pub(crate) fn hurt(
     ents: &mut Entities,
     hash: &mut HashCache,
     dead: &mut Vec<Fallen>,
@@ -2719,6 +2790,12 @@ impl MatchState {
             if clear && dist <= blast_r {
                 hurt_by(ctx, dead, b, id, b.damage, None);
             }
+        }
+        // S15 R3a: riders on a deck (not in the soldier hash) are
+        // suppressed as men in the open at their vehicle's position (no
+        // cover). Nothing while `[riders] enabled` is 0.
+        if self.setup.rules.riders.enabled == 1 {
+            self.burst_riders(ctx, b, pos, supp_r);
         }
         // S10b R20: a demolition charge's piece takes its tamped damage
         // (whatever its owner, no line check) instead of the overpressure.
@@ -3239,6 +3316,18 @@ impl MatchState {
                     let i = id.index();
                     crate::wounds::zone_at(&ctx.ents.transform[i], &ctx.ents.combat[i], z, w)
                 });
+                // S15 P1-P3: the fragment's pen falls as its damage does.
+                let pen = Fx::from_raw(
+                    ((he.frag_pen_mm as i64 * pct.raw() as i64) / 100).min(i32::MAX as i64) as i32,
+                );
+                let dmg = self.plate_damage(
+                    ctx.ents,
+                    id,
+                    o.xy(),
+                    zone,
+                    crate::s15::PlateBlow::Fragment(pen),
+                    dmg,
+                );
                 hurt_by(ctx, dead, b, id, dmg, Some(zone));
                 ctx.stats.frag_hits += 1;
             }
@@ -3390,6 +3479,8 @@ impl MatchState {
             }
             Some(WeaponClass::Mortar) => kill_class::MORTAR,
             Some(WeaponClass::Cannon) => kill_class::TANK_AP,
+            // S14 F8.
+            Some(WeaponClass::Flame) => kill_class::FLAME,
             _ => kill_class::OTHER,
         }
     }
@@ -3470,12 +3561,29 @@ impl MatchState {
                         rules.hit_suppression * 1000,
                     );
                     let class = self.round_class(ctx.ents, e.weapon, e.ammo, e.shooter);
+                    // S15 P1-P3, P5: a bullet (not a flame particle) at a
+                    // plated man's front.
+                    let mut dmg = w.damage;
+                    if let Some(o) = e.origin
+                        && w.class != frontline_content::WeaponClass::Flame
+                    {
+                        let at = ctx.ents.transform[id.index()].pos.xy();
+                        let flown = (at - o.xy()).length();
+                        dmg = self.plate_damage(
+                            ctx.ents,
+                            id,
+                            o.xy(),
+                            zone,
+                            crate::s15::PlateBlow::Bullet(e.weapon, flown),
+                            dmg,
+                        );
+                    }
                     hurt(
                         ctx.ents,
                         ctx.hash,
                         &mut dead,
                         id,
-                        w.damage,
+                        dmg,
                         (e.player, class),
                         (zone, false),
                         ctx.wounds.as_ref(),
@@ -3510,6 +3618,47 @@ impl MatchState {
                             as u32;
                     }
                     add_suppression(c, add);
+                    ctx.hash.mark_entity_chunk(id.chunk());
+                    None
+                }
+                Blow::Burn { id, dmg, by, supp } => {
+                    let i = id.index();
+                    let kind = ctx.ents.kind[i];
+                    if kind != EntityKind::Soldier && kind != EntityKind::Downed {
+                        continue;
+                    }
+                    add_suppression(&mut ctx.ents.combat[i], supp * 1000);
+                    // S14 Fix 7: a 0 HP pulse is suppression only (no
+                    // `hurt`: it would kill a downed man and reset his care).
+                    if dmg == 0 {
+                        ctx.hash.mark_entity_chunk(id.chunk());
+                        continue;
+                    }
+                    let fell = hurt(
+                        ctx.ents,
+                        ctx.hash,
+                        &mut dead,
+                        id,
+                        dmg,
+                        by,
+                        (crate::wounds::ZONE_NONE, false),
+                        ctx.wounds.as_ref(),
+                    );
+                    // S14 F5 (S14-1 (A)): an own burn is own fire, not a
+                    // kill (the S11a2 own-fire list, as an own burst's).
+                    if fell && ctx.ents.owner[i].0 == by.0 {
+                        ctx.ff_dead.push(id);
+                    }
+                    // S14 F8: enemy men fire downed or killed (own burns
+                    // are own fire, not kills).
+                    if fell && ctx.ents.owner[i].0 != by.0 {
+                        let s14 = &mut self.players[by.0 as usize].s14;
+                        if kind == EntityKind::Soldier && ctx.wounds.is_some() {
+                            s14.burn_downs += 1;
+                        } else {
+                            s14.burn_kills += 1;
+                        }
+                    }
                     ctx.hash.mark_entity_chunk(id.chunk());
                     None
                 }
@@ -3785,6 +3934,11 @@ impl MatchState {
                 self.start_smoke(t.item, t.pos);
             }
         }
+        // S14 M1, M4: strikes, after every blow of this tick.
+        if !ctx.strikes.is_empty() {
+            let strikes = ctx.strikes;
+            self.resolve_strikes(ctx, strikes, &mut dead);
+        }
         dead.append(&mut ctx.fallen);
         ctx.ff_dead.sort_unstable();
         if let Some(w) = ctx.wounds.clone() {
@@ -3853,6 +4007,12 @@ impl MatchState {
         // S8a: a passenger leaves his slot; his body lies on the vehicle's
         // ground level where he sat.
         if let Some(r) = ents.unit[i].riding {
+            // S15 R4: a rider killed on a deck.
+            if self.rider_slots_of(r.vehicle)
+                && let Some(p) = self.players.get_mut(owner)
+            {
+                p.s15.rider_casualties = p.s15.rider_casualties.saturating_add(1);
+            }
             if let Some(vs) = self.vehicles.get_mut(&r.vehicle)
                 && vs.riders.get(r.slot as usize) == Some(&Some(id))
             {
@@ -4002,6 +4162,8 @@ impl MatchState {
         if sq.members.is_empty() {
             self.lose_squad_kg(sid);
             self.squads.remove(&sid);
+            // S14 C5: its clear ends with it (a save this tick must load).
+            self.clears.remove(&sid);
             for q in &mut self.path_queue.queues {
                 q.retain(|r| *r != PathReq::Squad(sid));
             }
@@ -4193,6 +4355,12 @@ impl MatchState {
         };
         // S8a: a rider leaves his slot and lies at the door.
         if let Some(r) = ents.unit[i].riding {
+            // S15 R4: a rider downed on a deck.
+            if self.rider_slots_of(r.vehicle)
+                && let Some(p) = self.players.get_mut(owner as usize)
+            {
+                p.s15.rider_casualties = p.s15.rider_casualties.saturating_add(1);
+            }
             if let Some(vs) = self.vehicles.get_mut(&r.vehicle)
                 && vs.riders.get(r.slot as usize) == Some(&Some(id))
             {
@@ -4257,6 +4425,13 @@ impl MatchState {
             fire_height: prone,
             seen_by: c.seen_by,
             wound,
+            // S14 F3: a downed man keeps burning (the next pulse kills
+            // him, W3); a strike in progress ends.
+            close: crate::flame::Close {
+                burn_until: c.close.burn_until,
+                burn_by: c.close.burn_by,
+                ..crate::flame::Close::default()
+            },
             ..Combat::default()
         };
         ents.unit[i] = Unit::default();
@@ -4694,6 +4869,7 @@ mod tests {
             let pos = at.extend(self.terrain.height_at(at));
             let mut stats = Stats::default();
             let mut ctx = DamageCtx {
+                strikes: &[],
                 ents: &mut self.ents,
                 terrain: &mut self.terrain,
                 spatial: &self.spatial,
@@ -4715,6 +4891,7 @@ mod tests {
                 shooter: SimId(0),
                 blow: Blow::Burst(pos),
                 mission: 0,
+                origin: None,
             }];
             self.game.apply_blows(
                 &mut ctx,
@@ -4878,6 +5055,7 @@ mod tests {
         r.ents.combat[man.index()].suppression = 0;
         let mut stats = Stats::default();
         let mut ctx = DamageCtx {
+            strikes: &[],
             ents: &mut r.ents,
             terrain: &mut r.terrain,
             spatial: &r.spatial,
@@ -4906,6 +5084,7 @@ mod tests {
             shooter: SimId(0),
             blow: Blow::NearMiss(man),
             mission: 0,
+            origin: None,
         };
         r.game.apply_blows(
             &mut ctx,
@@ -4939,6 +5118,7 @@ mod tests {
                 vmarks: &vmarks,
                 game: &self.game,
                 terrain: &self.terrain,
+                spatial: &self.spatial,
                 seed: 1,
                 tick,
             };
@@ -4950,6 +5130,7 @@ mod tests {
                 &mut self.ents.weapon,
                 &mut self.ents.kit,
                 &mut out,
+                &mut Vec::new(),
             );
             out
         }

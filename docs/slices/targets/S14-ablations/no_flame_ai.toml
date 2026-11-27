@@ -1,0 +1,16 @@
+# S14 ablation (plan 10): the mechanics on, the AI's flame jobs, refuel and
+# flame buys off (A1-A3). Run by the later balance pass.
+[flame]
+enabled = 1
+
+[melee]
+enabled = 1
+
+[clear]
+enabled = 1
+
+[ai.flame]
+jobs = 0
+refuel = 0
+buy = 0
+clear = 1

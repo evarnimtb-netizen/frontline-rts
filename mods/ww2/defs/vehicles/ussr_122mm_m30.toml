@@ -1,0 +1,191 @@
+# 122 mm M-30 (S15 Build C, S15-ussr.md 6.3): the field howitzer, as the leFH 18 card (cap 1, unlock 8:00).
+# Layout, mobility, parts and service places are the ger_lefh18 def's (positions approximate);
+# figures not read in a source are S15 starting values (unverified).
+id = "ww2:ussr_122mm_m30"
+name = "122 mm howitzer M1938 (M-30)"
+short_name = "M-30"
+faction = "ww2:ussr"
+role = "inf_gun"
+crew_model = "served"
+# Mass in firing position, kg (Wikipedia, read).
+mass_kg = 2450
+# Card price, MP (D 837: 480 + tow, no tow in S11b; no German cut for gun cards, S9-4).
+# S15 starting value (copied from the nearest German or US card, not tuned).
+cost = 520
+# The gun's pop is 2 (D 842 "the crew plus 2 for the gun"; the six crew
+# are counted as soldiers, S9-5).
+pop = 2
+# Card cooldown 180 s, unlock 8:00 (D 837).
+recall_cooldown_s = 180
+initial_cooldown_s = 480
+# Sight, m (the crew's eye, as the S9 guns).
+sight_m = 175
+# Silhouette: 105 mm howitzers are big (D 812: 130 %).
+spot_size_pct = 130
+# Eye height, cm (kneeling behind the sight; verify).
+eye_height_cm = 110
+crew_squad = "ww2:ussr_gun_crew_122mm"
+rare_cap = 0
+sources = [
+  "Wikipedia, 122 mm howitzer M1938 (M-30): 2,450 kg, crew 8, -3 to +63.5 deg, traverse 49 deg (read 2026-11-26)",
+  "S15-ussr.md 6.3 (cost); 12 rounds as the leFH 18 (unverified)",
+]
+
+[mobility]
+type = "towed"
+# No push (D 721): the def check allows speed 0 for a towed gun, but
+# the setup check refuses a card whose speed is 0, so the smallest speed it
+# allows, 1 cm/s, with push_men above the crew (spec C1: "or what the check
+# allows"; S11b log).
+speed_cm_s = 1
+reverse_cm_s = 1
+# Crew turn rate when re-laid, deg/s (as the 105 mm M3; verify).
+turn_deg_s = 22
+accel_cm_s2 = 50
+brake_cm_s2 = 200
+# Steepest slope the crew push it up, % (push_max_slope_pct).
+max_slope_pct = 15
+# Ground dug this deep blocks the wheels (dm; wheel_block_dm).
+ditch_block_dm = 6
+# A gun does not bog when pushed.
+bog_pct = 0
+unbog_s = [0, 0]
+# Fired only from emplaced, so no moving spread.
+moving_spread_pct = 100
+# Men for full push speed (push_men): one above the crew of 6. A full crew
+# still pushes it at speed x men / push_men (6/7 of 1 cm/s, about 0.5 m a
+# minute; S11b review B-1): practically immovable, not impossible. The AI never
+# orders a field howitzer pushed or hitched (it has no tow job for one).
+push_men = 7
+# Seconds to emplace (limbered -> firing), pack, hitch or unhitch (D 721).
+emplace_s = 90
+pack_s = 54
+hitch_s = 25
+# Seconds to re-lay the trail for a target outside the arc (D 726-727:
+# 105 mm 20-30 s; 25 taken, spec C1).
+relay_trail_s = 25
+# Gun origin to the trail tip that goes on the hitch, cm (the rigid bar; matches the trail box).
+tow_bar_cm = 310
+
+[hull]
+# No tracks: no running-gear band.
+track_band_pct = 0
+track_mm = 0
+
+# Armour boxes as the leIG 18 (S11a1; thin on purpose, a bullet that misses
+# the shield reaches a man). The shield stops fragments and bullets from the
+# front only (D 809; plates as the leIG 18, verify).
+[[boxes]]
+id = "axle"
+frame = "hull"
+box = { center = [0, 0, 45], half = [15, 95, 20] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+[[boxes]]
+id = "shield"
+frame = "hull"
+box = { center = [40, 0, 65], half = [4, 50, 45] }
+[boxes.armor]
+front = { thickness_mm = 8, slope_deg = 18 }
+side = { thickness_mm = 4 }
+rear = { thickness_mm = 4, slope_deg = 18 }
+top = { thickness_mm = 4 }
+
+[[boxes]]
+id = "trail"
+frame = "hull"
+box = { center = [-170, 0, 25], half = [140, 20, 25] }
+[boxes.armor]
+front = { thickness_mm = 6 }
+side = { thickness_mm = 6 }
+rear = { thickness_mm = 6 }
+top = { thickness_mm = 6 }
+
+# The crew's places, priority order (the last listed living man moves up
+# for a dead gunner, then loader). Each slot's capsule must clear the boxes.
+[[service]]
+role = "gunner"
+at = [-60, 55, 0]
+pose = "kneel"
+[[service]]
+role = "loader"
+at = [-60, -55, 0]
+pose = "kneel"
+[[service]]
+role = "commander"
+at = [-300, 80, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, 75, 0]
+pose = "kneel"
+[[service]]
+role = "ammo"
+at = [-420, -75, 0]
+pose = "kneel"
+# A sixth man (the crew of 6, D 143): a third ammo slot (verify).
+[[service]]
+role = "ammo"
+at = [-520, 0, 0]
+pose = "kneel"
+# S15: the M-30's crew of 8 has one more ammo man than the leFH 18 layout (the 122 mm crew def has 7 men).
+[[service]]
+role = "ammo"
+at = [-520, 90, 0]
+pose = "kneel"
+
+# The gun optic inside the arc (as the S9 guns, S9-1 (A)): 175 m x 250 % = 437 m.
+[optic]
+sight_pct = 250
+
+[[weapons]]
+def = "ww2:ussr_m30_122mm"
+mount = "casemate"
+# Gun pivot in the gun frame, cm (the leIG 18's; verify).
+pivot = [0, 0, 70]
+# Muzzle from the pivot, cm (the leIG 18's; verify).
+muzzle = [90, 0, 5]
+# Traverse arc and rates, deg and deg/s: as the 105 mm M3 def (not in the
+# design; verify: plan value, S11b-13).
+traverse_deg = [-24, 25]
+traverse_deg_s = 9
+elevate_deg_s = 6
+# Elevation, deg (D 143 "-5 to +42").
+elevation_deg = [-3, 63]
+# 12 FH Gr 38 HE (D 395).
+ammo = [{ id = "ww2:ussr_122mm_of462", count = 12 }]
+barrel = { length_cm = 90, radius_cm = 6 }
+
+# Parts (S9-11 (A)): destroying `gun` knocks the gun out; `sight` and
+# `recoil` can be field-repaired; wheels only stop it moving.
+[[components]]
+type = "gun"
+hp = 80
+box = { frame = "hull", center = [-30, 0, 85], half = [30, 15, 15] }
+
+[[components]]
+type = "ammo_rack"
+hp = 40
+box = { frame = "hull", center = [-120, -60, 20], half = [30, 25, 15] }
+
+[[components]]
+type = "wheels_front"
+hp = 60
+anchors = [{ pos = [0, 85, 40] }, { pos = [0, -85, 40] }]
+repair = { to_hp = 60, time_s = 30 }
+
+[[components]]
+type = "sight"
+hp = 30
+anchors = [{ pos = [-15, 30, 110] }]
+repair = { to_hp = 30, time_s = 30 }
+
+[[components]]
+type = "recoil"
+hp = 50
+box = { frame = "hull", center = [10, 0, 75], half = [25, 10, 10] }
+repair = { to_hp = 50, time_s = 45 }

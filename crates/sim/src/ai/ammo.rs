@@ -120,6 +120,16 @@ impl Planner<'_> {
                 keep.push(m);
                 continue;
             };
+            // S14-ai A2: a flame man at or under the reserve makes the
+            // squad dry (the squad share hides a dry tank); on the trip
+            // the tank's share counts too.
+            let tank = self.tank_pct(m.id);
+            let pct = match tank {
+                Some(t) if self.ai.tasks.get(&m.id).map(|t| t.kind) == Some(TaskKind::Refill) => {
+                    pct.min(t)
+                }
+                _ => pct,
+            };
             // An ambush runs to its end (it has its own end rules).
             if self.ai.ambush.get(&m.id).is_some_and(|a| !a.done) {
                 keep.push(m);
@@ -161,8 +171,9 @@ impl Planner<'_> {
                 continue;
             }
             let threat = self.threat_at(known, m.lead) > 0;
-            if pct < cfg.dry_pct || (pct < cfg.return_below_pct && !threat) {
-                cands.push((pct, m, threat));
+            let refuel = self.tank_low(m.id).is_some();
+            if refuel || pct < cfg.dry_pct || (pct < cfg.return_below_pct && !threat) {
+                cands.push((if refuel { 0 } else { pct }, m, threat));
             } else {
                 keep.push(m);
             }
@@ -186,7 +197,7 @@ impl Planner<'_> {
                     &mut started.last_mut().expect("pushed").1
                 }
             };
-            let dry = pct < cfg.dry_pct;
+            let dry = pct < cfg.dry_pct || self.tank_low(m.id).is_some();
             let last = point != NO_POINT && tasked <= 1;
             if !dry && (*n >= allowed || last) {
                 keep.push(m);
@@ -207,6 +218,7 @@ impl Planner<'_> {
             self.ai.refill.insert(m.id, 0);
             self.ai.counters.refill_trips += 1;
             self.ai.counters.refill_dry_trips += u32::from(dry);
+            self.ai.counters.refuels += u32::from(self.tank_low(m.id).is_some());
             self.ai.counters.refill_away += 1;
         }
         *mine = keep;

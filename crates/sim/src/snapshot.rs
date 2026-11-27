@@ -149,6 +149,27 @@ pub struct CorpseSnapshot {
     pub seen_by: u16,
 }
 
+/// S14: a flame particle in flight (`MatchState::flame`, never the
+/// projectile pool), ascending id.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FlameSnapshot {
+    pub id: u32,
+    pub pos: [f32; 3],
+    pub player: u8,
+}
+
+/// S14: a burning patch of ground, ascending id: burns within
+/// `[flame] patch_radius_cm` of `pos` until it goes out.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PatchSnapshot {
+    pub id: u32,
+    /// `[x, y, z]`, z on the ground.
+    pub pos: [f32; 3],
+    pub player: u8,
+    /// Ticks until it goes out.
+    pub ticks_left: u32,
+}
+
 /// S12: a downed man (`EntityKind::Downed`), ascending id: he lies prone
 /// where he fell (or where his carriers are).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -271,8 +292,15 @@ pub mod vehicle_flags {
     pub const ABANDONED: u16 = 1 << 9;
     /// S3c: someone is climbing in (`Recrew` boarding).
     pub const BOARDING: u16 = 1 << 10;
+    /// S15 R1: its rider slots are an exposed deck (`[riders] enabled` 1;
+    /// the riders sit on it in the open, `soldier_riding` names them).
+    pub const DECK: u16 = 1 << 11;
+    /// S15 R3a-R3c: its riders' exit timer runs (suppressed, the vehicle
+    /// struck, its gun fired): they jump off over the sides, stunned.
+    pub const RIDERS_OFF: u16 = 1 << 12;
     /// The flags an enemy (or anyone, for a wreck) is sent.
-    pub const PUBLIC: u16 = BURNING | WRECK | KNOCKED_OUT | ABANDONED | BOARDING;
+    pub const PUBLIC: u16 =
+        BURNING | WRECK | KNOCKED_OUT | ABANDONED | BOARDING | DECK | RIDERS_OFF;
 }
 
 /// A fresh wreck smokes this long (`vehicle_flags::KNOCKED_OUT`).
@@ -717,6 +745,17 @@ pub struct RenderSnapshot {
     pub soldier_ride_slot: Vec<u8>,
     /// S12, per entry of `soldiers` (match mode only): [`wound_bits`].
     pub soldier_wound: Vec<u8>,
+    /// S14, per entry of `soldiers` (match mode only): he is burning (a
+    /// flame hit or burning ground, `[flame] burn_s`).
+    pub soldier_burning: Vec<bool>,
+    /// S14 M3, per entry of `soldiers` (match mode only): his strike phase
+    /// (`crate::flame::STRIKE_NONE` 0, `STRIKE_WINDUP` 1, `STRIKE_RECOVER`
+    /// 2: the strike landed or missed at the start of the recovery).
+    pub soldier_strike: Vec<u8>,
+    /// S15 P1, per entry of `soldiers` (match mode only): he wears a body
+    /// plate (`[body_armour] enabled` 1; the setup drops plates otherwise).
+    /// A stop is counted on his player (`s15.plate_stops`), no event.
+    pub soldier_plate: Vec<bool>,
     /// Detached soldiers, ascending id (match mode only).
     pub units: Vec<UnitSnapshot>,
     /// Dead soldiers, ascending id (match mode only).
@@ -731,6 +770,10 @@ pub struct RenderSnapshot {
     pub thrown: Vec<ThrownSnapshot>,
     /// Smoke clouds, ascending id (match mode only).
     pub smoke: Vec<SmokeSnapshot>,
+    /// S14: flame particles in flight, ascending id (match mode only).
+    pub flame: Vec<FlameSnapshot>,
+    /// S14: burning ground, ascending id (match mode only).
+    pub patches: Vec<PatchSnapshot>,
     /// Per live projectile, in slot order: `[x, y, z]`.
     pub projectiles: Vec<[f32; 3]>,
     /// Vehicles and wrecks, ascending id (match mode only, S3).
@@ -823,6 +866,9 @@ impl RenderSnapshot {
         self.soldier_riding.clear();
         self.soldier_ride_slot.clear();
         self.soldier_wound.clear();
+        self.soldier_burning.clear();
+        self.soldier_strike.clear();
+        self.soldier_plate.clear();
         self.units.clear();
         self.corpses.clear();
         self.casualties.clear();
@@ -879,6 +925,17 @@ impl RenderSnapshot {
                             .push(u.riding.map_or(u32::MAX, |r| r.vehicle.0));
                         self.soldier_ride_slot.push(u.riding.map_or(0, |r| r.slot));
                         let w = &c.wound;
+                        self.soldier_burning.push(c.close.burn_until > tick);
+                        self.soldier_strike.push(c.close.strike_phase);
+                        self.soldier_plate.push(game.is_some_and(|g| {
+                            let setup = g.setup();
+                            setup.rules.body_armour.enabled == 1
+                                && ents.squad()[i]
+                                    .and_then(|q| g.squad(q))
+                                    .and_then(|sq| setup.squad_types.get(sq.type_idx as usize))
+                                    .and_then(|ty| ty.members.get(k.slot as usize))
+                                    .is_some_and(|m| m.plate.is_some())
+                        }));
                         self.soldier_wound.push(
                             [
                                 (w.state == crate::wounds::WOUNDED, wound_bits::WOUNDED),
@@ -970,6 +1027,8 @@ impl RenderSnapshot {
         self.crates.clear();
         self.thrown.clear();
         self.smoke.clear();
+        self.flame.clear();
+        self.patches.clear();
         self.outcome = Outcome::Running;
         self.winner = None;
         let Some(g) = game else {
@@ -1047,6 +1106,18 @@ impl RenderSnapshot {
                 density: crate::fx::Fx::from_ratio(density as i64, 1000).to_f32(),
             });
         }
+        self.flame.extend(g.flame().iter().map(|f| FlameSnapshot {
+            id: f.id,
+            pos: f.pos.to_f32(),
+            player: f.player,
+        }));
+        self.patches
+            .extend(g.patches().iter().map(|q| PatchSnapshot {
+                id: q.id,
+                pos: q.pos.to_f32(),
+                player: q.player,
+                ticks_left: q.ends_at.saturating_sub(tick).min(u32::MAX as u64) as u32,
+            }));
         for (p, pl) in g.players().iter().enumerate() {
             let id = PlayerId(p as u8);
             self.players.push(PlayerSnapshot {
@@ -1343,6 +1414,12 @@ impl RenderSnapshot {
                 set(IMMOBILISED, !wreck && !abandoned && vs.immobilised(v));
                 set(ABANDONED, abandoned);
                 set(BOARDING, vs.board.is_some());
+                set(
+                    DECK,
+                    setup.rules.riders.enabled == 1
+                        && v.transport.as_ref().is_some_and(|t| t.exposed),
+                );
+                set(RIDERS_OFF, vs.rider_off.is_some());
                 set(BURNING, vs.burn > 0 || vs.ammo_fire > 0);
                 set(REPAIRING, vs.repairing.is_some());
                 set(CROSSING, vs.crossing);

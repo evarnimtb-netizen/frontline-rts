@@ -186,12 +186,14 @@ pub(crate) mod arty;
 mod assault;
 mod breach;
 mod demolish;
+mod flame;
 pub(crate) mod fort;
 mod guns;
 pub(crate) mod medic;
 mod mortar;
 pub(crate) mod obstacles;
 mod overwatch;
+mod riders;
 mod supply;
 mod sweep;
 mod transport;
@@ -209,6 +211,9 @@ pub use transport::{
 pub use arty::{AiArty, AiFo, ArtyPhase, MAX_ARTY, MAX_FO};
 pub use breach::{
     AiBreach, BreachEnd, BreachPhase, MAX_BREACH_TRIES, MAX_BREACHES, MAX_WIRE_KNOWN,
+};
+pub use flame::{
+    AiFlame, AiFlameState, FlamePhase, MAX_FLAME_CLEARED, MAX_FLAME_FAILED, MAX_FLAME_JOBS,
 };
 pub use fort::{
     AiFortJob, BUNKER_WHY, FRONT_WHY, FortPhase, FrontLane, MAX_FORT_JOBS, MAX_FORT_TRIES,
@@ -403,6 +408,11 @@ pub struct AiState {
     /// S13 H1: tick the current heavy plan (saving for an `ai_heavy` card)
     /// started (0: no plan).
     pub heavy_plan_since: u64,
+    /// S14-ai (`ai::flame`): flame jobs, failed flame targets and the AI's
+    /// clear orders.
+    pub flame: AiFlameState,
+    /// S15-ai (`ai::riders`): rider jobs and failed pairings.
+    pub riders: crate::s15::AiRiders,
 }
 
 /// S7: most overwatch entries one AI keeps.
@@ -767,7 +777,23 @@ pub struct AiCounters {
     pub heavy_buys: u32,
     pub heavy_drops: u32,
     pub push_turnbacks: u32,
+    /// S14-ai A1-A4: flame jobs started and ended by reason
+    /// (`FLAME_END_NAMES`: done, spent, dead, weak, deadline, stall), flame
+    /// cards bought, refuel tasks, clear orders.
+    pub flame_jobs: u32,
+    pub flame_job_ends: [u32; 6],
+    pub flame_buys: u32,
+    pub refuels: u32,
+    pub clear_orders: u32,
+    /// S15-ai A1: rider jobs started and ended by reason
+    /// (`crate::s15::RIDER_END_NAMES`: dropped, forced off, tank lost,
+    /// deadline, stall).
+    pub rider_jobs: u32,
+    pub rider_job_ends: [u32; 5],
 }
+
+/// S14-ai: `AiCounters::flame_job_ends` names, by index.
+pub const FLAME_END_NAMES: [&str; 6] = ["done", "spent", "dead", "weak", "deadline", "stall"];
 
 impl AiState {
     /// A fresh AI state whose first plan runs at `first_plan` (the
@@ -817,6 +843,8 @@ impl AiState {
             fo_lost_at: 0,
             armour_seen_at: 0,
             heavy_plan_since: 0,
+            flame: AiFlameState::default(),
+            riders: crate::s15::AiRiders::default(),
         }
     }
 
@@ -973,6 +1001,10 @@ impl AiState {
             // S13.
             || self.armour_seen_at > tick
             || self.heavy_plan_since > tick
+            // S14-ai.
+            || !self.flame.valid(np, tick, ents_len, on_map, bad_squad)
+            // S15-ai.
+            || !self.riders.valid(g, player, tick, bad_squad)
             || self.pending.windows(2).any(|w| w[0].due > w[1].due)
             // Due one reaction delay after its plan at most (the save fuzz).
             || self.pending.last().is_some_and(|c| {
@@ -1093,7 +1125,9 @@ fn squad_of(kind: &CommandKind) -> Option<SquadId> {
         | CommandKind::ClearMines { squad, .. }
         | CommandKind::Demolish { squad, .. }
         // S12b: only the medic habit sends it.
-        | CommandKind::Reinforce { squad } => Some(*squad),
+        | CommandKind::Reinforce { squad }
+        // S14-ai: only the flame habit sends it.
+        | CommandKind::ClearTrench { squad, .. } => Some(*squad),
         _ => None,
     }
 }
@@ -1147,7 +1181,7 @@ pub(crate) fn ai_kind(s: &MatchSetup, t: u16) -> AiKind {
 /// S4: the buy-mix slot (index into `AiSetup::mix`) of squad type `t`:
 /// the first mix entry whose tag the card carries; `None` for a card the
 /// AI never buys (no mix tag, or a crew).
-fn mix_slot(s: &MatchSetup, t: u16) -> Option<usize> {
+pub(crate) fn mix_slot(s: &MatchSetup, t: u16) -> Option<usize> {
     let ty = &s.squad_types[t as usize];
     // S8b: recon cars and trucks have their own buys, never a tank's slot
     // (S8a's half-tracks displaced tanks there).
@@ -1522,6 +1556,8 @@ impl Planner<'_> {
         // S10a-ai: enemy wire by sight, then the breach jobs keep theirs.
         self.wire_sight();
         self.breach_continue(&mut mine, &busy);
+        // S14-ai: the flame jobs and AI clears keep their squads.
+        self.flame_continue(&mut mine, &busy, &known);
         // S10b-ai: the sweep jobs keep their sweepers.
         self.sweep_continue(&mut mine, &busy);
         // S10b-ai: the demolition jobs keep their squads and vehicles.
@@ -1536,6 +1572,8 @@ impl Planner<'_> {
         // S8a: half-track jobs take their vehicles out of the tank habits
         // (but support, which is the overwatch habit).
         let waiting = self.transport_jobs(&mut tanks, &known, &busy);
+        // S15-ai A1: rider jobs keep their boarding and dropping tanks.
+        self.riders_continue(&mut tanks, &busy);
         self.ride_locks(&mut mine, &known);
         self.vehicle_upkeep(&mut tanks, &known, &kv);
         self.truck_jobs(&mut tanks, &known, &kv, &busy);
@@ -1563,12 +1601,22 @@ impl Planner<'_> {
         // S10a-ai: new breach jobs take an attacker that can open wire.
         let breaching = self.breach_start(&mine, &assigned, &points, &hunting);
         hunting.extend(breaching);
+        // S14-ai: new flame jobs take a fuelled flame squad (A1), then
+        // attackers near a trench clear it (A4).
+        let flaming = self.flame_start(&mine, &assigned, &points, &known, &hunting);
+        hunting.extend(flaming);
+        let clearing = self.flame_clears(&mine, &assigned, &points, &known, &hunting);
+        hunting.extend(clearing);
         // S10b-ai: new sweep jobs take a `clear_mines` squad (R10).
         let sweeping = self.sweep_start(&mine, &assigned, &points, &hunting, None);
         hunting.extend(sweeping);
         // S10b-ai: new demolition jobs for blocked vehicles (R14).
         let demolishing = self.demolish_start(&mine, &mut tanks, &hunting);
         hunting.extend(demolishing);
+        // S15-ai A1: new rider jobs take a free tank in the base and a
+        // squad there.
+        let riding = self.riders_start(&mut tanks, &mine, &assigned, &points, &hunting);
+        hunting.extend(riding);
         let escorting = self.vehicle_tasks(
             &tanks, &mine, &assigned, &points, &known, &kv, &busy, &hunting,
         );
@@ -1983,11 +2031,17 @@ impl Planner<'_> {
         // sight than own AT teams and vehicles, an AT card ready), then
         // the floor.
         let mut urgent_builder = self.builder_floor_card();
+        // S14-ai A3: the faction's flame card (after the breach card).
+        let mut urgent_flame = self.flame_card(&faction.roster, &alive_by_type);
         // S13-ai H1 (plan 5): the heavy card the AI saves for, if any.
         let mut heavy = self.heavy_plan(veh_slot.is_some(), |t| ready(t, &bought, &alive_by_type));
         let mut saving_heavy = false;
         for _ in 0..self.g.setup.rules.ai.infantry.buys_per_plan {
-            if let Some(t) = urgent_breach.take()
+            let (urgent, flame) = match urgent_breach.take() {
+                Some(t) => (Some(t), false),
+                None => (urgent_flame.take(), true),
+            };
+            if let Some(t) = urgent
                 && ready(t, &bought, &alive_by_type)
             {
                 let ty = &s.squad_types[t as usize];
@@ -2007,6 +2061,7 @@ impl Planner<'_> {
                         c.bought.resize(s.squad_types.len(), 0);
                     }
                     c.bought[t as usize] += 1;
+                    c.flame_buys += u32::from(flame);
                     continue;
                 }
             }
@@ -3228,9 +3283,20 @@ impl Planner<'_> {
         self.ai
             .last_throw
             .retain(|id, t| g.squads.contains_key(id) && tick < t.saturating_add(cool));
+        // S14-ai: a squad ordered to clear a trench (A4) throws by the
+        // clear's own steps and is not regrouped (a later order ends it).
+        let clearing = |ai: &AiState, id: SquadId| {
+            g.clears.contains_key(&id)
+                || ai.pending.iter().any(
+                    |c| matches!(c.kind, CommandKind::ClearTrench { squad, .. } if squad == id),
+                )
+        };
         for m in mine {
             let sq = &g.squads[&m.id];
-            if sq.order == Order::Retreat || self.ai.last_throw.contains_key(&m.id) {
+            if sq.order == Order::Retreat
+                || self.ai.last_throw.contains_key(&m.id)
+                || clearing(self.ai, m.id)
+            {
                 continue;
             }
             // S7: into a stopped open-topped vehicle first.
@@ -3272,12 +3338,29 @@ impl Planner<'_> {
             self.ai.last_throw.insert(m.id, tick);
         }
         // Throwers stay detached where they stood; take them along again
-        // once their squad walks on.
+        // once their squad walks on. S14 Fix 8: men who stepped out of
+        // burning ground (detached, idle) rejoin a holding squad once no
+        // patch is near them (only with F6 on: nothing changes with S14
+        // off).
+        let fl = &g.setup.rules.flame;
+        let step_out = fl.enabled != 0 && fl.step_out != 0;
+        let clear_m = Fx::from_int(fl.patch_radius_cm as i32).div_int(100)
+            + Fx::from_int(fl.step_out_m as i32 + 1);
         for m in mine {
             let sq = &g.squads[&m.id];
             let unit = |id: &SimId| &self.ents.unit[id.index()];
             let kit = |id: &SimId| &self.ents.kit[id.index()];
             let detached = sq.members.iter().filter(|id| unit(id).detached);
+            let back = step_out
+                && sq.nav.phase == NavPhase::Holding
+                && detached.clone().next().is_some()
+                && detached.clone().all(|id| {
+                    let p = self.ents.transform[id.index()].pos.xy();
+                    unit(id).order == crate::unit::UnitOrder::Idle
+                        && g.patches()
+                            .iter()
+                            .all(|q| (q.pos.xy() - p).length() > clear_m)
+                });
             let pending = self
                 .ai
                 .pending
@@ -3285,10 +3368,12 @@ impl Planner<'_> {
                 .any(|c| matches!(c.kind, CommandKind::Regroup { squad } if squad == m.id));
             // S5b: a mortar's spotter stays out.
             if !pending
+                && !clearing(self.ai, m.id)
                 && !self.ai.spotter_out(m.id)
                 && !self.sheltering(m.id)
-                && matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending)
-                && detached.clone().next().is_some()
+                && (back
+                    || matches!(sq.nav.phase, NavPhase::Moving | NavPhase::PathPending)
+                        && detached.clone().next().is_some())
                 && detached.clone().all(|id| kit(id).windup.is_none())
             {
                 self.ai.emit(self.due, CommandKind::Regroup { squad: m.id });

@@ -230,6 +230,25 @@ pub struct ThrownView {
     pub visible: bool,
 }
 
+/// S14: a flame particle in flight.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlameView {
+    pub id: u32,
+    pub pos: [f32; 3],
+    pub player: u8,
+    pub visible: bool,
+}
+
+/// S14: a burning patch of ground.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PatchView {
+    pub id: u32,
+    pub pos: [f32; 3],
+    pub player: u8,
+    pub ticks_left: u32,
+    pub visible: bool,
+}
+
 /// A smoke cloud (a cylinder standing at `pos`, as tall as it is wide).
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct SmokeView {
@@ -323,6 +342,19 @@ pub struct MatchFrame {
     pub casualties: Vec<CasualtySnapshot>,
     /// S12: per soldier, `frontline_sim::wound_bits`.
     pub wound: Vec<u8>,
+    /// S14: per soldier, he burns.
+    pub burning: Vec<bool>,
+    /// S14: per soldier, his strike phase (0 none, 1 wind-up, 2 recovery).
+    pub strike: Vec<u8>,
+    /// S8a / S15: per soldier, the vehicle he rides (`u32::MAX`: on foot)
+    /// and his slot there; S15 P1: he wears a body plate.
+    pub riding: Vec<u32>,
+    pub ride_slot: Vec<u8>,
+    pub plate: Vec<bool>,
+    /// S14: flame particles and burning ground, ascending id, with
+    /// whether the local player sees them.
+    pub flame: Vec<FlameView>,
+    pub patches: Vec<PatchView>,
     /// Per corpse: the local player sees the body (own: always).
     pub corpse_visible: Vec<bool>,
     /// Small-arms rounds and mortar shells (main-gun shells and rockets
@@ -397,6 +429,13 @@ impl MatchFrame {
             corpses: Vec::new(),
             casualties: Vec::new(),
             wound: Vec::new(),
+            burning: Vec::new(),
+            strike: Vec::new(),
+            riding: Vec::new(),
+            ride_slot: Vec::new(),
+            plate: Vec::new(),
+            flame: Vec::new(),
+            patches: Vec::new(),
             corpse_visible: Vec::new(),
             rounds: Vec::new(),
             vehicles: Vec::new(),
@@ -467,6 +506,11 @@ impl MatchFrame {
         self.sidearm.clone_from(&snap.soldier_sidearm);
         self.fire.clone_from(&snap.soldier_fire);
         self.wound.clone_from(&snap.soldier_wound);
+        self.burning.clone_from(&snap.soldier_burning);
+        self.strike.clone_from(&snap.soldier_strike);
+        self.riding.clone_from(&snap.soldier_riding);
+        self.ride_slot.clone_from(&snap.soldier_ride_slot);
+        self.plate.clone_from(&snap.soldier_plate);
         self.throwing.clone_from(&snap.soldier_throwing);
         self.units.clear();
         self.units.extend(
@@ -611,6 +655,26 @@ impl MatchFrame {
                 radius: c.radius,
                 density: c.density,
                 visible: near(c.pos, ctx.sight_m + c.radius),
+            });
+        }
+
+        self.flame.clear();
+        for c in &snap.flame {
+            self.flame.push(FlameView {
+                id: c.id,
+                pos: c.pos,
+                player: c.player,
+                visible: c.player == local || near(c.pos, ctx.sight_m),
+            });
+        }
+        self.patches.clear();
+        for c in &snap.patches {
+            self.patches.push(PatchView {
+                id: c.id,
+                pos: c.pos,
+                player: c.player,
+                ticks_left: c.ticks_left,
+                visible: c.player == local || near(c.pos, ctx.sight_m + 6.0),
             });
         }
 
@@ -1380,7 +1444,7 @@ pub(crate) mod tests_support {
 mod tests {
     use super::tests_support::test_world;
     use super::*;
-    use frontline_sim::{Command, CommandKind, Fx, FxVec2, PlayerId};
+    use frontline_sim::{Command, CommandKind, Fx, FxVec2, PlayerId, SimId};
 
     #[test]
     fn frame_matches_the_world() {
@@ -1439,6 +1503,116 @@ mod tests {
         );
         assert_eq!(f.extra[0].squads_called, 1);
         assert_eq!(f.extra[1].squads_called, f.extra[1].squads_called);
+    }
+
+    /// S14: the frame copies the flame fields one to one; before anyone
+    /// fires (the shipped rules have S14 on) there is no particle or
+    /// patch, and burning and strike hold one quiet entry per soldier.
+    #[test]
+    fn frame_carries_the_s14_fields_quiet_before_any_fire() {
+        let mut w = test_world(false);
+        let setup = w.match_setup().unwrap().clone();
+        let mut ctx = FrameCtx::new(&setup, 0);
+        let mut f = MatchFrame::empty();
+        for _ in 0..30 {
+            w.step(&[]);
+        }
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        assert!(f.flame.is_empty() && f.patches.is_empty());
+        assert_eq!(f.burning.len(), f.ids.len());
+        assert_eq!(f.strike.len(), f.ids.len());
+        assert!(f.burning.iter().all(|b| !b) && f.strike.iter().all(|s| *s == 0));
+    }
+
+    /// S15 P (S15 Fix, review 7): the frame copies the rider and plate
+    /// fields one per soldier, values included: the six-man section aboard
+    /// a T-34-85 has `riding` = the tank's id and its six deck slots; the
+    /// assault group's plated men (and only they) have `plate`. Control:
+    /// the men on foot ride nothing.
+    #[test]
+    fn frame_carries_riders_and_plates() {
+        let mut w = test_world(false);
+        let setup = w.match_setup().unwrap().clone();
+        let card = |id: &str| setup.squad_type_index(id).unwrap();
+        let east = FxVec2::new(Fx::ONE, Fx::ZERO);
+        let t = w
+            .spawn_squad_at(
+                PlayerId(0),
+                card("ww2:ussr_t34_85_squad"),
+                FxVec2::from_int(300, 300),
+                east,
+            )
+            .unwrap();
+        let inf = w
+            .spawn_squad_at(
+                PlayerId(0),
+                card("ww2:ussr_strelkovoe_otdelenie_6"),
+                FxVec2::from_int(285, 305),
+                east,
+            )
+            .unwrap();
+        let group = w
+            .spawn_squad_at(
+                PlayerId(0),
+                card("ww2:ussr_shturmovaya_gruppa"),
+                FxVec2::from_int(320, 340),
+                east,
+            )
+            .unwrap();
+        for _ in 0..2 {
+            w.step(&[]);
+        }
+        let g = w.game().unwrap();
+        let tank = g.squad(t).unwrap().members[0];
+        let men = g.squad(inf).unwrap().members.clone();
+        let plated: Vec<SimId> = {
+            let ty = &setup.squad_types[g.squad(group).unwrap().type_idx as usize];
+            g.squad(group)
+                .unwrap()
+                .members
+                .iter()
+                .copied()
+                .filter(|m| {
+                    ty.members[w.entities().kit()[m.index()].slot as usize]
+                        .plate
+                        .is_some()
+                })
+                .collect()
+        };
+        assert!(!plated.is_empty(), "the assault group wears plates");
+        w.step(&[Command {
+            player: PlayerId(0),
+            seq: 1,
+            kind: CommandKind::Embark {
+                squads: vec![inf],
+                vehicle: tank,
+            },
+        }]);
+        for _ in 0..900 {
+            w.step(&[]);
+        }
+        let mut ctx = FrameCtx::new(&setup, 0);
+        let mut f = MatchFrame::empty();
+        f.fill(&w, &mut ctx, 0.0, Instant::now());
+        assert_eq!(f.riding.len(), f.ids.len());
+        assert_eq!(f.ride_slot.len(), f.ids.len());
+        assert_eq!(f.plate.len(), f.ids.len());
+        let at = |id: SimId| f.ids.iter().position(|x| *x == id.0).unwrap();
+        let mut slots: Vec<u8> = men
+            .iter()
+            .map(|&m| {
+                assert_eq!(f.riding[at(m)], tank.0, "a rider names the tank");
+                f.ride_slot[at(m)]
+            })
+            .collect();
+        slots.sort();
+        assert_eq!(slots, [0, 1, 2, 3, 4, 5], "one deck slot each");
+        let riders = f.riding.iter().filter(|r| **r != u32::MAX).count();
+        assert_eq!(riders, men.len(), "control: nobody else rides");
+        for (k, &id) in f.ids.iter().enumerate() {
+            let want = plated.iter().any(|m| m.0 == id);
+            assert_eq!(f.plate[k], want, "plate of soldier {id}");
+        }
     }
 
     /// S10b review R14: the frame keeps the mines the local player knows

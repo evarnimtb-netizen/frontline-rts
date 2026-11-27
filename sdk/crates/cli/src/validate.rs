@@ -132,29 +132,50 @@ pub fn mod_dir(root: &Path) -> FileResult {
     }
 }
 
-/// Resolves every rules def with every map for the first two factions.
-fn resolve_all(defs: &ModDefs, problems: &mut Vec<Problem>) {
-    let factions: Vec<String> = defs.factions.keys().take(2).cloned().collect();
-    if factions.len() != 2 {
-        return;
+/// S15 M (docs/slices/S15-ussr.md 4): the faction pairs rules `r` lets
+/// fight: its `[matchups] pairs` (with `free` 1, every two enabled
+/// factions); without the table or pairs, the first two factions.
+pub fn allowed_pairs(defs: &ModDefs, r: &frontline_content::RulesDef) -> Vec<[String; 2]> {
+    let all: Vec<String> = defs.factions.keys().cloned().collect();
+    match &r.matchups {
+        Some(m) if m.free == 1 => {
+            let on: Vec<&String> = all.iter().filter(|f| m.enabled(f)).collect();
+            let mut out = Vec::new();
+            for (i, a) in on.iter().enumerate() {
+                for b in &on[i + 1..] {
+                    out.push([(*a).clone(), (*b).clone()]);
+                }
+            }
+            out
+        }
+        Some(m) if !m.pairs.is_empty() => m.pairs.clone(),
+        _ if all.len() >= 2 => vec![[all[0].clone(), all[1].clone()]],
+        _ => Vec::new(),
     }
-    for rules in defs.rules.keys() {
-        for map in defs.maps.keys() {
-            let req = MatchRequest {
-                rules: rules.clone(),
-                map: map.clone(),
-                seed: 1,
-                players: factions
-                    .iter()
-                    .map(|f| PlayerRequest {
-                        faction: f.clone(),
-                        ai: true,
-                        difficulty: Default::default(),
-                    })
-                    .collect(),
-            };
-            if let Err(e) = defs.resolve(&req) {
-                problems.extend(content_problems(e, &format!("{rules} on {map}")));
+}
+
+/// Resolves every rules def with every map for every allowed pair.
+fn resolve_all(defs: &ModDefs, problems: &mut Vec<Problem>) {
+    for (rid, rules) in &defs.rules {
+        for pair in allowed_pairs(defs, rules) {
+            for map in defs.maps.keys() {
+                let req = MatchRequest {
+                    rules: rid.clone(),
+                    map: map.clone(),
+                    seed: 1,
+                    players: pair
+                        .iter()
+                        .map(|f| PlayerRequest {
+                            faction: f.clone(),
+                            ai: true,
+                            difficulty: Default::default(),
+                        })
+                        .collect(),
+                };
+                if let Err(e) = defs.resolve(&req) {
+                    let at = format!("{rid} on {map} ({} vs {})", pair[0], pair[1]);
+                    problems.extend(content_problems(e, &at));
+                }
             }
         }
     }
@@ -229,5 +250,40 @@ impl From<Issue> for Problem {
             message: i.message,
             fix: i.hint,
         }
+    }
+}
+
+#[cfg(test)]
+mod s15_tests {
+    use super::*;
+
+    /// S15 M (plan 4 tools): `validate` resolves every allowed pair, not
+    /// "the first two factions". S15-ai: the shipped table holds
+    /// Germany-USA and Germany-USSR (the real USSR defs), and both resolve.
+    /// Control: `free` 1 adds the USA-USSR pair.
+    #[test]
+    fn validate_resolves_every_pair() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../mods/ww2");
+        let mut defs = ModDefs::load(&root).unwrap();
+        let r = &defs.rules["ww2:skirmish"];
+        let pair = |a: &str, b: &str| [a.to_string(), b.to_string()];
+        assert_eq!(
+            allowed_pairs(&defs, r),
+            [
+                pair("ww2:germany", "ww2:usa"),
+                pair("ww2:germany", "ww2:ussr")
+            ]
+        );
+        let mut problems = Vec::new();
+        resolve_all(&defs, &mut problems);
+        assert!(problems.is_empty(), "{problems:?}");
+        defs.rules
+            .get_mut("ww2:skirmish")
+            .unwrap()
+            .matchups
+            .as_mut()
+            .unwrap()
+            .free = 1;
+        assert_eq!(allowed_pairs(&defs, &defs.rules["ww2:skirmish"]).len(), 3);
     }
 }

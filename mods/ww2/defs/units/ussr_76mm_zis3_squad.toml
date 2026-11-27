@@ -1,0 +1,13 @@
+# The ZiS-3 card (S15 Build C): direct fire only (S15-13 (A)), as the Pak 40 card.
+# Price, pop, cooldown and unlock are on the vehicle def; card values are S15 starting values (the German card's).
+id = "ww2:ussr_76mm_zis3_squad"
+name = "76 mm ZiS-3"
+short_name = "ZiS-3"
+faction = "ww2:ussr"
+tags = ["vehicle"]
+vehicle = "ww2:ussr_76mm_zis3"
+ai_weight = 5
+max_alive = 2
+# The tow it comes with (S15-ussr.md 6.3; S15 Fix: the US6 gun tractor, which seats the crew, as the Sd.Kfz. 11): pays
+# gun + tow.
+tow = "ww2:ussr_us6_tractor_squad"

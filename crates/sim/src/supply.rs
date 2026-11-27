@@ -48,7 +48,9 @@ pub mod fired_class {
     pub const TANK_RARE: usize = 9;
     /// Coax and hull MGs.
     pub const VEHICLE_MG: usize = 10;
-    pub const COUNT: usize = 11;
+    /// S14 F1: flame particles.
+    pub const FLAME: usize = 11;
+    pub const COUNT: usize = 12;
     /// Report names, by class.
     pub const NAMES: [&str; COUNT] = [
         "rifle",
@@ -62,6 +64,7 @@ pub mod fired_class {
         "tank_he",
         "tank_rare",
         "vehicle_mg",
+        "flame",
     ];
 }
 
@@ -131,6 +134,7 @@ pub(crate) fn class_of(setup: &MatchSetup, ents: &Entities, r: &FireRequest) -> 
         WeaponClass::Mortar => f::MORTAR,
         WeaponClass::Launcher => f::ROCKET,
         WeaponClass::Cannon => f::TANK_AP,
+        WeaponClass::Flame => f::FLAME,
     })
 }
 
@@ -189,6 +193,11 @@ impl MatchState {
     /// A1 counters: every request of this tick by class and player.
     pub(crate) fn count_fired(&mut self, ents: &Entities, reqs: &[FireRequest]) {
         for r in reqs {
+            // S14 F1: a flame request is counted when it becomes a
+            // particle (`spawn_flame`): one dropped at the cap is not.
+            if r.flame {
+                continue;
+            }
             if let Some(c) = class_of(&self.setup, ents, r)
                 && let Some(p) = self.players.get_mut(r.player as usize)
             {
@@ -292,6 +301,53 @@ pub(crate) fn spawn_load(setup: &MatchSetup, ty: &SquadTypeSetup, kit: &mut Kit,
     }
 }
 
+/// What [`reload_dry`] does for a dry man: `Some((on_sidearm after, the
+/// weapon loaded, its feed slot))`, or `None` (he stays dry). Pure: the
+/// S14 strike asks it without loading (S14 Fix 3).
+pub(crate) fn dry_load(
+    setup: &MatchSetup,
+    ty: &SquadTypeSetup,
+    kit: &Kit,
+) -> Option<(bool, u16, usize)> {
+    let slot = ty.members.get(kit.slot as usize);
+    let main = &setup.weapons[kit.weapon as usize];
+    let side = slot
+        .and_then(|m| m.sidearm)
+        .map(|w| (w, &setup.weapons[w as usize]));
+    let main_k = ty.feed_slot(main);
+    let has = |k: Option<usize>| k.is_some_and(|k| kit.rounds[k] > 0);
+    if kit.on_sidearm {
+        // S5a-23: back to the main weapon at the next reload once it has
+        // rounds again.
+        if let Some(k) = main_k
+            && has(main_k)
+        {
+            return Some((false, kit.weapon, k));
+        }
+        if let Some((sw, sws)) = side
+            && let Some(k) = ty.feed_slot(sws)
+            && kit.rounds[k] > 0
+        {
+            return Some((true, sw, k));
+        }
+        return None;
+    }
+    if let Some(k) = main_k
+        && kit.rounds[k] > 0
+    {
+        return Some((false, kit.weapon, k));
+    }
+    if let Some((sw, sws)) = side
+        && let Some(k) = ty.feed_slot(sws)
+        && kit.rounds[k] > 0
+        && sws.he.is_none()
+        && sws.class != WeaponClass::Launcher
+    {
+        return Some((true, sw, k));
+    }
+    None
+}
+
 /// A dry man (magazine empty, cooldown done): reloads his weapon from his
 /// pouches, switches between his main weapon and his slot's sidearm (S5a
 /// "Sidearm"), or stays dry. True when he reloaded or switched (the
@@ -303,59 +359,16 @@ pub(crate) fn reload_dry(
     c: &mut Combat,
     ws: &mut Weapon,
 ) -> bool {
-    let slot = ty.members.get(kit.slot as usize);
-    let main = &setup.weapons[kit.weapon as usize];
-    let side = slot
-        .and_then(|m| m.sidearm)
-        .map(|w| (w, &setup.weapons[w as usize]));
-    let main_k = ty.feed_slot(main);
-    let has = |kit: &Kit, k: Option<usize>| k.is_some_and(|k| kit.rounds[k] > 0);
-    let load = |kit: &mut Kit,
-                c: &mut Combat,
-                ws: &mut Weapon,
-                w: &frontline_content::setup::WeaponSetup,
-                k: usize| {
-        let take = (w.magazine.min(u16::MAX as u32) as u16).min(kit.rounds[k]);
-        kit.rounds[k] -= take;
-        c.mag = take;
-        ws.cooldown = w.reload_ticks.max(1).min(u16::MAX as u32) as u16;
-    };
-    if kit.on_sidearm {
-        // S5a-23: back to the main weapon at the next reload once it has
-        // rounds again.
-        if let Some(k) = main_k
-            && has(kit, main_k)
-        {
-            kit.on_sidearm = false;
-            load(kit, c, ws, main, k);
-            return true;
-        }
-        if let Some((_, sw)) = side
-            && let Some(k) = ty.feed_slot(sw)
-            && kit.rounds[k] > 0
-        {
-            load(kit, c, ws, sw, k);
-            return true;
-        }
+    let Some((side, wi, k)) = dry_load(setup, ty, kit) else {
         return false;
-    }
-    if let Some(k) = main_k
-        && kit.rounds[k] > 0
-    {
-        load(kit, c, ws, main, k);
-        return true;
-    }
-    if let Some((_, sw)) = side
-        && let Some(k) = ty.feed_slot(sw)
-        && kit.rounds[k] > 0
-        && sw.he.is_none()
-        && sw.class != WeaponClass::Launcher
-    {
-        kit.on_sidearm = true;
-        load(kit, c, ws, sw, k);
-        return true;
-    }
-    false
+    };
+    let w = &setup.weapons[wi as usize];
+    kit.on_sidearm = side;
+    let take = (w.magazine.min(u16::MAX as u32) as u16).min(kit.rounds[k]);
+    kit.rounds[k] -= take;
+    c.mag = take;
+    ws.cooldown = w.reload_ticks.max(1).min(u16::MAX as u32) as u16;
+    true
 }
 
 /// S5a squad ammunition share (%, the AI's reserve and the HUD marker):
@@ -456,6 +469,8 @@ pub(crate) fn mortar_bombs(
     for m in &sq.members {
         let i = m.index();
         have += man_total(setup, ty, &ents.kit[i], &ents.combat[i], k);
+        // S15 X1: foreign bombs count as bombs (0 with the switch off).
+        have += ents.kit[i].foreign as u32;
         // The tube's ready bomb, only while the mortar is the weapon in
         // hand (S6 fix: a gunner on his sidearm holds pistol rounds in
         // `mag`, which counted as bombs).
@@ -472,6 +487,17 @@ pub(crate) fn mortar_bombs(
         have,
         (load > 0).then(|| (have as u64 * 100 / load as u64).min(100) as u32),
     )
+}
+
+/// S15 rows (tools): [`mortar_bombs`] of squad `q` (own and foreign; 0
+/// for no such squad).
+pub fn mortar_bombs_of(
+    g: &crate::game::MatchState,
+    ents: &Entities,
+    q: crate::game::SquadId,
+) -> u32 {
+    g.squad(q)
+        .map_or(0, |sq| mortar_bombs(g.setup(), ents, sq).0)
 }
 
 /// Whether `p` stands inside player `owner`'s base.
@@ -650,6 +676,17 @@ impl MatchState {
         let item_every = self.setup.rules.items.resupply_ticks.max(1);
         let bomb_every = (sp.base_bomb_s * hz).max(1);
         let bomb_wait = (sp.base_bomb_after_fire_s * hz).min(u16::MAX as u32);
+        // S14 F7: a flamethrower's fuel, one unit per `[flame]
+        // base_refill_ms` (a feed no Flame-class weapon uses: `bomb_every`).
+        let fuel_every = (self.setup.rules.flame.base_refill_ms as u64 * hz as u64)
+            .div_ceil(1000)
+            .clamp(1, u16::MAX as u64) as u32;
+        let fuel = |setup: &MatchSetup, f: Feed| {
+            setup
+                .weapons
+                .iter()
+                .any(|w| w.class == WeaponClass::Flame && w.feed == Some(f))
+        };
         for i in 0..ents.len() {
             if ents.kind[i] != EntityKind::Soldier {
                 continue;
@@ -735,7 +772,18 @@ impl MatchState {
                                 .is_some_and(|(kd, _)| kd == SupplyKind::Shells))
                     })
                     .filter(|&k| !self.bombs_wait(ents, sid, k, bomb_wait))
-                    .map(|k| (true, k, bomb_every)),
+                    .map(|k| {
+                        let f = self.setup.squad_types[ty_idx].feeds[k];
+                        (
+                            true,
+                            k,
+                            if fuel(&self.setup, f) {
+                                fuel_every
+                            } else {
+                                bomb_every
+                            },
+                        )
+                    }),
             };
             match next {
                 None => {
@@ -1017,6 +1065,52 @@ pub(crate) fn take_bomb(
     match giver {
         Some(g) => {
             ents.kit[g.index()].rounds[k] -= 1;
+            true
+        }
+        None => false,
+    }
+}
+
+/// S15 X2: whether [`take_bomb`] would find an own bomb (no change).
+pub(crate) fn own_bomb_left(
+    setup: &MatchSetup,
+    ents: &Entities,
+    members: &[SimId],
+    type_idx: u16,
+    gunner: SimId,
+    wi: u16,
+) -> bool {
+    let ty = &setup.squad_types[type_idx as usize];
+    let Some(k) = ty.feed_slot(&setup.weapons[wi as usize]) else {
+        return true;
+    };
+    let i = gunner.index();
+    if ents.combat[i].mag > 0 || ents.kit[i].rounds[k] > 0 {
+        return true;
+    }
+    let reach = setup.rules.combat.share.crew_feed_m;
+    members.iter().any(|&g| {
+        g != gunner && ents.kit[g.index()].rounds[k] > 0 && within(ents, g, gunner, reach)
+    })
+}
+
+/// S15 X2: takes one foreign bomb, the gunner's first, then the crew's
+/// within `crew_feed_m` (lowest id); whether there was one.
+pub(crate) fn take_foreign(
+    setup: &MatchSetup,
+    ents: &mut Entities,
+    members: &[SimId],
+    gunner: SimId,
+) -> bool {
+    let reach = setup.rules.combat.share.crew_feed_m;
+    let giver = std::iter::once(gunner)
+        .chain(members.iter().copied().filter(|&g| g != gunner))
+        .find(|&g| {
+            ents.kit[g.index()].foreign > 0 && (g == gunner || within(ents, g, gunner, reach))
+        });
+    match giver {
+        Some(g) => {
+            ents.kit[g.index()].foreign -= 1;
             true
         }
         None => false,

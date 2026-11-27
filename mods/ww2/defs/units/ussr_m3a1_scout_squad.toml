@@ -1,0 +1,12 @@
+# The M3A1 Scout Car as a buyable squad of one (S15 Build C, S15-9 (A)): the transport (6 men).
+# Cost, pop, call-in time and sight are on the vehicle def; card values are S15 starting values (no tuning).
+id = "ww2:ussr_m3a1_scout_squad"
+name = "M3A1 Scout Car"
+short_name = "M3A1 SC"
+faction = "ww2:ussr"
+tags = ["vehicle"]
+vehicle = "ww2:ussr_m3a1_scout"
+# AI weight (S15-ussr.md 6.4).
+ai_weight = 100
+# Most alive per player: 2, as the half-track card.
+max_alive = 2
