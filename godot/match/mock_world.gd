@@ -21,8 +21,12 @@ var _buf := PackedFloat32Array()
 
 
 func _ready() -> void:
+	# The match source may not have run yet: follow the session's map.
+	if has_node("/root/Session"):
+		MockMap.use(String(Session.setup.get("map", "kessel_ridge")))
 	_build_ground()
 	_build_trees()
+	_build_roads()
 	var cap := CapsuleMesh.new()
 	cap.radius = 0.32
 	cap.height = 1.75
@@ -168,6 +172,12 @@ func _build_ground() -> void:
 	ground.mesh = mesh
 	ground.material_override = mat
 	add_child(ground)
+
+
+func _build_roads() -> void:
+	var inst := RoadStyle.build(MockMap.ROADS, MockMap.height)
+	if inst != null:
+		add_child(inst)
 
 
 func _build_trees() -> void:

@@ -65,6 +65,7 @@ fn bands(w: &World) -> (u32, u32) {
 fn scan(w: &World, p: u8, vehicle: bool) -> MineSet {
     let b = bands(w);
     fs(w).scan_mine_set(
+        &crate::teams::Teams::alone(2),
         &w.match_setup().unwrap().items,
         w.state.terrain.dim(),
         PlayerId(p),
@@ -284,7 +285,8 @@ fn mine_layer_matches_full_scan_after_load() {
     };
     let refresh = |w: &mut World| {
         let g = w.state.game.as_mut().unwrap();
-        g.fort.refresh_mine_layer(&g.setup.items, dim, b);
+        g.fort
+            .refresh_mine_layer(&crate::teams::Teams::alone(2), &g.setup.items, dim, b);
     };
     let check = |w: &World, rng: &mut Lcg| -> u32 {
         let f = fs(w);

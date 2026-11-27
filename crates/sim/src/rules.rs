@@ -25,6 +25,17 @@
 //!   cheapest squad, or when he surrenders. The last player standing wins;
 //!   if the rest are knocked out in the same tick it is a draw.
 //!
+//! S17a teams (`crate::teams`, docs/slices/S17-team-play.md 4): men are
+//! counted per team and a point is contested when two hostile teams are
+//! present (T4); one team present takes it for its member with the most men
+//! there (ties: lowest slot), and an ally on his ally's point acts as the
+//! owner; a defeated player's men count for nobody. Income is per player (T5, `[teams] income_pct` for a player with
+//! an ally). With `[teams] team_tickets` the drain is the gap between the
+//! best standing hostile team's held value and the player's team's (T6).
+//! A team is out when all its members are out; the last team standing wins
+//! (T7), and with `wiped_waits` a wiped player is not out while an ally
+//! stands. With every player alone on his team each rule is the one above.
+//!
 //! Points are visited in index order and players in slot order, all
 //! integer arithmetic, so the result is the same on every client.
 
@@ -70,12 +81,53 @@ impl MatchState {
             .sum()
     }
 
+    /// S17a A1: the hostile player the AI's works, belts and guns face:
+    /// with `[ai.team] foe_first` 0 the standing hostile player whose base
+    /// is nearest `me`'s (ties: lowest slot), with 1 the lowest standing
+    /// hostile slot; with none standing, the lowest hostile slot. In a 1v1
+    /// that is the other player, as before S17.
+    pub fn main_foe(&self, me: PlayerId) -> Option<PlayerId> {
+        let standing: Vec<u8> = self
+            .teams
+            .foes(me.0)
+            .filter(|&q| {
+                self.players
+                    .get(q as usize)
+                    .is_some_and(|p| p.defeat.is_none())
+            })
+            .collect();
+        if standing.is_empty() {
+            return self.teams.foes(me.0).next().map(PlayerId);
+        }
+        if self.setup.rules.ai.team.foe_first != 0 {
+            return standing.first().copied().map(PlayerId);
+        }
+        let mine = self.base_of(me);
+        standing
+            .iter()
+            .map(|&q| ((self.base_of(PlayerId(q)) - mine).length_sq_raw(), q))
+            .min()
+            .map(|(_, q)| PlayerId(q))
+    }
+
+    /// S17a: point value held by `player`'s team (all members).
+    pub fn team_value(&self, player: PlayerId) -> u32 {
+        (0..self.players.len() as u8)
+            .filter(|&q| self.teams.allied(player.0, q))
+            .map(|q| self.held_value(PlayerId(q)))
+            .sum()
+    }
+
     /// `player`'s manpower income per minute right now (saturating: the
     /// content ranges allow products past `u32`).
     pub fn income_per_min(&self, player: PlayerId) -> u32 {
         let r = &self.setup.rules;
-        let base = r.income_per_min as u64
+        let mut base = r.income_per_min as u64
             + r.point_income_per_min as u64 * self.held_value(player) as u64;
+        // T5: a player with an ally earns the `[teams] income_pct` share.
+        if self.teams.in_team(player.0) {
+            base = base * r.teams.income_pct as u64 / 100;
+        }
         let ps = &self.setup.players[player.0 as usize];
         let income = if ps.is_ai {
             base * r.difficulty.get(ps.difficulty).income_pct as u64 / 100
@@ -86,12 +138,22 @@ impl MatchState {
     }
 
     /// `player`'s ticket loss per minute right now: the point value gap to
-    /// the best other standing player, times the drain rate.
+    /// the best standing hostile player, times the drain rate. T6: with
+    /// `[teams] team_tickets` the gap is between teams (each team's held
+    /// value; a hostile team counts while one of its members stands).
     pub fn drain_per_min(&self, player: PlayerId) -> u32 {
-        let mine = self.held_value(player);
+        let team = self.setup.rules.teams.team_tickets != 0;
+        let value = |q: PlayerId| {
+            if team {
+                self.team_value(q)
+            } else {
+                self.held_value(q)
+            }
+        };
+        let mine = value(player);
         let best = (0..self.players.len())
-            .filter(|&q| q != player.0 as usize && self.players[q].defeat.is_none())
-            .map(|q| self.held_value(PlayerId(q as u8)))
+            .filter(|&q| self.teams.hostile(player.0, q as u8) && self.players[q].defeat.is_none())
+            .map(|q| value(PlayerId(q as u8)))
             .max()
             .unwrap_or(0);
         best.saturating_sub(mine)
@@ -137,10 +199,14 @@ impl MatchState {
         let full = capture_full(r.capture_ticks);
         let np = self.players.len();
         let mut men = vec![0u32; np * self.points.len()];
+        // S17 review (O1): a defeated player's men (surrendered, or out of
+        // tickets with an ally still in) neither capture nor contest. In a
+        // 1v1 the first defeat ends the match, so this never applies there.
+        let out: Vec<bool> = self.players.iter().map(|p| p.defeat.is_some()).collect();
         for id in ents.soldiers() {
             let i = id.index();
             // S8a: men riding a transport neither capture nor contest.
-            if ents.unit[i].riding.is_some() {
+            if ents.unit[i].riding.is_some() || out[ents.owner[i].0 as usize] {
                 continue;
             }
             let retreating = ents.squad[i]
@@ -157,15 +223,33 @@ impl MatchState {
                 }
             }
         }
+        let teams = self.teams;
         for (k, c) in self.points.iter_mut().enumerate() {
             let here = &men[k * np..(k + 1) * np];
+            // T4: the first present player's team; contested when a hostile
+            // player is present too. The team's men are summed and the point
+            // goes to its member with the most men (ties: lowest slot).
             let mut present = here.iter().enumerate().filter(|(_, n)| **n > 0);
             let first = present.next();
-            c.contested = present.next().is_some();
+            c.contested =
+                first.is_some_and(|(p0, _)| present.any(|(q, _)| teams.hostile(p0 as u8, q as u8)));
             if c.contested {
                 continue;
             }
-            let Some((p, &n)) = first else {
+            let first = first.map(|(p0, _)| {
+                let mut lead = (p0, here[p0]);
+                let mut sum = 0u32;
+                for (q, &n) in here.iter().enumerate() {
+                    if n > 0 && teams.allied(p0 as u8, q as u8) {
+                        sum += n;
+                        if n > lead.1 {
+                            lead = (q, n);
+                        }
+                    }
+                }
+                (lead.0, sum)
+            });
+            let Some((p, n)) = first else {
                 // Empty: progress fades at the one-man rate.
                 c.progress = c.progress.saturating_sub(capture_rate(
                     1,
@@ -179,13 +263,13 @@ impl MatchState {
             };
             let p = PlayerId(p as u8);
             let rate = capture_rate(n, r.capture_max_men, r.capture_extra_man_pct);
-            if c.capturer.is_some_and(|q| q != p) {
-                // Someone else's progress is worn down first.
+            if c.capturer.is_some_and(|q| teams.hostile(q.0, p.0)) {
+                // A hostile team's progress is worn down first.
                 c.progress = c.progress.saturating_sub(rate);
                 if c.progress == 0 {
                     c.capturer = None;
                 }
-            } else if c.owner != Some(p) {
+            } else if c.owner.is_none_or(|o| teams.hostile(o.0, p.0)) {
                 c.capturer = Some(p);
                 c.progress = (c.progress + rate).min(full);
                 if c.progress >= full {
@@ -210,45 +294,69 @@ impl MatchState {
                 alive[ents.owner[id.index()].0 as usize] += 1;
             }
         }
-        for (p, a) in alive.iter().enumerate() {
-            let f = &self.setup.factions[self.setup.players[p].faction as usize];
-            let cheapest = f
-                .roster
-                .iter()
-                .map(|&t| self.setup.squad_types[t as usize].cost)
-                .min()
-                .unwrap_or(u32::MAX);
+        let wiped: Vec<bool> = alive
+            .iter()
+            .enumerate()
+            .map(|(p, a)| {
+                let f = &self.setup.factions[self.setup.players[p].faction as usize];
+                let cheapest = f
+                    .roster
+                    .iter()
+                    .map(|&t| self.setup.squad_types[t as usize].cost)
+                    .min()
+                    .unwrap_or(u32::MAX);
+                *a == 0 && self.players[p].manpower < cheapest
+            })
+            .collect();
+        // T7: with `wiped_waits` a wiped player stays in while an ally stands
+        // who is neither out nor wiped himself.
+        let waits = self.setup.rules.teams.wiped_waits != 0;
+        let ally_stands = |p: usize| {
+            (0..np).any(|q| {
+                q != p
+                    && self.teams.allied(p as u8, q as u8)
+                    && self.players[q].defeat.is_none()
+                    && self.players[q].tickets > 0
+                    && !wiped[q]
+            })
+        };
+        let stands: Vec<bool> = (0..np).map(|p| waits && ally_stands(p)).collect();
+        for p in 0..np {
             let pl = &mut self.players[p];
             if pl.defeat.is_some() {
                 continue;
             }
             if pl.tickets == 0 {
                 pl.defeat = Some(Defeat::Tickets);
-            } else if *a == 0 && pl.manpower < cheapest {
+            } else if wiped[p] && !stands[p] {
                 pl.defeat = Some(Defeat::Wiped);
             }
         }
         self.update_outcome();
     }
 
-    /// The last player standing wins; nobody standing is a draw.
+    /// The last team standing wins (T7; `winner` is its lowest standing
+    /// slot, callers ask `Teams::won_by`); nobody standing is a draw.
     pub(crate) fn update_outcome(&mut self) {
         if self.outcome != Outcome::Running {
             return;
         }
+        let teams = self.teams;
         let mut standing = self
             .players
             .iter()
             .enumerate()
-            .filter(|(_, p)| p.defeat.is_none());
-        match (standing.next(), standing.next()) {
-            (Some((w, _)), None) => {
-                self.outcome = Outcome::Won {
-                    winner: PlayerId(w as u8),
+            .filter(|(_, p)| p.defeat.is_none())
+            .map(|(w, _)| w as u8);
+        match standing.next() {
+            None => self.outcome = Outcome::Draw,
+            Some(w) => {
+                if standing.all(|q| teams.allied(w, q)) {
+                    self.outcome = Outcome::Won {
+                        winner: PlayerId(w),
+                    }
                 }
             }
-            (None, _) => self.outcome = Outcome::Draw,
-            _ => {}
         }
     }
 }

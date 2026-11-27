@@ -175,6 +175,8 @@ impl MatchState {
             };
             let owner = sq.owner;
             let bit = 1u8 << owner.0.min(7);
+            // S17a T2: what the team knows (finds still set his own bit).
+            let kmask = self.teams.known_mask(owner.0);
             let len = (b - a).length();
             let d = (b - a).normalize_or_zero();
             let n = d.perp();
@@ -201,7 +203,7 @@ impl MatchState {
             let type_idx = sq.type_idx as usize;
             // A lifted mine that went off or was lifted by others: drop it.
             let mut lift =
-                lift.filter(|l| self.fort.mines.get(l).is_some_and(|m| m.known & bit != 0));
+                lift.filter(|l| self.fort.mines.get(l).is_some_and(|m| m.known & kmask != 0));
             if lift.is_none() {
                 work = 0;
             }
@@ -211,7 +213,7 @@ impl MatchState {
                     let p = ents.transform[s.index()].pos.xy();
                     let mut found: Vec<u32> = Vec::new();
                     for (&mid, m) in &self.fort.mines {
-                        if m.known & bit != 0 || (m.pos - p).length_sq_raw() > detect_r2 {
+                        if m.known & kmask != 0 || (m.pos - p).length_sq_raw() > detect_r2 {
                             continue;
                         }
                         let roll = detect_roll(self.setup.seed, tick, s, mid);
@@ -235,7 +237,7 @@ impl MatchState {
                     .fort
                     .mines
                     .iter()
-                    .filter(|(_, m)| m.known & bit != 0 && near_segment(m.pos, a, b, half))
+                    .filter(|(_, m)| m.known & kmask != 0 && near_segment(m.pos, a, b, half))
                     .map(|(&mid, m)| ((m.pos - a).dot(d), mid))
                     .filter(|&(proj, _)| along >= len || proj <= reach)
                     .min()
@@ -318,7 +320,7 @@ impl MatchState {
                 along = (along + step).min(len);
             }
             for sp in spots.iter_mut() {
-                sp.1 = terrain.clamp(self.clear_of_known(sp.1, d, bit));
+                sp.1 = terrain.clamp(self.clear_of_known(sp.1, d, kmask));
             }
             let done = along >= len
                 && lift.is_none()
@@ -326,7 +328,7 @@ impl MatchState {
                     .fort
                     .mines
                     .values()
-                    .any(|m| m.known & bit != 0 && near_segment(m.pos, a, b, half));
+                    .any(|m| m.known & kmask != 0 && near_segment(m.pos, a, b, half));
             let hold = terrain.clamp(a - d.mul_int(HOLD_BACK));
             let sq = self.squads.get_mut(&id).expect("listed");
             if done {

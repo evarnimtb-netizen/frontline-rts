@@ -982,6 +982,67 @@ impl TransportTuning {
 }
 
 tuning_table! {
+    /// `[vehicles.road]` (S16a, docs/slices/S16-second-map.md 2 and 4):
+    /// vehicles on a map's `[[roads]]`. Every value lives in the rules TOML;
+    /// a rules def without the table ignores roads (`Default`: `enabled` 0).
+    pub struct RoadTuning {
+        /// R1-R3 master switch: with 0 a road flag changes nothing.
+        enabled: 0..=1,
+        /// Forward speed on a road node, in percent of the def's
+        /// cross-country `speed_cm_s`, by drive type (a vehicle's
+        /// `[mobility] road_speed_pct` overrides it).
+        wheeled_pct: 100..=200,
+        halftrack_pct: 100..=200,
+        tracked_pct: 100..=200,
+        /// Reverse speed on a road node, in percent of `reverse_cm_s`.
+        reverse_pct: 100..=200,
+        /// R3: 1 prices a road node by time (`100 / road pct` of a step,
+        /// no woods factor); 0 prices it as any other node.
+        path_cost: 0..=1,
+        /// R3: heuristic weight on a map with roads is
+        /// max(100, 130 x this / road pct) percent.
+        heuristic_pct: 1..=200,
+        /// S16 review (F3): a road-priced vehicle search that stops at
+        /// `path_max_expansions` without its goal runs once more at this
+        /// heuristic weight (percent) and keeps that path if it reaches
+        /// the goal (0: no retry, a partial path as before; else 100..=200).
+        cap_retry_weight_pct: 0..=200,
+    }
+}
+
+impl RoadTuning {
+    fn check_more(&self, table: &str, out: &mut Vec<Issue>) {
+        if (1..100).contains(&self.cap_retry_weight_pct) {
+            out.push(Issue::new(
+                format!("{table}.cap_retry_weight_pct"),
+                "0 (no retry) or 100..=200",
+            ));
+        }
+    }
+
+    /// Whether road rules apply on a map with `roads` road polylines.
+    pub fn active(&self, roads: usize) -> bool {
+        self.enabled == 1 && roads > 0
+    }
+}
+
+impl Default for RoadTuning {
+    /// No `[vehicles.road]` table: roads off (every factor neutral).
+    fn default() -> RoadTuning {
+        RoadTuning {
+            enabled: 0,
+            wheeled_pct: 100,
+            halftrack_pct: 100,
+            tracked_pct: 100,
+            reverse_pct: 100,
+            path_cost: 0,
+            heuristic_pct: 100,
+            cap_retry_weight_pct: 0,
+        }
+    }
+}
+
+tuning_table! {
     /// `[vehicles.recrew]` (S3c): who can man an abandoned vehicle again,
     /// and how (S3c-2, S3c-3 (A)).
     pub struct RecrewTuning {
@@ -3822,6 +3883,124 @@ impl Default for AiRidersTuning {
     }
 }
 
+tuning_table! {
+    /// `[teams]` (S17a, docs/slices/S17-team-play.md 2, rules T2, T6, T7,
+    /// T9): team play. A player alone on his team (every 1v1) never reads
+    /// the four `_pct` keys, and the three switches reduce to today's rules
+    /// there, so a 1v1 plays the same with any values.
+    pub struct TeamsTuning {
+        /// T2 switch: allies see what each other sees (spots, mines,
+        /// counter-battery markers).
+        shared_sight: 0..=1 = "d_t_one",
+        /// T6 switch: one ticket drain per team (0: per player).
+        team_tickets: 0..=1 = "d_t_one",
+        /// T7 switch: a wiped player with a standing ally is not out.
+        wiped_waits: 0..=1 = "d_t_one",
+        /// T9: pop cap of a player on a team of two or more, % of `pop_cap`.
+        pop_pct: 10..=300 = "d_t_pop_pct",
+        /// T9: base and point income of such a player (%).
+        income_pct: 10..=300 = "d_t_hundred",
+        /// T9: start manpower of such a player (%).
+        start_manpower_pct: 10..=300 = "d_t_hundred",
+        /// T9: start tickets of such a player (%).
+        tickets_pct: 10..=300 = "d_t_hundred",
+        /// S18 H1 switch: a surrendered player's (a dropped player's: the
+        /// relay surrenders him) troops, works and manpower go to his
+        /// lowest-slot standing ally; 0: they hold in place.
+        handover: 0..=1 = "d_t_one",
+        /// S18-6: 1 = handed-over troops count against the ally's pop cap
+        /// for new buys; 0 = never.
+        handover_pop: 0..=1 = "d_w_zero",
+        /// S18 H5: least time between two map pings of one player (s;
+        /// the presenter's gate, never a sim input).
+        ping_gap_s: 1..=60 = "d_t_ping_gap",
+    }
+}
+
+fn d_t_one() -> u32 {
+    1
+}
+fn d_t_pop_pct() -> u32 {
+    67
+}
+fn d_t_hundred() -> u32 {
+    100
+}
+fn d_t_ping_gap() -> u32 {
+    2
+}
+
+impl TeamsTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+
+    /// `v` scaled by `pct` (%), saturating.
+    pub fn scale(v: u32, pct: u32) -> u32 {
+        (v as u64 * pct as u64 / 100).min(u32::MAX as u64) as u32
+    }
+}
+
+impl Default for TeamsTuning {
+    /// The S17a values (a rules def without `[teams]`).
+    fn default() -> TeamsTuning {
+        TeamsTuning {
+            shared_sight: 1,
+            team_tickets: 1,
+            wiped_waits: 1,
+            pop_pct: 67,
+            income_pct: 100,
+            start_manpower_pct: 100,
+            tickets_pct: 100,
+            handover: 1,
+            handover_pop: 0,
+            ping_gap_s: 2,
+        }
+    }
+}
+
+tuning_table! {
+    /// `[ai.team]` (S17, docs/slices/S17-team-play.md 2, 6): how an AI plays
+    /// with an ally. The habits A3 and A4 are S17b's (switches 0 until then);
+    /// `foe_first` is A1's pick.
+    pub struct AiTeamTuning {
+        /// A3 switch: ally squads at a point lower my demand there.
+        share_points: 0..=1 = "d_w_zero",
+        /// A3: how much one ally squad counts against demand (%).
+        ally_squad_pct: 0..=300 = "d_t_hundred",
+        /// A4 switch: a threatened ally point gets a defence priority.
+        help_ally: 0..=1 = "d_w_zero",
+        /// A4: that point's priority ...
+        help_priority: 0..=1000 = "d_at_help_priority",
+        /// ... and demand (squads).
+        help_demand: 0..=8 = "d_t_one",
+        /// A1: the foe for works, belts and guns. 0: the standing hostile
+        /// player whose base is nearest mine (ties: lowest slot); 1: the
+        /// lowest standing hostile slot.
+        foe_first: 0..=1 = "d_w_zero",
+    }
+}
+
+fn d_at_help_priority() -> u32 {
+    80
+}
+
+impl AiTeamTuning {
+    fn check_more(&self, _at: &str, _out: &mut Vec<Issue>) {}
+}
+
+impl Default for AiTeamTuning {
+    /// The S17a values (a rules def without `[ai.team]`): habits off.
+    fn default() -> AiTeamTuning {
+        AiTeamTuning {
+            share_points: 0,
+            ally_squad_pct: 100,
+            help_ally: 0,
+            help_priority: 80,
+            help_demand: 1,
+            foe_first: 0,
+        }
+    }
+}
+
 /// Every tuning table: its dotted path in the rules TOML and its keys with
 /// their ranges (docs and the per-key tests).
 pub const TABLES: &[(&str, &[TuningKey])] = &[
@@ -3849,6 +4028,8 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("ai.riders", AiRidersTuning::KEYS),
     ("clear", ClearTuning::KEYS),
     ("ai.flame", AiFlameTuning::KEYS),
+    ("teams", TeamsTuning::KEYS),
+    ("ai.team", AiTeamTuning::KEYS),
     ("combat.body", BodyTuning::KEYS),
     ("combat.mortar", MortarTuning::KEYS),
     ("combat.blast", BlastTuning::KEYS),
@@ -3866,6 +4047,7 @@ pub const TABLES: &[(&str, &[TuningKey])] = &[
     ("vehicles.recrew", RecrewTuning::KEYS),
     ("vehicles.transport", TransportTuning::KEYS),
     ("vehicles.guns", GunsTuning::KEYS),
+    ("vehicles.road", RoadTuning::KEYS),
     ("movement.formation", FormationTuning::KEYS),
     ("cover", CoverTuning::KEYS),
     ("items.throw", ThrowTuning::KEYS),
@@ -3896,6 +4078,7 @@ pub(crate) struct TuningRefs<'a> {
     pub recrew: &'a RecrewTuning,
     pub transport: &'a TransportTuning,
     pub guns: &'a GunsTuning,
+    pub road: &'a RoadTuning,
     pub formation: &'a FormationTuning,
     pub cover: &'a CoverTuning,
     pub throw: &'a ThrowTuning,
@@ -3926,6 +4109,8 @@ pub(crate) struct TuningRefs<'a> {
     pub riders: &'a RidersTuning,
     pub body_armour: &'a BodyArmourTuning,
     pub ai_riders: &'a AiRidersTuning,
+    pub teams: &'a TeamsTuning,
+    pub ai_team: &'a AiTeamTuning,
 }
 
 /// Checks every tuning table; `prefix` goes before each table path (`""`
@@ -3964,6 +4149,7 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.recrew.check(&p("vehicles.recrew"), out);
     t.transport.check(&p("vehicles.transport"), out);
     t.guns.check(&p("vehicles.guns"), out);
+    t.road.check(&p("vehicles.road"), out);
     t.formation.check(&p("movement.formation"), out);
     t.cover.check(&p("cover"), out);
     t.throw.check(&p("items.throw"), out);
@@ -4000,6 +4186,8 @@ pub(crate) fn check_tuning(out: &mut Vec<Issue>, prefix: &str, t: TuningRefs) {
     t.riders.check(&p("riders"), out);
     t.body_armour.check(&p("body_armour"), out);
     t.ai_riders.check(&p("ai.riders"), out);
+    t.teams.check(&p("teams"), out);
+    t.ai_team.check(&p("ai.team"), out);
 }
 
 #[cfg(test)]

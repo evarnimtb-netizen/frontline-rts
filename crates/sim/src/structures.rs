@@ -361,10 +361,30 @@ impl SupplyState {
         setup: &MatchSetup,
         ents: &Entities,
         squads: &BTreeMap<SquadId, crate::game::Squad>,
+        handed_to: &[Option<PlayerId>],
     ) -> Result<(), &'static str> {
         let np = setup.players.len();
+        let factions: Vec<u16> = setup.players.iter().map(|p| p.faction).collect();
         if self.accounts.len() != np {
             return Err("S6 accounts disagree with the players");
+        }
+        // The gram and µMP tallies are summed unchecked; one near the top
+        // would overflow (no match comes near 2^62). S16a save fuzz finding.
+        if self.accounts.iter().any(|a| {
+            [
+                a.crate_micro,
+                a.stock_in_g,
+                a.stock_out_g,
+                a.stock_lost_g,
+                a.truck_load_micro,
+                a.truck_out_g,
+                a.truck_dropped_g,
+                a.truck_lost_g,
+            ]
+            .iter()
+            .any(|&v| v > 1 << 62)
+        }) {
+            return Err("an S6 account tally is out of range");
         }
         if self.structures.len() > MAX_STRUCTURES
             || self.crates.len() > MAX_CRATES
@@ -402,7 +422,8 @@ impl SupplyState {
             if s.built == s.builder.is_some() {
                 return Err("a structure is built xor has a builder");
             }
-            if d.faction != setup.players[s.owner.0 as usize].faction {
+            // S18 H1: or of a player who handed his troops to the owner.
+            if !crate::handover::plays_faction(&factions, handed_to, s.owner, d.faction) {
                 return Err("structure def of another faction");
             }
             // The Status stage drops a structure whose builder is gone or
@@ -823,10 +844,13 @@ impl MatchState {
         if !self.owned(p, squad) {
             return self.refuse6(p, squad, SupplyRefusal::NotAllowed);
         }
+        let teams = self.teams;
         let ok = self.supply6.crates.get(&crate_id).is_some_and(|c| {
             // S9: an enemy's set-down crate can be taken (it keeps its
-            // own faction's rounds, `source_for`).
-            c.carrier.is_none() && (c.owner == p || c.claim.is_none())
+            // own faction's rounds, `source_for`). S17 review (T8): an
+            // ally's crate serves its owner only and is never taken.
+            c.carrier.is_none()
+                && (c.owner == p || (c.claim.is_none() && teams.hostile_id(p, c.owner)))
         });
         if !ok {
             return self.refuse6(p, squad, SupplyRefusal::NoCrate);
@@ -2209,17 +2233,18 @@ fn static_box(
     }
 }
 
-/// The first live static box not owned by `player` that the segment
+/// The first live static box not owned by `player` (S17a: nor an ally,
+/// `allies` his team mask) that the segment
 /// `from → from + d` enters: `(t, index)`, earliest first, ties by index.
 pub(crate) fn first_static(
     statics: &[StaticBox],
     from: FxVec3,
     d: FxVec3,
-    player: u8,
+    allies: u16,
 ) -> Option<(Fx, usize)> {
     let mut best: Option<(Fx, usize)> = None;
     for (k, b) in statics.iter().enumerate() {
-        if b.owner == player || b.reach < Fx::ZERO {
+        if allies & (1 << (b.owner % 16)) != 0 || b.reach < Fx::ZERO {
             continue;
         }
         if !crate::armour::segment_near(from, d, b.frame.center, b.reach) {
@@ -2255,10 +2280,10 @@ mod tests {
         let d = FxVec3::new(Fx::from_int(20), Fx::ZERO, Fx::ZERO);
         let list = [b(0, 5, 2), b(1, 10, 2), b(1, 8, -1)];
         // Player 0's own box at 5 m is skipped; the broken one at 8 too.
-        let (t, k) = first_static(&list, from, d, 0).expect("hit");
+        let (t, k) = first_static(&list, from, d, 1).expect("hit");
         assert_eq!(k, 1);
         assert_eq!(t, Fx::from_ratio(9, 20));
         // Player 1 hits player 0's box first.
-        assert_eq!(first_static(&list, from, d, 1).map(|x| x.1), Some(0));
+        assert_eq!(first_static(&list, from, d, 2).map(|x| x.1), Some(0));
     }
 }

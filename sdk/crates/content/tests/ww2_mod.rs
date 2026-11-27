@@ -183,6 +183,7 @@ fn bad_requests_list_every_problem() {
             faction: "ww2:france".into(),
             ai: false,
             difficulty: Difficulty::Normal,
+            team: None,
         }],
     };
     let paths = issue_paths(d.resolve(&req).unwrap_err());

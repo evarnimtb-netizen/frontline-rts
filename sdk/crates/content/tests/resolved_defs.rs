@@ -52,11 +52,13 @@ fn ai_vs_ai(rules: &str, a: &str, b: &str, seed: u64, difficulty: Difficulty) ->
                 faction: a.into(),
                 ai: true,
                 difficulty,
+                team: None,
             },
             PlayerRequest {
                 faction: b.into(),
                 ai: true,
                 difficulty,
+                team: None,
             },
         ],
     }
@@ -220,15 +222,38 @@ fn setup_hash(s: &MatchSetup) -> u64 {
 // S15a Build A: the S15 keys ([matchups], [riders], [body_armour],
 // [ai.riders], [supply] foreign_ammo, [melee] bayonets) and
 // TransportSetup::exposed; no value of an existing key changed.
+// S16a Build A (`MapSetup::roads`, `[vehicles.road]`,
+// `MobilitySetup::road_speed_pct`) changed it; the B3 code values were
+// 0xeab40cb2122960c1, 0x2a81f7b3b47897ee, 0xc871cc8b8240ceb5,
+// 0xeab40cb2122960c1, 0x4f30ae2d701308a1, 0x2f7da91f46cf2629.
+// S16 review (`[vehicles.road] cap_retry_weight_pct`) changed it; the
+// S16a values were 0x4c3937e52dc6d9e0, 0x581ae4dfdf332bd5,
+// 0x663b27e422e8b1a2, 0x4c3937e52dc6d9e0, 0xa5335681da2200b6,
+// 0xf295242268d1ecfa (S16 review alone: 0xced768f332e161be, 0x86adc6852f82bfd8,
+// 0xa01f854cde1766c5, 0xced768f332e161be, 0xf787c39095036c7e, 0x8209d9e66ab83bc3).
+// S17a Build A (`PlayerSetup::team`, `[teams]`, `[ai.team]`) and the
+// merge with the S16 review changed it; S17a alone: 0xcb9f4e0ca75ca07a,
+// 0x849012774e0715c8, 0xbd3132cf10459956, 0xcb9f4e0ca75ca07a,
+// 0x443d47b184c840ce, 0x50a82256756d98e6.
+// S18 (`[teams] handover`, `handover_pop`, `ping_gap_s`) changed it; the
+// S17 values were 0xf98a18730dcc69d8, 0x9adcb3c9bfc13124,
+// 0xa92afd3f29f2782e, 0xf98a18730dcc69d8, 0x19026291de206f2e,
+// 0xf7d2ea888b7deb7e.
+// The merge of main's S14/S15 (`316419b`) into S16-S18 (PR 11) changed it;
+// main's S15 values were 0x1dfba3885c5c17d4, 0x46202681ac7cc847,
+// 0x93e91970c98371da, 0x1dfba3885c5c17d4, 0x9640916bd92a5f6f,
+// 0x02bc31155454159f; the S18 values 0xdc5b3cfb097da6d4,
+// 0xaea25867b2cddc8e, 0x65d381fb5f11e71b, 0xdc5b3cfb097da6d4,
+// 0x8f02abf66578cecd, 0xbf207ae145c7d539.
 const BASELINE: [(&str, u64); 6] = [
-    ("skirmish ger-usa seed 1 normal", 0x1dfba3885c5c17d4),
-    ("skirmish usa-ger seed 7 hard", 0x46202681ac7cc847),
-    ("test_unlock ger-usa seed 1 normal", 0x93e91970c98371da),
-    ("example override ger-usa seed 1 normal", 0x1dfba3885c5c17d4),
-    ("human ger vs ai usa seed 3 easy", 0x9640916bd92a5f6f),
+    ("skirmish ger-usa seed 1 normal", 0xfd4cb255318ff14b),
+    ("skirmish usa-ger seed 7 hard", 0x4b86c15c1b14d70e),
+    ("test_unlock ger-usa seed 1 normal", 0x1062569466d3d092),
+    ("example override ger-usa seed 1 normal", 0xfd4cb255318ff14b),
+    ("human ger vs ai usa seed 3 easy", 0x2dc01e1d457558a6),
     (
         "unit and weapon patch ger-usa seed 1 normal",
-        0x02bc31155454159f,
+        0x109f8d8cbaad746c,
     ),
 ];
 

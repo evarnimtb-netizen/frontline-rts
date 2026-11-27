@@ -254,6 +254,10 @@ impl MatchState {
             return Err(RecrewRefusal::NotCrew);
         }
         let enemy = ents.owner[vehicle.index()] != p;
+        // S17a T8: an ally's abandoned tank or gun cannot be captured.
+        if enemy && !self.teams.hostile_id(p, ents.owner[vehicle.index()]) {
+            return Err(RecrewRefusal::NoCapture);
+        }
         if r.capture == 0 && enemy {
             return Err(RecrewRefusal::NoCapture);
         }
@@ -281,7 +285,7 @@ impl MatchState {
         };
         let revived = ents.kind[vehicle.index()] == EntityKind::Abandoned;
         let extra = if gun && !revived { 0 } else { v.pop };
-        if self.population(ents, p).saturating_sub(men) + extra > s.rules.pop_cap {
+        if self.population(ents, p).saturating_sub(men) + extra > self.pop_cap_of(p) {
             return Err(RecrewRefusal::PopCap);
         }
         Ok(())
@@ -874,7 +878,7 @@ impl MatchState {
             + v.pop;
         let why = if self.vehicles_counted(ctx.ents, p) >= s.rules.vehicles.limit {
             Some(RecrewRefusal::VehicleLimit)
-        } else if pop_after > s.rules.pop_cap {
+        } else if pop_after > self.pop_cap_of(p) {
             Some(RecrewRefusal::PopCap)
         } else {
             None
@@ -1054,7 +1058,7 @@ impl MatchState {
                     pl.losses += alive;
                 }
                 if let Some(pl) = by
-                    .filter(|&b| b != owner.0)
+                    .filter(|&b| self.teams.hostile(b, owner.0))
                     .and_then(|b| self.players.get_mut(b as usize))
                 {
                     pl.kills += alive;

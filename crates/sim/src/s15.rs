@@ -364,13 +364,6 @@ impl MatchState {
     }
 }
 
-/// S15 plan 9 (S15 Fix, review 12): the one owner test of the S15 rules
-/// in this file, so that the PR 11 merge swaps it for `teams.hostile` in
-/// one place.
-pub(crate) fn hostile_to(a: PlayerId, b: PlayerId) -> bool {
-    a != b
-}
-
 impl MatchState {
     /// S15 R3a: burst `b` at `pos` suppresses the enemy riders on the
     /// decks of vehicles within `supp_r` (the vehicle's position for each
@@ -394,7 +387,9 @@ impl MatchState {
             }
             for m in vs.riders.iter().flatten() {
                 let i = m.index();
-                let own = !hostile_to(ctx.ents.owner[i], PlayerId(b.player));
+                // S15 plan 9 with S17a T1/T3 (the PR 11 merge): an ally's
+                // rider is an own rider (`crate::teams`, the one source).
+                let own = ctx.teams.allied(b.player, ctx.ents.owner[i].0);
                 if ctx.ents.kind[i] != EntityKind::Soldier || (own && !b.ff) {
                     continue;
                 }

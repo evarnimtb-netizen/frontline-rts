@@ -325,7 +325,7 @@ impl MatchState {
             .pieces
             .iter()
             .filter(|(_, p)| {
-                p.owner != me
+                self.teams.hostile_id(me, p.owner)
                     && self
                         .setup
                         .forts

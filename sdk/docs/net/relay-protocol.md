@@ -1,6 +1,6 @@
 # Frontline relay protocol
 
-Protocol version **17** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
+Protocol version **18** (`PROTOCOL_VERSION` in `crates/net/src/protocol.rs`).
 This file is the reference for the wire format, so anyone can write a
 relay or a tool that speaks to one (§7.9, §17 Q15). The code and this file
 change together, and every change a peer could observe bumps the version.
@@ -161,8 +161,24 @@ kind the relay may not send. Clients cannot send relay messages.
   7 `Flame`, a member's `when` and (S14a Build C, same version) a
   weapon's optional `melee` (`reach_cm`, `damage`, `windup_ms`,
   `recover_ms`: an `Option` of four `u32` after `core`). The save
-  version is `-s33`.
+  version is `-s33` (S15, no protocol change, moved it to `-s34`).
   The one bump for the S14 slice.
+- Version 18 (S16 roads, S17 teams, S18 online teams; one bump over S14's
+  17 when the branches merged) carries S16a's setup additions
+  (`MapSetup::roads`, `[vehicles.road]`, `MobilitySetup::road_speed_pct`)
+  and opens up to four slots
+  (`MAX_SLOTS`): `LobbySet` gains `team`, and for the host `players` and
+  the AI fill `ai`; `Ready` carries the lobby revision `rev`; new
+  `Up::TakeSlot(u8)`, `Up::MapPing { x, y }`, `Down::Slot(u8)` and
+  `Down::MapPing { slot, x, y }`; `LobbyState` lists every opened slot
+  with `players` and `rev`, and `SlotInfo` gains `team` and `ai`;
+  `Start` names every slot in `players: Vec<StartPlayer>` (replacing
+  `factions` and `names`); `Desync.hashes` and `Bundle.peers` have one
+  entry per slot. The setup gains `[teams] handover`, `handover_pop` and
+  `ping_gap_s`, and the save version moves to 35 (over S14/S15's 34).
+  A 1v1 plays as before: the lobby holds two slots until the host opens
+  more, and a two-slot match closes turns and checks hashes exactly as
+  version 17 did.
 - A relay answers a padded `Hello` of another version with
   `Reject { relay_version, nonce: 0, reason: Version }`, sent with its own
   version in the header. The client reads only the frozen part and tells
@@ -195,7 +211,9 @@ Checked on every decode. A datagram that breaks any limit is dropped whole.
 | Men per `Strike` (version 17) | 1–150 (`MAX_UNITS`) |
 | Turns per `Input` | 64 |
 | Turns per `Bundle` datagram | 300 |
-| Commands per bundled turn | 34 (2 × (16 + 1 relay-injected `Surrender`)) |
+| Commands per bundled turn | 68 (4 slots × (16 + 1 relay-injected `Surrender`)) |
+| Slots (`MAX_SLOTS`, version 18) | 4; team numbers 0–3; AI difficulty 0–2 |
+| Map ping (version 18) | 0–65,535 m on each axis |
 | Encoded closed turn | 1,100 B (excess rolls into the next turn) |
 | Commands waiting at the relay per player | 256 (beyond: `Bye(Flood)`) |
 | Input delay D | suggestion 2–4, slot 0 override 2–6, capped by `--max-delay` |
@@ -244,6 +262,9 @@ Hello { nonce: u64, build_id: String, content_hash: u64, name: String }
   profiles, the S6 `[supply]` keys and `[ai.supply]`, four cards) and the
   save version (`-s15`: structures, crates, cook-offs and per-player S6
   accounts).
+  S16a bumped `PROTOCOL_VERSION` to 17 with no command change: the
+  setup each peer hashes for `Ready` gains map roads, `[vehicles.road]`
+  and a vehicle's `road_speed_pct`, and the save version moves to 33.
 - The relay drops `Hello`s shorter than 512 bytes. No reply before
   authentication is larger than the request, so the relay cannot amplify
   a flood with a spoofed source address.
@@ -262,8 +283,9 @@ Welcome { nonce: u64, token: u64, slot: u8 }
   address. A datagram with a valid token from a new address moves the
   connection there (NAT rebinding, Wi-Fi to Ethernet). Datagrams with an
   unknown token are dropped without a reply.
-- `slot`: 0 or 1. Slot 0 is whoever joined first; it chooses the seed, the
-  map and D.
+- `slot`: the lowest open slot of the match that is not an AI slot (0 or
+  1 in a 1v1). Slot 0 is whoever joined first (the host); it chooses the
+  seed, the map, D, the match size and the AI fill.
 - A resent `Hello` with the same nonce gets the same `Welcome`, sent to
   the address it came from.
 
@@ -277,7 +299,9 @@ RejectReason = Version | Build { lobby: String } | Content | Full | Started | Ba
 - `Build`: the other player runs another build (`lobby` is theirs). A
   relay started with `--allow-build-mismatch` skips this check (dev only).
 - `Content`: the other player loaded different defs (`content_hash`).
-- `Full`: both slots are taken. `Started`: no join-in-progress.
+- `Full`: every slot of the match is taken (a player or AI fill; the
+  lobby has the host's `players` slots, 2 until he opens more, at most
+  the relay's `--max-slots`). `Started`: no join-in-progress.
 
 ### Control stream
 
@@ -304,8 +328,10 @@ direction.
 
 | Message | Meaning |
 |---|---|
-| `LobbySet { faction, seed: Option<u64>, map: Option<String>, d: Option<u8> }` | Lobby choice. Only slot 0's `seed`, `map` and `d` count (`d: None` means "use the suggestion"; others are clamped to 2..=`max_d`). Any `LobbySet` clears both players' Ready. |
-| `Ready { setup_hash: u64 }` | xxh3-64 of postcard(`MatchSetup`) from the client's own resolve. |
+| `LobbySet { faction, seed: Option<u64>, map: Option<String>, d: Option<u8>, team: Option<u8>, players: Option<u8>, ai: Option<Vec<AiPick>> }` | Lobby choice. Only slot 0's `seed`, `map`, `d`, `players` and `ai` count (`d: None` means "use the suggestion"; others are clamped to 2..=`max_d`). `team`: the sender's team (`None`: alone; team numbers 0–3). `players`: slots in the match, 2 to the opened slots, never below the highest taken slot + 1 (AI slots past it go). `ai` replaces the AI fill (none with `--no-ai`; never slot 0 or a player's slot). Any `LobbySet` clears every Ready and bumps the lobby revision. |
+| `Ready { setup_hash: u64, rev: u32 }` | xxh3-64 of postcard(`MatchSetup`) from the client's own resolve, made from lobby revision `rev`. A `Ready` for an older revision is dropped (the lobby changed after it was made). A client sends the revision of the lobby state it resolved the setup from, not merely the newest it has heard. |
+| `TakeSlot(u8)` | Lobby: move to that open slot of the match (not to or from slot 0, not to an AI slot). The relay answers `Down::Slot`, clears every Ready and bumps the revision. |
+| `MapPing { x: i32, y: i32 }` | Match: a map ping (metres, 0–65,535) for the sender's connected allies. At most one per `--ping-gap-ms` (500 ms) per slot is forwarded; the game gates its own at `[teams] ping_gap_s`. A client clamps the point into the range before sending: a control message that fails the relay's decode is never acked, so it would hold back the rest of that client's control stream. |
 | `Hash { tick, hash }` | A published sim hash: the state hash after `tick` ticks (every `hash_interval` = 30 ticks). |
 | `PauseReq` | Pause the match. |
 | `ResumeReq` | Resume a player pause. A slot's pause and resume requests closer than 250 ms to its previous accepted one are ignored. |
@@ -319,31 +345,43 @@ direction.
 | `Start(Start)` | The match starts. |
 | `Paused { at, cause }` | The relay stopped closing turns; turn `at` is the first not closed. `cause`: `Player(slot)` or `Waiting(slot)` (silent for 10 s). |
 | `Resume { at, close_at }` | Turn `at` closes at relay time `close_at` (µs), turn `at + k` one period per `k` later. |
-| `Desync { tick, hashes: [u64; 2], at }` | The hashes for `tick` differed (slot order). Turn `at` is not closed. The match does not resume. |
+| `Desync { tick, hashes: Vec<Option<u64>>, at }` | The hashes for `tick` differed: one entry per match slot (`None`: not reported, or an AI slot). Turn `at` is not closed. The match does not resume. |
+| `Slot(u8)` | Your `TakeSlot` was accepted: you are in this slot now. |
+| `MapPing { slot, x, y }` | An ally in `slot` pinged the map at `(x, y)` metres. |
 | `Bye(reason)` | `TimedOut`, `Flood` or `Shutdown`. `Shutdown`: the relay is stopping (the host left, or the binary stops). Mid-match it first closes the turns holding every queued command (a quitting host's `Surrender`), resumes a player or waiting pause, and sends those bundles for up to 250 ms or until each player holds them; only then `Bye(Shutdown)`, since a client stops reading bundles once it has it. |
 
 ```
-LobbyState { slots: [Option<SlotInfo>; 2], seed: u64, map: String,
-             d: Option<u8>, suggested_d: u8, note: String }
-SlotInfo   { name: String, faction: String, ready: bool, rtt_ms: u16 }
+LobbyState { slots: Vec<Option<SlotInfo>>, players: u8, rev: u32, seed: u64,
+             map: String, d: Option<u8>, suggested_d: u8, note: String }
+SlotInfo   { name: String, faction: String, ready: bool, rtt_ms: u16,
+             team: Option<u8>, ai: Option<u8> }
+AiPick     { slot: u8, faction: String, team: Option<u8>, difficulty: u8 }
 Start      { start_at: u64, tick_hz: u32, speed_pct: u16, d: u8, seed: u64,
-             map: String, factions: [String; 2], names: [String; 2] }
+             map: String, players: Vec<StartPlayer> }
+StartPlayer { name: String, faction: String, team: Option<u8>, ai: Option<u8> }
 ByeReason  = Quit | MatchOver | TimedOut | Flood | Shutdown
 PauseCause = Player(u8) | Waiting(u8)
 ```
 
 A client refuses a `Start` with `tick_hz` outside 1–120, `speed_pct`
-outside 1–1,000 or `d` outside 2–6 (the datagram is dropped as invalid).
+outside 1–1,000, `d` outside 2–6 or other than 2 to 4 players (the
+datagram is dropped as invalid). `SlotInfo.ai` and `StartPlayer.ai` are
+an AI slot's difficulty (0 easy, 1 normal, 2 hard; the name is empty);
+`None` is a player. A team of `None` resolves to the slot number, so
+everyone without a team is alone (a 1v1).
 
 **Names.** A player whose `Hello` name equals the other slot's gets
 ` (2)` appended, so overlays can tell them apart.
 
-**Start rule.** When both slots are Ready, the relay starts only if:
+**Start rule.** When every slot of the match is filled (a player or AI
+fill) and every player is Ready, the relay starts only if:
 
-- both picked a faction, and the factions differ;
-- both setup hashes are equal.
+- every slot has a faction; in a two-slot match, or with
+  `--distinct-factions`, hostile slots' factions differ;
+- there are at least two teams;
+- every player's setup hash is equal.
 
-Otherwise it clears both Ready flags and puts the reason in
+Otherwise it clears every Ready flag and puts the reason in
 `LobbyState.note`. The match starts `countdown` (3 s) after the decision:
 turn 0 opens at `start_at` and closes one period later. Clients map
 `start_at` through their synced clock for the 3-2-1.
@@ -416,8 +454,8 @@ InputTurn { target: u64, seq0: u32, cmds: Vec<CommandKind> }
 arrived:
 
 - it takes each player's waiting commands with turn ≤ `T`, in `seq` order,
-  one at a time, alternating players (the first player alternates by
-  tick);
+  one at a time, round-robin over the match's slots (the first player
+  rotates by tick: `tick mod players`; AI slots have no queue);
 - each player gets at most 16 commands and 1,024 B per turn, and the turn
   at most 1,100 B; a relay-injected `Surrender` may be a 17th;
 - whatever does not fit, or arrived after its target closed, goes to the
@@ -428,7 +466,7 @@ arrived:
 **`Bundle`** (relay → client):
 
 ```
-Bundle     { confirmed: u64, peers: [PeerStat; 2], turns: Vec<Turn> }
+Bundle     { confirmed: u64, peers: Vec<PeerStat>, turns: Vec<Turn> }
 PeerStat   { rtt_ms: u16, unstable: bool, gone: bool }
 Turn       { tick: u64, salt: u64, cmds: Vec<BundledCmd> }
 BundledCmd { cmd: Command { player: u8, seq: u32, kind: CommandKind }, target: u64 }
@@ -438,7 +476,9 @@ BundledCmd { cmd: Command { player: u8, seq: u32, kind: CommandKind }, target: u
   `salt` is always 0 in S2.
 - `target != tick` marks a restamp. Both clients count them from the
   bundles (§10 "Re-stamp transparency").
-- `confirmed`: the highest tick where both clients' hashes agreed.
+- `confirmed`: the highest tick where every connected player's hash
+  agreed.
+- `peers`: one per match slot (an AI slot's is all zero).
   Checkpoints at or below it are safe.
 - **Delivery.** The relay sends unacked turns **oldest first**, whenever
   a turn is new (just closed) or due for a resend: still unacked
@@ -517,10 +557,12 @@ identically on both clients, so the relay does not.
 ## Hash check
 
 - Clients send each published hash (`Up::Hash`).
-- When both slots' hashes for a tick are in, the relay compares them.
-  Equal: `confirmed` advances. Different: `Desync { tick, hashes, at }`
-  with `at` = the next turn to close, and no more turns close.
-- Both clients stop before turn `at`, at most 30 ticks plus one RTT after
+- The relay compares the connected players' hashes for a tick as they
+  come in. Any two different: `Desync { tick, hashes, at }` at once, with
+  `at` = the next turn to close, and no more turns close. All in and
+  equal: `confirmed` advances. With one player left connected there is
+  nobody to compare with.
+- Every client stops before turn `at`, at most 30 ticks plus one RTT after
   the divergence, and write their dump (`manifest.json`, `checkpoint.sav`,
   `paused.sav`, `bundles.jsonl`). The relay log gives `relay.jsonl`.
   `frontline-cli desync-diff slot0/paused.sav slot1/paused.sav` names the

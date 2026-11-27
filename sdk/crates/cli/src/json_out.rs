@@ -208,8 +208,11 @@ pub fn skirmish(r: &ManyReport) -> Value {
         .iter()
         .map(|m| {
             let rp = &m.report;
-            let p = |k: usize| &rp.players[k].armour;
-            json!({
+            // S17b: one entry per player (two in a 1v1, as before).
+            let all = |f: fn(&crate::skirmish::PlayerArmour) -> u32| -> Vec<u32> {
+                rp.players.iter().map(|p| f(&p.armour)).collect()
+            };
+            let mut v = json!({
                 "seed": m.seed,
                 "side": if m.swapped { "swapped" } else { "normal" },
                 "result": rp.result,
@@ -218,10 +221,25 @@ pub fn skirmish(r: &ManyReport) -> Value {
                 "length_s": round3(rp.game_seconds),
                 "he_share_pct": rp.armour.he_share_pct,
                 "hash": rp.final_hash,
-                "tanks_lost": [p(0).vehicles_lost, p(1).vehicles_lost],
-                "rockets_fired": [p(0).at_shots, p(1).at_shots],
-                "satchels_at_vehicles": [p(0).satchels_at_vehicles, p(1).satchels_at_vehicles],
-            })
+                "tanks_lost": all(|a| a.vehicles_lost),
+                "rockets_fired": all(|a| a.at_shots),
+                "satchels_at_vehicles": all(|a| a.satchels_at_vehicles),
+            });
+            // S17b: a team match adds its team numbers (never in a 1v1).
+            if let Some(t) = &rp.teams {
+                v["s17"] = json!({
+                    "team": t.team,
+                    "winner_team": t.winner_team,
+                    "kills": rp.players.iter().map(|p| p.kills).collect::<Vec<_>>(),
+                    "losses": rp.players.iter().map(|p| p.losses).collect::<Vec<_>>(),
+                    "points_held_s": t.points_held_s,
+                    "ally_help_tasks": t.ally_help_tasks,
+                    "shared_point_holds_s": t.shared_point_holds_s,
+                    "ai_second_foe_unbelted": t.ai_second_foe_unbelted,
+                    "tick_p99_ms": rp.timing.all.p99_ms,
+                });
+            }
+            v
         })
         .collect();
 
@@ -256,9 +274,11 @@ pub fn skirmish(r: &ManyReport) -> Value {
         factions.insert(short(&f.faction).into(), faction(f, n));
     }
 
-    json!({
+    let mut doc = json!({
         "schema": 1,
         "kind": "skirmish",
+        // S16a: the map the set played.
+        "map": r.map,
         "matches": s.matches,
         "swapped_matches": r.matches.iter().filter(|m| m.swapped).count(),
         "jobs": s.jobs,
@@ -277,6 +297,18 @@ pub fn skirmish(r: &ManyReport) -> Value {
         "s12_derived": {
             "he_share_casualties_pct": { "mean": s.he_cas_mean_pct, "max": s.he_cas_max_pct },
         },
+        // S16a (S16 plan 7): expansions per path search over every match
+        // (AI searches included; an observer, not saved sim state).
+        "s16_derived": {
+            "path_search": crate::skirmish::PathSearchStats::merged(
+                r.matches.iter().map(|m| &m.report.path_search)
+            ),
+            // S16b (F1): vehicle km and the share on road nodes, by drive
+            // type (plan 8 `road_km_pct`).
+            "road_km_pct": crate::skirmish::RoadKm::merged(
+                r.matches.iter().map(|m| &m.report.road_km)
+            ).json(),
+        },
         "tick_p99_ms": { "peak": s.peak_p99_max_ms, "all": s.all_p99_max_ms },
         "tank_losses": {
             "total": ko_total,
@@ -290,7 +322,13 @@ pub fn skirmish(r: &ManyReport) -> Value {
                 s.factions.iter().map(|f| f.s6.cookoffs).sum::<u64>() as f64 / n
             ),
         },
-    })
+    });
+    // S17b (plan 8): a set of team matches gets its printout block (never
+    // in a set of 1v1s, so neutral checks see no change).
+    if let Some(t) = crate::skirmish::TeamSetSummary::of(&r.matches) {
+        doc["s17_derived"] = serde_json::to_value(t).unwrap_or(Value::Null);
+    }
+    doc
 }
 
 /// One faction's tables: the summary struct as is, plus the derived numbers
@@ -735,6 +773,7 @@ pub fn skirmish_one(m: ManyMatch, overrides: Vec<String>) -> Value {
     let matches = vec![m];
     let summary: ManySummary = summarise(&matches, 1);
     skirmish(&ManyReport {
+        map: matches[0].report.map.clone(),
         matches,
         summary,
         overrides,

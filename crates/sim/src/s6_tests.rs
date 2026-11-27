@@ -402,7 +402,14 @@ fn t23_a_bullet_stops_at_a_box() {
 /// Spawns a round of `weapon` (and `ammo`, `None`: small arms) for
 /// `player` at `from` with velocity `vel` (review S6 F6: staged real
 /// projectiles, not direct `hit_static` calls).
-fn fire(w: &mut World, player: u8, weapon: &str, ammo: Option<&str>, from: FxVec3, vel: FxVec3) {
+pub(super) fn fire(
+    w: &mut World,
+    player: u8,
+    weapon: &str,
+    ammo: Option<&str>,
+    from: FxVec3,
+    vel: FxVec3,
+) {
     let s = w.match_setup().unwrap();
     let wk = s.weapons.iter().position(|x| x.id == weapon).unwrap() as u16;
     let ak = ammo.map_or(crate::projectile::NO_AMMO, |a| {
@@ -1363,6 +1370,16 @@ fn every_s6_field_is_saved_hashed_and_checked_on_load() {
         (
             "accounts len",
             Box::new(|s| s.accounts.pop().map(|_| ()).unwrap()),
+        ),
+        // S16a save fuzz finding: a tally at the top overflowed on the
+        // next crate set down.
+        (
+            "account stock_in_g near u64::MAX",
+            Box::new(|s| s.accounts[0].stock_in_g = u64::MAX - 1),
+        ),
+        (
+            "account truck_out_g near u64::MAX",
+            Box::new(|s| s.accounts[1].truck_out_g = u64::MAX - 1),
         ),
         (
             "hq cap",

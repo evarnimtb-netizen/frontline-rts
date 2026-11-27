@@ -83,7 +83,7 @@ func show_result(s: Dictionary) -> void:
 	var why: String = reasons[0] if won else reasons[1]
 	# Net mode: a surrender the relay made for a player who stayed silent
 	# for the whole 60 s wait.
-	var loser := view.local_player if not won else 1 - view.local_player
+	var loser := view.local_player if not won else view.foe_slot()
 	if view.net_mode and result.get("reason", "") == "surrender" and view.net_timed_out_slot == loser:
 		var who := String(view.player(loser).get("name", ""))
 		why = "%s lost the connection and timed out." % (who if who != "" and won else ("The enemy" if won else "You"))
@@ -91,7 +91,7 @@ func show_result(s: Dictionary) -> void:
 	for c in _grid.get_children():
 		c.queue_free()
 	var me := view.player(view.local_player)
-	var them := view.player(1 - view.local_player)
+	var them := view.player(view.foe_slot())
 	_cell("", UiPalette.TEXT_DIM)
 	_cell("%s (you)" % UiPalette.FACTION_NAMES.get(me.get("faction", ""), "You"), UiPalette.faction_color(me.get("faction", "")).lightened(0.3))
 	# Net mode: the other player's name instead of "AI".
@@ -100,7 +100,7 @@ func show_result(s: Dictionary) -> void:
 	var stats: Array = s.get("stats", [])
 	for row in ROWS:
 		_cell(row[1], UiPalette.TEXT_DIM)
-		for p in [view.local_player, 1 - view.local_player]:
+		for p in [view.local_player, view.foe_slot()]:
 			var st: Dictionary = stats[p] if p < stats.size() else {}
 			if row[2] == "ammo":
 				_cell(ammo_text(st.get("ammo_mp", {})), UiPalette.TEXT)

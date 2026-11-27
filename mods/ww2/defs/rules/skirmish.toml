@@ -1802,6 +1802,64 @@ td_hi_pct = 90               # ... and full at or above this one (%)
 apcbc_w_pct = 100            # full weight of class apcbc (%; c^1.5)
 apcr_w_pct = 100             # full weight of class apcr (%; c^2)
 
+[vehicles.road]
+# S16a (docs/slices/S16-second-map.md 2, 4): vehicles on a map's [[roads]].
+# A map without roads (Kessel Ridge) is unchanged whatever these say.
+# R1-R3 master switch (0: a road flag changes nothing).
+enabled = 1
+# Forward speed on a road node in percent of the def's cross-country
+# speed_cm_s, by drive type (S16-5 (A)); a vehicle's [mobility]
+# road_speed_pct overrides it. Checked in Build A against the defs: Opel
+# Blitz 800 cm/s (29 km/h) -> 50 km/h; Sd.Kfz. 251 750 -> 41 km/h; Pz IV
+# 600 (22 km/h) -> 30 km/h, all at or under the historical road speeds
+# (about 80, 52 and 38 km/h). Towed guns: 100 (a hitched gun moves with
+# its tower).
+wheeled_pct = 175
+halftrack_pct = 150
+tracked_pct = 140
+# Reverse speed on a road node in percent of reverse_cm_s.
+reverse_pct = 100
+# R3: 1 prices a road node by time (100 / road pct of a step, no woods
+# factor); 0 prices it as any other node.
+path_cost = 1
+# R3: on a map with roads the A* heuristic weight is
+# max(100, 130 x heuristic_pct / road pct) percent (100: plain A* at
+# least, so searches stay under path_max_expansions).
+heuristic_pct = 100
+# S16 review (F3): a road-map vehicle search that stops at
+# path_max_expansions without reaching its goal (about 1-5 % of searches
+# on Linden Brook, more for tracks) runs once more at this heuristic
+# weight in percent (130: the weight every Kessel Ridge search uses) and
+# keeps that path if it reaches the goal, instead of a partial path (and
+# an AI gun or belt route of None). 0: no retry. Searches that reach
+# their goal are unchanged; a map without roads never retries.
+cap_retry_weight_pct = 130
+
+[teams]
+# S17a (docs/slices/S17-team-play.md 2, 4): team play. A player alone on his
+# team (every 1v1) reads none of the _pct keys, and the switches reduce to
+# the 1v1 rules there. No value here is tuned (owner rule 2026-11-25).
+shared_sight = 1             # T2: allies see each other's spots, mines, markers
+team_tickets = 1             # T6: one drain per team (0: per player)
+wiped_waits = 1              # T7: a wiped player with a standing ally is not out
+pop_pct = 67                 # T9: pop cap of a team player, % of pop_cap (S17-2)
+income_pct = 100             # T9: base and point income of a team player (%)
+start_manpower_pct = 100     # T9: start manpower of a team player (%)
+tickets_pct = 100            # T9: start tickets of a team player (%)
+handover = 1                 # S18 H1: a surrendered (or dropped) player's troops go to his ally
+handover_pop = 0             # S18-6: 1 = handed-over troops count against the ally's pop cap
+ping_gap_s = 2               # S18 H5: least seconds between two map pings of one player
+
+[ai.team]
+# S17 (plan 6): an AI with an ally. A3 and A4 (S17b) are on; an AI alone
+# on its team never runs them (every 1v1). No value here is tuned.
+share_points = 1             # A3: ally squads at a point lower my demand there
+ally_squad_pct = 100         # A3: one ally squad's weight against demand (%)
+help_ally = 1                # A4: a threatened ally point gets a defence task
+help_priority = 80           # A4: its priority (own threatened point: 80) ...
+help_demand = 1              # ... and demand (squads)
+foe_first = 0                # A1: 0 = the hostile player with the nearest base; 1 = the lowest slot
+
 # S14 assault kit (docs/slices/S14-assault-kit.md 2-3): flame particles F1-F9. Every number is a
 # balance lever (owner 2026-11-25: no balance runs in S14; a later pass fixes them here). The
 # switch is on since S14-ai Build D; with 0 no particle exists and flame slots resolve to today's men.

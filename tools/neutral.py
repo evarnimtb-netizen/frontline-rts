@@ -26,10 +26,15 @@ Compares the CLI JSON files present in both directories:
   off). S12b (Build C): a key starting `s12_derived` that BASE lacks is
   skipped likewise (its HE share over kills plus downs, length and losses
   read with the switches off; the `s12` counters stay checked as zero).
-  The set header's
+  S16a (Build A): a key starting `s16_derived` that BASE lacks is skipped
+  likewise (its per-search path expansions are read with every switch
+  off); S16b: so is a key inside an `s16_derived` both have that BASE
+  lacks (`road_km_pct`, vehicle km on and off roads). The set header's
   `overrides` list (the `-o` files a run was given) is not part of the
   verdict: when it differs the line gets a note `(note: overrides N -> M
-  items)`.
+  items)`. S16a: the header's `map` (the map the set played) likewise gets
+  a note when only NEW names it (`map - -> ww2:kessel_ridge`); two sets
+  that name different maps are DIFFERENT.
 * any other JSON in both (fortify-test, armour-test): every BASE value
   equal (keys only in NEW are allowed: new rows).
 
@@ -49,7 +54,7 @@ IGNORED = {"tick_p99_ms", "jobs", "schema"}
 MATCH_IGNORED = {"hash"}
 # Set-header fields that record how a run was made, not what it did: a
 # difference is printed as a note, never counted.
-HEADER_NOTED = {"overrides"}
+HEADER_NOTED = {"overrides", "map"}
 # S11a1 (review B-4): the keys of an `s11a1` block that hold denominators,
 # not counters; every other value there must be blank in an all-off run.
 S11A1_DENOMS = {"matches", "kills", "income_mp", "gun_kills_in_tank_he"}
@@ -99,7 +104,11 @@ def diff(base, new, path, out, strict, skip=frozenset()):
             if k not in new:
                 out.append(f"{p}: only in BASE")
             elif k not in base:
-                if k.startswith(("s10c", "s11a2", "s11b", "s12_derived")):
+                if k.startswith(("s10c", "s11a2", "s11b", "s12_derived", "s16_derived")):
+                    continue
+                # S16b: a new block inside an `s16_derived` both have
+                # (`road_km_pct`: vehicle km, read with every switch off).
+                if path == "s16_derived":
                     continue
                 if k.startswith("s11a1"):
                     if strict and not blank_but_denoms(new[k]):
@@ -137,6 +146,9 @@ def header_notes(base, new):
     for k in sorted(HEADER_NOTED):
         b, n = base.get(k), new.get(k)
         if b != n:
+            if isinstance(b, str) or isinstance(n, str):
+                notes.append(f"{k} {b or '-'} -> {n or '-'}")
+                continue
             size = lambda v: len(v) if isinstance(v, list) else (0 if v is None else 1)
             notes.append(f"{k} {size(b)} -> {size(n)} items")
     return notes
@@ -161,6 +173,9 @@ def skirmish(base, new):
             same += 1
     for k in sorted(set(nm) - set(bm), key=str):
         out.append(f"match {k}: only in NEW")
+    # S16a: sets of two different maps are never the same.
+    if base.get("map") and new.get("map") and base["map"] != new["map"]:
+        out.append(f"map: {base['map']} -> {new['map']}")
     agg_b = {k: v for k, v in base.items() if k != "per_match" and k not in HEADER_NOTED}
     agg_n = {k: v for k, v in new.items() if k != "per_match" and k not in HEADER_NOTED}
     diff(agg_b, agg_n, "", out, True)

@@ -891,7 +891,12 @@ impl RenderSnapshot {
                             .push((c.suppression / 1000).min(100) as u8);
                         self.soldier_pinned.push(c.pinned);
                         self.soldier_ducked.push(c.ducked);
-                        self.soldier_visible.push(c.seen_by | (1 << owner));
+                        // S17b (checker after A, 5): bit p set when p's team
+                        // sight sees him or p is his ally (alone: as before).
+                        self.soldier_visible
+                            .push(game.map_or(c.seen_by | (1 << owner), |g| {
+                                g.teams.visible_mask(owner, c.seen_by)
+                            }));
                         let u = &ents.unit()[i];
                         self.soldier_stance_order.push(u.stance);
                         self.soldier_detached.push(u.detached);
@@ -1128,7 +1133,7 @@ impl RenderSnapshot {
                 surrendered: pl.surrendered,
                 defeat: pl.defeat,
                 pop: g.population(ents, id),
-                pop_cap: g.setup().rules.pop_cap,
+                pop_cap: g.pop_cap_of(id),
                 kills: pl.kills,
                 losses: pl.losses,
                 points_held: g.points().iter().filter(|c| c.owner == Some(id)).count() as u8,
@@ -1479,7 +1484,7 @@ impl RenderSnapshot {
                 seen_by: if wreck || abandoned {
                     all
                 } else {
-                    ents.combat()[i].seen_by | (1 << owner)
+                    g.teams.visible_mask(owner, ents.combat()[i].seen_by)
                 },
                 seats,
                 components,

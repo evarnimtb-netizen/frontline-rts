@@ -41,6 +41,8 @@ const LOST_US: u64 = 75_000_000;
 const WAIT_US: u64 = 60_000_000;
 /// Published hashes kept for tests and the HUD (about 34 minutes).
 pub const HASH_KEEP: usize = 4096;
+/// S18 H5: allies' map pings waiting for the presenter, at most.
+pub const MAX_PINGS: usize = 16;
 
 /// What the sim thread reads from and sends to the net thread. Tests use a
 /// fake with a virtual clock.
@@ -89,7 +91,8 @@ pub struct NetMatchInfo {
     pub d: u8,
     /// Same on both clients: `<seed>-<8 hex digits>`.
     pub match_id: String,
-    pub names: [String; 2],
+    /// One per slot (an AI slot's is empty).
+    pub names: Vec<String>,
     pub build_id: String,
     pub content_hash: u64,
     pub setup_hash: u64,
@@ -181,7 +184,7 @@ pub struct NetStepper {
     slot: u8,
     driver: SimDriver,
     pause: Option<(PauseCause, u64)>,
-    desync: Option<(u64, [u64; 2], u64)>,
+    desync: Option<(u64, Vec<Option<u64>>, u64)>,
     bye: Option<ByeReason>,
     said_bye: bool,
     dumped: bool,
@@ -246,6 +249,15 @@ impl NetStepper {
                 NetEvent::Paused { cause, .. } => self.pause = Some((cause, now)),
                 NetEvent::Resume { .. } => self.pause = None,
                 NetEvent::Desync { tick, hashes, at } => self.desync = Some((tick, hashes, at)),
+                // S18 H5: an ally's map ping, for the presenter.
+                NetEvent::MapPing { slot, x, y } => {
+                    if let Ok(mut q) = counters.pings.lock() {
+                        if q.len() == MAX_PINGS {
+                            q.pop_front();
+                        }
+                        q.push_back((slot, x, y));
+                    }
+                }
                 NetEvent::Bye(r) => self.bye = Some(r),
                 _ => {}
             }
@@ -301,17 +313,23 @@ impl NetStepper {
             }
         }
         if !self.dumped
-            && let Some((tick, hashes, at)) = self.desync
+            && let Some((tick, hashes, at)) = self.desync.clone()
             && world.tick() >= at
         {
             self.dumped = true;
-            self.write_dump(world, tick, hashes, counters);
+            self.write_dump(world, tick, &hashes, counters);
         }
         self.publish(world, now, counters);
         stepped
     }
 
-    fn write_dump(&self, world: &World, tick: u64, hashes: [u64; 2], counters: &MatchCounters) {
+    fn write_dump(
+        &self,
+        world: &World,
+        tick: u64,
+        hashes: &[Option<u64>],
+        counters: &MatchCounters,
+    ) {
         let Some(base) = &self.info.user_dir else {
             return;
         };
@@ -325,7 +343,10 @@ impl NetStepper {
             d: self.info.d,
             slot: self.slot,
             desync_tick: tick,
-            hashes: hashes.map(|h| format!("{h:016x}")),
+            hashes: hashes
+                .iter()
+                .map(|h| h.map(|h| format!("{h:016x}")))
+                .collect(),
             ..DumpManifest::default()
         };
         let Some(rec) = self.driver.recorder.as_ref() else {
@@ -408,7 +429,7 @@ impl NetStepper {
             .stall_ticks
             .store(self.driver.stall_ticks, Ordering::Relaxed);
         counters.desync_tick.store(
-            self.desync.map_or(-1, |(t, _, _)| t as i64),
+            self.desync.as_ref().map_or(-1, |(t, _, _)| *t as i64),
             Ordering::Relaxed,
         );
         counters
@@ -522,7 +543,7 @@ mod tests {
         NetMatchInfo {
             d: 3,
             match_id: "7-0000abcd".into(),
-            names: ["a".into(), "b".into()],
+            names: vec!["a".into(), "b".into()],
             build_id: "test".into(),
             seed: 7,
             ..NetMatchInfo::default()
@@ -645,11 +666,14 @@ mod tests {
         );
         // A peer silent for 2 s shows; a silent relay is "reconnecting",
         // then lost.
-        l.status.peers[0] = PeerStat {
-            rtt_ms: 40,
-            unstable: true,
-            gone: false,
-        };
+        l.status.peers = vec![
+            PeerStat {
+                rtt_ms: 40,
+                unstable: true,
+                gone: false,
+            },
+            PeerStat::default(),
+        ];
         st.poll(&mut w, &mut l, &c);
         assert_eq!(
             NetState::from_u8(c.net_state.load(Ordering::Relaxed)),
@@ -717,7 +741,7 @@ mod tests {
         l.status.confirmed = 300;
         l.events.push_back(NetEvent::Desync {
             tick: 330,
-            hashes: [1, 2],
+            hashes: vec![Some(1), Some(2)],
             at: 335,
         });
         for _ in 0..200 {

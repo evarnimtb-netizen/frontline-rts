@@ -140,6 +140,7 @@ impl DigJob {
     /// none). Depth already dug at each segment's midpoint is credited.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
+        teams: &crate::teams::Teams,
         line: &[FxVec2],
         men: usize,
         owner: PlayerId,
@@ -157,7 +158,7 @@ impl DigJob {
             .soldiers()
             .filter(|id| {
                 let i = id.index();
-                ents.owner[i] != owner && ents.combat[i].seen_by & (1 << owner.0) != 0
+                teams.enemy_seen(owner.0, ents.owner[i].0, ents.combat[i].seen_by)
             })
             .map(|id| {
                 let p = ents.transform[id.index()].pos.xy();

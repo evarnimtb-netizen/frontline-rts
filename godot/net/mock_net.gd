@@ -10,12 +10,18 @@ extends RefCounted
 ##   host(port) -> bool          start the in-game relay and join it
 ##   join("addr:port") -> bool   IPv6 as "[addr]:port"
 ##   set_name(name)              before host/join (Hello carries the name)
-##   set_choice({faction, seed, map, input_delay})   slot 0 sets all four,
-##                               slot 1 only the faction (the rest ignored)
+##   set_choice({faction, seed, map, input_delay, team, players, ai})
+##                               slot 0 sets all; a joiner only the faction
+##                               and his team (the rest ignored). S18:
+##                               team -1 none; players 2..4; ai [{slot,
+##                               faction, team, difficulty}] (the AI fill)
+##   take_slot(slot)             S18: a joiner moves to an open slot
 ##   ready()                     sends Ready (setup hash)
 ##   leave()                     Bye; back to "idle"
-##   status() -> Dictionary      {state, slot, slots, seed, map, input_delay,
-##                               suggested_delay, mismatch, countdown_s, error}
+##   status() -> Dictionary      {state, slot, slots, players, seed, map,
+##                               input_delay, suggested_delay, mismatch,
+##                               countdown_s, error}; a slot is {name,
+##                               faction, ping_ms, ready, team, ai}
 ## Match side (the real bridge puts these in FrontlineMatch.get_state()):
 ##   match_state() -> {net: {...}, pending_orders: [{pos, kind}]}
 ##
@@ -34,7 +40,7 @@ const FACTIONS := ["germany", "usa", "ussr"]
 ## S15 M2: the pairs that may fight (the real rules' `[matchups] pairs`);
 ## USA-USSR is refused, as in the shipped plan (free skirmish only).
 const PAIRS := [["germany", "usa"], ["germany", "ussr"]]
-const MAPS := ["kessel_ridge"]
+const MAPS := ["kessel_ridge", "linden_brook", "harrow_cross"]
 
 ## Scripted opponent on/off (off: only stage() and explicit calls move it).
 var auto := true
@@ -58,6 +64,8 @@ var _error := ""
 var _host_port := 0
 var _countdown_end := 0.0
 var _name := DEFAULT_NAME
+## S18: slots in the match.
+var _players := 2
 ## Scheduled script steps: [time_s, Callable].
 var _todo: Array = []
 var _t0_ms := Time.get_ticks_msec()
@@ -133,6 +141,32 @@ func set_choice(choice: Dictionary) -> void:
 	if f in FACTIONS and f != _slots[_slot].faction:
 		_slots[_slot].faction = f
 		changed = true
+	if choice.has("team") and int(choice.team) != int(_slots[_slot].team):
+		_slots[_slot].team = clampi(int(choice.team), -1, 3)
+		changed = true
+	if _slot == 0 and choice.has("players"):
+		var n := clampi(int(choice.players), 2, 4)
+		# Never below a taken player slot.
+		for i in range(_slots.size() - 1, -1, -1):
+			if _slots[i].name != "":
+				n = maxi(n, i + 1)
+				break
+		if n != _players:
+			_players = n
+			changed = true
+		while _slots.size() < _players:
+			_slots.append(_empty_slot())
+		while _slots.size() > _players:
+			_slots.pop_back()
+	if _slot == 0 and choice.has("ai"):
+		for i in _slots.size():
+			if int(_slots[i].ai) >= 0:
+				_slots[i] = _empty_slot()
+		for a in choice.ai:
+			var k := int(a.get("slot", 0))
+			if k > 0 and k < _slots.size() and _slots[k].name == "" and String(a.get("faction", "")) in FACTIONS:
+				_slots[k] = _ai_slot(a.faction, int(a.get("team", -1)), int(a.get("difficulty", 1)))
+		changed = true
 	if _slot == 0:
 		if choice.has("seed") and int(choice.seed) != _seed:
 			_seed = int(choice.seed)
@@ -152,9 +186,27 @@ func set_choice(choice: Dictionary) -> void:
 		_mismatch = ""
 
 
+## S18: a joiner moves to an open slot (not slot 0, not an AI's).
+func take_slot(slot: int) -> void:
+	calls.append(["take_slot", [slot]])
+	if _state != "lobby" or _slot <= 0 or slot <= 0 or slot >= _slots.size():
+		return
+	if _slots[slot].name != "" or int(_slots[slot].ai) >= 0:
+		return
+	_slots[slot] = _slots[_slot]
+	_slots[_slot] = _empty_slot()
+	_slot = slot
+	for s in _slots:
+		if int(s.ai) < 0:
+			s.ready = false
+
+
 func ready() -> void:
 	calls.append(["ready", []])
 	if _state != "lobby" or _slot < 0:
+		return
+	if _players > 2:
+		_ready_team()
 		return
 	if _slots[1].name == "":
 		_mismatch = "Waiting for a second player."
@@ -178,6 +230,43 @@ func ready() -> void:
 	_maybe_start()
 
 
+## S18: Ready in a lobby of three or four slots: every slot filled, at
+## least two teams (no team: alone).
+func _ready_team() -> void:
+	var teams := {}
+	for i in _slots.size():
+		var s: Dictionary = _slots[i]
+		if s.name == "" and int(s.ai) < 0:
+			_mismatch = "Waiting for every slot to be filled."
+			return
+		teams[int(s.team) if int(s.team) >= 0 else 10 + i] = true
+	if teams.size() < 2:
+		_mismatch = "the players must be on at least two teams"
+		return
+	# S15 M2 with S18 teams (merge): every two hostile slots of different
+	# factions must be a pair the rules allow (allies may be any two).
+	for i in _slots.size():
+		for j in range(i + 1, _slots.size()):
+			var a: Dictionary = _slots[i]
+			var b: Dictionary = _slots[j]
+			var ta := int(a.team) if int(a.team) >= 0 else 10 + i
+			var tb := int(b.team) if int(b.team) >= 0 else 10 + j
+			if ta == tb or a.faction == b.faction or pair_allowed(a.faction, b.faction):
+				continue
+			_mismatch = "%s cannot fight %s in this ruleset; pick another faction." % [UiPalette.faction_name(a.faction), UiPalette.faction_name(b.faction)]
+			return
+	_mismatch = ""
+	_slots[_slot].ready = true
+	if auto:
+		_after(OPPONENT_READY_S, func() -> void:
+			if _state != "lobby" or not _slots[_slot].ready:
+				return
+			for s in _slots:
+				s.ready = true
+			_maybe_start())
+	_maybe_start()
+
+
 func leave() -> void:
 	calls.append(["leave", []])
 	_reset_lobby()
@@ -195,6 +284,7 @@ func status() -> Dictionary:
 		"state": _state,
 		"slot": _slot,
 		"slots": _slots.duplicate(true),
+		"players": _players,
 		"seed": _seed,
 		"map": _map,
 		"input_delay": _delay,
@@ -223,6 +313,7 @@ func reset_match() -> void:
 		"desync_tick": -1,
 		"desync_dump": "",
 		"disconnect_reason": "",
+		"pings": [],
 	}
 	pending.clear()
 
@@ -236,6 +327,8 @@ func match_state() -> Dictionary:
 	for p in pending:
 		out.append({"pos": p.pos, "kind": p.kind})
 	var n := net.duplicate()
+	# Pings are handed out once, like the bridge's.
+	net.pings = []
 	if n.state == "waiting" and n.has("waiting_until"):
 		n.waiting_s_left = maxf(float(n.waiting_until) - t, 0.0)
 	n.erase("waiting_until")
@@ -251,6 +344,12 @@ func mock_order(kind: StringName, pos: Vector3) -> void:
 	var halted: bool = net.state in ["paused", "waiting", "desync"]
 	var wait_s := INF if halted else float(net.delay_ms) / 1000.0 + float(net.ping_ms) / 2000.0
 	pending.append({"pos": pos, "kind": String(kind), "exec_at": now() + wait_s})
+
+
+## Mock of an ally in `slot` pinging the map at `pos` (S18 H5).
+func mock_ally_ping(slot: int, pos: Vector3) -> void:
+	var who := String(_slots[slot].name) if slot >= 0 and slot < _slots.size() else ""
+	net.pings.append({"slot": slot, "name": who, "pos": pos})
 
 
 ## Mock of the local player pausing or resuming.
@@ -281,7 +380,10 @@ func advance(dt: float) -> void:
 ## Puts the mock in a named state at once (tests and screenshots):
 ##   lobby states: idle, connecting, lobby_host (alone), lobby (two players,
 ##   slot 0), lobby_guest (slot 1), lobby_same_faction, lobby_mismatch,
-##   lobby_ready (both ready), countdown, disconnected, rejected;
+##   lobby_ready (both ready), countdown, disconnected, rejected; S18:
+##   lobby_2v2 (host, an AI ally, a guest and an AI on team 2),
+##   lobby_2v2_guest (the same, as the guest in slot 2), lobby_2v2_open
+##   (host alone in four slots);
 ##   match states: net_ok, net_unstable, net_waiting, net_reconnecting,
 ##   net_paused, net_paused_by_them, net_desync, net_disconnect.
 func stage(what: String) -> void:
@@ -320,6 +422,22 @@ func stage(what: String) -> void:
 				_slots[1].ready = true
 				_state = "countdown"
 				_countdown_end = now() + COUNTDOWN_S - 0.6
+		"lobby_2v2", "lobby_2v2_guest", "lobby_2v2_open":
+			_reset_lobby()
+			_state = "lobby"
+			_players = 4
+			_map = "harrow_cross"
+			_seed = 1944
+			_delay = 3
+			_slot = 2 if what == "lobby_2v2_guest" else 0
+			_slots = [_slot_dict("Erik", "germany", 41.0), _ai_slot("germany", 0, 1), _slot_dict("Sam", "usa", 44.0), _ai_slot("usa", 1, 2)]
+			_slots[0].team = 0
+			_slots[2].team = 1
+			_slots[_slot].name = _name
+			if what == "lobby_2v2_open":
+				for i in [1, 2, 3]:
+					_slots[i] = _empty_slot()
+			_suggest(44.0)
 		"disconnected":
 			_reset_lobby()
 			_fail("opponent_left")
@@ -373,7 +491,10 @@ func _stage_match(what: String) -> void:
 
 
 func _maybe_start() -> void:
-	if _state == "lobby" and _slots.size() == 2 and _slots[0].ready and _slots[1].ready:
+	var all_ready := _slots.size() >= 2
+	for s in _slots:
+		all_ready = all_ready and s.ready
+	if _state == "lobby" and all_ready:
 		_state = "countdown"
 		_countdown_end = now() + COUNTDOWN_S
 		net.input_delay = _delay
@@ -389,6 +510,7 @@ func _reset_lobby() -> void:
 	_state = "idle"
 	_slot = -1
 	_slots = []
+	_players = 2
 	_mismatch = ""
 	_error = ""
 	_host_port = 0
@@ -415,11 +537,16 @@ func _run_todo() -> void:
 
 
 func _slot_dict(n: String, faction: String, ping: float) -> Dictionary:
-	return {"name": n, "faction": faction, "ping_ms": ping, "ready": false}
+	return {"name": n, "faction": faction, "ping_ms": ping, "ready": false, "team": -1, "ai": -1}
 
 
 func _empty_slot() -> Dictionary:
-	return {"name": "", "faction": "", "ping_ms": -1.0, "ready": false}
+	return {"name": "", "faction": "", "ping_ms": -1.0, "ready": false, "team": -1, "ai": -1}
+
+
+## S18: an AI fill slot (difficulty 0 easy, 1 normal, 2 hard).
+func _ai_slot(faction: String, team: int, difficulty: int) -> Dictionary:
+	return {"name": "", "faction": faction, "ping_ms": -1.0, "ready": true, "team": team, "ai": clampi(difficulty, 0, 2)}
 
 
 func _other(f: String) -> String:

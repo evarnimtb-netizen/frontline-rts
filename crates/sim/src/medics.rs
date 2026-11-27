@@ -1182,9 +1182,7 @@ impl MatchState {
             .min(u32::MAX as u64) as u32;
         let pl = &self.players[p.0 as usize];
         let room = self
-            .setup
-            .rules
-            .pop_cap
+            .pop_cap_of(p)
             .saturating_sub(self.population(ctx.ents, p)) as usize;
         let afford = pl.manpower.checked_div(price).map_or(gaps, |n| n as usize);
         let n = gaps.min(room).min(afford);

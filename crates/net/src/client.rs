@@ -121,12 +121,24 @@ pub enum NetEvent {
         at: u64,
         close_at: u64,
     },
+    /// `hashes[i]`: slot `i`'s hash of `tick` (`None`: not reported, or
+    /// not a human slot).
     Desync {
         tick: u64,
-        hashes: [u64; 2],
+        hashes: Vec<Option<u64>>,
         at: u64,
     },
     Bye(ByeReason),
+    /// S18: the relay moved us to `slot` (an accepted `take_slot`).
+    Slot {
+        slot: u8,
+    },
+    /// S18 H5: an ally in `slot` pinged the map at `(x, y)` metres.
+    MapPing {
+        slot: u8,
+        x: i32,
+        y: i32,
+    },
 }
 
 /// The readout a HUD or a test wants.
@@ -151,7 +163,8 @@ pub struct ClientStatus {
     pub bundled: u64,
     /// Turn the match is paused before, if paused.
     pub paused_at: Option<u64>,
-    pub peers: [PeerStat; 2],
+    /// One entry per match slot (AI slots read as defaults).
+    pub peers: Vec<PeerStat>,
     /// Local µs since the relay was last heard from.
     pub silent_us: u64,
     pub schedule: Option<Schedule>,
@@ -216,6 +229,8 @@ pub struct NetClient {
     held: u64,
     buffer: BTreeMap<u64, Vec<Command>>,
     events: VecDeque<NetEvent>,
+    /// S18: revision of the last lobby state heard (`Ready` carries it).
+    lobby_rev: u32,
     out: Vec<(SocketAddr, Vec<u8>)>,
     buf: Vec<u8>,
     status: ClientStatus,
@@ -250,6 +265,7 @@ impl NetClient {
             held: 0,
             buffer: BTreeMap::new(),
             events: VecDeque::new(),
+            lobby_rev: 0,
             out: Vec::new(),
             buf: Vec::with_capacity(MAX_DATAGRAM),
             status: ClientStatus::default(),
@@ -363,8 +379,43 @@ impl NetClient {
         self.ctl_out.push(Up::LobbySet(l));
     }
 
+    /// Ready with `setup_hash`, for the last lobby state heard (S18: the
+    /// relay drops a ready for an older lobby revision).
     pub fn ready(&mut self, setup_hash: u64) {
-        self.ctl_out.push(Up::Ready { setup_hash });
+        self.ctl_out.push(Up::Ready {
+            setup_hash,
+            rev: self.lobby_rev,
+        });
+    }
+
+    /// Ready with `setup_hash`, made from lobby revision `rev` (the
+    /// `LobbyState::rev` the caller resolved the setup from). A caller on
+    /// another thread than this client's must use this, not [`Self::ready`]:
+    /// this client may already have heard a newer revision than the one
+    /// the hash was made from, and stamping that one would let a stale
+    /// hash through.
+    pub fn ready_for(&mut self, setup_hash: u64, rev: u32) {
+        self.ctl_out.push(Up::Ready { setup_hash, rev });
+    }
+
+    /// S18: asks to move to open slot `slot` (lobby only).
+    pub fn take_slot(&mut self, slot: u8) {
+        if self.phase == ClientPhase::Lobby {
+            self.ctl_out.push(Up::TakeSlot(slot));
+        }
+    }
+
+    /// S18 H5: pings the map at `(x, y)` metres for the allies (match
+    /// only; the relay drops pings closer together than its gap). The
+    /// point is clamped to the wire range (`0..=MAX_PING_M`): an off-map
+    /// point would fail the relay's decode, and the reliable control
+    /// stream would resend it forever, holding back every later hash,
+    /// pause and bye.
+    pub fn map_ping(&mut self, x: i32, y: i32) {
+        if self.phase == ClientPhase::Running {
+            let (x, y) = (x.clamp(0, MAX_PING_M), y.clamp(0, MAX_PING_M));
+            self.ctl_out.push(Up::MapPing { x, y });
+        }
     }
 
     pub fn request_pause(&mut self) {
@@ -457,7 +508,18 @@ impl NetClient {
 
     fn on_down(&mut self, msg: Down, now: u64) {
         match msg {
-            Down::Lobby(l) => self.events.push_back(NetEvent::Lobby(l)),
+            Down::Lobby(l) => {
+                self.lobby_rev = l.rev;
+                self.events.push_back(NetEvent::Lobby(l));
+            }
+            Down::Slot(slot) if self.phase == ClientPhase::Lobby => {
+                self.slot = Some(slot);
+                self.events.push_back(NetEvent::Slot { slot });
+            }
+            Down::Slot(_) => {}
+            Down::MapPing { slot, x, y } => {
+                self.events.push_back(NetEvent::MapPing { slot, x, y });
+            }
             Down::Start(s) if self.phase == ClientPhase::Lobby => {
                 let schedule = Schedule::new(s.start_at, s.tick_hz, s.speed_pct);
                 self.playout = playout_ticks(

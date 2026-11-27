@@ -66,6 +66,8 @@ struct SquadMemo {
 #[derive(Clone, Debug, Default)]
 pub struct EventTracker {
     local: u8,
+    /// S17: the local player's team (bit mask, him included); 0 = alone.
+    allies: u16,
     started: bool,
     owners: Vec<Option<u8>>,
     squads: BTreeMap<u32, SquadMemo>,
@@ -211,9 +213,18 @@ impl EventTracker {
         }
     }
 
+    /// S17: the tracker of a team match (`allies`: the local player's
+    /// team mask): an ally's capture and a team win read as such.
+    pub fn with_allies(mut self, allies: u16) -> EventTracker {
+        self.allies = allies;
+        self
+    }
+
     /// Compares `f` with the previous frame and appends the new messages.
     pub fn update(&mut self, f: &MatchFrame, setup: &MatchSetup, out: &mut Vec<UiEvent>) {
         let local = self.local;
+        let allies = self.allies;
+        let ally = |p: u8| p != local && p < 16 && allies & (1 << p) != 0;
         let hz = setup.tick_hz.max(1) as u64;
         let mut push = |kind, text: String, pos: Option<[f32; 2]>| {
             out.push(UiEvent {
@@ -246,6 +257,9 @@ impl EventTracker {
                     ),
                     Some(_) if before == Some(local) => {
                         push("point_lost", format!("Point {name} lost."), Some(p.pos))
+                    }
+                    Some(o) if ally(o) => {
+                        push("info", format!("Our ally took point {name}."), Some(p.pos))
                     }
                     Some(_) => push("info", format!("The enemy took point {name}."), Some(p.pos)),
                     None if before == Some(local) => push(
@@ -320,7 +334,9 @@ impl EventTracker {
         if !self.ended && f.outcome != Outcome::Running {
             self.ended = true;
             let text = match f.outcome {
-                Outcome::Won { winner } if winner.0 == local => "The enemy is beaten.",
+                Outcome::Won { winner } if winner.0 == local || ally(winner.0) => {
+                    "The enemy is beaten."
+                }
                 Outcome::Won { .. } => "We have lost the field.",
                 _ => "Nobody holds the field.",
             };

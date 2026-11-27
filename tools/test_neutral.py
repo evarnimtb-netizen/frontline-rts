@@ -254,6 +254,52 @@ class Neutral(unittest.TestCase):
         new["matches"] = 3
         self.assertFalse(self.run_dirs(base, new)[1])
 
+    def test_s16_map_header_is_a_note_when_only_new_names_it(self):
+        # S16a: a set made before `map` existed against one that names it.
+        new = copy.deepcopy(BASE)
+        new["map"] = "ww2:kessel_ridge"
+        lines, ok = self.run_dirs(BASE, new)
+        self.assertTrue(ok, lines)
+        self.assertEqual(lines, ["skirmish40.json: same 2/2 (note: map - -> ww2:kessel_ridge)"])
+        # Both name the same map: no note.
+        base = copy.deepcopy(new)
+        lines, ok = self.run_dirs(base, new)
+        self.assertTrue(ok, lines)
+        self.assertEqual(lines, ["skirmish40.json: same 2/2"])
+
+    def test_s16_different_maps_fail(self):
+        # Control: two sets of different maps are never neutral, even with
+        # every match equal.
+        base = dict(copy.deepcopy(BASE), map="ww2:kessel_ridge")
+        new = dict(copy.deepcopy(BASE), map="ww2:linden_brook")
+        lines, ok = self.run_dirs(base, new)
+        self.assertFalse(ok)
+        self.assertIn("map: ww2:kessel_ridge -> ww2:linden_brook", "\n".join(lines))
+
+    def test_neutral_skips_s16_derived_the_base_lacks(self):
+        # S16a: the per-search path expansions count with every switch off.
+        new = copy.deepcopy(BASE)
+        new["s16_derived"] = {"path_search": {"searches": 900, "mean": 210.5, "p99": 4031, "max": 8000}}
+        self.assertTrue(self.run_dirs(BASE, new)[1])
+        # Control: when BASE has it too, it is compared.
+        base = copy.deepcopy(new)
+        base["s16_derived"]["path_search"]["searches"] = 901
+        lines, ok = self.run_dirs(base, new)
+        self.assertFalse(ok)
+        self.assertIn("s16_derived.path_search.searches", "\n".join(lines))
+        # S16b: a block inside s16_derived that BASE lacks is skipped too;
+        # a key BASE lacks inside one both have is still checked.
+        new3 = copy.deepcopy(new)
+        new3["s16_derived"]["road_km_pct"] = {"wheeled": {"pct": 0.0, "km": 120.5}}
+        self.assertTrue(self.run_dirs(new, new3)[1])
+        new4 = copy.deepcopy(new)
+        new4["s16_derived"]["path_search"]["p50"] = 7
+        self.assertFalse(self.run_dirs(new, new4)[1])
+        # Control: the same block under another name fails.
+        new2 = copy.deepcopy(BASE)
+        new2["s17_derived"] = new["s16_derived"]
+        self.assertFalse(self.run_dirs(BASE, new2)[1])
+
     def test_first_five_differences_only(self):
         new = copy.deepcopy(BASE)
         for m in new["per_match"]:

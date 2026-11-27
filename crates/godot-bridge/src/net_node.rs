@@ -13,6 +13,7 @@ use godot::prelude::*;
 
 use crate::match_setup::{MenuChoice, find_mods_dir, load_defs, menu_options, mods_candidates};
 use crate::net_session::{ChoiceUpdate, NetSession};
+use frontline_net::protocol::AiPick;
 
 #[derive(GodotClass)]
 #[class(base = RefCounted)]
@@ -91,17 +92,48 @@ impl FrontlineNet {
     }
 
     /// Partial lobby choice: any of `faction`, `seed`, `map`,
-    /// `input_delay`. Slot 1's seed, map and delay are ignored by the relay.
+    /// `input_delay`, `team` (-1: none), `players` (2 to 4) and `ai` (an
+    /// array of `{slot, faction, team, difficulty}`, the AI fill). A
+    /// joiner's seed, map, delay, players and ai are ignored by the relay.
     #[func]
     fn set_choice(&mut self, choice: VarDictionary) {
         let s = |k: &str| choice.get(k).map(|v| v.to_string());
         let n = |k: &str| choice.get(k).and_then(|v| v.try_to::<i64>().ok());
+        let team = |v: i64| (v >= 0).then(|| v.min(3) as u8);
+        let ai = choice
+            .get("ai")
+            .and_then(|v| v.try_to::<VarArray>().ok())
+            .map(|a| {
+                a.iter_shared()
+                    .filter_map(|v| v.try_to::<VarDictionary>().ok())
+                    .map(|d| {
+                        let n = |k: &str| d.get(k).and_then(|v| v.try_to::<i64>().ok());
+                        AiPick {
+                            slot: n("slot").unwrap_or(0).clamp(0, 3) as u8,
+                            faction: d.get("faction").map(|v| v.to_string()).unwrap_or_default(),
+                            team: n("team").and_then(team),
+                            difficulty: n("difficulty").unwrap_or(1).clamp(0, 2) as u8,
+                        }
+                    })
+                    .collect()
+            });
         self.session.set_choice(ChoiceUpdate {
             faction: s("faction"),
             seed: n("seed").map(|v| v.max(0) as u64),
             map: s("map"),
             d: n("input_delay").map(|v| v.clamp(0, 255) as u8),
+            team: n("team").map(team),
+            players: n("players").map(|v| v.clamp(2, 4) as u8),
+            ai,
         });
+    }
+
+    /// S18: move to open lobby slot `slot` (not as the host, not to slot 0).
+    #[func]
+    fn take_slot(&mut self, slot: i64) {
+        if (1..4).contains(&slot) {
+            self.session.take_slot(slot as u8);
+        }
     }
 
     /// Sends `Ready` (the hash of the setup this client would play).
@@ -190,8 +222,9 @@ impl FrontlineNet {
     }
 
     /// Lobby snapshot (`godot/docs/net_api.md`): state, slot, slots (name,
-    /// faction, ping_ms, ready), seed, map, input_delay, suggested_delay,
-    /// mismatch, countdown_s, error, error_detail, host_port.
+    /// faction, ping_ms, ready, team, ai), players, seed, map, input_delay,
+    /// suggested_delay, mismatch, countdown_s, error, error_detail,
+    /// host_port.
     #[func]
     fn status(&mut self) -> VarDictionary {
         let v = self.session.view();
@@ -203,6 +236,8 @@ impl FrontlineNet {
                     "faction" => s.faction.as_str(),
                     "ping_ms" => s.ping_ms,
                     "ready" => s.ready,
+                    "team" => s.team as i64,
+                    "ai" => s.ai as i64,
                 }
                 .to_variant(),
             );
@@ -211,6 +246,7 @@ impl FrontlineNet {
             "state" => v.state,
             "slot" => v.slot as i64,
             "slots" => &slots,
+            "players" => v.players as i64,
             "seed" => v.seed as i64,
             "map" => v.map.as_str(),
             "input_delay" => v.input_delay as i64,

@@ -929,15 +929,14 @@ impl MatchState {
         // G6 self-defence: a seen enemy within `gun_break_m`.
         let gp = f.origin.xy();
         let brk = Fx::from_int(fm.gun_break_m as i32);
-        let bit = 1u32 << sq_owner.0;
+        let teams = self.teams;
         let near = |p: FxVec2| (p - gp).length_sq_raw() <= range_sq(brk);
         let mut threat = false;
         ctx.soldiers.for_each_near(gp, brk, |t| {
             let ti = t.index();
             threat |= ents.kind[ti] == EntityKind::Soldier
                 && ents.combat[ti].hp > 0
-                && ents.owner[ti] != sq_owner
-                && ents.combat[ti].seen_by as u32 & bit != 0
+                && teams.enemy_seen(sq_owner.0, ents.owner[ti].0, ents.combat[ti].seen_by)
                 && near(ents.transform[ti].pos.xy());
         });
         threat = threat
@@ -945,8 +944,7 @@ impl MatchState {
                 let ti = t.index();
                 ts.wreck_tick.is_none()
                     && ents.kind[ti] == EntityKind::Vehicle
-                    && ents.owner[ti] != sq_owner
-                    && ents.combat[ti].seen_by as u32 & bit != 0
+                    && teams.enemy_seen(sq_owner.0, ents.owner[ti].0, ents.combat[ti].seen_by)
                     && near(ents.transform[ti].pos.xy())
             });
         if threat {
@@ -1293,11 +1291,11 @@ impl MatchState {
         if k == EntityKind::Abandoned && !ordered {
             return None;
         }
-        if !ordered && ents.owner[t.index()] == owner {
+        if !ordered && !self.teams.hostile_id(owner, ents.owner[t.index()]) {
             return None;
         }
         let r = range_sq(self.setup.weapons[main.weapon as usize].range_max.into());
-        let seen = ents.combat[t.index()].seen_by & (1 << owner.0) != 0;
+        let seen = self.teams.sees(owner.0, ents.combat[t.index()].seen_by);
         if !seen {
             return None;
         }
@@ -1400,8 +1398,11 @@ impl MatchState {
                 if !ordered
                     && (ts.wreck_tick.is_some()
                         || ents.kind[ti] != EntityKind::Vehicle
-                        || ents.owner[ti] == owner
-                        || ents.combat[ti].seen_by & (1 << owner.0) == 0)
+                        || !self.teams.enemy_seen(
+                            owner.0,
+                            ents.owner[ti].0,
+                            ents.combat[ti].seen_by,
+                        ))
                 {
                     continue;
                 }
@@ -1445,7 +1446,7 @@ impl MatchState {
         let blast_r = Fx::from_int(setup.rules.vehicles.gunnery.he_group_m as i32);
         let mut near: Vec<(u64, u32)> = Vec::new();
         for (k, m) in ctx.marks.iter().enumerate() {
-            if m.owner == owner.0 || m.seen_by & (1 << owner.0) == 0 {
+            if !self.teams.enemy_seen(owner.0, m.owner, m.seen_by) {
                 continue;
             }
             let d = (m.pos.xy() - f.origin.xy()).length_sq_raw();
@@ -1489,7 +1490,8 @@ impl MatchState {
         (None, false)
     }
 
-    /// Whether own soldiers stand within the rules' `he_clear` of `p`.
+    /// Whether own (S17a: or allied) soldiers stand within the rules'
+    /// `he_clear` of `p`.
     fn own_men_near(&self, ents: &Entities, ctx: &GunCtx, owner: PlayerId, p: FxVec3) -> bool {
         let clear: Fx = self.setup.rules.vehicles.he_clear.into();
         let r = range_sq(clear);
@@ -1498,7 +1500,7 @@ impl MatchState {
             let i = s.index();
             if !found
                 && ents.kind[i] == EntityKind::Soldier
-                && ents.owner[i] == owner
+                && self.teams.allied(owner.0, ents.owner[i].0)
                 && (ents.transform[i].pos.xy() - p.xy()).length_sq_raw() <= r
             {
                 found = true;
@@ -1526,8 +1528,7 @@ impl MatchState {
         let Some(m) = ctx.marks.get(k as usize) else {
             return false;
         };
-        m.owner != owner.0
-            && m.seen_by & (1 << owner.0) != 0
+        self.teams.enemy_seen(owner.0, m.owner, m.seen_by)
             && (m.pos.xy() - from.xy()).length_sq_raw() <= r
             && in_cone(axis_yaw, m.pos.xy() - from.xy(), cone)
     }

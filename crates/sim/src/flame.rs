@@ -380,7 +380,8 @@ pub(crate) fn flame_aim_z(game: &MatchState, terrain: &Heightfield, owner: u8, p
     let f = &game.setup.rules.flame;
     let near = Fx::from_int(f.slit_near_cm as i32).div_int(100);
     for q in game.fort.pieces.values() {
-        if q.owner.0 == owner {
+        // S17a T1 (merge with S14): an ally's roof is not aimed at.
+        if game.teams.allied(owner, q.owner.0) {
             continue;
         }
         let Some(def) = game.setup.forts.get(q.fort as usize) else {
@@ -495,6 +496,9 @@ impl MatchState {
                 statics: self.static_boxes(),
                 downed: (!self.casualties.is_empty()).then_some(downed),
                 wounds: (s.rules.wounds.enabled != 0).then_some(&s.rules.wounds),
+                // S17a T3 (merge with S14): the stream passes allies as it
+                // passes own men.
+                teams: self.teams,
             };
             let (mut ended, mut ev, mut tests) = (Vec::new(), Vec::new(), 0u64);
             let dt = Fx::ONE.div_int(60);
@@ -683,9 +687,9 @@ impl MatchState {
                 }
                 c.burn_until = c.burn_until.max(tick + burn_ticks);
                 hash.mark_entity_chunk(id.chunk());
-                // Burns of enemy men only (own burns have no counter of
-                // their own: none is saved).
-                if ents.owner[id.index()].0 != q.by.0 {
+                // Burns of enemy men only (own and, S17a T3, ally burns
+                // have no counter of their own: none is saved).
+                if self.teams.hostile(q.by.0, ents.owner[id.index()].0) {
                     self.players[q.player as usize].s14.patch_hits += 1;
                 }
             }
@@ -1289,6 +1293,7 @@ fn nearest_enemy(
     near: impl FnOnce(&mut dyn FnMut(SimId)),
     kind: &[EntityKind],
     owners: &[PlayerId],
+    teams: &crate::teams::Teams,
     transform: &[Transform],
     me: SimId,
     owner: u8,
@@ -1301,7 +1306,11 @@ fn nearest_enemy(
     let mut best: Option<(u64, SimId)> = None;
     near(&mut |id: SimId| {
         let j = id.index();
-        if id == me || kind.get(j) != Some(&EntityKind::Soldier) || owners[j].0 == owner {
+        // S17a T1 (merge with S14): an ally is never struck.
+        if id == me
+            || kind.get(j) != Some(&EntityKind::Soldier)
+            || !teams.hostile(owner, owners[j].0)
+        {
             return;
         }
         let fz = transform[j].pos.z;
@@ -1447,6 +1456,7 @@ pub(crate) fn strike_tick(
         |f| ctx.spatial.for_each_near(pos, within, f),
         ctx.kind,
         ctx.owner,
+        &ctx.game.teams,
         ctx.transform,
         id,
         ctx.owner[i].0,
@@ -1505,6 +1515,7 @@ impl MatchState {
                 near,
                 &ents.kind,
                 &ents.owner,
+                &self.teams,
                 &ents.transform,
                 m,
                 p.0,
@@ -1568,6 +1579,7 @@ impl MatchState {
                     .get(wi as usize)
                     .is_some_and(|w| w.bayonet.is_some());
             let owner = ents.owner[i].0;
+            let teams = self.teams;
             let c = &ents.combat[i];
             let pos = ents.transform[i].pos;
             let chest = (c.fire_height - Fx::from_milli(400)).max(Fx::from_milli(100));
@@ -1590,7 +1602,7 @@ impl MatchState {
                 .for_each_near(pos.xy(), reach + Fx::from_int(2), |id| {
                     let j = id.index();
                     if j == i
-                        || ents.owner[j].0 == owner
+                        || !teams.hostile(owner, ents.owner[j].0)
                         || ents.kind[j] != EntityKind::Soldier
                         || ents.combat[j].hp == 0
                     {

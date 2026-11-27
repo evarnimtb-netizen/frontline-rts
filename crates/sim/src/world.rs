@@ -494,7 +494,14 @@ const SAVE_MAGIC: [u8; 8] = *b"FLSIM\0\0\0";
 /// `VehicleState::rider_off`; in the setup `TransportSetup::exposed`, the
 /// `[matchups]`, `[riders]`, `[body_armour]` keys, plates, foreign feeds
 /// and bayonet blocks). One bump for the whole slice.
-const SAVE_VERSION: u32 = 34;
+/// 35: S16-S18, merged over S14/S15's 34 in one bump (S16a `FLAG_ROAD` in
+/// the terrain flag layer and the point-symmetry blend, `MapSetup::roads`,
+/// `[vehicles.road]`, `MobilitySetup::road_speed_pct`; S17a
+/// `PlayerSetup::team`, `[teams]`, `[ai.team]`, the team table derived, not
+/// saved; S18 `PlayerState::{handed, handed_to}`, the H1 hand-over, `[teams]
+/// handover, handover_pop, ping_gap_s`). On the S16-S18 branch alone these
+/// were 33, 34 and 35.
+const SAVE_VERSION: u32 = 35;
 
 #[derive(Serialize)]
 struct SaveRef<'a> {
@@ -962,6 +969,17 @@ impl World {
     /// the benchmark's ray budget. Never affects sim results.
     pub fn install<R: Send>(&self, op: impl FnOnce() -> R + Send) -> R {
         self.threads.install(op)
+    }
+
+    /// S16a: starts counting every path search this world's pool threads
+    /// run (expansions per search, AI searches included) into the returned
+    /// sink. A CLI observer: never affects sim results.
+    pub fn observe_path_searches(&self) -> crate::path::observe::Sink {
+        let sink = crate::path::observe::Sink::default();
+        let s = sink.clone();
+        self.threads
+            .broadcast(|_| crate::path::observe::set_thread_sink(Some(s.clone())));
+        sink
     }
 
     /// Runs one tick with the commands scheduled for it. Returns the combined
@@ -1437,6 +1455,7 @@ impl World {
                         downed: (!g.casualties.is_empty()).then_some(&*downed),
                         wounds: (g.setup().rules.wounds.enabled != 0)
                             .then_some(&g.setup().rules.wounds),
+                        teams: g.teams,
                     };
                     threads.install(|| {
                         projectiles
@@ -1545,6 +1564,7 @@ impl World {
                     .as_ref()
                     .is_some_and(|g| !g.casualties.is_empty())
                     .then_some(&*downed),
+                teams: game.as_ref().map(|g| g.teams).unwrap_or_default(),
             };
             game.as_mut().expect("match world").apply_blows(
                 &mut ctx,
@@ -3176,6 +3196,12 @@ mod s15_ai_tests;
 #[cfg(test)]
 #[path = "s15_tests.rs"]
 mod s15_tests;
+#[cfg(test)]
+#[path = "s17_tests.rs"]
+mod s17_tests;
+#[cfg(test)]
+#[path = "s18_tests.rs"]
+mod s18_tests;
 #[cfg(test)]
 #[path = "s8b_tests.rs"]
 mod s8b_tests;
@@ -5721,6 +5747,7 @@ mod tests {
             ff_hit: Vec::new(),
             wounds: None,
             downed: None,
+            teams: Default::default(),
         };
         let g = game.as_mut().unwrap();
         g.deal(
@@ -5841,6 +5868,7 @@ mod tests {
                 ff_hit: Vec::new(),
                 wounds: None,
                 downed: None,
+                teams: Default::default(),
             };
             let g = state.game.as_mut().unwrap();
             let ko = g.deal(

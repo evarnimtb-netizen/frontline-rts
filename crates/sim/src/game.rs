@@ -58,6 +58,7 @@
 use std::collections::BTreeMap;
 
 use frontline_content::setup::{Capability, SquadTypeSetup};
+use frontline_content::tuning::TeamsTuning;
 use frontline_content::{DigProfile, ItemKind, MatchSetup, WeaponClass};
 use serde::{Deserialize, Serialize};
 
@@ -500,6 +501,11 @@ pub struct PlayerState {
     pub s14: crate::flame::S14Counters,
     /// S15: plate, rider, captured-bomb and bayonet counters (report).
     pub s15: crate::s15::S15Counters,
+    /// S18 H1: the squads handed to this player by a surrendered ally
+    /// (ascending, ids never reused; `crate::handover`).
+    pub handed: Vec<SquadId>,
+    /// S18 H1: the ally this player's troops went to when he surrendered.
+    pub handed_to: Option<PlayerId>,
 }
 
 /// S8a per-player counters (saved and hashed, read only by reports;
@@ -805,6 +811,11 @@ pub struct MatchState {
     pub(crate) next_patch: u32,
     /// S14 C1-C5: squads clearing a trench.
     pub(crate) clears: crate::flame::Clears,
+    /// S17a: the team table (`crate::teams`), derived from the setup: not
+    /// saved and not hashed (the setup is); rebuilt by
+    /// [`MatchState::rebuild_derived`] after load.
+    #[serde(skip)]
+    pub(crate) teams: crate::teams::Teams,
 }
 
 /// S4: a man picked up a fallen man's crew weapon (presentation only).
@@ -833,12 +844,24 @@ impl MatchState {
             .iter()
             .map(|t| t.initial_cooldown_ticks as u64)
             .collect();
+        let teams = crate::teams::Teams::of_setup(&setup);
+        let tt = &r.teams;
         let players = setup
             .players
             .iter()
-            .map(|_| PlayerState {
-                manpower: r.start_manpower,
-                tickets: r.tickets,
+            .enumerate()
+            .map(|(p, _)| PlayerState {
+                // T9: a player with an ally starts with the `[teams]` shares.
+                manpower: if teams.in_team(p as u8) {
+                    TeamsTuning::scale(r.start_manpower, tt.start_manpower_pct)
+                } else {
+                    r.start_manpower
+                },
+                tickets: if teams.in_team(p as u8) {
+                    TeamsTuning::scale(r.tickets, tt.tickets_pct).max(1)
+                } else {
+                    r.tickets
+                },
                 surrendered: false,
                 ready_at: start_ready.clone(),
                 kills: 0,
@@ -868,6 +891,8 @@ impl MatchState {
                 s12: crate::wounds::S12Counters::default(),
                 s14: crate::flame::S14Counters::default(),
                 s15: crate::s15::S15Counters::default(),
+                handed: Vec::new(),
+                handed_to: None,
             })
             .collect();
         let np = setup.players.len();
@@ -933,6 +958,7 @@ impl MatchState {
             patches: Vec::new(),
             next_patch: 0,
             clears: BTreeMap::new(),
+            teams,
             setup,
         }
     }
@@ -949,6 +975,24 @@ impl MatchState {
             &self.setup.rules.armour,
         );
         self.vderived = VehicleDerived::new(&self.setup, grid_dim(&self.setup));
+        self.teams = crate::teams::Teams::of_setup(&self.setup);
+    }
+
+    /// S17a: the team table.
+    #[inline]
+    pub fn teams(&self) -> &crate::teams::Teams {
+        &self.teams
+    }
+
+    /// S17a T9: `player`'s pop cap: `pop_cap`, times `[teams] pop_pct` for a
+    /// player with an ally.
+    pub fn pop_cap_of(&self, player: PlayerId) -> u32 {
+        let r = &self.setup.rules;
+        if self.teams.in_team(player.0) {
+            TeamsTuning::scale(r.pop_cap, r.teams.pop_pct)
+        } else {
+            r.pop_cap
+        }
     }
 
     // ------------------------------------------------------------ queries --
@@ -1038,23 +1082,34 @@ impl MatchState {
     /// `pop` (S3). S3b: no call-in waits anywhere, a bought squad is alive
     /// at once.
     pub fn population(&self, ents: &Entities, player: PlayerId) -> u32 {
+        // S18-6: with `[teams] handover_pop` 0 the squads a surrendered
+        // ally handed over never count (an empty list in every match
+        // without a hand-over: the filters below are then today's).
+        let free = self.setup.rules.teams.handover_pop == 0
+            && self
+                .players
+                .get(player.0 as usize)
+                .is_some_and(|p| !p.handed.is_empty());
+        let counted = |sq: Option<SquadId>| !free || !self.pop_free(player, sq);
         let alive = ents
             .soldiers()
-            .filter(|id| ents.owner[id.index()] == player)
+            .filter(|id| ents.owner[id.index()] == player && counted(ents.squad[id.index()]))
             .count() as u32;
         // S12 (S12-6 (A)): downed men count until they die or leave.
         let alive = alive
             + self
                 .casualties
-                .keys()
-                .filter(|id| ents.owner[id.index()] == player)
+                .iter()
+                .filter(|(id, c)| ents.owner[id.index()] == player && counted(Some(c.from_squad)))
                 .count() as u32;
         // S9: a gun counts its own `pop`; its crew are soldiers (above).
         let vehicles: u32 = self
             .vehicles
             .iter()
             .filter(|(id, _)| {
-                ents.kind[id.index()] == EntityKind::Vehicle && ents.owner[id.index()] == player
+                ents.kind[id.index()] == EntityKind::Vehicle
+                    && ents.owner[id.index()] == player
+                    && counted(ents.squad[id.index()])
             })
             .map(|(_, vs)| self.setup.vehicles[vs.type_idx as usize].pop)
             .sum();
@@ -1187,7 +1242,7 @@ impl MatchState {
                 .filter(|v| v.served())
                 .and_then(|v| v.crew_squad)
                 .map_or(0, |c| s.squad_types[c as usize].men as u32);
-        if self.population(ents, player) + ty.pop(&s.vehicles) + tow_pop > s.rules.pop_cap {
+        if self.population(ents, player) + ty.pop(&s.vehicles) + tow_pop > self.pop_cap_of(player) {
             return Err(CallInRefusal::PopCap);
         }
         Ok(())
@@ -1240,8 +1295,18 @@ impl MatchState {
             &CommandKind::CallIn { squad_type } => self.call_in(ctx, p, squad_type),
             CommandKind::Surrender => {
                 let pl = &mut self.players[p.0 as usize];
+                // A second Surrender (his own, then the relay's as he
+                // quits) changes nothing more: the hand-over is once.
+                let first = !pl.surrendered;
                 pl.surrendered = true;
                 pl.defeat = Some(Defeat::Surrendered);
+                // S18 H1: his troops go to his lowest-slot standing ally.
+                if first
+                    && self.setup.rules.teams.handover != 0
+                    && let Some(to) = self.handover_target(p)
+                {
+                    self.hand_over(ctx, p, to);
+                }
                 self.update_outcome();
                 true
             }
@@ -1489,6 +1554,7 @@ impl MatchState {
         let base = self.base_of(p);
         let sq = self.squads.get_mut(&id).expect("owned");
         let job = DigJob::new(
+            &self.teams,
             line,
             sq.members.len(),
             p,
@@ -2314,7 +2380,7 @@ impl MatchState {
                     && self.path_queue.queues.iter().any(|q| !q.is_empty()) =>
             {
                 self.fort
-                    .refresh_mine_layer(&self.setup.items, terrain.dim(), bands);
+                    .refresh_mine_layer(&self.teams, &self.setup.items, terrain.dim(), bands);
                 true
             }
             _ => false,
@@ -2440,13 +2506,17 @@ impl MatchState {
                         trench_cost_pct: 100,
                         ..cost
                     };
+                    let ty = &self.setup.vehicles[vs.type_idx as usize];
                     let veh = VehiclePathCost {
-                        block: self
-                            .vderived
-                            .block_of(&self.setup.vehicles[self.vehicles[&v].type_idx as usize]),
+                        block: self.vderived.block_of(ty),
                         avoid,
                         costs: &self.setup.rules.vehicles.path,
                         mines: None,
+                        road_pct: VehiclePathCost::road_for(
+                            &self.setup.map,
+                            &self.setup.rules.vehicles.road,
+                            &ty.mobility,
+                        ),
                     };
                     let set = mines_of(sq.owner, true);
                     let cross = |a: FxVec2, b: FxVec2| set.is_some_and(|s| s.crosses(a, b));
@@ -2509,7 +2579,8 @@ impl MatchState {
             return Err("an id counter is exhausted");
         }
         // S6.
-        self.supply6.validate(s, ents, &self.squads)?;
+        let handed_to: Vec<Option<PlayerId>> = self.players.iter().map(|p| p.handed_to).collect();
+        self.supply6.validate(s, ents, &self.squads, &handed_to)?;
         // S10a.
         self.fort.validate(s, ents, &self.squads, tick)?;
         // S12.
@@ -2545,15 +2616,21 @@ impl MatchState {
         }) {
             return Err("capture point progress is inconsistent");
         }
-        let standing = self.players.iter().filter(|p| p.defeat.is_none()).count();
+        // S17a: the team table from the setup (the derived one is rebuilt
+        // after this check).
+        let teams = crate::teams::Teams::of_setup(s);
+        let standing: Vec<u8> = (0..np as u8)
+            .filter(|&p| self.players[p as usize].defeat.is_none())
+            .collect();
+        let one_team = standing.iter().all(|&q| teams.allied(standing[0], q));
         let consistent = match self.outcome {
-            Outcome::Running => standing >= 2,
+            Outcome::Running => !standing.is_empty() && !one_team,
             Outcome::Won { winner } => {
                 (winner.0 as usize) < np
-                    && standing <= 1
                     && self.players[winner.0 as usize].defeat.is_none()
+                    && standing.iter().all(|&q| teams.allied(winner.0, q))
             }
-            Outcome::Draw => standing == 0,
+            Outcome::Draw => standing.is_empty(),
         };
         if !consistent {
             return Err("match outcome disagrees with the players");
@@ -2565,6 +2642,19 @@ impl MatchState {
                 || pl.drain_acc >= per_min
             {
                 return Err("bad player state");
+            }
+            // S18 H1: handed squads ascending and issued; a hand-over only
+            // from a surrendered player to an ally.
+            if pl.handed.windows(2).any(|w| w[0] >= w[1])
+                || pl.handed.iter().any(|q| q.0 >= self.next_squad)
+                || pl.handed_to.is_some_and(|t| {
+                    t.0 as usize >= np
+                        || t.0 as usize == p
+                        || !teams.allied(p as u8, t.0)
+                        || !pl.surrendered
+                })
+            {
+                return Err("bad hand-over state");
             }
             // Counters are bumped unchecked (the save fuzz).
             use crate::bounds::counters_ok;
@@ -2730,7 +2820,7 @@ impl MatchState {
                             < s.rules.items.resupply_ticks.max(1) + s.rules.supply.is_some() as u32
                         && l.attack.is_none_or(|t| {
                             ents.kind.get(t.index()) == Some(&EntityKind::Vehicle)
-                                && ents.owner[t.index()] != sq.owner
+                                && teams.hostile_id(sq.owner, ents.owner[t.index()])
                         })
                 }
             };
@@ -2760,7 +2850,7 @@ impl MatchState {
             }
             let live_enemy_vehicle = |t: SimId| {
                 ents.kind.get(t.index()) == Some(&EntityKind::Vehicle)
-                    && ents.owner[t.index()] != sq.owner
+                    && teams.hostile_id(sq.owner, ents.owner[t.index()])
             };
             let pzf_ok = match &sq.pzf {
                 None => ty.squad_items(ItemKind::SingleShotAt) == 0 || ty.vehicle.is_some(),
@@ -3011,6 +3101,7 @@ impl MatchState {
     /// references to live entities of the right kind, the wreck cap, the
     /// AT-ditch lines.
     fn validate_vehicles(&self, ents: &Entities, tick: u64) -> Result<(), &'static str> {
+        let teams = crate::teams::Teams::of_setup(&self.setup);
         let s = &self.setup;
         let size = Fx::from_int(s.map.size_m);
         let kind = |id: SimId| ents.kind.get(id.index()).copied();
@@ -3064,7 +3155,7 @@ impl MatchState {
                 return Err("a vehicle's crew squad or boarding squad is inconsistent");
             }
             wrecks += wreck as u32;
-            let enemy = |t: SimId| ents.owner[t.index()] != ents.owner[i];
+            let enemy = |t: SimId| teams.hostile_id(ents.owner[i], ents.owner[t.index()]);
             // S3c: an abandoned vehicle (any side's) only by order.
             let ordered_abandoned =
                 |t: SimId| kind(t) == Some(EntityKind::Abandoned) && vs.attack == Some(t);

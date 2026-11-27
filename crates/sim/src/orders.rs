@@ -123,8 +123,11 @@ impl MatchState {
         if ids.len() > crate::unit::MAX_UNITS
             || (!abandoned
                 && (ctx.ents.kind.get(ti) != Some(&EntityKind::Vehicle)
-                    || ctx.ents.owner[ti] == p
-                    || ctx.ents.combat[ti].seen_by & (1 << p.0) == 0))
+                    || !self.teams.enemy_seen(
+                        p.0,
+                        ctx.ents.owner[ti].0,
+                        ctx.ents.combat[ti].seen_by,
+                    )))
         {
             return false;
         }
@@ -339,12 +342,12 @@ impl MatchState {
             let abandoned = ctx.ents.kind.get(ti) == Some(&EntityKind::Abandoned);
             if !abandoned
                 && (ctx.ents.kind.get(ti) != Some(&EntityKind::Vehicle)
-                    || ctx.ents.owner[ti] == owner)
+                    || !self.teams.hostile_id(owner, ctx.ents.owner[ti]))
             {
                 vs.attack = None;
                 continue;
             }
-            if ctx.ents.combat[ti].seen_by & (1 << owner.0) == 0 {
+            if !self.teams.sees(owner.0, ctx.ents.combat[ti].seen_by) {
                 continue;
             }
             let Some(sid) = ctx.ents.squad[i] else {
@@ -454,8 +457,11 @@ impl MatchState {
             let enemy = (0..ctx.ents.len())
                 .filter(|&j| {
                     matches!(ctx.ents.kind[j], EntityKind::Soldier | EntityKind::Vehicle)
-                        && ctx.ents.owner[j] != owner
-                        && ctx.ents.combat[j].seen_by & (1 << owner.0) != 0
+                        && self.teams.enemy_seen(
+                            owner.0,
+                            ctx.ents.owner[j].0,
+                            ctx.ents.combat[j].seen_by,
+                        )
                 })
                 .map(|j| {
                     let q = ctx.ents.transform[j].pos.xy();

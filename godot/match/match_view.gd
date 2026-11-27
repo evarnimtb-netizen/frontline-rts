@@ -257,6 +257,8 @@ func _ready() -> void:
 func update_state(s: Dictionary) -> void:
 	state = s
 	local_player = s.get("local_player", 0)
+	# S17: the local team for the ally colour (absent: alone).
+	UiPalette.ally_mask = int(s.get("allies", 1 << local_player))
 	_clock += get_process_delta_time()
 	# Once the match is over the readout keeps its last values: the other
 	# side stops talking after its goodbye, which would read "unstable".
@@ -296,6 +298,10 @@ func update_state(s: Dictionary) -> void:
 		overlay.update_state(s, self)
 	for e in s.get("events", []):
 		event_feed.push(e)
+	# S18 H5: allies' map pings, in the feed (Space jumps there).
+	for p in net.get("pings", []):
+		var who := String(p.get("name", ""))
+		event_feed.push({"kind": "map_ping", "text": "%s pinged the map" % (who if who != "" else "An ally"), "pos": p.pos})
 	event_feed.update_state(s)
 	for c in [net_readout, net_overlay, net_disconnect]:
 		c.update_state(s)
@@ -778,6 +784,26 @@ func player(idx: int) -> Dictionary:
 	return ps[idx] if idx >= 0 and idx < ps.size() else {}
 
 
+## S17: the slot shown as "them" (top bar, end screen): the first player
+## not on the local player's team (a 1v1: the other player).
+func foe_slot() -> int:
+	var ps: Array = state.get("players", [])
+	for i in ps.size():
+		if i != local_player and not UiPalette.is_ally(i, local_player):
+			return i
+	return 1 - local_player
+
+
+## S17: the local player's allies (slots), for the roster and top bar.
+func ally_slots() -> Array:
+	var out := []
+	var ps: Array = state.get("players", [])
+	for i in ps.size():
+		if UiPalette.is_ally(i, local_player):
+			out.append(i)
+	return out
+
+
 ## S5b: asks the source for the fire-mission preview of `squad` at `g`.
 func request_fire_preview(squad: int, g: Vector3, rounds: int) -> void:
 	if preview_source != null:
@@ -832,6 +858,13 @@ func ground_pick(screen: Vector2) -> Variant:
 		return null
 	g.y = ground_y(g.x, g.z)
 	return g
+
+
+## S18 H5: pings `pos` for the allies (net match), and shows it in the
+## feed. The bridge drops pings closer than `[teams] ping_gap_s`.
+func map_ping(pos: Vector3) -> void:
+	emit_intent(&"map_ping", {"target": pos})
+	event_feed.push({"kind": "map_ping", "text": "You pinged the map", "pos": pos})
 
 
 func jump_camera(pos: Vector3) -> void:

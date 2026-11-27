@@ -427,7 +427,11 @@ impl Planner<'_> {
         }
         let pts = &s.map.points;
         let target = (0..pts.len())
-            .filter(|&k| g.points[k].owner != Some(self.me))
+            .filter(|&k| {
+                g.points[k]
+                    .owner
+                    .is_none_or(|o| g.teams.hostile_id(self.me, o))
+            })
             .min_by_key(|&k| {
                 let at: FxVec2 = pts[k].pos.into();
                 ((at - base).length_sq_raw(), k)
@@ -805,7 +809,7 @@ impl Planner<'_> {
         let below = s.rules.ai.medic.reinforce_below_pct as usize;
         let mut budget =
             g.players[me.0 as usize].manpower as i64 - self.held_pots() - self.medic_pot();
-        let mut room = s.rules.pop_cap as i64 - g.population(self.ents, me) as i64;
+        let mut room = g.pop_cap_of(me) as i64 - g.population(self.ents, me) as i64;
         let mut cards: Vec<u16> = self
             .ai
             .pending

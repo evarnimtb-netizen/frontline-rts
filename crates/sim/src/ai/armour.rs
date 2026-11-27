@@ -299,7 +299,7 @@ impl Planner<'_> {
                 .copied()
                 .filter(|v| {
                     self.ents.kind[v.index()] == EntityKind::Abandoned
-                        && self.ents.owner[v.index()] != self.me
+                        && self.g.teams.hostile_id(self.me, self.ents.owner[v.index()])
                 })
                 .collect()
         };
@@ -445,7 +445,7 @@ impl Planner<'_> {
             .filter(|v| {
                 let i = v.index();
                 self.ents.kind[i] == EntityKind::Abandoned
-                    && self.ents.owner[i] != self.me
+                    && self.g.teams.hostile_id(self.me, self.ents.owner[i])
                     && (self.ents.transform[i].pos.xy() - t.pos).length_sq_raw() <= r
                     && self.terrain.line_of_sight(
                         eye,

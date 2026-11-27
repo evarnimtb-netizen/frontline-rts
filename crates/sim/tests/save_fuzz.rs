@@ -350,7 +350,7 @@ struct SaveMirror<'a> {
 fn layout(w: &World) -> save_layout::Layout {
     let l = save_layout::Layout::of(&SaveMirror {
         magic: *b"FLSIM\0\0\0",
-        version: 34,
+        version: 35,
         state: w.state(),
     });
     assert!(
@@ -727,6 +727,105 @@ fn focus(path: &str) -> bool {
 
 /// Index of the staged S10b save in `fuzz_set` (after `FUZZ_SAVES`).
 const STAGED: usize = FUZZ_SAVES.len();
+/// S16a: the road-map save's index in `fuzz_set` (after the staged one).
+const ROADS: usize = STAGED + 1;
+/// S16a: the road-map match's save tick.
+const ROAD_TICK: u64 = 7_200;
+/// S17a: the four-player, two-team save's index in `fuzz_set`.
+const TEAMS: usize = ROADS + 1;
+/// S17a: the team match's save tick.
+const TEAM_TICK: u64 = 6_000;
+
+/// S17a: the paths the team save mutates: the players and their teams, the
+/// bases, `[teams]` and `[ai.team]`, capture points, the outcome, the
+/// players' state and AI state, and the entities' owners and sight bits.
+fn team_path(path: &str) -> bool {
+    path.starts_with("state.game.setup.players")
+        || path.starts_with("state.game.setup.map.bases")
+        || path.contains("rules.teams")
+        || path.contains("ai.team")
+        || path.starts_with("state.game.points")
+        || path.starts_with("state.game.outcome")
+        || path.starts_with("state.game.players")
+        || path.starts_with("state.entities.owner")
+        || path.contains("seen_by")
+        || path.starts_with("state.config")
+        || (path.starts_with("state.game.ai") && path.contains(".tasks"))
+}
+
+/// S17a, moved to Harrow Cross in S17b: the seed match with four AI
+/// players on two teams (slots 0 and 1, side 0, against 2 and 3) with the
+/// A3 and A4 habits on as shipped, saved at `TEAM_TICK`; S18: player 1
+/// surrendered half way and handed his troops to player 0 (H1).
+fn team_world() -> World {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/ww2");
+    let defs = ModDefs::load(&root).unwrap_or_else(|e| panic!("{e}"));
+    let mut req = MatchRequest::skirmish(SEED, "ww2:germany", "ww2:usa", Difficulty::Normal);
+    req.map = "ww2:harrow_cross".into();
+    let proto = req.players.clone();
+    req.players = (0..4)
+        .map(|i| {
+            let mut p = proto[i % 2].clone();
+            p.team = Some(i as u8 / 2);
+            p.ai = true;
+            p
+        })
+        .collect();
+    let s = defs.resolve(&req).unwrap_or_else(|e| panic!("{e}"));
+    let mut w = World::new_match(s, 1).unwrap();
+    while w.tick() < TEAM_TICK {
+        // S18 H1: player 1 surrenders at 100 s and his troops go to his
+        // ally, player 0 (the save holds `handed` and `handed_to`).
+        if w.tick() == TEAM_TICK / 2 {
+            w.step(&[frontline_sim::Command {
+                player: PlayerId(1),
+                seq: 0,
+                kind: frontline_sim::CommandKind::Surrender,
+            }]);
+            assert_eq!(w.game().unwrap().players()[1].handed_to, Some(PlayerId(0)));
+            continue;
+        }
+        w.step(&[]);
+    }
+    w
+}
+
+/// S16a: the paths the road-map save mutates: the map's roads, the terrain
+/// flag layer, `[vehicles.road]` and each vehicle's `road_speed_pct`.
+fn road_path(path: &str) -> bool {
+    path.contains("map.roads")
+        || path.starts_with("state.terrain.flags")
+        || path.contains("vehicles.road")
+        || path.contains("road_speed_pct")
+        || path.contains("point_symmetric")
+}
+
+/// S16a: the seed match on Kessel Ridge with two roads (base to base, and
+/// across the centre) and a point-symmetric blend, AI on both sides.
+fn road_world() -> World {
+    use frontline_content::setup::{FixedVec2, RoadSetup};
+    let mut s = setup(SEED);
+    s.map.terrain.point_symmetric = true;
+    s.map.roads = vec![
+        RoadSetup {
+            points: vec![
+                FixedVec2::from_m([80, 80]),
+                FixedVec2::from_m([512, 512]),
+                FixedVec2::from_m([944, 944]),
+            ],
+            half_width: frontline_content::Fixed::from_int(3),
+        },
+        RoadSetup {
+            points: vec![FixedVec2::from_m([100, 900]), FixedVec2::from_m([900, 100])],
+            half_width: frontline_content::Fixed::from_int(5),
+        },
+    ];
+    let mut w = World::new_match(s, 1).unwrap();
+    while w.tick() < ROAD_TICK {
+        w.step(&[]);
+    }
+    w
+}
 
 /// The S10b state of a save: mines, charges, the S10b orders, the
 /// blueprints and the mine items (S10b review R4).
@@ -793,6 +892,10 @@ fn plan(save: usize, l: &save_layout::Layout) -> Vec<Mutation> {
             // items and the mine items' `[mine]` tables, at full weight.
             _ if save == STAGED && !s10b_path(path) => continue,
             _ if save == STAGED => (2, 3),
+            _ if save == ROADS && !road_path(path) => continue,
+            _ if save == ROADS => (3, 3),
+            _ if save == TEAMS && !team_path(path) => continue,
+            _ if save == TEAMS => (2, 2),
             _ if setup && p % 3 != save => continue,
             _ if setup => (1, 1),
             _ if focus(path) => (2, 3),
@@ -934,6 +1037,14 @@ fn fuzz_set() -> &'static (Vec<save_layout::Layout>, Vec<u64>) {
         saves.push(layout(&w));
         let mut ticks = FUZZ_SAVES.to_vec();
         ticks.push(w.tick());
+        // S16a: a road map (`ROADS`).
+        let r = road_world();
+        saves.push(layout(&r));
+        ticks.push(r.tick());
+        // S17a: four players on two teams (`TEAMS`).
+        let t = team_world();
+        saves.push(layout(&t));
+        ticks.push(t.tick());
         (saves, ticks)
     })
 }
@@ -945,6 +1056,35 @@ fn fuzz_set() -> &'static (Vec<save_layout::Layout>, Vec<u64>) {
 #[test]
 fn fuzz_plan_reaches_s10b_state() {
     let (saves, _) = fuzz_set();
+    // S16a: the road save's own mutations reach the roads and the flags.
+    let road: Vec<&str> = plan(ROADS, &saves[ROADS])
+        .into_iter()
+        .map(|m| saves[ROADS].paths[m.field.path as usize].as_str())
+        .collect();
+    for want in ["map.roads", "state.terrain.flags", "vehicles.road"] {
+        assert!(
+            road.iter().any(|p| p.contains(want)),
+            "no road mutation reaches {want}: {road:?}"
+        );
+    }
+    // S17a: the team save's mutations reach the team field and the keys.
+    let team: Vec<&str> = plan(TEAMS, &saves[TEAMS])
+        .into_iter()
+        .map(|m| saves[TEAMS].paths[m.field.path as usize].as_str())
+        .collect();
+    for want in [
+        "setup.players",
+        ".team",
+        "rules.teams",
+        "ai.team",
+        "seen_by",
+        "handed",
+    ] {
+        assert!(
+            team.iter().any(|p| p.contains(want)),
+            "no team mutation reaches {want}: {team:?}"
+        );
+    }
     let planned: Vec<&str> = (0..saves.len())
         .flat_map(|s| {
             plan(s, &saves[s])

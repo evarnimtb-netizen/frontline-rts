@@ -462,7 +462,8 @@ pub(crate) fn front_points_of(g: &crate::game::MatchState, me: PlayerId) -> Vec<
     let s = &g.setup;
     let o = &s.rules.ai.obstacles;
     let n = o.front_points as usize;
-    let Some(enemy) = (0..s.players.len() as u8).map(PlayerId).find(|&o| o != me) else {
+    // S17a A1: the main foe.
+    let Some(enemy) = g.main_foe(me) else {
         return Vec::new();
     };
     let eb = g.base_of(enemy);
@@ -474,7 +475,11 @@ pub(crate) fn front_points_of(g: &crate::game::MatchState, me: PlayerId) -> Vec<
         .filter(|(_, (c, _))| c.owner == Some(me))
         .map(|(i, (_, ps))| ((FxVec2::from(ps.pos) - eb).length_sq_raw(), i))
         .collect();
-    let theirs = g.points.iter().filter(|c| c.owner == Some(enemy)).count();
+    let theirs = g
+        .points
+        .iter()
+        .filter(|c| g.teams.hostile_owner(me, c.owner))
+        .count();
     if o.front != 0 && o.front_home == 0 && theirs * 2 <= g.points.len() {
         let ob = g.base_of(me);
         let home = s
@@ -535,7 +540,13 @@ impl super::Planner<'_> {
         let pts = &g.setup.map.points;
         let pos: FxVec2 = pts.get(i)?.pos.into();
         (0..pts.len())
-            .filter(|&j| j != i && g.points.get(j).is_some_and(|c| c.owner != Some(self.me)))
+            .filter(|&j| {
+                // S17a A2: not this AI's nor its ally's.
+                j != i
+                    && g.points
+                        .get(j)
+                        .is_some_and(|c| c.owner.is_none_or(|o| g.teams.hostile_id(self.me, o)))
+            })
             .map(|j| -> FxVec2 { pts[j].pos.into() })
             .min_by_key(|&p| ((p - pos).length_sq_raw(), p.x.raw(), p.y.raw()))
     }
@@ -696,9 +707,7 @@ impl super::Planner<'_> {
         let s = &g.setup;
         let fd = fort_of(s, WorkKind::AtField)?;
         let pos: FxVec2 = s.map.points.get(i)?.pos.into();
-        let enemy = (0..s.players.len() as u8)
-            .map(PlayerId)
-            .find(|&o| o != self.me)?;
+        let enemy = g.main_foe(self.me)?;
         let ty = self.route_vehicle(enemy)?;
         let mut scratch = crate::path::PathScratch::default();
         let way = self.gun_route(g.base_of(enemy), pos, ty, &mut scratch)?;
@@ -1028,9 +1037,7 @@ impl super::Planner<'_> {
         let o = &s.rules.ai.obstacles;
         let pts = &s.map.points;
         let pos: FxVec2 = pts.get(i)?.pos.into();
-        let enemy = (0..s.players.len() as u8)
-            .map(PlayerId)
-            .find(|&p| p != self.me)?;
+        let enemy = g.main_foe(self.me)?;
         let from = (0..pts.len())
             .filter(|&j| j != i && g.points.get(j).is_some_and(|c| c.owner == Some(enemy)))
             .map(|j| -> FxVec2 { pts[j].pos.into() })

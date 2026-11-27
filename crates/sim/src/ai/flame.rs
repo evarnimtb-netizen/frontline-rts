@@ -272,7 +272,9 @@ impl super::Planner<'_> {
                 .pieces
                 .values()
                 .filter(|q| {
-                    q.owner != me
+                    // S17a T1 (merge with S14): an enemy's bunker, not an
+                    // ally's.
+                    g.teams.hostile_id(me, q.owner)
                         && q.fort == b
                         && q.part == 0
                         && (q.pos - pos).length_sq_raw() <= r

@@ -2,7 +2,8 @@
 //!
 //! * **Base tier:** a square grid of Q16.16 heights at 4 m spacing, flat,
 //!   seeded integer value noise (bench) or generated from a map def (match),
-//!   plus a per-point flag layer (`flags`, match maps only) that marks woods.
+//!   plus a per-point flag layer (`flags`, match maps only) that marks woods
+//!   and (S16a) roads.
 //!   It never changes after generation, so it is hashed once (at creation
 //!   and on load).
 //! * **Detail tier** ([`DetailTier`]): sparse 0.25 m tiles of 64 × 64 points
@@ -46,6 +47,9 @@ pub enum TerrainKind {
 
 /// Grid-point flag: inside a woods patch (cuts spotting, not bullets).
 pub const FLAG_WOODS: u8 = 1;
+/// S16a: grid-point flag: within a road's half width of one of its
+/// segments (vehicle speed and path cost, `[vehicles.road]`).
+pub const FLAG_ROAD: u8 = 2;
 
 /// Grid spacing in metres.
 pub const SPACING_M: i32 = 4;
@@ -242,17 +246,25 @@ impl Heightfield {
                 }
             }
         }
-        // S3c: a point-symmetric map takes the far half (x + y beyond the
-        // size; on the anti-diagonal, the east end) from its mirror cell.
+        // S16a: roads, after woods (a grid point may carry both flags).
+        for r in &map.roads {
+            mark_road(&mut flags, dim, r);
+        }
+        // S3c, S16a blend: on a point-symmetric map each cell and its
+        // mirror both take the mean of their generated heights, so the field
+        // is exactly point-symmetric and has no step along the
+        // anti-diagonal (S3c copied the near half, which left one).
         if t.point_symmetric {
             let last = dim - 1;
             for gy in 0..dim {
                 for gx in 0..dim {
-                    let far = gx + gy > last || (gx + gy == last && gx > gy);
-                    if far {
-                        let i = (gy * dim + gx) as usize;
-                        let j = ((last - gy) * dim + (last - gx)) as usize;
-                        heights[i] = heights[j];
+                    let i = (gy * dim + gx) as usize;
+                    let j = ((last - gy) * dim + (last - gx)) as usize;
+                    if i < j {
+                        let sum = heights[i].raw() as i64 + heights[j].raw() as i64;
+                        let mean = Fx::from_raw(sum.div_euclid(2) as i32);
+                        heights[i] = mean;
+                        heights[j] = mean;
                     }
                 }
             }
@@ -409,6 +421,30 @@ impl Heightfield {
         }
         let (gx, gy) = self.nearest_grid(p);
         self.flags[(gy * self.dim + gx) as usize] & FLAG_WOODS != 0
+    }
+
+    /// S16a: whether `p` is on a road (nearest grid point, as
+    /// [`Self::woods_at`]).
+    #[inline]
+    pub fn road_at(&self, p: FxVec2) -> bool {
+        if self.flags.is_empty() {
+            return false;
+        }
+        let (gx, gy) = self.nearest_grid(p);
+        self.flags[(gy * self.dim + gx) as usize] & FLAG_ROAD != 0
+    }
+
+    /// S16a: whether grid node `n` (`gy * dim + gx`) is on a road.
+    #[inline]
+    pub fn road_node(&self, n: u32) -> bool {
+        self.flags
+            .get(n as usize)
+            .is_some_and(|f| f & FLAG_ROAD != 0)
+    }
+
+    /// S16a: whether any grid point is on a road.
+    pub fn has_roads(&self) -> bool {
+        self.flags.iter().any(|f| f & FLAG_ROAD != 0)
     }
 
     #[inline]
@@ -964,6 +1000,45 @@ fn smooth_noise(seed: u64, x: i32, y: i32, period: i32, amp: Fx, octave: u32) ->
     let a = v00 + (((v10 - v00) * sx) >> 16);
     let b = v01 + (((v11 - v01) * sx) >> 16);
     Fx::from_raw((a + (((b - a) * sy) >> 16)) as i32)
+}
+
+/// S16a: sets [`FLAG_ROAD`] on every grid point within `r.half_width` of
+/// one of the road's segments (integer distance test, exact; only the
+/// segment's bounding box is scanned).
+fn mark_road(flags: &mut [u8], dim: u32, r: &frontline_content::setup::RoadSetup) {
+    let hw = r.half_width.0 as i128;
+    let hw_sq = hw * hw;
+    let cell = (SPACING_M as i64) << Fx::FRAC_BITS;
+    let to_grid = |v: i64| -> i64 { v.div_euclid(cell) };
+    for w in r.points.windows(2) {
+        let (ax, ay) = (w[0].x.0 as i128, w[0].y.0 as i128);
+        let (bx, by) = (w[1].x.0 as i128, w[1].y.0 as i128);
+        let (dx, dy) = (bx - ax, by - ay);
+        let len_sq = dx * dx + dy * dy;
+        let lo_x = to_grid(ax.min(bx) as i64 - hw as i64).max(0);
+        let hi_x = (to_grid(ax.max(bx) as i64 + hw as i64) + 1).min(dim as i64 - 1);
+        let lo_y = to_grid(ay.min(by) as i64 - hw as i64).max(0);
+        let hi_y = (to_grid(ay.max(by) as i64 + hw as i64) + 1).min(dim as i64 - 1);
+        for gy in lo_y..=hi_y {
+            for gx in lo_x..=hi_x {
+                let (px, py) = ((gx * cell) as i128, (gy * cell) as i128);
+                let (wx, wy) = (px - ax, py - ay);
+                let dot = wx * dx + wy * dy;
+                let on = if len_sq == 0 || dot <= 0 {
+                    wx * wx + wy * wy <= hw_sq
+                } else if dot >= len_sq {
+                    let (ex, ey) = (px - bx, py - by);
+                    ex * ex + ey * ey <= hw_sq
+                } else {
+                    // |w|^2 - dot^2 / |d|^2 <= hw^2, times |d|^2.
+                    (wx * wx + wy * wy) * len_sq - dot * dot <= hw_sq * len_sq
+                };
+                if on {
+                    flags[(gy as u32 * dim + gx as u32) as usize] |= FLAG_ROAD;
+                }
+            }
+        }
+    }
 }
 
 /// Height offset of a ridge/valley band at `p`: `height` on the segment

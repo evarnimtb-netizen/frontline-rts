@@ -955,6 +955,7 @@ impl super::Planner<'_> {
             avoid: None,
             costs: &s.rules.vehicles.path,
             mines: None,
+            road_pct: VehiclePathCost::road_for(&s.map, &s.rules.vehicles.road, &ty.mobility),
         };
         let r = find_vehicle_path(
             self.terrain,
@@ -1046,9 +1047,7 @@ impl super::Planner<'_> {
         let s = &g.setup;
         let a = &s.rules.ai.guns;
         let p = points[point_to_cover(points)?].pos;
-        let enemy = (0..s.players.len() as u8)
-            .map(PlayerId)
-            .find(|&o| o != self.me)?;
+        let enemy = g.main_foe(self.me)?;
         let enemy_base = g.base_of(enemy);
         let toward = kv
             .iter()

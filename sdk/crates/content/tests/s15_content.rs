@@ -717,3 +717,31 @@ fn s15c_rounds_cards_and_tows() {
         }
     }
 }
+
+/// Merge of S15 with S17 teams (PR 11): M2 asks only hostile pairs, so the
+/// USA and the USSR may be allies against two Germans on Harrow Cross.
+/// Control: the same four with the USA and the USSR on opposite teams is
+/// refused.
+#[test]
+fn matchup_asks_hostile_pairs_only() {
+    let defs = defs_with(east);
+    let four = |teams: [u8; 4]| MatchRequest {
+        rules: RULES.into(),
+        map: "ww2:harrow_cross".into(),
+        seed: 1,
+        players: ["ww2:usa", "ww2:ussr", "ww2:germany", "ww2:germany"]
+            .iter()
+            .zip(teams)
+            .map(|(f, t)| frontline_content::PlayerRequest {
+                faction: (*f).into(),
+                ai: true,
+                difficulty: Difficulty::Normal,
+                team: Some(t),
+            })
+            .collect(),
+    };
+    defs.resolve(&four([0, 0, 1, 1]))
+        .expect("USA and USSR allied against Germany");
+    let e = defs.resolve(&four([0, 1, 0, 1])).unwrap_err();
+    assert!(e.to_string().contains("allows no match"), "{e}");
+}

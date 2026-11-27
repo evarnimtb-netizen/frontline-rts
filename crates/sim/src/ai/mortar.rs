@@ -187,10 +187,15 @@ impl Planner<'_> {
         self.ai
             .spotters
             .retain(|id, _| g.squads.get(id).is_some_and(|q| q.owner == self.me));
+        // S17a A5: own and allied men (mission bursts hurt both).
         let own: Vec<FxVec2> = self
             .ents
             .soldiers()
-            .filter(|id| self.ents.owner[id.index()] == self.me)
+            .filter(|id| {
+                self.g
+                    .teams
+                    .allied(self.me.0, self.ents.owner[id.index()].0)
+            })
             .map(|id| self.ents.transform[id.index()].pos.xy())
             .collect();
         let front = points
@@ -785,10 +790,15 @@ impl Planner<'_> {
             e.2 += 1;
             e.3 += k.in_trench as i64;
         }
+        // S17a A5: own and allied men (mission bursts hurt both).
         let own: Vec<FxVec2> = self
             .ents
             .soldiers()
-            .filter(|id| self.ents.owner[id.index()] == self.me)
+            .filter(|id| {
+                self.g
+                    .teams
+                    .allied(self.me.0, self.ents.owner[id.index()].0)
+            })
             .map(|id| self.ents.transform[id.index()].pos.xy())
             .collect();
         let danger = sq_m(Fx::from_int(

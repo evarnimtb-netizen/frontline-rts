@@ -6,7 +6,12 @@
 # (cached per binary + mods), and check.sh full, the armour and fortify runs play beside the
 # 160 sets instead of after them.
 #
-#   tools/verify.sh OUTDIR TARGETS.toml
+#   tools/verify.sh OUTDIR TARGETS.toml [--map ID]
+#
+# S16 review: `--map ID` plays the timing 40 and the 160 sets on that map
+# (S16 plan 7 reads tick p99 on Linden Brook); default the CLI's (Kessel
+# Ridge, same cache keys). The armour, fortify and mortar runs keep their
+# own test scenarios.
 #
 # Writes OUTDIR/summary.txt (one line per step with its seconds) and prints it.
 # Run it alone on a quiet machine: step 1 measures tick time, before anything else starts.
@@ -14,7 +19,11 @@
 set -u
 cd "$(dirname "$0")/.."
 O=${1:?usage: tools/verify.sh OUTDIR TARGETS.toml}
-TARGETS=${2:?usage: tools/verify.sh OUTDIR TARGETS.toml}
+TARGETS=${2:?usage: tools/verify.sh OUTDIR TARGETS.toml [--map ID]}
+MAP=()
+if [ "${3:-}" = --map ]; then
+    MAP=(--map "${4:?--map needs an id}")
+fi
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
 C=target/release/frontline-cli
 mkdir -p "$O"
@@ -38,7 +47,7 @@ timed() { # NAME CMD... (stdout+stderr to OUTDIR/NAME.txt)
 #    from the cache. (check.sh full builds the CLI later; build it here.)
 cargo build -q --release -p frontline-cli >"$O/build_cli.txt" 2>&1 || { cat "$O/build_cli.txt"; exit 2; }
 timed run_timing40 env BATCH_NO_CACHE=1 BATCH_JOBS=3 tools/batch.sh "$O/timing40.json" -- \
-    skirmish --ai-vs-ai --seed 1 --seeds 20 --both-bases --summary --minutes 45
+    skirmish --ai-vs-ai --seed 1 --seeds 20 --both-bases --summary --minutes 45 ${MAP[@]+"${MAP[@]}"}
 cp "$O/timing40.json" "$O/skirmish40.json"
 python3 -I -c "
 import json,sys
@@ -64,14 +73,14 @@ side() {
 }
 if [ -n "${VERIFY_SERIAL:-}" ]; then
     timed check_full tools/check.sh full
-    timed sets tools/batch.sh sets "$O"
+    timed sets tools/batch.sh sets "$O" ${MAP[@]+"${MAP[@]}"}
     side
 else
     timed check_full tools/check.sh full &
     CHK=$!
     side &
     SIDE=$!
-    timed sets tools/batch.sh sets "$O"
+    timed sets tools/batch.sh sets "$O" ${MAP[@]+"${MAP[@]}"}
     wait $SIDE $CHK
 fi
 cat "$O/check_full.txt" >>"$SUM"

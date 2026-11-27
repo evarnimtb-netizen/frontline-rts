@@ -341,7 +341,11 @@ mod tests {
         let t0 = Instant::now();
         let mut seen = 0;
         let mut last_sched = f.sched;
-        while t0.elapsed() < Duration::from_millis(400) {
+        // S17 review: wait until five frames came (30 Hz: about 170 ms) with
+        // a generous deadline, not a fixed 400 ms window: under a loaded
+        // test run the sim thread can be starved for that long, which made
+        // the count a timing failure, not a handoff one.
+        while seen < 5 && t0.elapsed() < Duration::from_secs(20) {
             if h.take_newest(&mut f) {
                 seen += 1;
                 assert_eq!(f.soldiers.len(), f.ids.len());

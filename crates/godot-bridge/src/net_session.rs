@@ -7,8 +7,12 @@
 //! snapshots and sends small messages, so it never waits on the network.
 //! Host names are resolved on a short-lived thread.
 //!
+//! S18: a lobby holds two to four slots (the host picks how many); each
+//! player picks a team, the host may fill open slots with AI and a joiner
+//! may move to another open slot.
+//!
 //! When the relay starts the match, [`NetSession::take_match`] resolves the
-//! [`MatchSetup`] from `Start` (both slots human) and hands out the sim
+//! [`MatchSetup`] from `Start` (its slots, human or AI) and hands out the sim
 //! thread's half of the link ([`NetLink`]) for `MatchHandle::spawn_net`.
 //! The match events are split off the net thread as soon as it starts, so
 //! no bundle is lost while the match scene loads.
@@ -23,7 +27,10 @@ use std::time::{Duration, Instant};
 use frontline_content::{MatchSetup, ModDefs};
 use frontline_net::client::{ClientConfig, ClientStatus, NetEvent};
 use frontline_net::client_io::{NetHandle, ToNet};
-use frontline_net::protocol::{LobbyState, MAX_D, MAX_NAME, MIN_D, RejectReason, SlotInfo, Start};
+use frontline_net::protocol::{
+    AiPick, LobbyState, MAX_D, MAX_DIFFICULTY, MAX_NAME, MAX_SLOTS, MIN_D, RejectReason, SlotInfo,
+    Start,
+};
 use frontline_net::relay::RelayConfig;
 use frontline_net::rng::OsRandom;
 use frontline_net::server::{LogSink, RelayServer};
@@ -49,8 +56,8 @@ enum Phase {
     Disconnected,
 }
 
-/// The lobby choice this client last sent. Slot 1's seed, map and D are
-/// ignored by the relay; slot 0's are the match's.
+/// The lobby choice this client last sent. A joiner's seed, map, D, size
+/// and AI fill are ignored by the relay; slot 0's are the match's.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Choice {
     /// Short ids (`germany`, `kessel_ridge`).
@@ -59,6 +66,12 @@ pub struct Choice {
     pub map: String,
     /// `None`: the relay's suggestion.
     pub d: Option<u8>,
+    /// S18: own team (`None`: alone, as in a 1v1).
+    pub team: Option<u8>,
+    /// S18, host: slots in the match (2 to 4).
+    pub players: u8,
+    /// S18, host: the AI fill (full faction ids).
+    pub ai: Vec<AiPick>,
 }
 
 impl Default for Choice {
@@ -68,6 +81,9 @@ impl Default for Choice {
             seed: 1,
             map: "kessel_ridge".into(),
             d: None,
+            team: None,
+            players: 2,
+            ai: Vec::new(),
         }
     }
 }
@@ -79,6 +95,11 @@ pub struct ChoiceUpdate {
     pub seed: Option<u64>,
     pub map: Option<String>,
     pub d: Option<u8>,
+    /// S18: `Some(None)` clears the team.
+    pub team: Option<Option<u8>>,
+    pub players: Option<u8>,
+    /// S18: the AI fill, short faction ids (replaces the list).
+    pub ai: Option<Vec<AiPick>>,
 }
 
 /// One lobby slot as the presenter shows it.
@@ -91,6 +112,11 @@ pub struct SlotView {
     /// The relay's P99 round trip to that player, -1 unknown.
     pub ping_ms: f32,
     pub ready: bool,
+    /// S18: team, -1 none (alone).
+    pub team: i32,
+    /// S18: an AI slot's difficulty (0 easy, 1 normal, 2 hard), -1 for a
+    /// player or an open slot.
+    pub ai: i32,
 }
 
 /// `FrontlineNet.status()` (`godot/docs/net_api.md`).
@@ -101,7 +127,10 @@ pub struct SessionView {
     pub state: &'static str,
     /// Own slot, -1 before `Welcome`.
     pub slot: i32,
+    /// The match's slots (S18: 2 to 4; the lobby may show more).
     pub slots: Vec<SlotView>,
+    /// S18: slots in the match.
+    pub players: u8,
     pub seed: u64,
     pub map: String,
     /// D in ticks: slot 0's choice or the suggestion (the match's once
@@ -350,6 +379,31 @@ impl NetSession {
         if let Some(d) = u.d {
             self.choice.d = Some(d.clamp(MIN_D, MAX_D));
         }
+        if let Some(t) = u.team {
+            self.choice.team = t.map(|t| t.min(MAX_SLOTS as u8 - 1));
+        }
+        if let Some(n) = u.players {
+            self.choice.players = n.clamp(2, MAX_SLOTS as u8);
+        }
+        if let Some(ai) = u.ai {
+            let full = |id: &str| format!("{MOD_ID}:{id}");
+            self.choice.ai = ai
+                .into_iter()
+                .filter(|a| {
+                    // S15 M1 (merge): any faction the rules enable.
+                    let f = short_id(&a.faction).to_owned();
+                    (1..MAX_SLOTS as u8).contains(&a.slot)
+                        && offered.as_ref().map_or(short(&f), |o| o.contains(&f))
+                })
+                .map(|a| AiPick {
+                    faction: full(short_id(&a.faction)),
+                    team: a.team.map(|t| t.min(MAX_SLOTS as u8 - 1)),
+                    difficulty: a.difficulty.min(MAX_DIFFICULTY),
+                    slot: a.slot,
+                })
+                .take(MAX_SLOTS)
+                .collect();
+        }
         self.mismatch.clear();
         self.ready_hash = None;
         self.send_choice();
@@ -361,27 +415,55 @@ impl NetSession {
             return;
         }
         let Some(slot) = self.slot else { return };
-        let other = 1 - slot as usize;
-        let Some(theirs) = self.lobby.slots[other].as_ref() else {
-            self.mismatch = "Waiting for a second player.".into();
-            return;
-        };
-        let mut factions = [String::new(), String::new()];
-        factions[slot as usize] = self.choice.faction.clone();
-        factions[other] = short_id(&theirs.faction).to_owned();
+        let n = (self.lobby.players as usize).clamp(2, MAX_SLOTS);
+        let mut slots = Vec::with_capacity(n);
+        for k in 0..n {
+            if k == slot as usize {
+                slots.push(SlotChoice {
+                    faction: self.choice.faction.clone(),
+                    human: true,
+                    team: self.choice.team,
+                    difficulty: None,
+                });
+                continue;
+            }
+            let Some(theirs) = self.lobby.slots.get(k).and_then(|s| s.as_ref()) else {
+                self.mismatch = if n == 2 {
+                    "Waiting for a second player.".into()
+                } else {
+                    "Waiting for every slot to be filled.".into()
+                };
+                return;
+            };
+            slots.push(slot_choice(theirs));
+        }
         let (seed, map) = if slot == 0 {
             (self.choice.seed, self.choice.map.clone())
         } else {
             (self.lobby.seed, short_id(&self.lobby.map).to_owned())
         };
-        match self.resolve(&factions, seed, &map) {
+        match self.resolve(&slots, seed, &map) {
             Ok(setup) => {
                 let h = frontline_net::setup_hash(&setup);
                 self.ready_hash = Some(h);
                 self.mismatch.clear();
-                self.send(ToNet::Ready(h));
+                // The revision this hash was made from: the net thread may
+                // already hold a newer lobby than `self.lobby`.
+                self.send(ToNet::ReadyFor {
+                    setup_hash: h,
+                    rev: self.lobby.rev,
+                });
             }
             Err(e) => self.mismatch = e,
+        }
+    }
+
+    /// S18: moves to open slot `slot` of the lobby (not the host's, not
+    /// the host; the relay decides).
+    pub fn take_slot(&mut self, slot: u8) {
+        if self.phase == Phase::Lobby && self.slot.is_some_and(|s| s != 0) && slot != 0 {
+            self.ready_hash = None;
+            self.send(ToNet::TakeSlot(slot));
         }
     }
 
@@ -482,6 +564,10 @@ impl NetSession {
             NetEvent::WrongVersion { .. } => {
                 self.fail("protocol");
             }
+            NetEvent::Slot { slot } => {
+                self.slot = Some(slot);
+                self.ready_hash = None;
+            }
             NetEvent::Lobby(l) => {
                 if !l.note.is_empty() {
                     self.mismatch = if l.note.contains("setups differ") {
@@ -520,8 +606,36 @@ impl NetSession {
             }
             Phase::Disconnected => "disconnected",
         };
+        let players = match &self.start {
+            Some(s) => s.players.len(),
+            None => (self.lobby.players as usize).clamp(2, MAX_SLOTS),
+        };
         let mut slots: Vec<SlotView> = if self.slot.is_some() {
-            self.lobby.slots.iter().map(slot_view).collect()
+            match &self.start {
+                Some(s) => s
+                    .players
+                    .iter()
+                    .enumerate()
+                    .map(|(k, p)| SlotView {
+                        name: p.name.clone(),
+                        faction: short_id(&p.faction).to_owned(),
+                        ping_ms: self
+                            .lobby
+                            .slots
+                            .get(k)
+                            .and_then(|s| s.as_ref())
+                            .map_or(-1.0, |s| s.rtt_ms as f32),
+                        ready: true,
+                        team: p.team.map_or(-1, |t| t as i32),
+                        ai: p.ai.map_or(-1, |d| d as i32),
+                    })
+                    .collect(),
+                // Every match slot, open ones too (also before the first
+                // lobby state arrived).
+                None => (0..players)
+                    .map(|k| slot_view(self.lobby.slots.get(k).unwrap_or(&None)))
+                    .collect(),
+            }
         } else {
             Vec::new()
         };
@@ -546,6 +660,7 @@ impl NetSession {
             state,
             slot: self.slot.map_or(-1, |s| s as i32),
             slots,
+            players: players as u8,
             seed,
             map: if map.is_empty() {
                 self.choice.map.clone()
@@ -566,8 +681,8 @@ impl NetSession {
         }
     }
 
-    /// The started match: its setup (both slots human, from `Start`) and
-    /// the sim thread's link. Once per match.
+    /// The started match: its setup (its slots from `Start`) and the sim
+    /// thread's link. Once per match.
     pub fn take_match(&mut self) -> Result<NetMatch, String> {
         self.poll();
         if self.phase != Phase::Started {
@@ -580,11 +695,17 @@ impl NetSession {
         else {
             return Err("no net match".into());
         };
-        let factions = [
-            short_id(&start.factions[0]).to_owned(),
-            short_id(&start.factions[1]).to_owned(),
-        ];
-        let setup = self.resolve(&factions, start.seed, short_id(&start.map))?;
+        let slots: Vec<SlotChoice> = start
+            .players
+            .iter()
+            .map(|p| SlotChoice {
+                faction: short_id(&p.faction).to_owned(),
+                human: p.ai.is_none(),
+                team: p.team,
+                difficulty: p.ai.map(|d| difficulty_name(d).to_owned()),
+            })
+            .collect();
+        let setup = self.resolve(&slots, start.seed, short_id(&start.map))?;
         let setup_hash = frontline_net::setup_hash(&setup);
         if self.ready_hash.is_some_and(|r| r != setup_hash) {
             // The relay matched both Ready hashes, so the other client sent
@@ -603,7 +724,7 @@ impl NetSession {
                 start.seed,
                 (setup_hash ^ start.start_at) as u32
             ),
-            names: start.names.clone(),
+            names: start.players.iter().map(|p| p.name.clone()).collect(),
             build_id: frontline_net::build_id(),
             content_hash: self.content_hash,
             setup_hash,
@@ -625,44 +746,62 @@ impl NetSession {
         })
     }
 
-    /// The players' names from `Start` (or the lobby).
-    pub fn names(&self) -> [String; 2] {
+    /// The players' names from `Start` (or the lobby), one per slot (an AI
+    /// slot's is empty).
+    pub fn names(&self) -> Vec<String> {
         match &self.start {
-            Some(s) => s.names.clone(),
+            Some(s) => s.players.iter().map(|p| p.name.clone()).collect(),
             None => self
                 .lobby
                 .slots
-                .clone()
-                .map(|s| s.map(|s| s.name).unwrap_or_default()),
+                .iter()
+                .take((self.lobby.players as usize).clamp(2, MAX_SLOTS))
+                .map(|s| s.as_ref().map(|s| s.name.clone()).unwrap_or_default())
+                .collect(),
         }
     }
 
     // ------------------------------------------------------------ inner --
 
-    fn resolve(&self, factions: &[String; 2], seed: u64, map: &str) -> Result<MatchSetup, String> {
+    fn resolve(&self, slots: &[SlotChoice], seed: u64, map: &str) -> Result<MatchSetup, String> {
         let defs = self.defs.as_ref().ok_or("no mod content loaded")?;
         // S15 M2, M4, M6: the rules' pairs (and a mirror) decide, with the
-        // words the lobby shows.
-        if let Some(why) = crate::match_setup::pair_refusal(
-            defs,
-            &MenuChoice::default(),
-            &factions[0],
-            &factions[1],
-        ) {
-            return Err(why);
+        // words the lobby shows. A 1v1 (two slots, no teams) asks for the
+        // pair; S18 teams ask for every two hostile slots of different
+        // factions (allies may be any factions, and a faction may meet
+        // itself across teams as before).
+        let team_of = |i: usize, s: &SlotChoice| s.team.unwrap_or(i as u8);
+        let one_v_one = slots.len() == 2 && slots.iter().all(|s| s.team.is_none());
+        for (i, a) in slots.iter().enumerate() {
+            for (j, b) in slots.iter().enumerate().skip(i + 1) {
+                if team_of(i, a) == team_of(j, b) || (!one_v_one && a.faction == b.faction) {
+                    continue;
+                }
+                if let Some(why) = crate::match_setup::pair_refusal(
+                    defs,
+                    &MenuChoice::default(),
+                    &a.faction,
+                    &b.faction,
+                ) {
+                    return Err(why);
+                }
+            }
         }
+        let own = (self.slot.unwrap_or(0) as usize).min(slots.len().saturating_sub(1));
         let choice = MenuChoice {
-            faction: factions[self.slot.unwrap_or(0) as usize % 2].clone(),
+            faction: slots
+                .get(own)
+                .map(|s| s.faction.clone())
+                .unwrap_or_default(),
             difficulty: "normal".into(),
             map: map.to_owned(),
             seed,
             ai_vs_ai: false,
             tickets: None,
             start_manpower: self.start_manpower,
-            slots: Some(factions.clone().map(|faction| SlotChoice {
-                faction,
-                human: true,
-            })),
+            slots: Some(slots.to_vec()),
+            // S18: the slots decide; four of them are a 2v2.
+            mode: if slots.len() == 4 { "2v2" } else { "1v1" }.into(),
             test_unlock: self.test_unlock,
             opponent: None,
         };
@@ -705,6 +844,9 @@ impl NetSession {
             seed: (slot == 0).then_some(c.seed),
             map: (slot == 0).then(|| full(&c.map)),
             d: if slot == 0 { c.d } else { None },
+            team: c.team,
+            players: (slot == 0).then_some(c.players),
+            ai: (slot == 0).then(|| c.ai.clone()),
         }));
     }
 
@@ -770,13 +912,40 @@ fn slot_view(s: &Option<SlotInfo>) -> SlotView {
         Some(s) => SlotView {
             name: s.name.clone(),
             faction: short_id(&s.faction).to_owned(),
-            ping_ms: s.rtt_ms as f32,
-            ready: s.ready,
+            ping_ms: if s.ai.is_some() {
+                -1.0
+            } else {
+                s.rtt_ms as f32
+            },
+            ready: s.ready || s.ai.is_some(),
+            team: s.team.map_or(-1, |t| t as i32),
+            ai: s.ai.map_or(-1, |d| d as i32),
         },
         None => SlotView {
             ping_ms: -1.0,
+            team: -1,
+            ai: -1,
             ..SlotView::default()
         },
+    }
+}
+
+/// A filled lobby slot as the setup sees it (a player, or AI fill).
+fn slot_choice(s: &SlotInfo) -> SlotChoice {
+    SlotChoice {
+        faction: short_id(&s.faction).to_owned(),
+        human: s.ai.is_none(),
+        team: s.team,
+        difficulty: s.ai.map(|d| difficulty_name(d).to_owned()),
+    }
+}
+
+/// The wire's AI difficulty → the menu's word.
+pub fn difficulty_name(d: u8) -> &'static str {
+    match d {
+        0 => "easy",
+        2 => "hard",
+        _ => "normal",
     }
 }
 
@@ -919,6 +1088,100 @@ mod tests {
         assert!((2..=4).contains(&v.input_delay), "D {}", v.input_delay);
         assert_eq!(v.slots[0].name, "Host");
         assert_eq!(guest.view().slot, 1);
+    }
+
+    /// S18: a 2v2 lobby over loopback: the host opens four slots and
+    /// fills slots 1 (his ally) and 3 with AI, the guest gets slot 2 and
+    /// picks team 1; both ready, and both clients build the same match
+    /// from `Start`: teams 0 0 1 1, AI in slots 1 and 3.
+    #[test]
+    fn a_2v2_lobby_with_ai_fill_starts_one_match() {
+        let defs = defs();
+        let user = temp_dir("lobby2v2");
+        let mut host = session(&defs, "Host", &user);
+        let port = host_lobby(&mut host);
+        let ai = |slot: u8, faction: &str, team: u8| AiPick {
+            slot,
+            faction: faction.into(),
+            team: Some(team),
+            difficulty: 2,
+        };
+        host.set_choice(ChoiceUpdate {
+            faction: Some("usa".into()),
+            map: Some("harrow_cross".into()),
+            seed: Some(5),
+            team: Some(Some(0)),
+            players: Some(4),
+            ai: Some(vec![ai(1, "usa", 0), ai(3, "germany", 1)]),
+            ..ChoiceUpdate::default()
+        });
+        let t0 = Instant::now();
+        while host.view().players != 4 || host.view().slots[3].ai != 2 {
+            assert!(t0.elapsed() < Duration::from_secs(5), "{:?}", host.view());
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let mut guest = session(&defs, "Guest", &user);
+        guest.join(&format!("127.0.0.1:{port}")).unwrap();
+        let t0 = Instant::now();
+        let mut chose = false;
+        let mut readied: [Option<Instant>; 2] = [None; 2];
+        loop {
+            assert!(
+                t0.elapsed() < Duration::from_secs(20),
+                "the lobby did not start: {:?} {:?}",
+                host.view(),
+                guest.view()
+            );
+            let mut started = 0;
+            for (i, s) in [&mut host, &mut guest].into_iter().enumerate() {
+                let v = s.view();
+                match v.state {
+                    "lobby" => {
+                        if i == 1 && !chose {
+                            chose = true;
+                            assert_eq!(v.slot, 2, "{v:?}");
+                            s.set_choice(ChoiceUpdate {
+                                faction: Some("germany".into()),
+                                team: Some(Some(1)),
+                                ..ChoiceUpdate::default()
+                            });
+                        }
+                        let set = v.slots.len() == 4
+                            && v.slots[2].faction == "germany"
+                            && v.slots[2].team == 1
+                            && v.slots[0].team == 0;
+                        let me = v.slot as usize;
+                        if set
+                            && !v.slots[me].ready
+                            && readied[i].is_none_or(|t| t.elapsed() > Duration::from_millis(400))
+                        {
+                            readied[i] = Some(Instant::now());
+                            s.ready();
+                        }
+                    }
+                    "countdown" | "in_match" => started += 1,
+                    "connecting" => {}
+                    other => panic!("session {i} is {other}: {:?}", v.error),
+                }
+            }
+            if started == 2 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let a = host.take_match().unwrap();
+        let b = guest.take_match().unwrap();
+        assert_eq!((a.slot, b.slot), (0, 2));
+        assert_eq!(
+            frontline_net::setup_hash(&a.setup),
+            frontline_net::setup_hash(&b.setup)
+        );
+        let teams: Vec<u8> = a.setup.players.iter().map(|p| p.team).collect();
+        assert_eq!(teams, [0, 0, 1, 1]);
+        let ai: Vec<bool> = a.setup.players.iter().map(|p| p.is_ai).collect();
+        assert_eq!(ai, [false, true, false, true]);
+        assert_eq!(a.info.names, ["Host", "", "Guest", ""]);
+        assert_eq!(host.view().slots[3].ai, 2);
     }
 
     /// S3b quick iteration: a player who edited the mod's TOML (here

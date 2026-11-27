@@ -243,7 +243,7 @@ impl Planner<'_> {
         // points not held by this player.
         let mut eyes: Vec<FxVec2> = known.iter().take(PROBE_MEN).map(|k| k.pos).collect();
         for (j, p) in pts.iter().enumerate() {
-            if g.points[j].owner != Some(me) {
+            if g.points[j].owner.is_none_or(|o| g.teams.hostile_id(me, o)) {
                 eyes.push(p.pos.into());
             }
         }

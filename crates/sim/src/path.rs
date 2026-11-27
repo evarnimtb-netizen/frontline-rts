@@ -57,7 +57,9 @@ use std::collections::BinaryHeap;
 use crate::fx::{Fx, FxVec2};
 use crate::terrain::{FLAG_WOODS, Heightfield, SPACING_M};
 use crate::vehicle::BlockLayer;
-use frontline_content::tuning::VehiclePathTuning;
+use frontline_content::setup::MapSetup;
+use frontline_content::tuning::{RoadTuning, VehiclePathTuning};
+use frontline_content::vehicle::MobilitySetup;
 
 const STRAIGHT: u32 = 1000;
 const DIAGONAL: u32 = 1414;
@@ -95,6 +97,39 @@ pub struct VehiclePathCost<'a> {
     pub costs: &'a VehiclePathTuning,
     /// S10b-ai (R11): known enemy AT mines (`None`: no mine costs).
     pub mines: Option<MineCost<'a>>,
+    /// S16a (R3): road pricing, `None` unless the map has roads and
+    /// `[vehicles.road]` `enabled` and `path_cost` are 1 (built by
+    /// [`VehiclePathCost::road_for`]).
+    pub road_pct: Option<RoadPathCost>,
+}
+
+/// S16a (R3): how a vehicle prices road nodes.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct RoadPathCost {
+    /// The vehicle's forward road speed in percent (a road node costs
+    /// `100 / pct` of a step, no woods factor).
+    pub pct: u32,
+    /// `[vehicles.road] heuristic_pct`.
+    pub heuristic_pct: u32,
+    /// S16 review (F3): `[vehicles.road] cap_retry_weight_pct`. When a
+    /// search stops at `max_expansions` without its goal, it runs once more
+    /// at this heuristic weight (percent; 0: no retry) and takes that path
+    /// if it reaches the goal. Searches that reach their goal or prove it
+    /// unreachable are unchanged.
+    pub cap_retry_weight_pct: u32,
+}
+
+impl VehiclePathCost<'_> {
+    /// S16a (R3): the road pricing of a vehicle `m` on `map` under `road`
+    /// (`None` when roads do not price paths there: no roads on the map,
+    /// `enabled` or `path_cost` 0).
+    pub fn road_for(map: &MapSetup, road: &RoadTuning, m: &MobilitySetup) -> Option<RoadPathCost> {
+        (road.active(map.roads.len()) && road.path_cost == 1).then(|| RoadPathCost {
+            pct: m.road_pct(road).max(1),
+            heuristic_pct: road.heuristic_pct,
+            cap_retry_weight_pct: road.cap_retry_weight_pct,
+        })
+    }
 }
 
 /// Result of [`find_path`].
@@ -294,16 +329,43 @@ pub fn find_vehicle_path(
     max_expansions: u32,
     s: &mut PathScratch,
 ) -> PathResult {
-    search(
-        terrain,
-        from,
-        to,
-        cost,
-        Some(vehicle),
-        None,
-        max_expansions,
-        s,
-    )
+    let run = |weight: Option<u32>, s: &mut PathScratch| {
+        search_core(
+            terrain,
+            from,
+            to,
+            cost,
+            Some(vehicle),
+            None,
+            None,
+            vehicle.mines.as_ref(),
+            max_expansions,
+            weight,
+            s,
+        )
+    };
+    let mut r = run(None, s);
+    let capped = !r.reached && !r.exhausted;
+    // S16 review (F3): a road-priced search that hit the cap runs once
+    // more at `cap_retry_weight_pct` and keeps that path only if it
+    // reaches the goal; both runs' expansions are charged (`PathQueue`
+    // debt, the observer). Never on a map without roads (`road_pct`
+    // `None`), so Kessel Ridge is unchanged.
+    if let Some(rp) = vehicle.road_pct
+        && rp.cap_retry_weight_pct > 0
+        && !r.reached
+        && !r.exhausted
+    {
+        let total = r.expansions;
+        let again = run(Some(rp.cap_retry_weight_pct), s);
+        let total = total.saturating_add(again.expansions);
+        if again.reached {
+            r = again;
+        }
+        r.expansions = total;
+    }
+    observe::record(r.expansions, capped, !r.reached && !r.exhausted);
+    r
 }
 
 /// Vehicle step-cost multiplier (percent) into node `(mx, my)`, or `None`
@@ -324,7 +386,12 @@ fn vehicle_pct(
     let k = v.costs;
     let mut pct = 100u64;
     let flags = terrain.flags();
-    if !flags.is_empty() && flags[m as usize] & FLAG_WOODS != 0 {
+    // S16a (R3): a road node is priced by time and skips the woods factor.
+    if let Some(r) = v.road_pct
+        && terrain.road_node(m)
+    {
+        pct = pct * 100 / r.pct as u64;
+    } else if !flags.is_empty() && flags[m as usize] & FLAG_WOODS != 0 {
         pct = pct * k.woods_pct as u64 / 100;
     }
     let dug = terrain.dug_dm(mx, my) as u32;
@@ -380,6 +447,40 @@ fn search_with(
     max_expansions: u32,
     s: &mut PathScratch,
 ) -> PathResult {
+    let r = search_core(
+        terrain,
+        from,
+        to,
+        cost,
+        vehicle,
+        ditches,
+        wire,
+        mines,
+        max_expansions,
+        None,
+        s,
+    );
+    let capped = !r.reached && !r.exhausted;
+    observe::record(r.expansions, capped, capped);
+    r
+}
+
+/// The grid search and smoothing; `weight_override` replaces the
+/// heuristic weight (percent; S16 review F3 cap retry).
+#[allow(clippy::too_many_arguments)]
+fn search_core(
+    terrain: &Heightfield,
+    from: FxVec2,
+    to: FxVec2,
+    cost: &PathCost,
+    vehicle: Option<&VehiclePathCost>,
+    ditches: Option<&BlockLayer>,
+    wire: Option<&WireCost>,
+    mines: Option<&MineCost>,
+    max_expansions: u32,
+    weight_override: Option<u32>,
+    s: &mut PathScratch,
+) -> PathResult {
     let ditch = |n: u32| ditches.is_some_and(|d| d.is_ditch(n));
     let dim = terrain.dim();
     let to = terrain.clamp(to);
@@ -395,8 +496,15 @@ fn search_with(
     s.parent[start as usize] = start;
     s.seen[start as usize] = stamp;
     let near = sx.abs_diff(tx).max(sy.abs_diff(ty)) <= TRENCH_SEARCH_NODES;
-    let weight = if vehicle.is_none() && near && terrain.is_trench(sx, sy) && !ditch(start) {
+    let weight = if let Some(w) = weight_override {
+        w
+    } else if vehicle.is_none() && near && terrain.is_trench(sx, sy) && !ditch(start) {
         H_WEIGHT_PCT * cost.trench_cost_pct / 100
+    } else if let Some(r) = vehicle.and_then(|v| v.road_pct) {
+        // S16a (R3): only on a map with roads (`road_pct` is `None`
+        // otherwise, so road-free searches are bit-identical); never below
+        // plain A*.
+        (H_WEIGHT_PCT * r.heuristic_pct / r.pct).max(100)
     } else {
         H_WEIGHT_PCT
     };
@@ -588,6 +696,18 @@ fn segment_in_trench(terrain: &Heightfield, a: FxVec2, b: FxVec2) -> bool {
     })
 }
 
+/// S16a (R3): whether every 2 m sample of the straight segment `a → b`
+/// (end points included) is nearest to a road node.
+fn segment_on_road(terrain: &Heightfield, a: FxVec2, b: FxVec2) -> bool {
+    let d = b - a;
+    let steps = (d.length().raw() >> (Fx::FRAC_BITS + 1)).max(1);
+    (0..=steps).all(|k| {
+        let p = a + FxVec2::new(d.x.mul_int(k).div_int(steps), d.y.mul_int(k).div_int(steps));
+        let (gx, gy) = terrain.nearest_grid(p);
+        terrain.road_node(gy * terrain.dim() + gx)
+    })
+}
+
 /// String-pulls a grid path: from each anchor, jump to the furthest of the
 /// next [`SMOOTH_LOOKAHEAD`] nodes whose straight segment is no steeper than
 /// the grid path it replaces (or gentle anyway), and stays in the trench
@@ -627,6 +747,14 @@ fn smooth(
             terrain.is_trench(gx, gy)
         };
         let mut all_trench = vehicle.is_none() && at(anchor);
+        // S16a (R3): a shortcut may not touch a non-road node when the grid
+        // stretch it replaces is all road.
+        let road_on = vehicle.is_some_and(|v| v.road_pct.is_some());
+        let on_road = |p: FxVec2| {
+            let (gx, gy) = terrain.nearest_grid(p);
+            terrain.road_node(gy * terrain.dim() + gx)
+        };
+        let mut all_road = road_on && on_road(anchor);
         let mut path_dear = 0u64;
         let mut path_wire = false;
         let mut path_mine = false;
@@ -634,6 +762,7 @@ fn smooth(
         for (j, &node) in grid.iter().enumerate().take(hi + 1).skip(i) {
             path_worst = path_worst.max(segment_grade(terrain, prev, node));
             all_trench &= at(node);
+            all_road &= road_on && on_road(node);
             if let Some(v) = vehicle {
                 let (gx, gy) = terrain.nearest_grid(node);
                 path_dear = path_dear.max(vehicle_pct(terrain, v, gx, gy, true).unwrap_or(0));
@@ -651,6 +780,7 @@ fn smooth(
             let allowed = path_worst.max(SMOOTH_GENTLE_PCT).min(cost.max_slope_pct);
             if segment_grade(terrain, anchor, node) <= allowed
                 && (!all_trench || segment_in_trench(terrain, anchor, node))
+                && (!all_road || segment_on_road(terrain, anchor, node))
                 && vehicle.is_none_or(|v| {
                     !v.block.segment_in_margin(terrain, anchor, node)
                         && dear(v, anchor, node).is_some_and(|d| d <= path_dear.max(100))
@@ -666,6 +796,110 @@ fn smooth(
         i = best + 1;
     }
     out
+}
+
+/// S16a (S16 plan 7): per-search expansion counts for the CLI. An observer
+/// only: the sim never reads it and it is neither saved nor hashed. A
+/// thread records into the sink set for it (`World::observe_path_searches`
+/// sets one on each of a world's pool threads); with none set, nothing.
+pub mod observe {
+    use std::cell::RefCell;
+    use std::sync::{Arc, Mutex};
+
+    /// Histogram bucket width (expansions).
+    pub const BUCKET: u32 = 64;
+    /// Buckets; the last holds every search at or above
+    /// `BUCKET * (BUCKETS - 1)` expansions.
+    pub const BUCKETS: usize = 257;
+
+    /// Searches seen, their expansions and a histogram for percentiles.
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    pub struct SearchStats {
+        pub searches: u64,
+        pub expansions: u64,
+        pub max: u32,
+        pub hist: Vec<u64>,
+        /// S17 review: searches whose first run stopped at the expansion
+        /// cap short of the goal ...
+        pub capped: u64,
+        /// ... and those still short of it after the S16 retry (a vehicle
+        /// search on a road map) or with no retry.
+        pub capped_unreached: u64,
+    }
+
+    impl SearchStats {
+        pub fn add(&mut self, expansions: u32) {
+            self.add_search(expansions, false, false);
+        }
+
+        pub fn add_search(&mut self, expansions: u32, capped: bool, unreached: bool) {
+            if self.hist.is_empty() {
+                self.hist = vec![0; BUCKETS];
+            }
+            self.capped += capped as u64;
+            self.capped_unreached += unreached as u64;
+            self.searches += 1;
+            self.expansions += expansions as u64;
+            self.max = self.max.max(expansions);
+            self.hist[((expansions / BUCKET) as usize).min(BUCKETS - 1)] += 1;
+        }
+
+        pub fn merge(&mut self, o: &SearchStats) {
+            if o.hist.is_empty() {
+                return;
+            }
+            if self.hist.is_empty() {
+                self.hist = vec![0; BUCKETS];
+            }
+            self.searches += o.searches;
+            self.expansions += o.expansions;
+            self.capped += o.capped;
+            self.capped_unreached += o.capped_unreached;
+            self.max = self.max.max(o.max);
+            for (a, b) in self.hist.iter_mut().zip(&o.hist) {
+                *a += b;
+            }
+        }
+
+        /// The upper edge of the bucket holding the `pct` percentile
+        /// (never above `max`); 0 with no searches.
+        pub fn percentile(&self, pct: u32) -> u32 {
+            if self.searches == 0 {
+                return 0;
+            }
+            let rank = (self.searches * pct as u64).div_ceil(100).max(1);
+            let mut seen = 0u64;
+            for (k, n) in self.hist.iter().enumerate() {
+                seen += n;
+                if seen >= rank {
+                    return (((k as u32) + 1) * BUCKET - 1).min(self.max);
+                }
+            }
+            self.max
+        }
+    }
+
+    /// A shared sink (one per observed world).
+    pub type Sink = Arc<Mutex<SearchStats>>;
+
+    thread_local! {
+        static SINK: RefCell<Option<Sink>> = const { RefCell::new(None) };
+    }
+
+    /// Sets (or clears) this thread's sink.
+    pub fn set_thread_sink(sink: Option<Sink>) {
+        SINK.with(|c| *c.borrow_mut() = sink);
+    }
+
+    pub(crate) fn record(expansions: u32, capped: bool, unreached: bool) {
+        SINK.with(|c| {
+            if let Some(s) = &*c.borrow()
+                && let Ok(mut st) = s.lock()
+            {
+                st.add_search(expansions, capped, unreached);
+            }
+        });
+    }
 }
 
 #[cfg(test)]
@@ -859,6 +1093,138 @@ mod tests {
         b
     }
 
+    /// S16a: a flat 256 m map with one road along `points` (m).
+    fn road_map(points: &[[u32; 2]], width_m: i64) -> Heightfield {
+        use frontline_content::setup::{Fixed, FixedVec2, RoadSetup, TerrainSetup};
+        Heightfield::generate_map(&MapSetup {
+            id: "t:roads".into(),
+            name: "roads".into(),
+            size_m: 256,
+            terrain: TerrainSetup {
+                seed: 1,
+                base_height: Fixed::ZERO,
+                octaves: Vec::new(),
+                bands: Vec::new(),
+                point_symmetric: false,
+            },
+            woods: Vec::new(),
+            points: Vec::new(),
+            bases: Vec::new(),
+            roads: vec![RoadSetup {
+                points: points.iter().map(|&p| FixedVec2::from_m(p)).collect(),
+                half_width: Fixed::from_ratio(width_m, 2),
+            }],
+        })
+    }
+
+    /// S16a (R3): a grid path that is all road keeps every smoothed
+    /// shortcut on the road; control: without road pricing the same grid
+    /// path is cut across the bend.
+    #[test]
+    fn a_path_along_a_road_is_not_smoothed_off_it() {
+        let road: &[[u32; 2]] = &[[20, 100], [120, 140], [220, 100]];
+        let t = road_map(road, 6);
+        // The grid path: the polyline sampled every metre, snapped to its
+        // nearest grid node, repeats dropped.
+        let mut grid: Vec<FxVec2> = Vec::new();
+        for w in road.windows(2) {
+            let (a, b) = (
+                FxVec2::from_int(w[0][0] as i32, w[0][1] as i32),
+                FxVec2::from_int(w[1][0] as i32, w[1][1] as i32),
+            );
+            let d = b - a;
+            let n = d.length().raw() >> Fx::FRAC_BITS;
+            for k in 0..=n {
+                let p = a + FxVec2::new(d.x.mul_int(k).div_int(n), d.y.mul_int(k).div_int(n));
+                let (gx, gy) = t.nearest_grid(p);
+                let q = node_pos(t.dim(), gy * t.dim() + gx);
+                if grid.last() != Some(&q) {
+                    grid.push(q);
+                }
+            }
+        }
+        let from = grid.remove(0);
+        assert!(
+            grid.iter().all(|&p| t.road_at(p)),
+            "the grid path is all road"
+        );
+        let b = BlockLayer::new(t.dim(), u16::MAX);
+        let mut v = VehiclePathCost {
+            block: &b,
+            avoid: None,
+            costs: &VCOSTS,
+            mines: None,
+            road_pct: Some(RoadPathCost {
+                pct: 175,
+                heuristic_pct: 100,
+                cap_retry_weight_pct: 0,
+            }),
+        };
+        let on_road = |pts: &[FxVec2]| {
+            let mut prev = from;
+            pts.iter().all(|&q| {
+                let ok = segment_on_road(&t, prev, q);
+                prev = q;
+                ok
+            })
+        };
+        let pts = smooth(&t, from, &grid, &COST, Some(&v), None, None);
+        assert!(on_road(&pts), "{pts:?}");
+        assert!(pts.len() < grid.len(), "it still smooths along the road");
+        v.road_pct = None;
+        let pts = smooth(&t, from, &grid, &COST, Some(&v), None, None);
+        assert!(!on_road(&pts), "control: cut across the bend {pts:?}");
+    }
+
+    /// S16a (R3): road nodes cost `100 / road pct` and skip woods; the
+    /// observer counts each search.
+    #[test]
+    fn road_nodes_are_priced_by_time() {
+        let t = road_map(&[[20, 100], [220, 100]], 8);
+        let b = BlockLayer::new(t.dim(), u16::MAX);
+        let mut v = VehiclePathCost {
+            block: &b,
+            avoid: None,
+            costs: &VCOSTS,
+            mines: None,
+            road_pct: Some(RoadPathCost {
+                pct: 175,
+                heuristic_pct: 100,
+                cap_retry_weight_pct: 0,
+            }),
+        };
+        let (gx, gy) = t.nearest_grid(FxVec2::from_int(100, 100));
+        assert_eq!(vehicle_pct(&t, &v, gx, gy, false), Some(57));
+        assert_eq!(vehicle_pct(&t, &v, gx, gy + 10, false), Some(100));
+        v.road_pct = None;
+        assert_eq!(vehicle_pct(&t, &v, gx, gy, false), Some(100));
+        let sink = observe::Sink::default();
+        observe::set_thread_sink(Some(sink.clone()));
+        let mut s = PathScratch::default();
+        let r = find_vehicle_path(
+            &t,
+            FxVec2::from_int(20, 100),
+            FxVec2::from_int(220, 100),
+            &COST,
+            &v,
+            100_000,
+            &mut s,
+        );
+        // S16b (checker after A): a search whose start is its goal has no
+        // early return; it is counted too, with 0 expansions.
+        let same = FxVec2::from_int(20, 100);
+        let r0 = find_vehicle_path(&t, same, same, &COST, &v, 100_000, &mut s);
+        assert!(r0.reached);
+        assert_eq!(r0.expansions, 0);
+        observe::set_thread_sink(None);
+        let st = sink.lock().unwrap().clone();
+        assert_eq!(
+            (st.searches, st.expansions, st.max),
+            (2, r.expansions as u64, r.expansions)
+        );
+        assert_eq!(st.percentile(99), r.expansions.min(st.max));
+    }
+
     fn passes_near(points: &[FxVec2], p: FxVec2, m: i32) -> bool {
         let mut prev = points[0];
         for &q in points {
@@ -892,6 +1258,7 @@ mod tests {
             avoid: None,
             costs: &VCOSTS,
             mines: None,
+            road_pct: None,
         };
         let mut s = PathScratch::default();
         let (from, to) = (FxVec2::from_int(60, 60), FxVec2::from_int(200, 60));
@@ -927,6 +1294,7 @@ mod tests {
             avoid: None,
             costs: &VCOSTS,
             mines: None,
+            road_pct: None,
         };
         let mut s = PathScratch::default();
         let (from, to) = (FxVec2::from_int(60, 72), FxVec2::from_int(150, 72));
@@ -958,6 +1326,7 @@ mod tests {
             avoid: Some(gy * t.dim() + gx),
             costs: &VCOSTS,
             mines: None,
+            road_pct: None,
         };
         let r = find_vehicle_path(&t, from, to, &COST, &avoided, 100_000, &mut s);
         let path = [&[from][..], &r.points].concat();

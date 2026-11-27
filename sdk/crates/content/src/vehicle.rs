@@ -905,6 +905,10 @@ pub struct MobilityDef {
     /// S8b: speed in woods in percent of `speed_cm_s` (default 50).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub woods_speed_pct: Option<u32>,
+    /// S16a: forward speed on a road node in percent of `speed_cm_s`,
+    /// 100..=200; overrides the drive type's `[vehicles.road]` value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub road_speed_pct: Option<u32>,
     /// S8b: percent of speed lost at `max_slope_pct`, linear (default 70).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slope_loss_pct: Option<u32>,
@@ -1519,6 +1523,15 @@ impl VehicleDef {
         }
         if let Some(p) = m.woods_speed_pct {
             range(&mut out, "mobility.woods_speed_pct", p as i64, 1, 100);
+        }
+        if let Some(p) = m.road_speed_pct {
+            range(&mut out, "mobility.road_speed_pct", p as i64, 100, 200);
+            if m.kind == MobilityKind::Towed {
+                out.push(Issue::new(
+                    "mobility.road_speed_pct",
+                    "a towed gun moves at its tower's road speed; remove road_speed_pct",
+                ));
+            }
         }
         if let Some(p) = m.slope_loss_pct {
             range(&mut out, "mobility.slope_loss_pct", p as i64, 0, 95);
@@ -3077,6 +3090,9 @@ pub struct MobilitySetup {
     pub turn_radius: Fixed,
     /// S8b: percent of speed in woods.
     pub woods_speed_pct: u32,
+    /// S16a: `[mobility] road_speed_pct` (None: the drive type's
+    /// `[vehicles.road]` value).
+    pub road_speed_pct: Option<u32>,
     /// S8b: percent of speed lost at `max_slope_pct`.
     pub slope_loss_pct: u32,
     /// m/s².
@@ -3090,6 +3106,32 @@ pub struct MobilitySetup {
     pub moving_spread_pct: u32,
     /// S9: a towed gun's times; `None` on any other mobility.
     pub towed: Option<TowedSetup>,
+}
+
+impl MobilitySetup {
+    /// S16a (R1): forward speed on a road node in percent of `speed`
+    /// under `road` (100 with road rules off). A towed gun gets 100: pushed
+    /// by its crew it gains nothing, hitched it moves with its tower.
+    pub fn road_pct(&self, road: &crate::tuning::RoadTuning) -> u32 {
+        if road.enabled != 1 {
+            return 100;
+        }
+        let by_type = match self.kind {
+            MobilityKind::Towed => return 100,
+            MobilityKind::Wheeled => road.wheeled_pct,
+            MobilityKind::Halftrack => road.halftrack_pct,
+            MobilityKind::Tracked => road.tracked_pct,
+        };
+        self.road_speed_pct.unwrap_or(by_type)
+    }
+
+    /// S16a (R1): reverse speed on a road node in percent of `reverse`.
+    pub fn road_reverse_pct(&self, road: &crate::tuning::RoadTuning) -> u32 {
+        if road.enabled != 1 || self.kind == MobilityKind::Towed {
+            return 100;
+        }
+        road.reverse_pct
+    }
 }
 
 /// S9: a towed gun's `[mobility]` times (ticks).
@@ -3746,6 +3788,7 @@ pub(crate) fn lower_vehicle(
             turn_deg_s: m.turn_deg_s as i32,
             turn_radius: Fixed::from_cm(m.turn_radius_cm.unwrap_or(0)),
             woods_speed_pct: m.woods_speed_pct.unwrap_or(50),
+            road_speed_pct: m.road_speed_pct,
             slope_loss_pct: m.slope_loss_pct.unwrap_or(70),
             accel: Fixed::from_cm(m.accel_cm_s2),
             brake: Fixed::from_cm(m.brake_cm_s2),
@@ -4151,6 +4194,7 @@ pub(crate) fn check_vehicle(
         || !((m.reverse > Fixed::ZERO || towed_gun) && m.reverse <= m.speed)
         || !turn_ok
         || !(1..=100).contains(&m.woods_speed_pct)
+        || m.road_speed_pct.is_some_and(|p| !(100..=200).contains(&p))
         || m.slope_loss_pct > 95
         || !(m.accel > Fixed::ZERO && fx_in(m.accel, 0, 20))
         || !(m.brake > Fixed::ZERO && fx_in(m.brake, 0, 50))

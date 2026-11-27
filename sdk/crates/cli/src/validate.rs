@@ -23,6 +23,9 @@ pub struct FileResult {
     pub file: String,
     pub ok: bool,
     pub problems: Vec<Problem>,
+    /// S16a (R5): findings that do not fail the file (a point-symmetric
+    /// map's hand-placed items without a mirror).
+    pub warnings: Vec<Problem>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -46,9 +49,11 @@ pub fn path(p: &Path) -> FileResult {
 pub fn mod_dir(root: &Path) -> FileResult {
     let file = root.display().to_string();
     let mut problems: Vec<Problem> = Vec::new();
+    let mut warnings: Vec<Problem> = Vec::new();
     match ModDefs::load(root) {
         Err(e) => problems.extend(content_problems(e, "")),
         Ok(mut defs) => {
+            warnings = map_warnings(&defs);
             let mut overrides: Vec<_> = std::fs::read_dir(root.join("tests"))
                 .into_iter()
                 .flatten()
@@ -129,7 +134,26 @@ pub fn mod_dir(root: &Path) -> FileResult {
         ok: problems.is_empty(),
         file,
         problems,
+        warnings,
     }
+}
+
+/// S16a (R5): the mirror warnings of every map (`MapFileDef::mirror_warnings`;
+/// S17a: and `side_warnings`), each path prefixed with the map id.
+pub fn map_warnings(defs: &ModDefs) -> Vec<Problem> {
+    defs.maps
+        .iter()
+        .flat_map(|(id, m)| {
+            let mut w = m.mirror_warnings();
+            // S17a: the bases' `side` values.
+            w.extend(m.side_warnings());
+            w.into_iter().map(move |i| {
+                let mut p = Problem::from(i);
+                p.path = format!("maps.{id}.{}", p.path);
+                p
+            })
+        })
+        .collect()
 }
 
 /// S15 M (docs/slices/S15-ussr.md 4): the faction pairs rules `r` lets
@@ -169,6 +193,7 @@ fn resolve_all(defs: &ModDefs, problems: &mut Vec<Problem>) {
                             faction: f.clone(),
                             ai: true,
                             difficulty: Default::default(),
+                            team: None,
                         })
                         .collect(),
                 };
@@ -230,6 +255,7 @@ pub fn scenario_file(path: &Path) -> FileResult {
         ok: problems.is_empty(),
         file,
         problems,
+        warnings: Vec::new(),
     }
 }
 

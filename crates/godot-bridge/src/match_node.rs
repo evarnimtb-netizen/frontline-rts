@@ -911,6 +911,7 @@ fn menu_choice(d: &VarDictionary) -> MenuChoice {
         tickets: n("tickets").filter(|&t| t > 0).map(|t| t as u32),
         start_manpower: n("start_manpower").filter(|&t| t >= 0).map(|t| t as u32),
         slots: None,
+        mode: s("mode", "1v1"),
         test_unlock: d
             .get("test_unlock")
             .and_then(|v| v.try_to::<bool>().ok())
@@ -1023,7 +1024,7 @@ impl FrontlineMatch {
         &mut self,
         world: World,
         local: u8,
-        net: Option<(NetLink, NetMatchInfo, [String; 2])>,
+        net: Option<(NetLink, NetMatchInfo, Vec<String>)>,
         scene_name: Option<String>,
     ) -> Result<(), String> {
         let world3d = self
@@ -1159,7 +1160,11 @@ struct SceneInfo {
 
 /// The presenter's side of a net match.
 struct NetView {
-    names: [String; 2],
+    /// One per slot (an AI slot's is empty).
+    names: Vec<String>,
+    /// S18 H5: when this player last pinged the map (the presenter's
+    /// `[teams] ping_gap_s` gate).
+    last_ping: Option<std::time::Instant>,
     /// `(send ordinal of the intent's last command, kind, Godot position)`,
     /// oldest first: drawn until that command ran.
     pending: VecDeque<(u64, &'static str, Vector3)>,
@@ -1183,7 +1188,7 @@ impl MatchRuntime {
         world: World,
         local: u8,
         scene: Option<String>,
-        net: Option<(NetLink, NetMatchInfo, [String; 2])>,
+        net: Option<(NetLink, NetMatchInfo, Vec<String>)>,
         scenario: Rid,
         [soldier_sh, tracer_sh]: [Gd<Shader>; 2],
         terrain_sh: Option<Gd<Shader>>,
@@ -1317,6 +1322,7 @@ impl MatchRuntime {
                 MatchHandle::spawn_net(world, local, link, info)?,
                 Some(NetView {
                     names,
+                    last_ping: None,
                     pending: VecDeque::new(),
                 }),
                 0,
@@ -1366,7 +1372,8 @@ impl MatchRuntime {
             flashes: Vec::new(),
             team_tint,
             events_in: Vec::new(),
-            tracker: EventTracker::new(local),
+            tracker: EventTracker::new(local)
+                .with_allies(frontline_sim::teams::Teams::of_setup(&setup).allies_mask(local)),
             ui_events: Vec::new(),
             cues: Vec::new(),
             dig_cue: BTreeMap::new(),
@@ -2038,19 +2045,26 @@ impl MatchRuntime {
             },
         };
 
+        // S17 (Presenter P): who is on the local player's team.
+        let teams = frontline_sim::teams::Teams::of_setup(setup);
+        let allies = teams.allies_mask(local as u8);
         let mut players = VarArray::new();
         for (p, ps) in f.players.iter().enumerate() {
             let ps_setup = &setup.players[p];
             let fac = short_id(&setup.factions[ps_setup.faction as usize].id);
+            let ally = p != local && teams.allied(local as u8, p as u8);
             let name = match &self.net {
-                Some(n) if !n.names[p % 2].is_empty() => n.names[p % 2].clone(),
+                Some(n) if n.names.get(p).is_some_and(|x| !x.is_empty()) => n.names[p].clone(),
                 _ if p == local => "You".to_owned(),
                 _ if !ps_setup.is_ai => "Player".to_owned(),
+                _ if ally => format!("Ally AI ({:?})", ps_setup.difficulty).to_lowercase(),
                 _ => format!("AI ({:?})", ps_setup.difficulty).to_lowercase(),
             };
             players.push(
                 &vdict! {
                     "id" => p as i64,
+                    "team" => ps_setup.team as i64,
+                    "ally" => ally,
                     "faction" => fac,
                     "name" => name.as_str(),
                     "is_ai" => ps_setup.is_ai,
@@ -2634,7 +2648,7 @@ impl MatchRuntime {
                     .players
                     .iter()
                     .enumerate()
-                    .find(|(p, _)| *p != winner.0 as usize)
+                    .find(|(p, _)| teams.hostile(winner.0, *p as u8))
                     .and_then(|(_, ps)| ps.defeat);
                 let reason = match loser {
                     Some(frontline_sim::Defeat::Tickets) => "tickets",
@@ -2642,7 +2656,8 @@ impl MatchRuntime {
                     Some(frontline_sim::Defeat::Surrendered) => "surrender",
                     None => "tickets",
                 };
-                let st = if winner.0 as usize == local {
+                // S17: a win of the local player's team is his win.
+                let st = if teams.allied(winner.0, local as u8) {
                     "won"
                 } else {
                     "lost"
@@ -2673,6 +2688,8 @@ impl MatchRuntime {
             "time_s" => f.tick as f32 / hz,
             "paused" => paused,
             "local_player" => local as i64,
+            // S17: bit mask of the local player's team (him included).
+            "allies" => allies as i64,
             "map" => &map,
             "rules" => &rules_d,
             "players" => &players,
@@ -3255,6 +3272,21 @@ impl MatchRuntime {
             "desync_dump" => detail.desync_dump.clone().unwrap_or_default().as_str(),
             "disconnect_reason" => detail.disconnect.unwrap_or(""),
         };
+        // S18 H5: allies' map pings since the last state, in Godot space.
+        let mut pings = VarArray::new();
+        if let Ok(mut q) = c.pings.lock() {
+            for (slot, x, y) in q.drain(..) {
+                pings.push(
+                    &vdict! {
+                        "slot" => slot as i64,
+                        "name" => name(slot).as_str(),
+                        "pos" => self.ground([x as f32, y as f32]),
+                    }
+                    .to_variant(),
+                );
+            }
+        }
+        out.set("pings", &pings);
         if let Some(p) = detail.paused_by {
             out.set("paused_slot", p as i64);
         }
@@ -3507,6 +3539,15 @@ impl MatchRuntime {
                     .to_variant(),
             );
         }
+        // S16: road polylines (ground-level points) and full width in metres.
+        let mut roads = VarArray::new();
+        for r in &m.roads {
+            let mut line = PackedVector3Array::new();
+            for p in &r.points {
+                line.push(self.ground(frontline_sim::FxVec2::from(*p).to_f32()));
+            }
+            roads.push(&vdict! {"points" => &line, "width" => 2.0 * fx(r.half_width)}.to_variant());
+        }
         let mut bases = VarArray::new();
         for b in &m.bases {
             let c = frontline_sim::FxVec2::from(b.center).to_f32();
@@ -3539,6 +3580,7 @@ impl MatchRuntime {
             "size_m" => m.size_m as f32,
             "half" => self.half,
             "woods" => &woods,
+            "roads" => &roads,
             "points" => &points,
             "bases" => &bases,
             "own_base" => own_base as i64,
@@ -4134,6 +4176,20 @@ impl MatchRuntime {
                 }
             }
             "surrender" => out.push(CommandKind::Surrender),
+            // S18 H5: a map ping at `target` for the allies (net matches;
+            // at most one per `[teams] ping_gap_s`).
+            "map_ping" => {
+                let Some(t) = target else { return };
+                let gap = std::time::Duration::from_secs(self.setup.rules.teams.ping_gap_s as u64);
+                let p = to_sim(t, self.half);
+                if let Some(n) = self.net.as_mut()
+                    && n.last_ping.is_none_or(|l| l.elapsed() >= gap)
+                    && self.sim.map_ping(p[0].round() as i32, p[1].round() as i32)
+                {
+                    n.last_ping = Some(std::time::Instant::now());
+                }
+                return;
+            }
             "pause" => {
                 let p = data
                     .get("paused")
@@ -4188,8 +4244,23 @@ fn items_dict(n: [u16; frontline_sim::ITEM_KINDS]) -> VarDictionary {
     d
 }
 
-/// Shaded top-down map image (north up), woods and contour lines, for the
-/// minimap and menu preview.
+/// Minimap road colour (S16; the Godot scenery colour is in `road_style.gd`).
+const MINIMAP_ROAD_COLOR: [f32; 3] = [0.62, 0.55, 0.40];
+
+/// Distance from `p` to the segment `a`-`b`.
+fn dist_to_segment(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> f32 {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 <= 0.0 {
+        0.0
+    } else {
+        (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2).clamp(0.0, 1.0)
+    };
+    ((p[0] - a[0] - t * dx).powi(2) + (p[1] - a[1] - t * dy).powi(2)).sqrt()
+}
+
+/// Shaded top-down map image (north up), woods, roads and contour lines,
+/// for the minimap and menu preview.
 fn minimap_texture(t: &TerrainStore, setup: &MatchSetup, px: usize) -> Option<Gd<ImageTexture>> {
     let size = t.size_m();
     let step = size / px as f32;
@@ -4205,6 +4276,19 @@ fn minimap_texture(t: &TerrainStore, setup: &MatchSetup, px: usize) -> Option<Gd
             )
         })
         .collect();
+    // Roads: segments and half width; drawn at least one pixel wide.
+    let mut road_segs: Vec<([f32; 2], [f32; 2], f32)> = Vec::new();
+    for r in &setup.map.roads {
+        let half = Fx::from(r.half_width).to_f32().max(step * 0.7);
+        let pts: Vec<[f32; 2]> = r
+            .points
+            .iter()
+            .map(|p| frontline_sim::FxVec2::from(*p).to_f32())
+            .collect();
+        for w in pts.windows(2) {
+            road_segs.push((w[0], w[1], half));
+        }
+    }
     let mut bytes = Vec::with_capacity(px * px * 3);
     for j in 0..px {
         for i in 0..px {
@@ -4224,7 +4308,12 @@ fn minimap_texture(t: &TerrainStore, setup: &MatchSetup, px: usize) -> Option<Gd
             {
                 c = [0.20, 0.27, 0.17];
             }
-            if h.rem_euclid(4.0) < 0.3 {
+            if road_segs
+                .iter()
+                .any(|(a, b, half)| dist_to_segment([x, y], *a, *b) <= *half)
+            {
+                c = MINIMAP_ROAD_COLOR;
+            } else if h.rem_euclid(4.0) < 0.3 {
                 c = [c[0] * 0.82, c[1] * 0.82, c[2] * 0.82];
             }
             for v in c {
@@ -4274,4 +4363,19 @@ fn phase_word(p: u8) -> &'static str {
         .get(p as usize)
         .copied()
         .unwrap_or("effect")
+}
+
+#[cfg(test)]
+mod minimap_road_tests {
+    use super::dist_to_segment;
+
+    #[test]
+    fn distance_to_segment_clamps_to_the_ends() {
+        let (a, b) = ([0.0, 0.0], [10.0, 0.0]);
+        assert_eq!(dist_to_segment([5.0, 3.0], a, b), 3.0);
+        assert_eq!(dist_to_segment([-4.0, 3.0], a, b), 5.0);
+        assert_eq!(dist_to_segment([13.0, 4.0], a, b), 5.0);
+        // A zero-length segment is a point.
+        assert_eq!(dist_to_segment([3.0, 4.0], a, a), 5.0);
+    }
 }

@@ -39,17 +39,17 @@ skirmish vs AI or 1v1 human vs human online. Rust 1.99.0, workspace in `Cargo.to
 | CLI and tools | simulate, skirmish, armour-test, fortify-test, mortar-bench, targets, ballistics, validate, schema, desync-diff; autotune, check.sh | `sdk/crates/cli/src/`, `tools/` |
 
 Not in the game yet: Jagdpanzer IV, 38(t), M18, gun tows, displacement, gun crates, registration, flash, HEAT, wounds, a
-third faction, a second map, SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a 3-inch M5
+third faction, SetHatch or unbuttoned commanders, carried men on trucks, fire from a vehicle, a 3-inch M5
 in the AI, HE for the 57 mm.
 
 ## Versions
 
-`SAVE_VERSION` **32** and `PROTOCOL_VERSION` **16** on main (`world.rs`, `protocol.rs`); **33** and **17** on the branch
-`claude/project-thread-aj1tww` (S14: flame particles, patches, clears, `Combat::close`, `AiState::flame`; commands
-`ClearTrench` and `Strike`). SAVE 33 / PROTOCOL 17 also after S14 Fix (no layout change). S15a Build A: SAVE **34**,
-PROTOCOL 17 (no new command; `PlayerState::s15`, rider jobs, `Kit::foreign`, `VehicleState::rider_off`, `TransportSetup::exposed`);
-SAVE 34 / PROTOCOL 17 also after S15 Fix (no layout change), with three factions in the shipped `[matchups]`. History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13;
-S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14; S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16; S14 33/17 (branch); S15a 34/17 (branch). A save, hash or command change
+`SAVE_VERSION` **35** and `PROTOCOL_VERSION` **18** on the branch `claude/project-thread-1d8xx3` (PR 11: S16-S18) after
+merging main at `316419b` (S14/S15: SAVE **34**, PROTOCOL **17**); the S16-S18 layout is one bump over main's 34 (`world.rs`,
+`protocol.rs`). History: S8b 19/11; S9 20/12; S9b 21/12; S10a 22/13; S10a-ai 23/13; S10b 24/14; S10b-ai 25/14; S10c-ai 26/14;
+S11a1 27/14; S11a2 28/14; S11b 29/15; S12 30/16; S13 31/16; B3 code 32/16; S14/S15 34/17 (S14 alone 33/17; main `316419b`);
+S16-S18 35/18 (branch `claude/project-thread-1d8xx3`, merged over S14/S15; before the merge S16a 33/17, S17a 34/17, S18
+35/18; logs `S16-log.md`, `S17-log.md`, `S18-log.md`). A save, hash or command change
 bumps these in the same commit. Relay commands: `sdk/docs/net/relay-protocol.md`. Each TOML value change refreshes the
 BASELINE in `sdk/crates/content/tests/resolved_defs.rs` and `crates/simbench/src/report.rs`.
 
@@ -149,6 +149,49 @@ roster (14 infantry cards, 5 guns, 7 vehicles; the AT guns towed by the US6 gun 
 tow), tank riders on Soviet decks (10 places on the T-34-85 and IS-2), the SN-42 plate, captured German mortar bombs, bayonets, the
 AI's rider job. All switches 1 in the mod; every number a key; no balance run (owner rule). Review findings 1-14 fixed (S15 Fix).
 T213c/d (ROKS-3 hits, bayonet strikes in matches) are reports (S15-15). Owner questions S15-1..16 in `docs/TODO.md`, each on (A).
+
+## S16 second map and roads (branch `claude/project-thread-1d8xx3`; log `S16-log.md`)
+
+SAVE 33, PROTOCOL 17 (S16a layout; 35/18 with S17-S18 after the merge with S14/S15). S16a: `[[roads]]` in maps, `[vehicles.road]` (speed by drive type, time-priced path cost,
+heuristic floor), point-symmetry blend, `skirmish --map`, tools take a map; Kessel Ridge neutral (40 set same 40/40 at Build A
+and Build B). S16b: Linden Brook (`ww2:linden_brook`, point-symmetric, C in a valley, four roads), mirror and path-cap tests,
+road km observer, AI metre audit (report only); woods no longer slow a vehicle on a road node with road factor 100. No balance
+runs (owner rule 2026-11-25). Linden Brook 40 set: 40/40 won, hashes equal at 1 and 4 threads (printout: median 19.2 min,
+Germany 31/40). Findings for the owner: F1 (wheels 22 % on road in matches, from AI destinations), F3 (search cost 4.5x).
+Presenter P (map in menus, roads drawn) not built yet.
+
+## S17 team play (branch `s17-build`; log `S17-log.md`)
+
+SAVE 34, PROTOCOL 17 before the merge (35/18 after). S17a: `team` per player, `crates/sim/src/teams.rs` (hostile, allied, sees), the owner-test sweep
+(`docs/slices/S17-sites.md`, checked by `tools/owner_sites.sh --check` in `tools/check.sh quick`), rules T1-T9 (`[teams]`),
+AI A1 A2 A5; at most 8 players (mine `known` mask). S17b: AI point sharing (A3) and ally help (A4) under `[ai.team]`
+(on; an AI alone never runs them), Harrow Cross (`ww2:harrow_cross`, 1536 m, four bases with `side`, seven points),
+`skirmish --teams 2v2|map --faction2 --faction3`, team reports (`teams`, `s17_derived`), `tools/batch.sh teams`.
+Presenter: ally colour (green), team fog in frames, top bar ally, 2v2 mode in the skirmish menu (you and an AI ally vs two
+AIs on Harrow Cross). No balance runs (owner rule 2026-11-25). Kessel Ridge 40 set same 40/40; 2v2 40 set on Harrow Cross:
+40/40 won, hashes equal at 1 and 4 threads (printout: team 0 18, team 1 22, median 20.6 min). Online teams are S18.
+Review fixes V1 (an ally's crate), V2; merged with the S16 review (`e585f9c`, `cap_retry_weight_pct`, Linden Brook in the
+menus: the menu map pick lists the maps of the mode); O1 (a defeated player's men do not capture), O4 (2v2 with net slots
+refused, CLI `--difficulty2`/`--difficulty3`) fixed; O2 (an AI's pieces can block an ally) open in TODO.
+
+## S18 online teams (branch `s18-build`; log `S18-log.md`)
+
+SAVE 35, PROTOCOL 18 (kept by the merge with S14/S15). Four-slot relay (`max_slots` 4, `--max-slots`, `--no-ai`, `--distinct-factions`, `--ping-gap-ms`):
+the host sets the lobby size (2 or 4), teams and AI fill; joiners take the lowest open slot or move (`TakeSlot`); Ready
+carries the lobby revision. Turns close round-robin over the slots; any two players' hashes differing is a desync, and
+every client dumps all hashes. H1 hand-over (`crates/sim/src/handover.rs`, `[teams] handover` 1): a surrendering or
+dropped player's troops, structures, works and manpower go to his lowest-slot standing ally, once; `handed_to` saved and
+hashed; handed squads free of the pop cap (`handover_pop` 0). Map pings to allies ("." key). Presenter: 2v2 lobby on
+Harrow Cross with AI rows, Add/Remove AI, Move here; MockNet plays four slots. 1v1 unchanged: Kessel Ridge 40 set same
+40/40 against `f58bcbd`. Team loopback (2+2 AI, 4 humans, drops, blackouts, forced desync): 0 mismatches. No balance runs.
+
+## Merge of main (S14/S15) into S16-S18 (branch `claude/project-thread-1d8xx3`; `S18-log.md` "Merge with S14/S15")
+
+SAVE 35, PROTOCOL 18 over main's 34/17. The S14/S15 owner tests are classed in `docs/slices/S17-sites.md` (flame,
+patches, strikes, clears, riders, plates, captured bombs); S15's `hostile_to` now asks `crate::teams`. `[matchups]` checks
+only hostile pairs (players on different teams), so the USSR plays on a team (Harrow Cross 2v2, the lobby, `skirmish
+--teams`); menus list the factions of `[matchups]` in both modes. `tools/batch.sh teams` adds `skirmish2v2_ussr`,
+`pair` takes `--map`; `tools/pool.py` pools per map and faction pair.
 
 ## Known gaps
 

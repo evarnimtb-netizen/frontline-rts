@@ -25,12 +25,28 @@ use crate::transport::{RECV_BUF, Transport, UdpTransport};
 #[derive(Clone, Debug)]
 pub enum ToNet {
     Command(CommandKind),
-    Hash { tick: u64, hash: u64 },
+    Hash {
+        tick: u64,
+        hash: u64,
+    },
     Lobby(LobbySet),
     Ready(u64),
+    /// S18: `Ready` for the lobby revision the hash was made from
+    /// ([`NetClient::ready_for`]).
+    ReadyFor {
+        setup_hash: u64,
+        rev: u32,
+    },
     Pause,
     Resume,
     Bye(ByeReason),
+    /// S18: move to this open lobby slot.
+    TakeSlot(u8),
+    /// S18 H5: a map ping for the allies, in metres.
+    MapPing {
+        x: i32,
+        y: i32,
+    },
 }
 
 /// The local address a client binds to reach `relay`: loopback for a
@@ -129,9 +145,14 @@ impl NetHandle {
                                 ToNet::Hash { tick, hash } => client.send_hash(tick, hash),
                                 ToNet::Lobby(l) => client.set_lobby(l),
                                 ToNet::Ready(h) => client.ready(h),
+                                ToNet::ReadyFor { setup_hash, rev } => {
+                                    client.ready_for(setup_hash, rev)
+                                }
                                 ToNet::Pause => client.request_pause(),
                                 ToNet::Resume => client.request_resume(),
                                 ToNet::Bye(r) => client.bye(r),
+                                ToNet::TakeSlot(slot) => client.take_slot(slot),
+                                ToNet::MapPing { x, y } => client.map_ping(x, y),
                             }
                         }
                         client.poll(clock());

@@ -21,6 +21,7 @@ var _faction := "germany"
 var _opponent := ""
 var _difficulty := "normal"
 var _map := "kessel_ridge"
+var _mode := "1v1"
 
 @onready var _content: PanelContainer = %Content
 @onready var _skirmish_btn: Button = %SkirmishButton
@@ -38,6 +39,10 @@ var _opp_btns := {}
 var _diff_btns := {}
 var _diff_note: Label
 var _preview: TextureRect
+var _map_pick: OptionButton
+var _map_ids: Array = []
+var _map_stats: Label
+var _map_blurb: Label
 
 
 func _ready() -> void:
@@ -50,6 +55,7 @@ func _ready() -> void:
 	_opponent = String(Session.setup.get("opponent", ""))
 	_difficulty = Session.setup.difficulty
 	_map = Session.setup.map
+	_mode = Session.setup.get("mode", "1v1")
 	_skirmish = _build_skirmish()
 	_content.add_child(_skirmish)
 	_settings = SettingsPanel.new()
@@ -157,6 +163,18 @@ func _build_skirmish() -> Control:
 	box.add_child(head)
 	box.add_child(_dim("One map, one AI opponent. Hold the points, dig in, bleed their tickets."))
 
+	# S17: the mode pick (1v1; 2v2 with an AI ally on Harrow Cross).
+	box.add_child(_section("Mode"))
+	var mode_row := HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 10)
+	var mode_group := ButtonGroup.new()
+	for md in Session.MODES:
+		var mb := _choice("1 v 1" if md == "1v1" else "2 v 2 (AI ally)", mode_group, md == _mode)
+		mb.custom_minimum_size = Vector2(170, 40)
+		mb.pressed.connect(_set_mode.bind(md))
+		mode_row.add_child(mb)
+	box.add_child(mode_row)
+
 	box.add_child(_section("Faction"))
 	var fac_row := HBoxContainer.new()
 	fac_row.add_theme_constant_override("separation", 10)
@@ -207,6 +225,7 @@ func _build_skirmish() -> Control:
 	var map_row := HBoxContainer.new()
 	map_row.add_theme_constant_override("separation", 16)
 	_preview = TextureRect.new()
+	MockMap.use(_map)
 	_preview.texture = ImageTexture.create_from_image(MockMap.make_image(160))
 	_preview.custom_minimum_size = Vector2(160, 160)
 	_preview.stretch_mode = TextureRect.STRETCH_SCALE
@@ -215,22 +234,26 @@ func _build_skirmish() -> Control:
 	map_row.add_child(_preview)
 	var map_info := VBoxContainer.new()
 	map_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# S17 (merge with S16): the pick lists the maps of the mode (1v1: two
+	# bases; 2v2: four bases) and stays enabled.
 	var map_pick := OptionButton.new()
-	for id in Session.MAPS:
-		map_pick.add_item(Session.MAPS[id].name)
+	_map_pick = map_pick
+	_fill_map_pick()
+	map_pick.item_selected.connect(func(i: int) -> void: _pick_map(_map_ids[i]))
 	map_pick.custom_minimum_size.x = 220
 	map_pick.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	map_info.add_child(map_pick)
 	var info: Dictionary = Session.map_info(_map)
-	var stats := _dim("%d × %d m · %d capture points · 2 players" % [info.size_m, info.size_m, info.points])
-	map_info.add_child(stats)
+	_map_stats = _dim("")
+	map_info.add_child(_map_stats)
 	var blurb := Label.new()
-	blurb.text = info.blurb
+	_map_blurb = blurb
 	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	blurb.custom_minimum_size.x = 300
 	map_info.add_child(blurb)
 	map_row.add_child(map_info)
 	box.add_child(map_row)
+	_show_map_text(info)
 
 	var spacer := Control.new()
 	spacer.custom_minimum_size.y = 6
@@ -243,6 +266,20 @@ func _build_skirmish() -> Control:
 	start.pressed.connect(_on_start)
 	box.add_child(start)
 	return box
+
+
+func _show_map_text(info: Dictionary) -> void:
+	_map_stats.text = "%d × %d m · %d capture points · %d players" % [
+		info.size_m, info.size_m, info.points, info.get("bases", 2)]
+	_map_blurb.text = info.blurb
+
+
+func _pick_map(id: String) -> void:
+	_map = id
+	MockMap.use(id)
+	_preview.texture = ImageTexture.create_from_image(MockMap.make_image(160))
+	_preview.queue_redraw()
+	_show_map_text(Session.map_info(id))
 
 
 ## The opponent row for the chosen faction: the rules' opponents, the default
@@ -293,7 +330,29 @@ func _on_start() -> void:
 	AudioManager.play_ui(&"confirm")
 	# An empty opponent is the default one (the bridge reads "" as absent).
 	var picker := Session.opponents_of(_faction).size() > 1
-	Session.start_skirmish({"faction": _faction, "difficulty": _difficulty, "map": _map, "opponent": _opponent if picker else ""})
+	Session.start_skirmish({"faction": _faction, "difficulty": _difficulty, "map": _map, "mode": _mode, "opponent": _opponent if picker else ""})
+
+
+## S17: picks the mode; the map stays if it plays the mode, else the
+## first map that does.
+func _set_mode(md: String) -> void:
+	_mode = md
+	if not _map in Session.maps_for_mode(md):
+		_map = Session.map_for_mode(md)
+	if _map_pick != null:
+		_fill_map_pick()
+		_pick_map(_map)
+
+
+## S17: the map pick holds the maps of the current mode.
+func _fill_map_pick() -> void:
+	_map_ids = Session.maps_for_mode(_mode)
+	if not _map in _map_ids:
+		_map = Session.map_for_mode(_mode)
+	_map_pick.clear()
+	for id in _map_ids:
+		_map_pick.add_item(Session.MAPS[id].name)
+	_map_pick.select(_map_ids.find(_map))
 
 
 func _section(text: String) -> Label:

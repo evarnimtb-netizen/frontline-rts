@@ -11,6 +11,16 @@ baseline and the others also print their change against it.
 
 Balance is judged on the pool only: one set of 160 has about +-7.7 points of
 noise, the pool of 480 about +-4.5 (95 %).
+
+S16a: sets are pooled per map (the JSON `map`; a set without one is Kessel
+Ridge, the only map before S16). A DIR whose sets played two maps prints one
+block per map, and the change against the baseline is read against the
+baseline's block of the same map.
+
+S15 (merge): the same holds per faction pair (the JSON `factions`; Germany
+against the USA unless named), so a Germany-USSR set never pools with a
+Germany-USA one. A 2v2 set (S17 `--teams`) has no Germany share to pool; read
+its `teams` block (`tools/batch.sh teams`).
 """
 import json
 import os
@@ -37,56 +47,78 @@ BOUGHT = {"germany": ["ger_sdkfz251_1_squad", "ger_stug3_g_squad", "ger_pz4_h_sq
           "usa": ["usa_m3a1_squad", "usa_m10_squad", "usa_m4a3_75_squad"]}
 
 
+DEFAULT_MAP = "ww2:kessel_ridge"
+DEFAULT_PAIR = "germany-usa"
+
+
 def read(d):
-    out = {"dir": d, "sets": [], "n": 0, "ger": 0, "nowin": 0, "he": [], "he_cas": [], "f": {}}
+    """One pooled block per map, in first-seen order."""
+    groups = {}
     for s in SETS:
         p = os.path.join(d, s + ".json")
         if not os.path.exists(p):
             continue
         j = json.load(open(p))
-        n = j["matches"]
-        w = j["wins"]
-        g = w.get("germany", 0)
-        out["sets"].append(100.0 * g / n)
-        out["n"] += n
-        out["ger"] += g
-        out["nowin"] += sum(1 for m in j["per_match"] if m.get("result") != "won")
-        out["he"].append(j["he_share_pct"]["mean"])
-        if "s12_derived" in j:
-            out["he_cas"].append(j["s12_derived"]["he_share_casualties_pct"]["mean"])
-        for name, f in j["factions"].items():
-            a = out["f"].setdefault(name, {"s9": {}, "bought": {}, "mp": {}, "veh_kills": [], "n": 0})
-            a["n"] += n
-            for k, v in f["s9"].items():
-                a["s9"][k] = a["s9"].get(k, 0) + v
-            d7 = f["s7_derived"]
-            for k, v in d7["bought_matches_pct"].items():
-                a["bought"][k] = a["bought"].get(k, 0) + v * n
-            for k, v in d7["mp_share_pct"].items():
-                a["mp"][k] = a["mp"].get(k, 0) + v * n
-            a["veh_kills"].append(d7["vehicle_kills_pct"])
-            a.setdefault("fired", []).append(f["s9_derived"]["gun_fired_matches_pct"])
-            a.setdefault("cover", []).append(f["s9_derived"]["gun_in_cover_pct"])
-            a.setdefault("gun_mp", []).append(f["s9_derived"]["gun_mp_pct"])
-            if "gun_armour_out_per_match" in f["s9_derived"]:
-                a.setdefault("out", []).append(f["s9_derived"]["gun_armour_out_per_match"])
-            d10 = f.get("s10_derived")
-            if d10 is not None:
-                for k in FORT:
-                    a.setdefault("fort", {}).setdefault(k, []).append(d10.get(k))
-            d12 = f.get("s12_derived")
-            if d12 is not None:
-                for k in S12:
-                    a.setdefault("s12", {}).setdefault(k, []).append(d12.get(k))
-            d14 = f.get("s14_derived")
-            if d14 is not None:
-                for k in S14:
-                    a.setdefault("s14", {}).setdefault(k, []).append(d14.get(k))
-            d10b = f.get("s10b_ai_derived")
-            if d10b is not None:
-                for k in S10B:
-                    a.setdefault("s10b", {}).setdefault(k, []).append(d10b.get(k))
-    return out
+        m = j.get("map") or DEFAULT_MAP
+        # S15 merge: a set of another faction pair (a matchup) pools apart.
+        pair = "-".join(sorted(j.get("factions", {}))) or DEFAULT_PAIR
+        k = (m, pair)
+        out = groups.get(k)
+        if out is None:
+            out = groups[k] = {"dir": d, "map": m, "pair": pair, "sets": [], "n": 0, "ger": 0,
+                               "nowin": 0, "he": [], "he_cas": [], "f": {}}
+        add(out, j)
+    if not groups:
+        groups[(DEFAULT_MAP, DEFAULT_PAIR)] = {"dir": d, "map": DEFAULT_MAP, "pair": DEFAULT_PAIR,
+                                               "sets": [], "n": 0, "ger": 0, "nowin": 0, "he": [],
+                                               "he_cas": [], "f": {}}
+    return list(groups.values())
+
+
+def add(out, j):
+    """Adds one set's JSON to a pooled block."""
+    n = j["matches"]
+    w = j["wins"]
+    g = w.get("germany", 0)
+    out["sets"].append(100.0 * g / n)
+    out["n"] += n
+    out["ger"] += g
+    out["nowin"] += sum(1 for m in j["per_match"] if m.get("result") != "won")
+    out["he"].append(j["he_share_pct"]["mean"])
+    if "s12_derived" in j:
+        out["he_cas"].append(j["s12_derived"]["he_share_casualties_pct"]["mean"])
+    for name, f in j["factions"].items():
+        a = out["f"].setdefault(name, {"s9": {}, "bought": {}, "mp": {}, "veh_kills": [], "n": 0})
+        a["n"] += n
+        for k, v in f["s9"].items():
+            a["s9"][k] = a["s9"].get(k, 0) + v
+        d7 = f["s7_derived"]
+        for k, v in d7["bought_matches_pct"].items():
+            a["bought"][k] = a["bought"].get(k, 0) + v * n
+        for k, v in d7["mp_share_pct"].items():
+            a["mp"][k] = a["mp"].get(k, 0) + v * n
+        a["veh_kills"].append(d7["vehicle_kills_pct"])
+        a.setdefault("fired", []).append(f["s9_derived"]["gun_fired_matches_pct"])
+        a.setdefault("cover", []).append(f["s9_derived"]["gun_in_cover_pct"])
+        a.setdefault("gun_mp", []).append(f["s9_derived"]["gun_mp_pct"])
+        if "gun_armour_out_per_match" in f["s9_derived"]:
+            a.setdefault("out", []).append(f["s9_derived"]["gun_armour_out_per_match"])
+        d10 = f.get("s10_derived")
+        if d10 is not None:
+            for k in FORT:
+                a.setdefault("fort", {}).setdefault(k, []).append(d10.get(k))
+        d12 = f.get("s12_derived")
+        if d12 is not None:
+            for k in S12:
+                a.setdefault("s12", {}).setdefault(k, []).append(d12.get(k))
+        d14 = f.get("s14_derived")
+        if d14 is not None:
+            for k in S14:
+                a.setdefault("s14", {}).setdefault(k, []).append(d14.get(k))
+        d10b = f.get("s10b_ai_derived")
+        if d10b is not None:
+            for k in S10B:
+                a.setdefault("s10b", {}).setdefault(k, []).append(d10b.get(k))
 
 
 def fmt(xs, nd=1):
@@ -100,7 +132,9 @@ def show(o, base):
         return
     pool = 100.0 * o["ger"] / o["n"]
     delta = f" ({pool - 100.0 * base['ger'] / base['n']:+.1f} against the baseline)" if base and base["n"] else ""
-    print(f"{o['dir']}: Germany pooled {pool:.2f} % of {o['n']}{delta}; sets {fmt(o['sets'], 2)}; "
+    tags = ([] if o["map"] == DEFAULT_MAP else [o["map"]]) + ([] if o["pair"] == DEFAULT_PAIR else [o["pair"]])
+    label = f"{o['dir']} [{', '.join(tags)}]" if tags else o["dir"]
+    print(f"{label}: Germany pooled {pool:.2f} % of {o['n']}{delta}; sets {fmt(o['sets'], 2)}; "
           f"no winner {o['nowin']}; HE share {fmt(o['he'])}"
           + (f"; HE share of casualties {fmt(o['he_cas'])} (T8 cap 26.3)" if o["he_cas"] else ""))
     for name, a in sorted(o["f"].items()):
@@ -157,11 +191,11 @@ def main():
     if not dirs:
         print(__doc__)
         sys.exit(2)
-    base = None
+    base = {}
     for d in dirs:
-        o = read(d)
-        show(o, base)
-        base = base or o
+        for o in read(d):
+            show(o, base.get((o["map"], o["pair"])))
+            base.setdefault((o["map"], o["pair"]), o)
 
 
 if __name__ == "__main__":

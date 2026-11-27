@@ -34,6 +34,7 @@
 //! [`COVER_RAYS`] sight rays per man). Spots keep `gap_mm` apart, also from
 //! where other friendly squads stand.
 
+use crate::teams::Teams;
 use frontline_content::setup::RulesSetup;
 
 use crate::ecs::{Entities, PlayerId, SimId};
@@ -127,7 +128,9 @@ pub(crate) fn assign_by_axis(
 
 /// Arrival slots and facing for a squad reaching its goal: slots for the
 /// men in formation (`form`); detached men keep where they stand.
+#[allow(clippy::too_many_arguments)]
 fn arrival(
+    teams: &Teams,
     sq: &Squad,
     form: &[SimId],
     ents: &Entities,
@@ -157,6 +160,7 @@ fn arrival(
     let mut slots = assign_by_axis(form, ents, &slots, axis);
     if !matches!(sq.order, Order::Dig { .. } | Order::Retreat) {
         seek_cover(
+            teams,
             sq.owner,
             sq.nav.goal,
             form,
@@ -253,6 +257,7 @@ pub(crate) fn trench_spot(
 /// into cover (see the module docs).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn seek_cover(
+    teams: &Teams,
     owner: PlayerId,
     goal: FxVec2,
     own: &[SimId],
@@ -285,7 +290,7 @@ pub(crate) fn seek_cover(
         .soldiers()
         .filter(|id| {
             let i = id.index();
-            ents.owner[i].0 != owner && ents.combat[i].seen_by & (1 << owner) != 0
+            teams.enemy_seen(owner, ents.owner[i].0, ents.combat[i].seen_by)
         })
         .map(|id| {
             let pos = ents.transform[id.index()].pos;
@@ -348,6 +353,7 @@ pub(crate) fn set_target(ctx: &mut Ctx, m: SimId, target: FxVec2, speed: Fx) {
 impl MatchState {
     /// Steers every squad for this tick (see the module docs).
     pub(crate) fn steer_squads(&mut self, ctx: &mut Ctx) {
+        let teams = self.teams;
         let hz = self.setup.tick_hz;
         let mv = &self.setup.rules.movement;
         let arrive = Fx::from(mv.arrive_radius);
@@ -493,8 +499,16 @@ impl MatchState {
                         if nav.partial {
                             repath.push((id, nav.goal));
                         } else {
-                            let (slots, facing) =
-                                arrival(sq, &form, ctx.ents, ctx.terrain, ditches, rules, spacing);
+                            let (slots, facing) = arrival(
+                                &teams,
+                                sq,
+                                &form,
+                                ctx.ents,
+                                ctx.terrain,
+                                ditches,
+                                rules,
+                                spacing,
+                            );
                             let nav = &mut sq.nav;
                             nav.slots = slots;
                             nav.facing = facing;

@@ -535,6 +535,48 @@ Plan `docs/slices/B3-balance.md` 9; stage contract `B3-run-1.md`; levers `docs/s
 - B3-6 The aim. (A) In order: HE under the cap with Germany not down more than 2 points; the heavies bought; Germany toward 45-55 only through levers that pass their rule. A set that fixes the cap and leaves Germany at 42-45 % is a valid result. (B) Apply nothing unless Germany also reaches 45 %. **(A) assumed 2026-11-22, owner away; Eva may reopen.**
 - B3-7 Method. (A) T31 logged, not a screen floor (it is a report row, B2-5 (A)); noisy hard rows listed apart in the judge (section 5); seeds as in section 5. (B) Keep B2's floors and judge rule unchanged. **(A) assumed 2026-11-22, owner away; Eva may reopen.**
 
+## S16 open owner questions (plan `docs/slices/S16-second-map.md` 12; log `S16-log.md`; each runs on (A): "(A) assumed")
+
+- S16-1 What S16 is. (A) Second map and roads. (B) 2v2 team play first. (C) The late-1944 US wave. (D) Buildings and a village (M4). **(A) assumed.**
+- S16-2 Map size. (A) 1024 m, as Kessel Ridge. (B) 1536 m. **(A) assumed.**
+- S16-3 How Linden Brook plays. (A) C in a valley overlooked by two ridges, bases west and east. (B) A crest map with another point layout. (C) Three points in a line. **(A) assumed.**
+- S16-4 If matches run short (median under 15 min). (A) Stop and ask before moving anything. (B) Move both bases 40 m back without asking. **(A) assumed.** (40-set printout: median 19.2 min, 11.7-25.9; not a measure.)
+- S16-5 Road speeds. (A) Wheels 175 %, half-tracks 150 %, tracks 140 % of cross-country. (B) One factor, 150 %. (C) No speed change. **(A) assumed.**
+- Note F1 (S16b, checked, no fix): the vehicle search does follow Linden Brook's roads (truck base to C, D, E 94-96 % driven on road;
+  an exact search would add about 5 points of road share and 2 % of trip time at 4.3x the expansions, and lowering the heuristic floor
+  puts 88 of 196 cross-map searches over the 8000 cap). In matches wheels drive 22 % on road because the AI sends them off the roads
+  (truck `follow_m`, gun sites, recon spots), so plan 9's "wheeled at least 50 %" would miss by AI destinations, not by the search.
+- Note F3 (S16b): vehicle searches on a road map cost about 4.5x Kessel Ridge's (mean 918 vs 206, p99 5119 vs 1087; plan 7 allows
+  +25 %): the R3 heuristic floor makes every road-map search plain A*. For Review; lever `heuristic_pct`, not applied.
+- Note: balance runs on Linden Brook (480, mirror 160s, `road_off`) are dropped by the owner rule of 2026-11-25; Germany won 31 of
+  the 40-set matches there (a printout).
+
+## S17 open owner questions (plan `docs/slices/S17-team-play.md` 12; log `S17-log.md`; each runs on (A): "(A) assumed")
+
+- S17-1 The split. (A) S17 = teams in the sim, AI allies, the map, 2v2 offline; S18 = online teams and co-op. (B) All of 2v2 in one slice. (C) Online first with human teams only, AI allies later. **(A) assumed.**
+- S17-2 Troops per player in 2v2. (A) 100 men each (`[teams] pop_pct` 67), 400 on the map. (B) 150 each, 600. (C) 75 each, 300 as in 1v1. **(A) assumed.**
+- S17-3 What allies see. (A) Everything their ally sees, mines and artillery markers included (`shared_sight` 1). (B) Only their own spots. **(A) assumed.**
+- S17-4 Tickets. (A) One count per team (`team_tickets` 1). (B) Each player his own. **(A) assumed.**
+- S17-5 Sharing between allies. (A) Not in S17: HQ, dumps, aid posts, trucks, transports and fire missions serve only their owner. (B) Allies may draw ammunition and use aid posts now. **(A) assumed.**
+- S17-6 A player with no troops left. (A) He stays in while his ally stands (`wiped_waits` 1). (B) He is out, as in 1v1. **(A) assumed.**
+- S17-7 The team map. (A) Harrow Cross, 1536 m, four bases on two edges, seven points, two crossing roads. (B) Four bases on a 1024 m map. (C) Two more bases on Linden Brook. **(A) assumed.**
+- S17-8 Who may team up. (A) Any mix (the CLI offers any; the menu's 2v2 puts your faction with your ally). (B) Historical sides only. **(A) assumed.**
+- S17-9 What S18 is. (A) Online teams and co-op (four-slot relay, team lobby, AI fill). (B) The late-1944 US wave. (C) Buildings and a village. **(A) assumed.**
+- Open S17 O2 (Review, not fixed): an AI's vehicle-blocking pieces (tank obstacles, hedgehogs) can block an ally's vehicles.
+  The AI demolishes enemy pieces only (`ai/demolish.rs`) and counts its own blocks (`ai/fort.rs` `count_own_blocked`, a
+  counter, no demolition), so an ally's route through them stays failed until repathed. Not a few-line fix: it needs an
+  ally-piece case in the demolish job (target choice, L3/L4, the Demolish order on an allied piece). For S18 or later.
+
+## S18 open owner questions (plan `docs/slices/S18-online-teams.md` 7; log `S18-log.md`; each runs on (A): "(A) assumed")
+
+- S18-1 A dropped or surrendered ally's troops. (A) They go to his ally, with his manpower (`[teams] handover` 1). (B) They hold in place and fight on without orders. (C) They are removed. **(A) assumed.**
+- S18-2 AI in online lobbies. (A) Yes, any empty slot may be AI (co-op vs AI; relay `--no-ai` turns it off). (B) Humans only. **(A) assumed.**
+- S18-3 Lobby size. (A) Up to four slots (2v2, co-op 2 vs 2 AI, 1v1; relay `--max-slots`). (B) Up to six (3v3), with a larger map later. **(A) assumed.**
+- S18-4 Who may pause. (A) Any player, with today's limit. (B) The host only. **(A) assumed.**
+- S18-5 Talking to the ally. (A) A map ping only ("." key, `[teams] ping_gap_s` 2, relay `--ping-gap-ms` 500). (B) Ping and text chat. (C) Nothing in S18. **(A) assumed.**
+- S18-6 (settled (A)) Handed-over troops and the pop cap: they never block the ally's cap (`[teams] handover_pop` 0; 1 counts them fully, not "for new buys only").
+- Open from S18 (log "Unfinished"): no per-player net overlay redesign; no real two-client co-op run through `autoplay_net.gd`; the host leaving still ends the match for all.
+
 ## S12 open items (2026-11-21; branch `claude/project-thread-aj1tww`, log `docs/slices/S12-log.md`)
 
 - S12-16 **T8 known miss (accepted for now, first item of the next balance pass).** With wounds on, HE's share of

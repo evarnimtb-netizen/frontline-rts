@@ -24,6 +24,9 @@ use serde::Serialize;
 use crate::report::{Summary, hex, ns, round3};
 use crate::s3c_tally::{S3cPlayer, S3cSummary, S3cTally};
 
+/// S16a: the map `skirmish` plays without `--map`.
+pub const DEFAULT_MAP: &str = "ww2:kessel_ridge";
+
 /// Ticks with at least this share of the peak soldier count are "peak".
 pub const PEAK_SHARE_PCT: usize = 90;
 
@@ -46,6 +49,17 @@ impl From<DifficultyArg> for Difficulty {
     }
 }
 
+/// S17b: a team match from the command line.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum TeamsArg {
+    /// Four players, 0 and 1 (team 0) against 2 and 3 (team 1); player i
+    /// starts at base i (on Harrow Cross: side 0 against side 1).
+    #[value(name = "2v2")]
+    TwoVTwo,
+    /// One player per base of the map, his team the base's `side`.
+    Map,
+}
+
 /// How `skirmish` prints its result.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum ReportFormat {
@@ -66,18 +80,44 @@ pub struct SkirmishArgs {
     /// Match seed.
     #[arg(long, value_name = "N", default_value_t = 1, conflicts_with = "load")]
     pub seed: u64,
-    /// AI difficulty for both players.
+    /// AI difficulty for every player.
     #[arg(long, value_enum, default_value_t = DifficultyArg::Normal)]
     pub difficulty: DifficultyArg,
-    /// Overrides --difficulty for player 1.
+    /// Overrides --difficulty for player 1 (slot 1: in a 1v1 the opponent,
+    /// in a `--teams 2v2` match player 0's ally).
     #[arg(long, value_enum, value_name = "DIFFICULTY")]
     pub difficulty1: Option<DifficultyArg>,
+    /// S17 review: overrides --difficulty for player 2 (team matches; in a
+    /// 2v2 the first player of team 1).
+    #[arg(long, value_enum, value_name = "DIFFICULTY", requires = "teams")]
+    pub difficulty2: Option<DifficultyArg>,
+    /// S17 review: overrides --difficulty for player 3 (team matches; in a
+    /// 2v2 the second player of team 1).
+    #[arg(long, value_enum, value_name = "DIFFICULTY", requires = "teams")]
+    pub difficulty3: Option<DifficultyArg>,
+    /// S16a: the map (a map def id). The default and an explicit
+    /// `--map ww2:kessel_ridge` play the same matches (same hashes).
+    #[arg(long, value_name = "ID", default_value = DEFAULT_MAP, conflicts_with = "load")]
+    pub map: String,
     /// Faction of player 0 (base 0).
     #[arg(long, value_name = "ID", default_value = "ww2:germany")]
     pub faction0: String,
     /// Faction of player 1 (base 1).
     #[arg(long, value_name = "ID", default_value = "ww2:usa")]
     pub faction1: String,
+    /// S17b: a team match (`2v2` or `map`) instead of a 1v1. Every player
+    /// is an AI at --difficulty; --difficultyN overrides player N (slot N:
+    /// 2v2 teams are players 0, 1 and players 2, 3). With
+    /// --swap-bases each player takes the base of the player n/2 slots on
+    /// (the other side's base in the same place).
+    #[arg(long, value_enum, value_name = "MODE", conflicts_with = "load")]
+    pub teams: Option<TeamsArg>,
+    /// S17b: faction of player 2 (team matches).
+    #[arg(long, value_name = "ID", default_value = "ww2:germany")]
+    pub faction2: String,
+    /// S17b: faction of player 3 (team matches).
+    #[arg(long, value_name = "ID", default_value = "ww2:usa")]
+    pub faction3: String,
     /// Stop after this many game minutes if nobody has won.
     #[arg(long, value_name = "M", default_value_t = 30)]
     pub minutes: u32,
@@ -111,7 +151,7 @@ pub struct SkirmishArgs {
     #[arg(
         long,
         value_name = "FILE",
-        conflicts_with_all = ["difficulty1", "start_manpower", "swap_bases"]
+        conflicts_with_all = ["difficulty1", "difficulty2", "difficulty3", "start_manpower", "swap_bases"]
     )]
     pub load: Option<PathBuf>,
     /// Output format.
@@ -170,8 +210,14 @@ impl Default for SkirmishArgs {
             seed: 1,
             difficulty: DifficultyArg::Normal,
             difficulty1: None,
+            difficulty2: None,
+            difficulty3: None,
+            map: DEFAULT_MAP.into(),
             faction0: "ww2:germany".into(),
             faction1: "ww2:usa".into(),
+            teams: None,
+            faction2: "ww2:germany".into(),
+            faction3: "ww2:usa".into(),
             minutes: 30,
             threads: None,
             mods: None,
@@ -214,7 +260,18 @@ pub struct SkirmishReport {
     pub game_seconds: f64,
     pub limit_minutes: u32,
     pub final_hash: String,
+    /// S16a: the map's def id.
+    pub map: String,
+    /// S16a: expansions per path search (every search of the match, AI
+    /// searches included; a CLI observer).
+    pub path_search: PathSearchStats,
+    /// S16b (F1, S16 plan 8 `road_km_pct`): vehicle metres driven, and on
+    /// road nodes, per drive type (a CLI observer).
+    pub road_km: RoadKm,
     pub players: Vec<PlayerReport>,
+    /// S17b: a team match's numbers (absent in a match of lone players).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub teams: Option<TeamReport>,
     /// S3c: the map's capture point names, in point order.
     pub point_names: Vec<String>,
     pub totals: Totals,
@@ -226,6 +283,360 @@ pub struct SkirmishReport {
     pub s3_failures: Vec<String>,
     pub timing: SkirmishTiming,
     pub wall_ms: f64,
+}
+
+/// S17b (S17 plan 8): the team numbers of a team match, read once a second
+/// (a CLI observer; nothing here is saved or hashed). `None` in a match
+/// where every player is alone (every 1v1), so its report is unchanged.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct TeamReport {
+    /// Team of each player.
+    pub team: Vec<u8>,
+    /// The winning team (`None`: draw or time limit).
+    pub winner_team: Option<u8>,
+    /// Per player: capture-point seconds held (points owned, summed over
+    /// the match's seconds).
+    pub points_held_s: Vec<u64>,
+    /// Per player: A4 help tasks started (an own squad's `Defend` task at a
+    /// point an ally owns).
+    pub ally_help_tasks: Vec<u32>,
+    /// Seconds in which two or more members of one team each held a point
+    /// (summed over teams): the AIs spread over the map (A3).
+    pub shared_point_holds_s: u64,
+    /// Per player, once a minute: own points nearer a standing hostile base
+    /// other than the main foe's than to the main foe's (A6: works and belts
+    /// face the main foe only; these points face another). Point-minutes.
+    pub ai_second_foe_unbelted: Vec<u32>,
+}
+
+/// S17b (plan 8): a set of team matches, printed and never judged.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct TeamSetSummary {
+    pub matches: u32,
+    /// Wins per team number (index = team).
+    pub team_wins: Vec<u32>,
+    pub draws: u32,
+    pub time_limit: u32,
+    pub length_min_median: f64,
+    pub ally_help_tasks: u64,
+    /// Matches where at least one help task started.
+    pub matches_with_help: u32,
+    pub shared_point_holds_s: u64,
+    /// Matches where two allies each held a point at once.
+    pub matches_with_shared_holds: u32,
+    pub ai_second_foe_unbelted: u64,
+    pub tick_p99_max_ms: f64,
+}
+
+impl TeamSetSummary {
+    pub fn of(matches: &[ManyMatch]) -> Option<TeamSetSummary> {
+        let team: Vec<(&SkirmishReport, &TeamReport)> = matches
+            .iter()
+            .filter_map(|m| m.report.teams.as_ref().map(|t| (&m.report, t)))
+            .collect();
+        if team.is_empty() {
+            return None;
+        }
+        let mut s = TeamSetSummary {
+            matches: team.len() as u32,
+            ..TeamSetSummary::default()
+        };
+        let mut lens: Vec<f64> = Vec::new();
+        for (r, t) in team {
+            match (r.result, t.winner_team) {
+                ("won", Some(w)) => {
+                    if s.team_wins.len() <= w as usize {
+                        s.team_wins.resize(w as usize + 1, 0);
+                    }
+                    s.team_wins[w as usize] += 1;
+                }
+                ("draw", _) => s.draws += 1,
+                _ => s.time_limit += 1,
+            }
+            lens.push(r.game_seconds / 60.0);
+            let help: u64 = t.ally_help_tasks.iter().map(|&h| h as u64).sum();
+            s.ally_help_tasks += help;
+            s.matches_with_help += u32::from(help > 0);
+            s.shared_point_holds_s += t.shared_point_holds_s;
+            s.matches_with_shared_holds += u32::from(t.shared_point_holds_s > 0);
+            s.ai_second_foe_unbelted += t
+                .ai_second_foe_unbelted
+                .iter()
+                .map(|&h| h as u64)
+                .sum::<u64>();
+            s.tick_p99_max_ms = s.tick_p99_max_ms.max(r.timing.all.p99_ms);
+        }
+        lens.sort_by(|a, b| a.total_cmp(b));
+        let k = lens.len();
+        let med = if k % 2 == 1 {
+            lens[k / 2]
+        } else {
+            (lens[k / 2 - 1] + lens[k / 2]) / 2.0
+        };
+        s.length_min_median = round3(med);
+        Some(s)
+    }
+
+    pub fn line(&self) -> String {
+        let wins: Vec<String> = self
+            .team_wins
+            .iter()
+            .enumerate()
+            .map(|(t, w)| format!("team {t} {w}"))
+            .collect();
+        format!(
+            "S17 teams: {} matches, wins {}, draws {}, time limit {}, length median {:.1} min; \
+             help tasks {} ({} matches), shared point holds {} s ({} matches), \
+             second-foe point-minutes {}, tick p99 max {:.2} ms\n",
+            self.matches,
+            wins.join(", "),
+            self.draws,
+            self.time_limit,
+            self.length_min_median,
+            self.ally_help_tasks,
+            self.matches_with_help,
+            self.shared_point_holds_s,
+            self.matches_with_shared_holds,
+            self.ai_second_foe_unbelted,
+            self.tick_p99_max_ms
+        )
+    }
+}
+
+/// S17b: the observer behind [`TeamReport`].
+#[derive(Default)]
+struct TeamSeen {
+    r: TeamReport,
+    /// (squad, point) help tasks seen at the last sample.
+    helping: BTreeSet<(u32, u8)>,
+}
+
+impl TeamSeen {
+    fn new(s: &MatchSetup) -> Option<TeamSeen> {
+        let team: Vec<u8> = s.players.iter().map(|p| p.team).collect();
+        let teamed = team
+            .iter()
+            .any(|t| team.iter().filter(|u| *u == t).count() > 1);
+        teamed.then(|| {
+            let n = team.len();
+            TeamSeen {
+                r: TeamReport {
+                    team,
+                    points_held_s: vec![0; n],
+                    ally_help_tasks: vec![0; n],
+                    ai_second_foe_unbelted: vec![0; n],
+                    ..TeamReport::default()
+                },
+                helping: BTreeSet::new(),
+            }
+        })
+    }
+
+    /// Once a second (and the foe count once a minute when `minute`).
+    fn observe(&mut self, w: &World, minute: bool) {
+        let Some(g) = w.game() else { return };
+        let s = g.setup();
+        let team = &self.r.team;
+        let n = team.len();
+        let mut held = vec![0u32; n];
+        for c in g.points() {
+            if let Some(o) = c.owner
+                && let Some(h) = held.get_mut(o.0 as usize)
+            {
+                *h += 1;
+            }
+        }
+        for (a, h) in self.r.points_held_s.iter_mut().zip(&held) {
+            *a += *h as u64;
+        }
+        let teams: BTreeSet<u8> = team.iter().copied().collect();
+        for t in teams {
+            let holders = (0..n).filter(|&p| team[p] == t && held[p] > 0).count();
+            if holders >= 2 {
+                self.r.shared_point_holds_s += 1;
+            }
+        }
+        let mut now = BTreeSet::new();
+        for p in 0..n {
+            let Some(ai) = g.ai(PlayerId(p as u8)) else {
+                continue;
+            };
+            for (id, t) in &ai.tasks {
+                let ally_point = g.points().get(t.point as usize).is_some_and(|c| {
+                    c.owner.is_some_and(|o| {
+                        o.0 as usize != p && team.get(o.0 as usize) == Some(&team[p])
+                    })
+                });
+                if t.kind == frontline_sim::TaskKind::Defend && ally_point {
+                    now.insert((id.0, t.point));
+                    if !self.helping.contains(&(id.0, t.point)) {
+                        self.r.ally_help_tasks[p] += 1;
+                    }
+                }
+            }
+        }
+        self.helping = now;
+        if minute {
+            for p in 0..n {
+                let me = PlayerId(p as u8);
+                if g.ai(me).is_none() || g.players()[p].defeat.is_some() {
+                    continue;
+                }
+                let Some(foe) = g.main_foe(me) else { continue };
+                let others: Vec<frontline_sim::FxVec2> = (0..n)
+                    .filter(|&q| team[q] != team[p] && q != foe.0 as usize)
+                    .filter(|&q| g.players()[q].defeat.is_none())
+                    .map(|q| g.base_of(PlayerId(q as u8)))
+                    .collect();
+                if others.is_empty() {
+                    continue;
+                }
+                let fb = g.base_of(foe);
+                for (c, ps) in g.points().iter().zip(&s.map.points) {
+                    if c.owner != Some(me) {
+                        continue;
+                    }
+                    let at = frontline_sim::FxVec2::from(ps.pos);
+                    let d = (at - fb).length_sq_raw();
+                    if others.iter().any(|&b| (at - b).length_sq_raw() < d) {
+                        self.r.ai_second_foe_unbelted[p] += 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// S16a (S16 plan 7): per-search path expansions of a match or a set.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct PathSearchStats {
+    pub searches: u64,
+    pub mean: f64,
+    pub p99: u32,
+    pub max: u32,
+    /// S17 review: searches that hit `path_max_expansions` short of the
+    /// goal, and those of them still short after the S16 road retry.
+    pub capped: u64,
+    pub capped_unreached: u64,
+    /// The raw counts (merged over a set; not printed).
+    #[serde(skip)]
+    pub raw: frontline_sim::path::observe::SearchStats,
+}
+
+impl PathSearchStats {
+    pub fn from_raw(raw: frontline_sim::path::observe::SearchStats) -> PathSearchStats {
+        PathSearchStats {
+            searches: raw.searches,
+            mean: round3(if raw.searches == 0 {
+                0.0
+            } else {
+                raw.expansions as f64 / raw.searches as f64
+            }),
+            p99: raw.percentile(99),
+            max: raw.max,
+            capped: raw.capped,
+            capped_unreached: raw.capped_unreached,
+            raw,
+        }
+    }
+
+    /// Every match's searches together.
+    pub fn merged<'a>(all: impl Iterator<Item = &'a PathSearchStats>) -> PathSearchStats {
+        let mut raw = frontline_sim::path::observe::SearchStats::default();
+        for p in all {
+            raw.merge(&p.raw);
+        }
+        PathSearchStats::from_raw(raw)
+    }
+}
+
+/// S16b (F1; S16 plan 8 `road_km_pct`): metres driven by self-propelled
+/// vehicles (|speed| per tick, towed guns left out) and the part of them
+/// with the hull centre on a road node, by drive type: wheeled, half-track,
+/// tracked. A CLI observer (read-only).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct RoadKm {
+    /// Kilometres driven, by drive type.
+    pub km: [f64; 3],
+    /// Kilometres of them on road nodes.
+    pub road_km: [f64; 3],
+}
+
+impl RoadKm {
+    pub const KINDS: [&'static str; 3] = ["wheeled", "halftrack", "tracked"];
+
+    fn observe(&mut self, w: &World, hz: u64) {
+        use frontline_content::vehicle::MobilityKind;
+        let (Some(g), Some(ms)) = (w.game(), w.match_setup()) else {
+            return;
+        };
+        let t = w.terrain();
+        let tf = w.entities().transform();
+        for (id, v) in g.vehicles() {
+            let k = match ms
+                .vehicles
+                .get(v.type_idx as usize)
+                .map(|d| d.mobility.kind)
+            {
+                Some(MobilityKind::Wheeled) => 0,
+                Some(MobilityKind::Halftrack) => 1,
+                Some(MobilityKind::Tracked) => 2,
+                _ => continue,
+            };
+            let m = v.speed.abs().to_f32() as f64 / hz as f64 / 1000.0;
+            self.km[k] += m;
+            if t.road_at(tf[id.index()].pos.xy()) {
+                self.road_km[k] += m;
+            }
+        }
+    }
+
+    /// Every match's kilometres together.
+    pub fn merged<'a>(all: impl Iterator<Item = &'a RoadKm>) -> RoadKm {
+        let mut r = RoadKm::default();
+        for m in all {
+            for k in 0..3 {
+                r.km[k] += m.km[k];
+                r.road_km[k] += m.road_km[k];
+            }
+        }
+        r
+    }
+
+    /// Percent on road per drive type (0 with nothing driven).
+    pub fn pct(&self) -> [f64; 3] {
+        std::array::from_fn(|k| {
+            if self.km[k] > 0.0 {
+                round3(100.0 * self.road_km[k] / self.km[k])
+            } else {
+                0.0
+            }
+        })
+    }
+
+    /// `wheeled 81.2 % of 312.0 km, ...`.
+    pub fn line(&self) -> String {
+        let p = self.pct();
+        Self::KINDS
+            .iter()
+            .enumerate()
+            .map(|(k, n)| format!("{n} {:.1} % of {:.1} km", p[k], self.km[k]))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// JSON: `{wheeled: {pct, km}, ...}`.
+    pub fn json(&self) -> serde_json::Value {
+        let p = self.pct();
+        let mut o = serde_json::Map::new();
+        for (k, n) in Self::KINDS.iter().enumerate() {
+            o.insert(
+                (*n).into(),
+                serde_json::json!({ "pct": p[k], "km": round3(self.km[k]) }),
+            );
+        }
+        serde_json::Value::Object(o)
+    }
 }
 
 /// S3 match totals for the skirmish report.
@@ -2505,20 +2916,31 @@ pub fn match_setup_with(
     edit(&mut defs);
     let d0: Difficulty = args.difficulty.into();
     let d1: Difficulty = args.difficulty1.unwrap_or(args.difficulty).into();
+    if let Some(mode) = args.teams {
+        let d = [
+            d0,
+            d1,
+            args.difficulty2.unwrap_or(args.difficulty).into(),
+            args.difficulty3.unwrap_or(args.difficulty).into(),
+        ];
+        return team_setup(args, &defs, mode, d);
+    }
     let req = MatchRequest {
         rules: "ww2:skirmish".into(),
-        map: "ww2:kessel_ridge".into(),
+        map: args.map.clone(),
         seed: args.seed,
         players: vec![
             PlayerRequest {
                 faction: args.faction0.clone(),
                 ai: true,
                 difficulty: d0,
+                team: None,
             },
             PlayerRequest {
                 faction: args.faction1.clone(),
                 ai: true,
                 difficulty: d1,
+                team: None,
             },
         ],
     };
@@ -2529,6 +2951,69 @@ pub fn match_setup_with(
     if args.swap_bases {
         let (b0, b1) = (setup.players[0].base, setup.players[1].base);
         (setup.players[0].base, setup.players[1].base) = (b1, b0);
+    }
+    Ok(setup)
+}
+
+/// S17b: the request of a team match (`--teams`): player i at base i, his
+/// team from the mode; `--swap-bases` gives each player the base of the
+/// player n/2 slots on.
+fn team_setup(
+    args: &SkirmishArgs,
+    defs: &frontline_content::ModDefs,
+    mode: TeamsArg,
+    difficulty: [Difficulty; 4],
+) -> Result<MatchSetup> {
+    let map = defs
+        .maps
+        .get(&args.map)
+        .ok_or_else(|| anyhow!("unknown map `{}`", args.map))?;
+    let teams: Vec<u8> = match mode {
+        TeamsArg::TwoVTwo => vec![0, 0, 1, 1],
+        TeamsArg::Map => map
+            .bases
+            .iter()
+            .enumerate()
+            .map(|(i, b)| {
+                b.side
+                    .ok_or_else(|| anyhow!("map `{}` base {i} names no `side`", args.map))
+            })
+            .collect::<Result<_>>()?,
+    };
+    if teams.len() > 4 {
+        bail!("--teams: at most 4 players from the command line (--faction0..3)");
+    }
+    let factions = [
+        &args.faction0,
+        &args.faction1,
+        &args.faction2,
+        &args.faction3,
+    ];
+    let req = MatchRequest {
+        rules: "ww2:skirmish".into(),
+        map: args.map.clone(),
+        seed: args.seed,
+        players: teams
+            .iter()
+            .enumerate()
+            .map(|(i, &t)| PlayerRequest {
+                faction: factions[i].clone(),
+                ai: true,
+                difficulty: difficulty[i],
+                team: Some(t),
+            })
+            .collect(),
+    };
+    let mut setup = defs.resolve(&req).map_err(|e| anyhow!("{e}"))?;
+    if let Some(mp) = args.start_manpower {
+        setup.rules.start_manpower = mp;
+    }
+    if args.swap_bases {
+        let n = setup.players.len();
+        let bases: Vec<u8> = setup.players.iter().map(|p| p.base).collect();
+        for (i, p) in setup.players.iter_mut().enumerate() {
+            p.base = bases[(i + n / 2) % n];
+        }
     }
     Ok(setup)
 }
@@ -2555,6 +3040,10 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         }
         None => World::new_match(match_setup(args)?, threads)?,
     };
+    // S16a: per-search expansions (an observer; results unchanged).
+    let path_sink = world.observe_path_searches();
+    // S16b (F1): vehicle kilometres on and off roads (an observer).
+    let mut road_km = RoadKm::default();
     let hz = world.match_setup().expect("match world").tick_hz as u64;
     let limit = args.minutes as u64 * 60 * hz;
     let start_tick = world.tick();
@@ -2632,6 +3121,7 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
     let mut s10b_ai_seen = S10bAiSeen::default();
     let mut death_places = DeathPlaces::default();
     let mut s10c_seen = S10cSeen::default();
+    let mut team_seen = TeamSeen::new(world.match_setup().expect("match world"));
     let stats_at_start = world.stats().clone();
     note_squads(&world, &mut fielded, &mut how_first);
 
@@ -2714,12 +3204,16 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
             }
         }
         tally.observe(&world);
+        road_km.observe(&world, hz);
         s3c.observe(&world);
         s10b_ordered.observe(&world);
         s10b_ai_seen.observe(&world);
         // S10c-ai: exposure, once a second (read-only).
         if world.tick().is_multiple_of(hz) {
             s10c_seen.observe(&world);
+            if let Some(t) = team_seen.as_mut() {
+                t.observe(&world, world.tick().is_multiple_of(60 * hz));
+            }
         }
         if args.side_detail {
             death_places.observe(&world);
@@ -3333,7 +3827,16 @@ pub fn skirmish(args: &SkirmishArgs) -> Result<SkirmishReport> {
         game_seconds: round3(world.tick() as f64 / hz as f64),
         limit_minutes: args.minutes,
         final_hash: hex(world.state_hash()),
+        map: s.map.id.clone(),
+        path_search: PathSearchStats::from_raw(
+            path_sink.lock().map(|g| g.clone()).unwrap_or_default(),
+        ),
+        road_km,
         players,
+        teams: team_seen.map(|t| TeamReport {
+            winner_team: winner.map(|w| s.players[w as usize].team),
+            ..t.r
+        }),
         point_names: s.map.points.iter().map(|p| p.name.clone()).collect(),
         totals: Totals {
             shots_fired: st.shots_fired,
@@ -3429,6 +3932,26 @@ pub fn summary_text(r: &SkirmishReport) -> String {
         r.ticks,
         r.final_hash
     );
+    let ps = &r.path_search;
+    out += &format!(
+        "map {}; path searches {} (expansions mean {:.1}, p99 {}, max {}; capped {}, still short {})\n",
+        r.map, ps.searches, ps.mean, ps.p99, ps.max, ps.capped, ps.capped_unreached
+    );
+    out += &format!("vehicle km on road: {}\n", r.road_km.line());
+    if let Some(t) = &r.teams {
+        let w = t
+            .winner_team
+            .map_or_else(|| "-".to_string(), |w| w.to_string());
+        out += &format!(
+            "S17 teams {:?}: winning team {w}; points held s {:?}; help tasks {:?}; \
+             shared point holds {} s; second-foe point-minutes {:?}\n",
+            t.team,
+            t.points_held_s,
+            t.ally_help_tasks,
+            t.shared_point_holds_s,
+            t.ai_second_foe_unbelted
+        );
+    }
     if let Some(from) = &r.loaded_from {
         out += &format!("continued from {from} at tick {}\n", r.start_tick);
     }
@@ -4280,6 +4803,8 @@ pub struct ManySummary {
 /// The result of `skirmish --seeds`.
 #[derive(Clone, Debug, Serialize)]
 pub struct ManyReport {
+    /// S16a: the map's def id.
+    pub map: String,
     pub matches: Vec<ManyMatch>,
     pub summary: ManySummary,
     /// `--rules-override` log lines (what each file changed).
@@ -4357,6 +4882,9 @@ pub fn skirmish_many(args: &SkirmishArgs) -> Result<ManyReport> {
     }
     let summary = summarise(&matches, jobs);
     Ok(ManyReport {
+        map: matches
+            .first()
+            .map_or_else(|| args.map.clone(), |m| m.report.map.clone()),
         matches,
         summary,
         overrides,
@@ -4668,9 +5196,21 @@ pub fn many_text(r: &ManyReport) -> String {
     let s = &r.summary;
     let swapped = r.matches.iter().filter(|m| m.swapped).count();
     let mut out = format!(
-        "skirmish summary: {} matches ({} with swapped bases), {} at once\n",
-        s.matches, swapped, s.jobs
+        "skirmish summary: {} matches ({} with swapped bases), {} at once, map {}\n",
+        s.matches, swapped, s.jobs, r.map
     );
+    {
+        let ps = PathSearchStats::merged(r.matches.iter().map(|m| &m.report.path_search));
+        out += &format!(
+            "S16 path searches: {}, expansions mean {:.1}, p99 {}, max {}; capped {}, still short after retry {}\n",
+            ps.searches, ps.mean, ps.p99, ps.max, ps.capped, ps.capped_unreached
+        );
+        let rk = RoadKm::merged(r.matches.iter().map(|m| &m.report.road_km));
+        out += &format!("S16 vehicle km on road: {}\n", rk.line());
+    }
+    if let Some(t) = TeamSetSummary::of(&r.matches) {
+        out += &t.line();
+    }
     for l in &r.overrides {
         out += &format!("{l}\n");
     }

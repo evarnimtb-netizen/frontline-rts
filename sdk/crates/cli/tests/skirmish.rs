@@ -142,6 +142,184 @@ fn binary_runs_a_skirmish_and_prints_json() {
     assert!(!out.status.success());
 }
 
+/// S16a (`docs/slices/S16-second-map.md` 9): `--map ww2:kessel_ridge` and
+/// no `--map` play the same match (same hashes); the reports and the
+/// `--json` set name the map and count path searches; an unknown map is
+/// refused.
+#[test]
+fn map_flag_defaults_to_kessel_ridge_with_the_same_hashes() {
+    let exe = env!("CARGO_BIN_EXE_frontline-cli");
+    let a = run(short(6, 2, 2));
+    let b = run(SkirmishArgs {
+        map: "ww2:kessel_ridge".into(),
+        ..short(6, 2, 2)
+    });
+    assert_eq!(a.final_hash, b.final_hash);
+    assert_eq!(a.map, "ww2:kessel_ridge");
+    assert!(a.path_search.searches > 0, "path searches are counted");
+    assert!(a.path_search.capped >= a.path_search.capped_unreached);
+    assert!(a.path_search.max >= a.path_search.p99);
+    let json = tmp("s16_map.json");
+    let out = Command::new(exe)
+        .args([
+            "skirmish",
+            "--ai-vs-ai",
+            "--seed",
+            "6",
+            "--seeds",
+            "1",
+            "--summary",
+        ])
+        .args(["--minutes", "1", "--map", "ww2:kessel_ridge", "--json"])
+        .arg(&json)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&json).unwrap()).unwrap();
+    assert_eq!(v["map"], "ww2:kessel_ridge");
+    assert!(
+        v["s16_derived"]["path_search"]["searches"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("map ww2:kessel_ridge"));
+    let out = Command::new(exe)
+        .args([
+            "skirmish",
+            "--ai-vs-ai",
+            "--minutes",
+            "1",
+            "--map",
+            "ww2:nowhere",
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+}
+
+/// S16b (`docs/slices/S16-second-map.md` 5, 7): Linden Brook plays to the
+/// same hash at 1 and 3 threads.
+#[test]
+fn linden_brook_plays_the_same_at_any_thread_count() {
+    let lb = |threads| {
+        run(SkirmishArgs {
+            map: "ww2:linden_brook".into(),
+            ..short(3, 2, threads)
+        })
+    };
+    let a = lb(1);
+    assert_eq!(a.map, "ww2:linden_brook");
+    assert_eq!(a.final_hash, lb(3).final_hash);
+}
+
+/// S17b (`docs/slices/S17-team-play.md` 9): `--teams 2v2` on Harrow Cross
+/// plays four AIs, two teams, each on his base; the same hash at 1 and 3
+/// threads and through a mid-match save and load; `--swap-bases` gives each
+/// player the other side's base. A 1v1 report has no `teams` block.
+#[test]
+fn a_2v2_on_harrow_cross_plays_the_same_at_any_thread_count_and_through_a_save() {
+    use frontline_cli::skirmish::TeamsArg;
+    let hc = |threads| SkirmishArgs {
+        map: "ww2:harrow_cross".into(),
+        teams: Some(TeamsArg::TwoVTwo),
+        ..short(4, 3, threads)
+    };
+    let a = run(hc(1));
+    assert_eq!(a.players.len(), 4);
+    let t = a.teams.as_ref().expect("a team match reports its teams");
+    assert_eq!(t.team, [0, 0, 1, 1]);
+    let bases: Vec<u8> = a.players.iter().map(|p| p.base).collect();
+    assert_eq!(bases, [0, 1, 2, 3]);
+    assert_eq!(a.final_hash, run(hc(3)).final_hash);
+    let save = tmp("skirmish_2v2_mid.sav");
+    let first = run(SkirmishArgs {
+        save: Some(save.clone()),
+        save_at: Some(2 * 60 * 30 + 11),
+        ..hc(2)
+    });
+    assert_eq!(first.final_hash, a.final_hash);
+    let resumed = run(SkirmishArgs {
+        ai_vs_ai: false,
+        load: Some(save),
+        ..short(999, 3, 3)
+    });
+    assert_eq!(resumed.final_hash, a.final_hash);
+    assert_eq!(resumed.players.len(), 4);
+    let sw = run(SkirmishArgs {
+        swap_bases: true,
+        minutes: 1,
+        ..hc(2)
+    });
+    let bases: Vec<u8> = sw.players.iter().map(|p| p.base).collect();
+    assert_eq!(bases, [2, 3, 0, 1]);
+    assert!(run(short(4, 1, 2)).teams.is_none(), "no teams in a 1v1");
+    // `--teams 2v2` on a two-base map is refused.
+    assert!(
+        skirmish(&SkirmishArgs {
+            teams: Some(TeamsArg::TwoVTwo),
+            ..short(4, 1, 1)
+        })
+        .is_err()
+    );
+}
+
+/// S17 review (O4): in a team match --difficulty sets every player and
+/// --difficulty1..3 override player 1..3 (slot N, base N); --difficulty2
+/// and --difficulty3 need --teams.
+#[test]
+fn team_difficulty_flags_set_their_own_slot() {
+    use frontline_cli::skirmish::{DifficultyArg, TeamsArg, match_setup};
+    use frontline_content::Difficulty;
+    let s = match_setup(&SkirmishArgs {
+        map: "ww2:harrow_cross".into(),
+        teams: Some(TeamsArg::TwoVTwo),
+        difficulty: DifficultyArg::Hard,
+        difficulty1: Some(DifficultyArg::Easy),
+        difficulty3: Some(DifficultyArg::Normal),
+        ..short(4, 1, 1)
+    })
+    .unwrap();
+    let d: Vec<Difficulty> = s.players.iter().map(|p| p.difficulty).collect();
+    assert_eq!(
+        d,
+        [
+            Difficulty::Hard,
+            Difficulty::Easy,
+            Difficulty::Hard,
+            Difficulty::Normal
+        ]
+    );
+    let exe = env!("CARGO_BIN_EXE_frontline-cli");
+    let out = Command::new(exe)
+        .args(["skirmish", "--ai-vs-ai", "--difficulty2", "easy"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "--difficulty2 needs --teams");
+}
+
+/// S16b (finding F1): the road observer counts vehicle km on Linden
+/// Brook's roads; Kessel Ridge (no roads) has none on road.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "long; run with --release")]
+fn the_road_observer_counts_vehicle_km_on_road() {
+    let a = run(SkirmishArgs {
+        map: "ww2:linden_brook".into(),
+        ..short(3, 9, 2)
+    });
+    let km: f64 = a.road_km.km.iter().sum();
+    let on: f64 = a.road_km.road_km.iter().sum();
+    assert!(km > 0.0, "vehicles drove");
+    assert!(on > 0.0 && on <= km, "{:?}", a.road_km);
+    let k = run(short(3, 9, 2));
+    assert!(k.road_km.km.iter().sum::<f64>() > 0.0);
+    assert_eq!(k.road_km.road_km, [0.0; 3], "no roads on Kessel Ridge");
+}
+
 /// The S1 cover bar over the default five seeds, both factions entrenched
 /// in turn, plus the S1b grenade assault and smoke screen. Slow in debug
 /// builds; `cargo test --release` runs it.

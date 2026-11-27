@@ -128,6 +128,10 @@ pub struct PlayerRequest {
     pub ai: bool,
     #[serde(default)]
     pub difficulty: Difficulty,
+    /// S17a: team number; none = the player's slot (everyone alone on his
+    /// team: a free-for-all, which with two players is today's 1v1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team: Option<u8>,
 }
 
 /// What the lobby (menu, CLI) asks for. Player `i` starts at the map's
@@ -155,11 +159,13 @@ impl MatchRequest {
                     faction: human.into(),
                     ai: false,
                     difficulty,
+                    team: None,
                 },
                 PlayerRequest {
                     faction: ai.into(),
                     ai: true,
                     difficulty,
+                    team: None,
                 },
             ],
         }
@@ -555,6 +561,8 @@ pub struct RulesSetup {
     pub riders: crate::tuning::RidersTuning,
     /// S15: `[body_armour]` (or the S15a values, the switch off).
     pub body_armour: crate::tuning::BodyArmourTuning,
+    /// S17a: `[teams]` (or the S17a values).
+    pub teams: crate::tuning::TeamsTuning,
 }
 
 impl RulesSetup {
@@ -679,6 +687,8 @@ pub struct VehicleRulesSetup {
     pub transport: TransportTuning,
     /// S9 `[vehicles.guns]`.
     pub guns: GunsTuning,
+    /// S16a `[vehicles.road]` (the neutral `Default` when absent).
+    pub road: crate::tuning::RoadTuning,
 }
 
 /// Thrown-item rules (see `ItemRulesDef`).
@@ -753,6 +763,8 @@ pub struct AiSetup {
     pub flame: crate::tuning::AiFlameTuning,
     /// S15-ai: `[ai.riders]` (or the S15a values, the switch off).
     pub riders: crate::tuning::AiRidersTuning,
+    /// S17: `[ai.team]` (or the S17a values, habits off).
+    pub team: crate::tuning::AiTeamTuning,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -899,6 +911,16 @@ pub struct MapSetup {
     pub woods: Vec<CircleSetup>,
     pub points: Vec<PointSetup>,
     pub bases: Vec<CircleSetup>,
+    /// S16a: road polylines (`[[roads]]`); empty on a map without roads.
+    pub roads: Vec<RoadSetup>,
+}
+
+/// S16a: one road, a polyline with a half width; grid points within
+/// `half_width` of a segment get `FLAG_ROAD` at terrain generation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoadSetup {
+    pub points: Vec<FixedVec2>,
+    pub half_width: Fixed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1537,13 +1559,19 @@ pub struct PlayerSetup {
     pub difficulty: Difficulty,
     /// Index into [`MapSetup::bases`].
     pub base: u8,
+    /// S17a: team number (the request's `team`, else the slot). Players with
+    /// the same number are allies; every other player is hostile.
+    pub team: u8,
 }
 
 // -------------------------------------------------------------- resolve --
 
 /// S15 M1-M2: the problems of request `req` under `[matchups]` `m` (a
 /// faction not enabled; two hostile players of a pair that is not allowed).
+/// Merge with S17: hostile means on different teams (a request's `team`,
+/// else the slot), so allies may be of any two enabled factions.
 pub fn matchup_issues(m: &crate::defs::MatchupsDef, req: &MatchRequest) -> Vec<Issue> {
+    let team_of = |i: usize, p: &PlayerRequest| p.team.unwrap_or(i as u8);
     let mut out = Vec::new();
     for (i, p) in req.players.iter().enumerate() {
         if !m.enabled(&p.faction) {
@@ -1554,8 +1582,8 @@ pub fn matchup_issues(m: &crate::defs::MatchupsDef, req: &MatchRequest) -> Vec<I
         }
     }
     for (i, a) in req.players.iter().enumerate() {
-        for b in &req.players[i + 1..] {
-            if !m.allows(&a.faction, &b.faction) {
+        for (j, b) in req.players.iter().enumerate().skip(i + 1) {
+            if team_of(i, a) != team_of(j, b) && !m.allows(&a.faction, &b.faction) {
                 out.push(Issue::new(
                     "players",
                     format!(
@@ -1601,6 +1629,41 @@ impl ModDefs {
                 ),
             ));
         }
+        // S17b (S17 plan 3, Build A's D3): a mine's `known` mask holds one
+        // bit per player for players 0..8, so a match takes at most 8.
+        if req.players.len() > MINE_KNOWN_PLAYERS {
+            issues.push(Issue::new(
+                "players",
+                format!(
+                    "{} players requested; at most {MINE_KNOWN_PLAYERS} (a mine's `known` mask \
+                     holds {MINE_KNOWN_PLAYERS})",
+                    req.players.len()
+                ),
+            ));
+        }
+        // S17a: a team number stays under the player limit, and a match
+        // needs two teams (with every team left out each player is alone).
+        let team_of = |i: usize, p: &PlayerRequest| p.team.unwrap_or(i as u8);
+        for (i, p) in req.players.iter().enumerate() {
+            if p.team.is_some_and(|t| t as usize >= MAX_MATCH_PLAYERS) {
+                issues.push(Issue::new(
+                    format!("players[{i}].team"),
+                    format!("must be under {MAX_MATCH_PLAYERS}"),
+                ));
+            }
+        }
+        if req.players.len() >= 2
+            && req
+                .players
+                .iter()
+                .enumerate()
+                .all(|(i, p)| team_of(i, p) == team_of(0, &req.players[0]))
+        {
+            issues.push(
+                Issue::new("players", "every player is on one team; a match needs two")
+                    .with_hint("give the players at least two different `team` values"),
+            );
+        }
         for (i, p) in req.players.iter().enumerate() {
             if !self.factions.contains_key(&p.faction) {
                 issues.push(Issue::new(
@@ -1611,7 +1674,7 @@ impl ModDefs {
         }
         // S15 M1-M2 (docs/slices/S15-ussr.md 4): a named faction must be
         // enabled and every two hostile players' factions an allowed pair
-        // (every other player is hostile until teams exist).
+        // (players on different teams: allies may be any two factions).
         if let Some(m) = rules.and_then(|r| r.matchups.as_ref()) {
             issues.extend(matchup_issues(m, req));
         }
@@ -2173,6 +2236,7 @@ impl ModDefs {
                 is_ai: p.ai,
                 difficulty: p.difficulty,
                 base: i as u8,
+                team: p.team.unwrap_or(i as u8),
             })
             .collect();
 
@@ -2328,6 +2392,7 @@ impl ModDefs {
                         recrew: v.recrew.clone(),
                         transport: v.transport.clone(),
                         guns: v.guns.clone(),
+                        road: v.road.clone().unwrap_or_default(),
                     }
                 },
                 difficulty: DifficultyTable {
@@ -2382,6 +2447,7 @@ impl ModDefs {
                         medic: a.medic.clone().unwrap_or_default(),
                         flame: a.flame.clone().unwrap_or_default(),
                         riders: a.riders.clone().unwrap_or_default(),
+                        team: a.team.clone().unwrap_or_default(),
                     }
                 },
                 cover: rules.cover.clone(),
@@ -2404,6 +2470,7 @@ impl ModDefs {
                 clear: rules.clear.clone().unwrap_or_default(),
                 riders: rules.riders.clone().unwrap_or_default(),
                 body_armour: rules.body_armour.clone().unwrap_or_default(),
+                teams: rules.teams.clone().unwrap_or_default(),
             },
             map: MapSetup {
                 id: map.id.clone(),
@@ -2446,6 +2513,14 @@ impl ModDefs {
                     .map(|b| CircleSetup {
                         center: FixedVec2::from_m(b.pos),
                         radius: Fixed::from_int(b.radius_m as i32),
+                    })
+                    .collect(),
+                roads: map
+                    .roads
+                    .iter()
+                    .map(|r| RoadSetup {
+                        points: r.points.iter().map(|&p| FixedVec2::from_m(p)).collect(),
+                        half_width: Fixed::from_ratio(r.width_m as i64, 2),
                     })
                     .collect(),
             },
@@ -2836,6 +2911,10 @@ fn invalid(issues: Vec<Issue>) -> ContentError {
 /// Most players in one match (§2.2 lobby limit).
 pub const MAX_MATCH_PLAYERS: usize = 10;
 
+/// S17b: players a mine's `known` mask (one `u8` bit each) can tell; a match
+/// request or setup with more is refused.
+pub const MINE_KNOWN_PLAYERS: usize = 8;
+
 impl MatchSetup {
     /// Structural checks the sim relies on (indices in range, positions on
     /// the map, magnitudes that keep fixed-point math in range). Defs that
@@ -2908,6 +2987,30 @@ impl MatchSetup {
             check(
                 c.radius > Fixed::ZERO && fx_in(c.radius, 0, 1000),
                 "map.circles.radius",
+                "out of range",
+            );
+        }
+        // S16a (R5): what `MapFileDef::validate` checks, on the setup.
+        check(
+            self.map.roads.len() <= crate::MAX_ROADS,
+            "map.roads",
+            "too many roads",
+        );
+        for r in &self.map.roads {
+            check(
+                (2..=crate::MAX_ROAD_POINTS).contains(&r.points.len())
+                    && r.points.iter().all(|&p| on_map(p)),
+                "map.roads.points",
+                "need at least two points on the map",
+            );
+            check(
+                r.points.windows(2).all(|w| w[0] != w[1]),
+                "map.roads.points",
+                "zero-length segment",
+            );
+            check(
+                r.half_width >= Fixed::from_int(2) && fx_in(r.half_width, 2, 6),
+                "map.roads.half_width",
                 "out of range",
             );
         }
@@ -3230,6 +3333,7 @@ impl MatchSetup {
                 recrew: &v.recrew,
                 transport: &v.transport,
                 guns: &v.guns,
+                road: &v.road,
                 vehicle_damage: &v.damage,
                 formation: &m.formation,
                 cover: &r.cover,
@@ -3261,6 +3365,8 @@ impl MatchSetup {
                 riders: &r.riders,
                 body_armour: &r.body_armour,
                 ai_riders: &a.riders,
+                teams: &r.teams,
+                ai_team: &a.team,
             },
         );
         r.at_ditch
@@ -3807,6 +3913,11 @@ impl MatchSetup {
             "players",
             "need 2..=10 players",
         );
+        check(
+            self.players.len() <= MINE_KNOWN_PLAYERS,
+            "players",
+            "at most 8 players (a mine's `known` mask)",
+        );
         for p in &self.players {
             check(
                 (p.faction as usize) < nf,
@@ -3818,7 +3929,17 @@ impl MatchSetup {
                 "players.base",
                 "index out of range",
             );
+            check(
+                (p.team as usize) < MAX_MATCH_PLAYERS,
+                "players.team",
+                "index out of range",
+            );
         }
+        check(
+            self.players.len() < 2 || self.players.iter().any(|p| p.team != self.players[0].team),
+            "players.team",
+            "a match needs two teams",
+        );
         out
     }
 

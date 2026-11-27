@@ -330,6 +330,7 @@ pub(super) fn burst_now(
         ff_hit: Vec::new(),
         wounds: None,
         downed: None,
+        teams: Default::default(),
     };
     let ev = [BallisticEvent {
         weapon,

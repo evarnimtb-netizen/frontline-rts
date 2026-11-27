@@ -8,9 +8,10 @@ extends SceneTree
 ##
 ## main.tscn and match/match.tscn need the Rust bridge (godot/bin); they
 ## are loaded and run only when its classes are registered. The real match
-## runs a few seconds of the sim against the AI.
+## runs a few seconds of the sim against the AI, then (S17) a 2v2 on Harrow
+## Cross: you and an AI ally against two AIs.
 
-const RUN_SCENES := ["res://ui/menu/main_menu.tscn", "res://match/match_mock.tscn", "res://match/match.tscn"]
+const RUN_SCENES := ["res://ui/menu/main_menu.tscn", "res://match/match_mock.tscn", "res://match/match.tscn", "res://match/match.tscn#2v2"]
 const FRAMES := 240
 
 var _failures := 0
@@ -47,6 +48,15 @@ func _process(_delta: float) -> bool:
 
 func _next_scene() -> void:
 	var path: String = RUN_SCENES[_scene_i]
+	# S17: "#2v2" runs the match scene with the 2v2 menu choice.
+	var mode := "1v1"
+	if path.ends_with("#2v2"):
+		path = path.trim_suffix("#2v2")
+		mode = "2v2"
+	var session := root.get_node_or_null(^"Session")
+	if session != null:
+		session.setup.mode = mode
+		session.setup.map = session.map_for_mode(mode)
 	if path == "res://match/match.tscn" and not ClassDB.class_exists(&"FrontlineMatch"):
 		print("skip %s (bridge not built)" % path)
 		return
@@ -58,7 +68,7 @@ func _next_scene() -> void:
 		if not c.name in ["AudioManager", "Settings", "Session"]:
 			c.queue_free()
 	root.add_child(packed.instantiate())
-	print("running %s for %d frames" % [path, FRAMES])
+	print("running %s (%s) for %d frames" % [path, mode, FRAMES])
 
 
 func _fail(msg: String) -> void:

@@ -1921,7 +1921,12 @@ pub fn drive(
     let max_slope = m.max_slope_pct.max(1) as i64;
     pct = pct * (100 - m.slope_loss_pct as i64 * grade.min(max_slope) / max_slope) / 100;
     let xy = t.pos.xy();
-    if ctx.terrain.woods_at(xy) {
+    // S16a (R1): on a road node the cap is the road factor of the def's
+    // speed (applied with the other caps below), and woods do not slow,
+    // whatever the factor (100 for a gun, or a road_speed_pct of 100), as
+    // R3 skips the woods cost on every road node.
+    let (road_f, road_r) = road_factors(r, m, ctx.terrain, xy);
+    if !on_road(r, ctx.terrain, xy) && ctx.terrain.woods_at(xy) {
         pct = pct * m.woods_speed_pct as i64 / 100;
     }
     let driver = vs.seat(v, SeatRole::Driver).map_or(0, |s| s.hp as u32);
@@ -1948,9 +1953,10 @@ pub fn drive(
     if (vs.component(ComponentKind::Transmission) as u32) * 2 < gearbox {
         pct = pct * 50 / 100;
     }
-    let scale = |s: Fx| s.mul_int(pct as i32).div_int(100);
-    let mut max_f = scale(m.speed.into());
-    let mut max_r = scale(m.reverse.into());
+    // Off a road both factors are 100, so `pct * 100 / 100` is `pct`.
+    let scale = |s: Fx, road: i64| s.mul_int((pct * road / 100) as i32).div_int(100);
+    let mut max_f = scale(m.speed.into(), road_f as i64);
+    let mut max_r = scale(m.reverse.into(), road_r as i64);
     if vs.crossing {
         let cap: Fx = r.crossing_speed.into();
         max_f = max_f.min(cap);
@@ -2153,6 +2159,45 @@ pub(crate) fn halts_to_fire(vs: &VehicleState, v: &VehicleSetup) -> bool {
         && vs.manned(v, SeatRole::Gunner)
         && vs.component(ComponentKind::Gun) > 0
         && (vs.loaded.is_some() || vs.ammo.iter().any(|n| *n > 0))
+}
+
+/// S16a (R1): the forward and reverse road factors (percent) of a hull
+/// at `xy`: the def's `[vehicles.road]` values on a road node with road
+/// rules on, else (100, 100). Woods do not slow a hull on a road node.
+pub(crate) fn road_factors(
+    r: &VehicleRulesSetup,
+    m: &frontline_content::vehicle::MobilitySetup,
+    terrain: &Heightfield,
+    xy: FxVec2,
+) -> (u32, u32) {
+    if on_road(r, terrain, xy) {
+        (m.road_pct(&r.road), m.road_reverse_pct(&r.road))
+    } else {
+        (100, 100)
+    }
+}
+
+/// S16a (R1): whether road rules apply to a hull centred at `xy` (road
+/// rules on and a road node there).
+fn on_road(r: &VehicleRulesSetup, terrain: &Heightfield, xy: FxVec2) -> bool {
+    r.road.enabled == 1 && terrain.road_at(xy)
+}
+
+/// S16a (R1): the drive controller's top speed for a hull at `xy`, forward
+/// or `reverse`: the def's speed times its road factor there.
+fn road_top(c: &Follow, xy: FxVec2, reverse: bool) -> Fx {
+    let m = &c.v.mobility;
+    let (f, r) = road_factors(c.rules, m, c.terrain, xy);
+    let (s, pct): (Fx, u32) = if reverse {
+        (m.reverse.into(), r)
+    } else {
+        (m.speed.into(), f)
+    };
+    if pct == 100 {
+        s
+    } else {
+        s.mul_int(pct as i32).div_int(100)
+    }
 }
 
 /// Speed cap as a throttle magnitude against the def's top speed.
@@ -2511,6 +2556,7 @@ impl MatchState {
             vehicles,
             squads,
             vderived,
+            teams,
             ..
         } = self;
         for (&id, vs) in vehicles.iter_mut() {
@@ -2548,6 +2594,8 @@ impl MatchState {
                             v,
                             geo,
                             drv: &setup.rules.vehicles.driving,
+                            teams: *teams,
+                            rules: &setup.rules.vehicles,
                             hz,
                             tick,
                         },
@@ -2639,6 +2687,10 @@ struct Follow<'a> {
     v: &'a VehicleSetup,
     geo: &'a Geo,
     drv: &'a DrivingTuning,
+    /// S16a: the vehicle rules (`[vehicles.road]` for the road top speed).
+    /// S17a: allied men count as own for the friendly-ahead yield.
+    teams: crate::teams::Teams,
+    rules: &'a VehicleRulesSetup,
     hz: u32,
     tick: u64,
 }
@@ -2865,11 +2917,9 @@ fn follow(c: &Follow, sq: &mut Squad, vs: &mut VehicleState, repath: &mut Vec<Re
         // S8b: no pivot: it steers by rolling, so it keeps rolling.
         throttle = throttle.max(127 * d.wheeled_creep_pct as i32 / 100);
     }
-    let top: Fx = if vs.reverse {
-        c.v.mobility.reverse.into()
-    } else {
-        c.v.mobility.speed.into()
-    };
+    // S16a (R1): road-scaled while the hull is on a road node, so braking
+    // for the last waypoint and escort pace scale with it.
+    let top = road_top(c, pos, vs.reverse);
     // Brake for the last waypoint: v² = 2·brake·d.
     if nav.next == last {
         let cap = (Fx::from(c.v.mobility.brake).mul_int(2) * dist).sqrt();
@@ -2946,7 +2996,8 @@ fn yield_cap(c: &Follow, dir: FxVec2) -> (Option<Fx>, bool) {
     let hy = c.geo.hull_half.y;
     let front = pos + dir * hx;
     let brake2 = Fx::from(c.v.mobility.brake).mul_int(2);
-    let top = Fx::from(c.v.mobility.speed);
+    // S16a (R1): the stop distance at the road-scaled top speed.
+    let top = road_top(c, pos, false);
     // At least 1.5 hull lengths, and long enough for two vehicles closing
     // head-on at top speed to stop (each in half the gap, plus 2 m).
     let len = hx
@@ -3009,7 +3060,7 @@ fn yield_cap(c: &Follow, dir: FxVec2) -> (Option<Fx>, bool) {
     let walk = Fx::from_milli(c.drv.walk_mm_s as i32);
     c.soldiers.for_each_near(front, ahead + hy + Fx::ONE, |s| {
         let si = s.index();
-        if c.ents.owner[si] != owner || c.ents.kind[si] != EntityKind::Soldier {
+        if c.teams.hostile_id(owner, c.ents.owner[si]) || c.ents.kind[si] != EntityKind::Soldier {
             return;
         }
         let rel = c.ents.transform[si].pos.xy() - front;

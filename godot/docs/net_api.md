@@ -33,7 +33,8 @@ snapshots from it: it never waits on the network.
 | `set_name(name: String)` | Before `host`/`join`; `Hello` carries it. Optional: called only `if net.has_method("set_name")`. |
 | `host(port: int) -> bool` | Start the in-game relay on `port` and join it as slot 0. `false` = could not start; `status().error` says why (`bind_failed`). |
 | `join(addr: String) -> bool` | `addr` is already validated and normalised by `NetUi.parse_join`: `"1.2.3.4:47015"`, `"[::1]:47015"` (IPv6 always bracketed), or `"host.name:47015"` (the bridge resolves names, e.g. Tailscale MagicDNS). `false` = refused at once (`bad_address`). |
-| `set_choice(choice: Dictionary)` | Partial updates: any of `faction`, `seed`, `map`, `input_delay`; missing keys keep their value. Slot 0 may send all four; slot 1 sends only `faction` (the relay ignores the rest from slot 1). The presenter clamps `input_delay` to 2–6. |
+| `set_choice(choice: Dictionary)` | Partial updates: any of `faction`, `seed`, `map`, `input_delay`, and (S18) `team` (0–3, -1 none), `players` (2–4) and `ai` (Array of `{slot, faction, team, difficulty}`: the AI fill, replacing the list; difficulty 0 easy, 1 normal, 2 hard); missing keys keep their value. Slot 0 may send all; a joiner sends only `faction` and `team` (the relay ignores the rest from him). The presenter clamps `input_delay` to 2–6. |
+| `take_slot(slot: int)` | S18: a joiner moves to an open slot of the match (not slot 0, not an AI slot). |
 | `ready()` | Send `Ready` (setup hash). Note: if `FrontlineNet` is a `Node`, a method named `ready` clashes with the `ready` signal in GDScript; prefer a non-Node class (`RefCounted`) or rename it (e.g. `set_ready`) and change the three call sites (`multiplayer_panel.gd` `on_ready`, `session.gd` `_run_autoplay_net`, the test). |
 | `leave()` | `Bye`, then `status().state == "idle"`. Safe to call in any state. |
 | `status() -> Dictionary` | Snapshot, read every frame by the lobby. |
@@ -44,12 +45,15 @@ snapshots from it: it never waits on the network.
 {
   state: "idle" | "connecting" | "lobby" | "countdown" | "in_match" | "disconnected",
   slot: int,                 # own slot, -1 before Welcome
-  slots: [                   # always 2 entries once in a lobby
-    { name: String,          # "" = open slot
+  slots: [                   # one entry per match slot once in a lobby (2-4)
+    { name: String,          # "" = open slot (or an AI slot)
       faction: String,       # "germany" | "usa"
       ping_ms: float,        # -1 unknown
-      ready: bool }, ...
+      ready: bool,
+      team: int,             # S18: -1 none (alone), else 0-3
+      ai: int }, ...         # S18: AI fill difficulty 0-2, -1 a player / open
   ],
+  players: int,              # S18: slots in the match (2 = 1v1, 4 = 2v2)
   seed: int, map: String,    # slot 0's choice
   input_delay: int,          # D in ticks (2-6)
   suggested_delay: int,      # clamp(ceil((p99 RTT / 2 + jitter) / tick), 2, 4)
@@ -89,8 +93,11 @@ The bridge's `FrontlineMatch.get_state()` then adds, in net mode:
 
 Schema: `godot/docs/match_state.md`, "Net mode (S2)".
 
-Intents in net mode: `pause {paused}` means PauseReq / resume for both
-players (the pause menu no longer pauses on open); `surrender` as before;
+Intents in net mode: `pause {paused}` means PauseReq / resume for every
+player (the pause menu no longer pauses on open); S18 `map_ping {target}`
+pings the map for the allies (the `.` key; at most one per `[teams]
+ping_gap_s`), and allies' pings come back in `net.pings` (`[{slot, name,
+pos}]`, each once); `surrender` as before;
 `quit_to_menu` makes the presenter call `Session.goto_menu()`, which calls
 `leave()`.
 

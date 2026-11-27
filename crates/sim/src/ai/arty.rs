@@ -140,7 +140,7 @@ use frontline_content::VehicleRole;
 use frontline_content::setup::member_trait;
 
 use super::truck::RoleBuy;
-use super::{Known, KnownVehicle, Mine, PointEval, Rel, sq_m};
+use super::{Known, KnownVehicle, Mine, PointEval, sq_m};
 use crate::command::CommandKind;
 use crate::ecs::{EntityKind, SimId};
 use crate::game::Order;
@@ -188,7 +188,7 @@ pub(super) fn own_near_within(
         Some(id) != firing
             && (goal - target).length_sq_raw() < danger
             && g.squads.get(&id).is_some_and(|q| {
-                q.owner == me
+                g.teams.allied(me.0, q.owner.0)
                     && !q.members.is_empty()
                     && (ents.transform[q.lead(ents).index()].pos.xy() - target).length_sq_raw()
                         <= lift
@@ -202,7 +202,8 @@ pub(super) fn own_near_within(
     });
     ordered_in
         || g.squads.iter().any(|(&id, q)| {
-            if q.owner != me || Some(id) == firing || q.members.is_empty() {
+            // S17a A5: an ally's men count as own.
+            if g.teams.hostile_id(me, q.owner) || Some(id) == firing || q.members.is_empty() {
                 return false;
             }
             let man = q.members.iter().any(|m| {
@@ -550,7 +551,7 @@ impl super::Planner<'_> {
             let front = points
                 .iter()
                 .enumerate()
-                .filter(|(_, p)| p.rel != Rel::Own || p.threat > 0)
+                .filter(|(_, p)| !p.rel.friendly() || p.threat > 0)
                 .max_by_key(|(_, p)| p.priority)
                 .or_else(|| points.iter().enumerate().max_by_key(|(_, p)| p.priority))
                 .map(|(i, p)| (i as u8, p.pos));
